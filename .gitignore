@@ -1,0 +1,10 @@
+# Build and IDE stuff
+build/
+llvm-build/
+cmake-build-*/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.exe
