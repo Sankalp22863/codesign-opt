@@ -11,6 +11,9 @@ cmake-build-*/
 *.dll
 *.exe
 
+# All MLIR files.
+*.mlir
+ 
 # CMake
 CMakeCache.txt
 CMakeFiles/
