@@ -1,4 +1,5 @@
-# Build and IDE stuff
+cat << 'EOF' > .gitignore
+# Build dirs
 build/
 llvm-build/
 cmake-build-*/
@@ -7,4 +8,15 @@ cmake-build-*/
 *.a
 *.so
 *.dylib
-*.exetest/bitnet.mlir
+*.dll
+*.exe
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+
+# MacOS junk
+.DS_Store
+EOF
+
+test/bitnet.mlir
