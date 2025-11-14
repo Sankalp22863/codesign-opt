@@ -1,0 +1,4 @@
+cmake ..
+cmake --build . --target codesign-opt -- -j8
+
+./build/tools/codesign-opt/codesign-opt test/test.mlir --lower-maximumf
