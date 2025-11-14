@@ -12,6 +12,15 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
 
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/Complex/IR/Complex.h"
+#include "mlir/Dialect/UB/IR/UBOps.h"
+#include "mlir/Dialect/MLProgram/IR/MLProgram.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
+
+
 int main(int argc, char **argv) {
   mlir::DialectRegistry registry;
   
@@ -20,7 +29,14 @@ int main(int argc, char **argv) {
                   mlir::arith::ArithDialect,
                   mlir::affine::AffineDialect,
                   mlir::scf::SCFDialect,
-                  mlir::memref::MemRefDialect>();
+                  mlir::tensor::TensorDialect,
+                  mlir::memref::MemRefDialect,
+                  mlir::linalg::LinalgDialect,
+                  mlir::cf::ControlFlowDialect,
+                  mlir::math::MathDialect,
+                  mlir::complex::ComplexDialect,
+                  mlir::ub::UBDialect,
+                  mlir::ml_program::MLProgramDialect>();
   
   // Register your custom passes
   // registerCodeSignPasses();

@@ -28,6 +28,13 @@ target_link_libraries(codesign-opt
     MLIRSCFDialect
     MLIRMemRefDialect
     MLIRTensorDialect
+    MLIRFuncDialect    
+    MLIRLinalgDialect
+    MLIRControlFlowDialect
+    MLIRMathDialect
+    MLIRComplexDialect
+    MLIRUBDialect
+    MLIRMLProgramDialect
 )
 
 # Optional helper to ensure all needed libs are linked
