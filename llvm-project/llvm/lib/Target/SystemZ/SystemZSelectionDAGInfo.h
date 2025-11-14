@@ -21,10 +21,6 @@ class SystemZSelectionDAGInfo : public SelectionDAGTargetInfo {
 public:
   explicit SystemZSelectionDAGInfo() = default;
 
-  bool isTargetMemoryOpcode(unsigned Opcode) const override;
-
-  bool isTargetStrictFPOpcode(unsigned Opcode) const override;
-
   SDValue EmitTargetCodeForMemcpy(SelectionDAG &DAG, const SDLoc &DL,
                                   SDValue Chain, SDValue Dst, SDValue Src,
                                   SDValue Size, Align Alignment,
@@ -41,7 +37,8 @@ public:
   std::pair<SDValue, SDValue>
   EmitTargetCodeForMemcmp(SelectionDAG &DAG, const SDLoc &DL, SDValue Chain,
                           SDValue Src1, SDValue Src2, SDValue Size,
-                          const CallInst *CI) const override;
+                          MachinePointerInfo Op1PtrInfo,
+                          MachinePointerInfo Op2PtrInfo) const override;
 
   std::pair<SDValue, SDValue>
   EmitTargetCodeForMemchr(SelectionDAG &DAG, const SDLoc &DL, SDValue Chain,
@@ -61,7 +58,8 @@ public:
 
   std::pair<SDValue, SDValue>
   EmitTargetCodeForStrlen(SelectionDAG &DAG, const SDLoc &DL, SDValue Chain,
-                          SDValue Src, const CallInst *CI) const override;
+                          SDValue Src,
+                          MachinePointerInfo SrcPtrInfo) const override;
 
   std::pair<SDValue, SDValue>
   EmitTargetCodeForStrnlen(SelectionDAG &DAG, const SDLoc &DL, SDValue Chain,

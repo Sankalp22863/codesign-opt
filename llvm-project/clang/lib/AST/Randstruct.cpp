@@ -13,6 +13,7 @@
 
 #include "clang/AST/Randstruct.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h" // For StaticAssertDecl
@@ -22,6 +23,7 @@
 #include <algorithm>
 #include <random>
 #include <set>
+#include <sstream>
 #include <string>
 
 using clang::ASTContext;
@@ -91,7 +93,7 @@ void randomizeStructureLayoutImpl(const ASTContext &Context,
     auto FieldIter = FieldsOut.begin();
     FieldDecl *FD = *FieldIter;
 
-    if (FD->isBitField() && !FD->isZeroLengthBitField()) {
+    if (FD->isBitField() && !FD->isZeroLengthBitField(Context)) {
       // Start a bitfield run if this is the first bitfield we have found.
       if (!CurrentBitfieldRun)
         CurrentBitfieldRun = std::make_unique<BitfieldRunBucket>();
@@ -159,7 +161,7 @@ void randomizeStructureLayoutImpl(const ASTContext &Context,
     if (!B->isBitfieldRun())
       std::shuffle(std::begin(RandFields), std::end(RandFields), RNG);
 
-    llvm::append_range(FinalOrder, RandFields);
+    FinalOrder.insert(FinalOrder.end(), RandFields.begin(), RandFields.end());
   }
 
   FieldsOut = FinalOrder;
@@ -208,10 +210,12 @@ bool randomizeStructureLayout(const ASTContext &Context, RecordDecl *RD,
   randomizeStructureLayoutImpl(Context, RandomizedFields, RNG);
 
   // Plorp the randomized decls into the final ordering.
-  llvm::append_range(FinalOrdering, RandomizedFields);
+  FinalOrdering.insert(FinalOrdering.end(), RandomizedFields.begin(),
+                       RandomizedFields.end());
 
   // Add fields that belong towards the end of the RecordDecl.
-  llvm::append_range(FinalOrdering, PostRandomizedFields);
+  FinalOrdering.insert(FinalOrdering.end(), PostRandomizedFields.begin(),
+                       PostRandomizedFields.end());
 
   // Add back the flexible array.
   if (FlexibleArray)

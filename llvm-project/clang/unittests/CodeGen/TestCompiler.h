@@ -20,7 +20,6 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/TargetParser/Host.h"
 
 namespace llvm {
@@ -36,7 +35,6 @@ struct TestCompiler {
                clang::CodeGenOptions CGO = clang::CodeGenOptions()) {
     compiler.getLangOpts() = LO;
     compiler.getCodeGenOpts() = CGO;
-    compiler.setVirtualFileSystem(llvm::vfs::getRealFileSystem());
     compiler.createDiagnostics();
 
     std::string TrStr = llvm::Triple::normalize(llvm::sys::getProcessTriple());
@@ -46,20 +44,21 @@ struct TestCompiler {
     Tr.setEnvironment(Triple::EnvironmentType::UnknownEnvironment);
     compiler.getTargetOpts().Triple = Tr.getTriple();
     compiler.setTarget(clang::TargetInfo::CreateTargetInfo(
-        compiler.getDiagnostics(), compiler.getTargetOpts()));
+        compiler.getDiagnostics(),
+        std::make_shared<clang::TargetOptions>(compiler.getTargetOpts())));
 
     const clang::TargetInfo &TInfo = compiler.getTarget();
     PtrSize = TInfo.getPointerWidth(clang::LangAS::Default) / 8;
 
     compiler.createFileManager();
-    compiler.createSourceManager();
+    compiler.createSourceManager(compiler.getFileManager());
     compiler.createPreprocessor(clang::TU_Prefix);
 
     compiler.createASTContext();
 
     CG.reset(CreateLLVMCodeGen(
         compiler.getDiagnostics(), "main-module",
-        compiler.getVirtualFileSystemPtr(), compiler.getHeaderSearchOpts(),
+        &compiler.getVirtualFileSystem(), compiler.getHeaderSearchOpts(),
         compiler.getPreprocessorOpts(), compiler.getCodeGenOpts(), Context));
   }
 

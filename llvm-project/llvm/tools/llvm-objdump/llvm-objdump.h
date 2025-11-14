@@ -15,6 +15,8 @@
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Compiler.h"
+#include "llvm/Support/DataTypes.h"
 #include "llvm/Support/FormattedStream.h"
 #include <functional>
 #include <memory>
@@ -36,21 +38,18 @@ class ELFObjectFileBase;
 class MachOObjectFile;
 class WasmObjectFile;
 class XCOFFObjectFile;
-class DXContainer;
 } // namespace object
 
 namespace objdump {
 
-enum DebugFormat { DFASCII, DFDisabled, DFInvalid, DFLimitsOnly, DFUnicode };
+enum DebugVarsFormat { DVDisabled, DVUnicode, DVASCII, DVInvalid };
 
 extern bool ArchiveHeaders;
 extern int DbgIndent;
-extern DebugFormat DbgVariables;
-extern DebugFormat DbgInlinedFunctions;
+extern DebugVarsFormat DbgVariables;
 extern bool Demangle;
 extern bool Disassemble;
 extern bool DisassembleAll;
-extern std::vector<std::string> DisassemblerOptions;
 extern DIDumpType DwarfDumpType;
 extern std::vector<std::string> FilterSections;
 extern bool LeadingAddr;
@@ -79,12 +78,11 @@ class Dumper {
   StringSet<> Warnings;
 
 protected:
-  llvm::raw_ostream &OS;
   std::function<Error(const Twine &Msg)> WarningHandler;
 
 public:
   Dumper(const object::ObjectFile &O);
-  virtual ~Dumper() = default;
+  virtual ~Dumper() {}
 
   void reportUniqueWarning(Error Err);
   void reportUniqueWarning(const Twine &Msg);
@@ -106,8 +104,6 @@ std::unique_ptr<Dumper> createELFDumper(const object::ELFObjectFileBase &Obj);
 std::unique_ptr<Dumper> createMachODumper(const object::MachOObjectFile &Obj);
 std::unique_ptr<Dumper> createWasmDumper(const object::WasmObjectFile &Obj);
 std::unique_ptr<Dumper> createXCOFFDumper(const object::XCOFFObjectFile &Obj);
-std::unique_ptr<Dumper>
-createDXContainerDumper(const object::DXContainerObjectFile &Obj);
 
 // Various helper functions.
 
@@ -130,7 +126,7 @@ void printSectionContents(const object::ObjectFile *O);
 void reportWarning(const Twine &Message, StringRef File);
 
 template <typename T, typename... Ts>
-T unwrapOrError(Expected<T> EO, Ts &&...Args) {
+T unwrapOrError(Expected<T> EO, Ts &&... Args) {
   if (EO)
     return std::move(*EO);
   reportError(EO.takeError(), std::forward<Ts>(Args)...);

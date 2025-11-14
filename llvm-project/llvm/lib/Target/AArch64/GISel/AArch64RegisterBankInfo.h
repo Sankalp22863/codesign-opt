@@ -22,7 +22,6 @@
 namespace llvm {
 
 class TargetRegisterInfo;
-class AArch64RegisterInfo;
 
 class AArch64GenRegisterBankInfo : public RegisterBankInfo {
 protected:
@@ -71,7 +70,7 @@ protected:
                                      PartialMappingIdx LastAlias,
                                      ArrayRef<PartialMappingIdx> Order);
 
-  static unsigned getRegBankBaseIdxOffset(unsigned RBIdx, TypeSize Size);
+  static unsigned getRegBankBaseIdxOffset(unsigned RBIdx, unsigned Size);
 
   /// Get the pointer to the ValueMapping representing the RegisterBank
   /// at \p RBIdx with a size of \p Size.
@@ -81,13 +80,13 @@ protected:
   ///
   /// \pre \p RBIdx != PartialMappingIdx::None
   static const RegisterBankInfo::ValueMapping *
-  getValueMapping(PartialMappingIdx RBIdx, TypeSize Size);
+  getValueMapping(PartialMappingIdx RBIdx, unsigned Size);
 
   /// Get the pointer to the ValueMapping of the operands of a copy
   /// instruction from the \p SrcBankID register bank to the \p DstBankID
   /// register bank with a size of \p Size.
   static const RegisterBankInfo::ValueMapping *
-  getCopyMapping(unsigned DstBankID, unsigned SrcBankID, TypeSize Size);
+  getCopyMapping(unsigned DstBankID, unsigned SrcBankID, unsigned Size);
 
   /// Get the instruction mapping for G_FPEXT.
   ///
@@ -121,29 +120,17 @@ class AArch64RegisterBankInfo final : public AArch64GenRegisterBankInfo {
   /// Maximum recursion depth for hasFPConstraints.
   const unsigned MaxFPRSearchDepth = 2;
 
-  /// \returns true if \p MI is a PHI that its def is used by
-  /// any instruction that onlyUsesFP.
-  bool isPHIWithFPConstraints(const MachineInstr &MI,
-                              const MachineRegisterInfo &MRI,
-                              const AArch64RegisterInfo &TRI,
-                              unsigned Depth = 0) const;
-
   /// \returns true if \p MI only uses and defines FPRs.
   bool hasFPConstraints(const MachineInstr &MI, const MachineRegisterInfo &MRI,
-                        const AArch64RegisterInfo &TRI,
-                        unsigned Depth = 0) const;
+                     const TargetRegisterInfo &TRI, unsigned Depth = 0) const;
 
   /// \returns true if \p MI only uses FPRs.
   bool onlyUsesFP(const MachineInstr &MI, const MachineRegisterInfo &MRI,
-                  const AArch64RegisterInfo &TRI, unsigned Depth = 0) const;
+                  const TargetRegisterInfo &TRI, unsigned Depth = 0) const;
 
   /// \returns true if \p MI only defines FPRs.
   bool onlyDefinesFP(const MachineInstr &MI, const MachineRegisterInfo &MRI,
-                     const AArch64RegisterInfo &TRI, unsigned Depth = 0) const;
-
-  /// \returns true if \p MI can take both fpr and gpr uses, but prefers fp.
-  bool prefersFPUse(const MachineInstr &MI, const MachineRegisterInfo &MRI,
-                    const AArch64RegisterInfo &TRI, unsigned Depth = 0) const;
+                     const TargetRegisterInfo &TRI, unsigned Depth = 0) const;
 
   /// \returns true if the load \p MI is likely loading from a floating-point
   /// type.
@@ -156,7 +143,7 @@ public:
                     TypeSize Size) const override;
 
   const RegisterBank &getRegBankFromRegClass(const TargetRegisterClass &RC,
-                                             LLT Ty) const override;
+                                             LLT) const override;
 
   InstructionMappings
   getInstrAlternativeMappings(const MachineInstr &MI) const override;

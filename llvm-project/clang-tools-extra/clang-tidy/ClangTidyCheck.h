@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- ClangTidyCheck.h - clang-tidy --------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -333,9 +333,9 @@ public:
     /// supply the mapping required to convert between ``T`` and a string.
     template <typename T>
     std::enable_if_t<std::is_enum_v<T>, std::optional<T>>
-    get(StringRef LocalName) const {
+    get(StringRef LocalName, bool IgnoreCase = false) const {
       if (std::optional<int64_t> ValueOr =
-              getEnumInt(LocalName, typeEraseMapping<T>(), false))
+              getEnumInt(LocalName, typeEraseMapping<T>(), false, IgnoreCase))
         return static_cast<T>(*ValueOr);
       return std::nullopt;
     }
@@ -353,9 +353,9 @@ public:
     /// \ref clang::tidy::OptionEnumMapping must be specialized for ``T`` to
     /// supply the mapping required to convert between ``T`` and a string.
     template <typename T>
-    std::enable_if_t<std::is_enum_v<T>, T> get(StringRef LocalName,
-                                               T Default) const {
-      return get<T>(LocalName).value_or(Default);
+    std::enable_if_t<std::is_enum_v<T>, T> get(StringRef LocalName, T Default,
+                                               bool IgnoreCase = false) const {
+      return get<T>(LocalName, IgnoreCase).value_or(Default);
     }
 
     /// Read a named option from the ``Context`` and parse it as an
@@ -373,9 +373,9 @@ public:
     /// supply the mapping required to convert between ``T`` and a string.
     template <typename T>
     std::enable_if_t<std::is_enum_v<T>, std::optional<T>>
-    getLocalOrGlobal(StringRef LocalName) const {
+    getLocalOrGlobal(StringRef LocalName, bool IgnoreCase = false) const {
       if (std::optional<int64_t> ValueOr =
-              getEnumInt(LocalName, typeEraseMapping<T>(), true))
+              getEnumInt(LocalName, typeEraseMapping<T>(), true, IgnoreCase))
         return static_cast<T>(*ValueOr);
       return std::nullopt;
     }
@@ -394,9 +394,10 @@ public:
     /// \ref clang::tidy::OptionEnumMapping must be specialized for ``T`` to
     /// supply the mapping required to convert between ``T`` and a string.
     template <typename T>
-    std::enable_if_t<std::is_enum_v<T>, T> getLocalOrGlobal(StringRef LocalName,
-                                                            T Default) const {
-      return getLocalOrGlobal<T>(LocalName).value_or(Default);
+    std::enable_if_t<std::is_enum_v<T>, T>
+    getLocalOrGlobal(StringRef LocalName, T Default,
+                     bool IgnoreCase = false) const {
+      return getLocalOrGlobal<T>(LocalName, IgnoreCase).value_or(Default);
     }
 
     /// Stores an option with the check-local name \p LocalName with
@@ -410,10 +411,7 @@ public:
     std::enable_if_t<std::is_integral_v<T>>
     store(ClangTidyOptions::OptionMap &Options, StringRef LocalName,
           T Value) const {
-      if constexpr (std::is_signed_v<T>)
-        storeInt(Options, LocalName, Value);
-      else
-        storeUnsigned(Options, LocalName, Value);
+      storeInt(Options, LocalName, Value);
     }
 
     /// Stores an option with the check-local name \p LocalName with
@@ -424,7 +422,7 @@ public:
     store(ClangTidyOptions::OptionMap &Options, StringRef LocalName,
           std::optional<T> Value) const {
       if (Value)
-        store(Options, LocalName, *Value);
+        storeInt(Options, LocalName, *Value);
       else
         store(Options, LocalName, "none");
     }
@@ -453,12 +451,12 @@ public:
 
     std::optional<int64_t> getEnumInt(StringRef LocalName,
                                       ArrayRef<NameAndValue> Mapping,
-                                      bool CheckGlobal) const;
+                                      bool CheckGlobal, bool IgnoreCase) const;
 
     template <typename T>
     std::enable_if_t<std::is_enum_v<T>, std::vector<NameAndValue>>
     typeEraseMapping() const {
-      const ArrayRef<std::pair<T, StringRef>> Mapping =
+      ArrayRef<std::pair<T, StringRef>> Mapping =
           OptionEnumMapping<T>::getEnumMapping();
       std::vector<NameAndValue> Result;
       Result.reserve(Mapping.size());
@@ -472,8 +470,6 @@ public:
     void storeInt(ClangTidyOptions::OptionMap &Options, StringRef LocalName,
                   int64_t Value) const;
 
-    void storeUnsigned(ClangTidyOptions::OptionMap &Options,
-                       StringRef LocalName, uint64_t Value) const;
 
     std::string NamePrefix;
     const ClangTidyOptions::OptionMap &CheckOptions;
@@ -529,6 +525,7 @@ template <>
 void ClangTidyCheck::OptionsView::store<bool>(
     ClangTidyOptions::OptionMap &Options, StringRef LocalName,
     bool Value) const;
+
 
 } // namespace tidy
 } // namespace clang

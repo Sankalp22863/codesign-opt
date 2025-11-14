@@ -47,14 +47,13 @@ int AA::A() { return sizeof(T); }
 namespace diag {
 
 template <unsigned N>
-struct TA { // #defined-here
+struct TA {
   template <template <unsigned> class TT> requires TT<N>::happy
   int A();
 };
 
 template <unsigned N>
 template <template <unsigned> class TT> int TA<N>::A() { return sizeof(TT<N>); }
-// expected-error@-1{{out-of-line definition of 'A' does not match any declaration in 'diag::TA<N>'}}
-// expected-note@#defined-here{{defined here}}
+// expected-error@-1{{out-of-line definition of 'A' does not match any declaration in 'TA<N>'}}
 
 } // end namespace diag

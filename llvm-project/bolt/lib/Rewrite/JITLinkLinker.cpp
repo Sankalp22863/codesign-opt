@@ -5,11 +5,9 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-
 #include "bolt/Rewrite/JITLinkLinker.h"
-#include "bolt/Core/BinaryContext.h"
 #include "bolt/Core/BinaryData.h"
-#include "bolt/Core/BinarySection.h"
+#include "bolt/Rewrite/RewriteInstance.h"
 #include "llvm/ExecutionEngine/JITLink/ELF_riscv.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 #include "llvm/ExecutionEngine/Orc/Shared/ExecutorAddress.h"
@@ -122,14 +120,14 @@ struct JITLinkLinker::Context : jitlink::JITLinkContext {
     jitlink::AsyncLookupResult AllResults;
 
     for (const auto &Symbol : Symbols) {
-      std::string SymName = (*Symbol.first).str();
+      std::string SymName = Symbol.first.str();
       LLVM_DEBUG(dbgs() << "BOLT: looking for " << SymName << "\n");
 
-      if (auto SymInfo = Linker.lookupSymbolInfo(SymName)) {
+      if (auto Address = Linker.lookupSymbol(SymName)) {
         LLVM_DEBUG(dbgs() << "Resolved to address 0x"
-                          << Twine::utohexstr(SymInfo->Address) << "\n");
+                          << Twine::utohexstr(*Address) << "\n");
         AllResults[Symbol.first] = orc::ExecutorSymbolDef(
-            orc::ExecutorAddr(SymInfo->Address), JITSymbolFlags());
+            orc::ExecutorAddr(*Address), JITSymbolFlags());
         continue;
       }
 
@@ -167,9 +165,7 @@ struct JITLinkLinker::Context : jitlink::JITLinkContext {
   Error notifyResolved(jitlink::LinkGraph &G) override {
     for (auto *Symbol : G.defined_symbols()) {
       SymbolInfo Info{Symbol->getAddress().getValue(), Symbol->getSize()};
-      auto Name =
-          Symbol->hasName() ? (*Symbol->getName()).str() : std::string();
-      Linker.Symtab.insert({std::move(Name), Info});
+      Linker.Symtab.insert({Symbol->getName().str(), Info});
     }
 
     return Error::success();
@@ -191,7 +187,7 @@ JITLinkLinker::~JITLinkLinker() { cantFail(MM->deallocate(std::move(Allocs))); }
 
 void JITLinkLinker::loadObject(MemoryBufferRef Obj,
                                SectionsMapper MapSections) {
-  auto LG = jitlink::createLinkGraphFromObject(Obj, BC.getSymbolStringPool());
+  auto LG = jitlink::createLinkGraphFromObject(Obj);
   if (auto E = LG.takeError()) {
     errs() << "BOLT-ERROR: JITLink failed: " << E << '\n';
     exit(1);

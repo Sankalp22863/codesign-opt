@@ -71,7 +71,7 @@ static Statistic RejectStatistics[] = {
     SCOP_STAT(LoopOnlySomeLatches, "Not all loop latches in scop"),
     SCOP_STAT(FuncCall, "Function call with side effects"),
     SCOP_STAT(NonSimpleMemoryAccess,
-              "Complicated access semantics (volatile or atomic)"),
+              "Compilated access semantics (volatile or atomic)"),
     SCOP_STAT(Alias, "Base address aliasing"),
     SCOP_STAT(Other, ""),
     SCOP_STAT(IntToPtr, "Integer to pointer conversions"),
@@ -89,6 +89,7 @@ template <typename T> std::string operator+(Twine LHS, const T &RHS) {
   std::string Buf;
   raw_string_ostream fmt(Buf);
   fmt << RHS;
+  fmt.flush();
 
   return LHS.concat(Buf).str();
 }
@@ -121,7 +122,7 @@ void getDebugLocations(const BBPair &P, DebugLoc &Begin, DebugLoc &End) {
       continue;
     Todo.append(succ_begin(BB), succ_end(BB));
     for (const Instruction &Inst : *BB) {
-      DebugLoc DL = Inst.getStableDebugLoc();
+      DebugLoc DL = Inst.getDebugLoc();
       if (!DL)
         continue;
 
@@ -201,7 +202,7 @@ std::string ReportInvalidTerminator::getRemarkName() const {
   return "InvalidTerminator";
 }
 
-const BasicBlock *ReportInvalidTerminator::getRemarkBB() const { return BB; }
+const Value *ReportInvalidTerminator::getRemarkBB() const { return BB; }
 
 std::string ReportInvalidTerminator::getMessage() const {
   return ("Invalid instruction terminates BB: " + BB->getName()).str();
@@ -222,7 +223,7 @@ std::string ReportUnreachableInExit::getRemarkName() const {
   return "UnreachableInExit";
 }
 
-const BasicBlock *ReportUnreachableInExit::getRemarkBB() const { return BB; }
+const Value *ReportUnreachableInExit::getRemarkBB() const { return BB; }
 
 std::string ReportUnreachableInExit::getMessage() const {
   std::string BBName = BB->getName().str();
@@ -246,7 +247,7 @@ std::string ReportIndirectPredecessor::getRemarkName() const {
   return "IndirectPredecessor";
 }
 
-const BasicBlock *ReportIndirectPredecessor::getRemarkBB() const {
+const Value *ReportIndirectPredecessor::getRemarkBB() const {
   if (Inst)
     return Inst->getParent();
   return nullptr;
@@ -277,7 +278,7 @@ std::string ReportIrreducibleRegion::getRemarkName() const {
   return "IrreducibleRegion";
 }
 
-const BasicBlock *ReportIrreducibleRegion::getRemarkBB() const {
+const Value *ReportIrreducibleRegion::getRemarkBB() const {
   return R->getEntry();
 }
 
@@ -311,7 +312,7 @@ bool ReportAffFunc::classof(const RejectReason *RR) {
 
 std::string ReportUndefCond::getRemarkName() const { return "UndefCond"; }
 
-const BasicBlock *ReportUndefCond::getRemarkBB() const { return BB; }
+const Value *ReportUndefCond::getRemarkBB() const { return BB; }
 
 std::string ReportUndefCond::getMessage() const {
   return ("Condition based on 'undef' value in BB: " + BB->getName()).str();
@@ -326,7 +327,7 @@ bool ReportUndefCond::classof(const RejectReason *RR) {
 
 std::string ReportInvalidCond::getRemarkName() const { return "InvalidCond"; }
 
-const BasicBlock *ReportInvalidCond::getRemarkBB() const { return BB; }
+const Value *ReportInvalidCond::getRemarkBB() const { return BB; }
 
 std::string ReportInvalidCond::getMessage() const {
   return ("Condition in BB '" + BB->getName()).str() +
@@ -342,7 +343,7 @@ bool ReportInvalidCond::classof(const RejectReason *RR) {
 
 std::string ReportUndefOperand::getRemarkName() const { return "UndefOperand"; }
 
-const BasicBlock *ReportUndefOperand::getRemarkBB() const { return BB; }
+const Value *ReportUndefOperand::getRemarkBB() const { return BB; }
 
 std::string ReportUndefOperand::getMessage() const {
   return ("undef operand in branch at BB: " + BB->getName()).str();
@@ -357,7 +358,7 @@ bool ReportUndefOperand::classof(const RejectReason *RR) {
 
 std::string ReportNonAffBranch::getRemarkName() const { return "NonAffBranch"; }
 
-const BasicBlock *ReportNonAffBranch::getRemarkBB() const { return BB; }
+const Value *ReportNonAffBranch::getRemarkBB() const { return BB; }
 
 std::string ReportNonAffBranch::getMessage() const {
   return ("Non affine branch in BB '" + BB->getName()).str() +
@@ -373,9 +374,7 @@ bool ReportNonAffBranch::classof(const RejectReason *RR) {
 
 std::string ReportNoBasePtr::getRemarkName() const { return "NoBasePtr"; }
 
-const BasicBlock *ReportNoBasePtr::getRemarkBB() const {
-  return Inst->getParent();
-}
+const Value *ReportNoBasePtr::getRemarkBB() const { return Inst->getParent(); }
 
 std::string ReportNoBasePtr::getMessage() const { return "No base pointer"; }
 
@@ -388,7 +387,7 @@ bool ReportNoBasePtr::classof(const RejectReason *RR) {
 
 std::string ReportUndefBasePtr::getRemarkName() const { return "UndefBasePtr"; }
 
-const BasicBlock *ReportUndefBasePtr::getRemarkBB() const {
+const Value *ReportUndefBasePtr::getRemarkBB() const {
   return Inst->getParent();
 }
 
@@ -407,7 +406,7 @@ std::string ReportVariantBasePtr::getRemarkName() const {
   return "VariantBasePtr";
 }
 
-const BasicBlock *ReportVariantBasePtr::getRemarkBB() const {
+const Value *ReportVariantBasePtr::getRemarkBB() const {
   return Inst->getParent();
 }
 
@@ -430,7 +429,7 @@ std::string ReportDifferentArrayElementSize::getRemarkName() const {
   return "DifferentArrayElementSize";
 }
 
-const BasicBlock *ReportDifferentArrayElementSize::getRemarkBB() const {
+const Value *ReportDifferentArrayElementSize::getRemarkBB() const {
   return Inst->getParent();
 }
 
@@ -457,7 +456,7 @@ std::string ReportNonAffineAccess::getRemarkName() const {
   return "NonAffineAccess";
 }
 
-const BasicBlock *ReportNonAffineAccess::getRemarkBB() const {
+const Value *ReportNonAffineAccess::getRemarkBB() const {
   return Inst->getParent();
 }
 
@@ -484,9 +483,7 @@ ReportLoopBound::ReportLoopBound(Loop *L, const SCEV *LoopCount)
 
 std::string ReportLoopBound::getRemarkName() const { return "LoopBound"; }
 
-const BasicBlock *ReportLoopBound::getRemarkBB() const {
-  return L->getHeader();
-}
+const Value *ReportLoopBound::getRemarkBB() const { return L->getHeader(); }
 
 std::string ReportLoopBound::getMessage() const {
   return "Non affine loop bound '" + *LoopCount +
@@ -510,9 +507,7 @@ std::string ReportLoopHasNoExit::getRemarkName() const {
   return "LoopHasNoExit";
 }
 
-const BasicBlock *ReportLoopHasNoExit::getRemarkBB() const {
-  return L->getHeader();
-}
+const Value *ReportLoopHasNoExit::getRemarkBB() const { return L->getHeader(); }
 
 std::string ReportLoopHasNoExit::getMessage() const {
   return "Loop " + L->getHeader()->getName() + " has no exit.";
@@ -535,7 +530,7 @@ std::string ReportLoopHasMultipleExits::getRemarkName() const {
   return "ReportLoopHasMultipleExits";
 }
 
-const BasicBlock *ReportLoopHasMultipleExits::getRemarkBB() const {
+const Value *ReportLoopHasMultipleExits::getRemarkBB() const {
   return L->getHeader();
 }
 
@@ -560,7 +555,7 @@ std::string ReportLoopOnlySomeLatches::getRemarkName() const {
   return "LoopHasNoExit";
 }
 
-const BasicBlock *ReportLoopOnlySomeLatches::getRemarkBB() const {
+const Value *ReportLoopOnlySomeLatches::getRemarkBB() const {
   return L->getHeader();
 }
 
@@ -588,9 +583,7 @@ ReportFuncCall::ReportFuncCall(Instruction *Inst)
 
 std::string ReportFuncCall::getRemarkName() const { return "FuncCall"; }
 
-const BasicBlock *ReportFuncCall::getRemarkBB() const {
-  return Inst->getParent();
-}
+const Value *ReportFuncCall::getRemarkBB() const { return Inst->getParent(); }
 
 std::string ReportFuncCall::getMessage() const {
   return "Call instruction: " + *Inst;
@@ -619,7 +612,7 @@ std::string ReportNonSimpleMemoryAccess::getRemarkName() const {
   return "NonSimpleMemoryAccess";
 }
 
-const BasicBlock *ReportNonSimpleMemoryAccess::getRemarkBB() const {
+const Value *ReportNonSimpleMemoryAccess::getRemarkBB() const {
   return Inst->getParent();
 }
 
@@ -676,12 +669,12 @@ std::string ReportAlias::formatInvalidAlias(std::string Prefix,
 
   OS << Suffix;
 
-  return Message;
+  return OS.str();
 }
 
 std::string ReportAlias::getRemarkName() const { return "Alias"; }
 
-const BasicBlock *ReportAlias::getRemarkBB() const { return Inst->getParent(); }
+const Value *ReportAlias::getRemarkBB() const { return Inst->getParent(); }
 
 std::string ReportAlias::getMessage() const {
   return formatInvalidAlias("Possible aliasing: ");
@@ -719,7 +712,7 @@ ReportIntToPtr::ReportIntToPtr(Instruction *BaseValue)
 
 std::string ReportIntToPtr::getRemarkName() const { return "IntToPtr"; }
 
-const BasicBlock *ReportIntToPtr::getRemarkBB() const {
+const Value *ReportIntToPtr::getRemarkBB() const {
   return BaseValue->getParent();
 }
 
@@ -743,9 +736,7 @@ ReportAlloca::ReportAlloca(Instruction *Inst)
 
 std::string ReportAlloca::getRemarkName() const { return "Alloca"; }
 
-const BasicBlock *ReportAlloca::getRemarkBB() const {
-  return Inst->getParent();
-}
+const Value *ReportAlloca::getRemarkBB() const { return Inst->getParent(); }
 
 std::string ReportAlloca::getMessage() const {
   return "Alloca instruction: " + *Inst;
@@ -767,7 +758,7 @@ ReportUnknownInst::ReportUnknownInst(Instruction *Inst)
 
 std::string ReportUnknownInst::getRemarkName() const { return "UnknownInst"; }
 
-const BasicBlock *ReportUnknownInst::getRemarkBB() const {
+const Value *ReportUnknownInst::getRemarkBB() const {
   return Inst->getParent();
 }
 
@@ -791,7 +782,7 @@ ReportEntry::ReportEntry(BasicBlock *BB)
 
 std::string ReportEntry::getRemarkName() const { return "Entry"; }
 
-const BasicBlock *ReportEntry::getRemarkBB() const { return BB; }
+const Value *ReportEntry::getRemarkBB() const { return BB; }
 
 std::string ReportEntry::getMessage() const {
   return "Region containing entry block of function is invalid!";
@@ -817,9 +808,7 @@ ReportUnprofitable::ReportUnprofitable(Region *R)
 
 std::string ReportUnprofitable::getRemarkName() const { return "Unprofitable"; }
 
-const BasicBlock *ReportUnprofitable::getRemarkBB() const {
-  return R->getEntry();
-}
+const Value *ReportUnprofitable::getRemarkBB() const { return R->getEntry(); }
 
 std::string ReportUnprofitable::getMessage() const {
   return "Region can not profitably be optimized!";
@@ -832,7 +821,7 @@ std::string ReportUnprofitable::getEndUserMessage() const {
 const DebugLoc &ReportUnprofitable::getDebugLoc() const {
   for (const BasicBlock *BB : R->blocks())
     for (const Instruction &Inst : *BB)
-      if (const DebugLoc &DL = Inst.getStableDebugLoc())
+      if (const DebugLoc &DL = Inst.getDebugLoc())
         return DL;
 
   return R->getEntry()->getTerminator()->getDebugLoc();

@@ -8,10 +8,10 @@
 //===----------------------------------------------------------------------===//
 
 export {
-#if _LIBCPP_HAS_LOCALIZATION
-  using ::lconv _LIBCPP_USING_IF_EXISTS;
+#ifndef _LIBCPP_HAS_NO_LOCALIZATION
+  using ::lconv;
 
-  using ::localeconv _LIBCPP_USING_IF_EXISTS;
-  using ::setlocale _LIBCPP_USING_IF_EXISTS;
-#endif // _LIBCPP_HAS_LOCALIZATION
+  using ::localeconv;
+  using ::setlocale;
+#endif // _LIBCPP_HAS_NO_LOCALIZATION
 } // export

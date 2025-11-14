@@ -35,16 +35,16 @@ void test_enabled_with_deleter() {
   using RawDel = typename std::decay<Del>::type;
   RawDel d(1);
   UPtr p(nullptr, std::forward<Del>(d));
-  test_hash_enabled<UPtr>(p);
-  test_hash_enabled<pointer>();
+  test_hash_enabled_for_type<UPtr>(p);
+  test_hash_enabled_for_type<pointer>();
 }
 
 template <class ValueT, class Del>
 void test_disabled_with_deleter() {
   using UPtr = std::unique_ptr<ValueT, Del>;
   using pointer = typename UPtr::pointer;
-  test_hash_disabled<UPtr>();
-  test_hash_disabled<pointer>();
+  test_hash_disabled_for_type<UPtr>();
+  test_hash_disabled_for_type<pointer>();
 }
 
 template <class T>
@@ -90,10 +90,12 @@ int main(int, char**)
     test_enabled_with_deleter<A, PointerDeleter<A, 1>>();
     test_enabled_with_deleter<A[], PointerDeleter<A[], 1>>();
 
+#if TEST_STD_VER > 14
     test_disabled_with_deleter<int, PointerDeleter<int, 0>>();
     test_disabled_with_deleter<int[], PointerDeleter<int[], 0>>();
     test_disabled_with_deleter<A, PointerDeleter<A, 0>>();
     test_disabled_with_deleter<A[], PointerDeleter<A[], 0>>();
+#endif
   }
 #endif
 

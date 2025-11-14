@@ -8,6 +8,11 @@
 
 // UNSUPPORTED: c++03, c++11, c++14, c++17
 
+// UNSUPPORTED: availability-filesystem-missing
+
+// "unable to find library from dependent library specifier: rt"
+// XFAIL: LIBCXX-PICOLIBC-FIXME
+
 // <chrono>
 //
 // file_clock

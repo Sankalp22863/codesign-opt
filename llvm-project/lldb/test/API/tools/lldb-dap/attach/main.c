@@ -1,10 +1,5 @@
-#include "attach.h"
 #include <stdio.h>
-#ifdef _WIN32
-#include <process.h>
-#else
 #include <unistd.h>
-#endif
 
 int main(int argc, char const *argv[]) {
   lldb_enable_attach();
@@ -19,9 +14,7 @@ int main(int argc, char const *argv[]) {
     fclose(f);
   }
 
-  // Wait on input from stdin.
-  getchar();
-
   printf("pid = %i\n", getpid());
-  return 0;
+  sleep(10);
+  return 0; // breakpoint 1
 }

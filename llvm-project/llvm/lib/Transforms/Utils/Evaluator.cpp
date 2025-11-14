@@ -29,6 +29,7 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/User.h"
 #include "llvm/IR/Value.h"
@@ -77,9 +78,7 @@ isSimpleEnoughValueToCommitHelper(Constant *C,
   // We don't know exactly what relocations are allowed in constant expressions,
   // so we allow &global+constantoffset, which is safe and uniformly supported
   // across targets.
-  ConstantExpr *CE = dyn_cast<ConstantExpr>(C);
-  if (!CE)
-    return false;
+  ConstantExpr *CE = cast<ConstantExpr>(C);
   switch (CE->getOpcode()) {
   case Instruction::BitCast:
     // Bitcast is fine if the casted value is fine.
@@ -255,15 +254,38 @@ Evaluator::getCalleeWithFormalArgs(CallBase &CB,
 
 bool Evaluator::getFormalParams(CallBase &CB, Function *F,
                                 SmallVectorImpl<Constant *> &Formals) {
+  if (!F)
+    return false;
+
   auto *FTy = F->getFunctionType();
-  if (FTy != CB.getFunctionType()) {
-    LLVM_DEBUG(dbgs() << "Signature mismatch.\n");
+  if (FTy->getNumParams() > CB.arg_size()) {
+    LLVM_DEBUG(dbgs() << "Too few arguments for function.\n");
     return false;
   }
 
-  for (Value *Arg : CB.args())
-    Formals.push_back(getVal(Arg));
+  auto ArgI = CB.arg_begin();
+  for (Type *PTy : FTy->params()) {
+    auto *ArgC = ConstantFoldLoadThroughBitcast(getVal(*ArgI), PTy, DL);
+    if (!ArgC) {
+      LLVM_DEBUG(dbgs() << "Can not convert function argument.\n");
+      return false;
+    }
+    Formals.push_back(ArgC);
+    ++ArgI;
+  }
   return true;
+}
+
+/// If call expression contains bitcast then we may need to cast
+/// evaluated return value to a type of the call expression.
+Constant *Evaluator::castCallResultIfNeeded(Type *ReturnType, Constant *RV) {
+  if (!RV || RV->getType() == ReturnType)
+    return RV;
+
+  RV = ConstantFoldLoadThroughBitcast(RV, ReturnType, DL);
+  if (!RV)
+    LLVM_DEBUG(dbgs() << "Failed to fold bitcast call expr\n");
+  return RV;
 }
 
 /// Evaluate all instructions in block BB, returning true if successful, false
@@ -352,6 +374,13 @@ bool Evaluator::EvaluateBlock(BasicBlock::iterator CurInst, BasicBlock *&NextBB,
       LLVM_DEBUG(dbgs() << "Found an alloca. Result: " << *InstResult << "\n");
     } else if (isa<CallInst>(CurInst) || isa<InvokeInst>(CurInst)) {
       CallBase &CB = *cast<CallBase>(&*CurInst);
+
+      // Debug info can safely be ignored here.
+      if (isa<DbgInfoIntrinsic>(CB)) {
+        LLVM_DEBUG(dbgs() << "Ignoring debug info.\n");
+        ++CurInst;
+        continue;
+      }
 
       // Cannot handle inline asm.
       if (CB.isInlineAsm()) {
@@ -492,7 +521,9 @@ bool Evaluator::EvaluateBlock(BasicBlock::iterator CurInst, BasicBlock *&NextBB,
         if (Callee->isDeclaration()) {
           // If this is a function we can constant fold, do it.
           if (Constant *C = ConstantFoldCall(&CB, Callee, Formals, TLI)) {
-            InstResult = C;
+            InstResult = castCallResultIfNeeded(CB.getType(), C);
+            if (!InstResult)
+              return false;
             LLVM_DEBUG(dbgs() << "Constant folded function call. Result: "
                               << *InstResult << "\n");
           } else {
@@ -514,7 +545,10 @@ bool Evaluator::EvaluateBlock(BasicBlock::iterator CurInst, BasicBlock *&NextBB,
             return false;
           }
           ValueStack.pop_back();
-          InstResult = RetVal;
+          InstResult = castCallResultIfNeeded(CB.getType(), RetVal);
+          if (RetVal && !InstResult)
+            return false;
+
           if (InstResult) {
             LLVM_DEBUG(dbgs() << "Successfully evaluated function. Result: "
                               << *InstResult << "\n\n");

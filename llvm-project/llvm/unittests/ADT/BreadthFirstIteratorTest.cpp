@@ -10,18 +10,12 @@
 #include "TestGraph.h"
 #include "gtest/gtest.h"
 
-#include <array>
-#include <iterator>
-#include <type_traits>
-
-#include <cstddef>
-
 using namespace llvm;
 
 namespace llvm {
 
 TEST(BreadthFristIteratorTest, Basic) {
-  using BFIter = bf_iterator<Graph<4>>;
+  typedef bf_iterator<Graph<4>> BFIter;
 
   Graph<4> G;
   G.AddEdge(0, 1);
@@ -46,7 +40,7 @@ TEST(BreadthFristIteratorTest, Basic) {
 }
 
 TEST(BreadthFristIteratorTest, Cycle) {
-  using BFIter = bf_iterator<Graph<4>>;
+  typedef bf_iterator<Graph<4>> BFIter;
 
   Graph<4> G;
   G.AddEdge(0, 1);
@@ -78,31 +72,6 @@ TEST(BreadthFristIteratorTest, Cycle) {
 
 static_assert(
     std::is_convertible_v<decltype(*std::declval<bf_iterator<Graph<3>>>()),
-                          bf_iterator<Graph<3>>::reference>);
-
-// bf_iterator should be (at-least) a forward-iterator
-static_assert(std::is_base_of_v<std::forward_iterator_tag,
-                                bf_iterator<Graph<4>>::iterator_category>);
-
-TEST(BreadthFristIteratorTest, MultiPassSafeWithInternalSet) {
-  Graph<4> G;
-  G.AddEdge(0, 1);
-  G.AddEdge(1, 2);
-  G.AddEdge(1, 3);
-
-  std::array<decltype(G)::NodeType *, 4> NodesFirstPass, NodesSecondPass;
-
-  auto B = bf_begin(G), E = bf_end(G);
-
-  std::size_t I = 0;
-  for (auto It = B; It != E; ++It)
-    NodesFirstPass[I++] = *It;
-
-  I = 0;
-  for (auto It = B; It != E; ++It)
-    NodesSecondPass[I++] = *It;
-
-  EXPECT_EQ(NodesFirstPass, NodesSecondPass);
-}
+                          typename bf_iterator<Graph<3>>::reference>);
 
 } // end namespace llvm

@@ -12,6 +12,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include <cstdint>
+#include <utility>
 
 namespace llvm {
 namespace dwarf_linker {
@@ -20,9 +21,11 @@ namespace dwarf_linker {
 template <typename T> class IndexedValuesMap {
 public:
   uint64_t getValueIndex(T Value) {
-    auto [It, Inserted] = ValueToIndexMap.try_emplace(Value, Values.size());
-    if (Inserted)
+    typename ValueToIndexMapTy::iterator It = ValueToIndexMap.find(Value);
+    if (It == ValueToIndexMap.end()) {
+      It = ValueToIndexMap.insert(std::make_pair(Value, Values.size())).first;
       Values.push_back(Value);
+    }
     return It->second;
   }
 

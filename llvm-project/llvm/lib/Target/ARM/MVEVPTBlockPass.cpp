@@ -9,6 +9,7 @@
 #include "ARM.h"
 #include "ARMMachineFunctionInfo.h"
 #include "ARMSubtarget.h"
+#include "MCTargetDesc/ARMBaseInfo.h"
 #include "Thumb2InstrInfo.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
@@ -21,6 +22,8 @@
 #include "llvm/CodeGen/MachineInstrBundle.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/IR/DebugLoc.h"
+#include "llvm/MC/MCInstrDesc.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/Support/Debug.h"
 #include <cassert>
 #include <new>
@@ -41,7 +44,8 @@ public:
   bool runOnMachineFunction(MachineFunction &Fn) override;
 
   MachineFunctionProperties getRequiredProperties() const override {
-    return MachineFunctionProperties().setNoVRegs();
+    return MachineFunctionProperties().set(
+        MachineFunctionProperties::Property::NoVRegs);
   }
 
   StringRef getPassName() const override {
@@ -127,8 +131,7 @@ static bool StepOverPredicatedInstrs(MachineBasicBlock::instr_iterator &Iter,
 static bool IsVPRDefinedOrKilledByBlock(MachineBasicBlock::iterator Iter,
                                         MachineBasicBlock::iterator End) {
   for (; Iter != End; ++Iter)
-    if (Iter->definesRegister(ARM::VPR, /*TRI=*/nullptr) ||
-        Iter->killsRegister(ARM::VPR, /*TRI=*/nullptr))
+    if (Iter->definesRegister(ARM::VPR) || Iter->killsRegister(ARM::VPR))
       return true;
   return false;
 }

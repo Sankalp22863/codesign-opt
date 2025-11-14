@@ -196,11 +196,10 @@ entry:
 ; functions but include unusual constant expressions that make discovering that
 ; a function is dead harder.
 
-define internal void @test4_f(i64 %a, i64 %b) {
+define internal void @test4_f(i1 %b) {
 entry:
   %p = alloca i32
-  %cmp = icmp ne i64 %a, %b
-  br i1 %cmp, label %then, label %exit
+  br i1 %b, label %then, label %exit
 
 then:
   store volatile i32 0, ptr %p
@@ -248,12 +247,12 @@ entry:
   ; constant expression. Merely inlining and deleting the call isn't enough to
   ; drop the use count here, we need to GC the dead constant expression as
   ; well.
-  call void @test4_f(i64 ptrtoint (ptr @test4_f to i64), i64 ptrtoint(ptr @test4_f to i64))
+  call void @test4_f(i1 icmp ne (i64 ptrtoint (ptr @test4_f to i64), i64 ptrtoint(ptr @test4_f to i64)))
 ; CHECK-NOT: @test4_f
 
   ; The second call is too expensive to inline unless we update the number of
   ; calls after inlining the second.
-  call void @test4_f(i64 0, i64 1)
+  call void @test4_f(i1 true)
 ; CHECK-NOT: @test4_f
 
   ; And check that a single call to a function which is used by a complex
@@ -261,11 +260,9 @@ entry:
   ; a second use. If this part starts failing we need to use more complex
   ; constant expressions to reference a particular function with them.
   %sink = alloca i64
-  %mul = mul i64 ptrtoint (ptr @test4_g to i64), ptrtoint(ptr @test4_g to i64)
-  store volatile i64 %mul, ptr %sink
+  store volatile i64 mul (i64 ptrtoint (ptr @test4_g to i64), i64 ptrtoint(ptr @test4_g to i64)), ptr %sink
   call void @test4_g(i1 true)
-; CHECK: %mul = mul i64 ptrtoint (ptr @test4_g to i64), ptrtoint (ptr @test4_g to i64)
-; CHECK: store volatile i64 %mul, ptr %sink
+; CHECK: store volatile i64 mul (i64 ptrtoint (ptr @test4_g to i64), i64 ptrtoint (ptr @test4_g to i64)), ptr %sink
 ; CHECK: call void @test4_g(i1 true)
 
   ret void

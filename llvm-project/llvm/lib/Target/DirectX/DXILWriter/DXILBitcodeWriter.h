@@ -18,7 +18,9 @@
 #include "llvm/MC/StringTableBuilder.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/MemoryBufferRef.h"
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace llvm {
@@ -45,7 +47,7 @@ class BitcodeWriter {
 
 public:
   /// Create a BitcodeWriter that writes to Buffer.
-  BitcodeWriter(SmallVectorImpl<char> &Buffer);
+  BitcodeWriter(SmallVectorImpl<char> &Buffer, raw_fd_stream *FS = nullptr);
 
   ~BitcodeWriter();
 

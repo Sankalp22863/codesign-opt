@@ -229,7 +229,7 @@ void AddLambdaCaptureDecls(StreamString &stream, StackFrame *frame,
   assert(frame);
 
   if (auto thisValSP = ClangExpressionUtil::GetLambdaValueObject(frame)) {
-    uint32_t numChildren = thisValSP->GetNumChildrenIgnoringErrors();
+    uint32_t numChildren = thisValSP->GetNumChildren();
     for (uint32_t i = 0; i < numChildren; ++i) {
       auto childVal = thisValSP->GetChildAtIndex(i);
       ConstString childName(childVal ? childVal->GetName() : ConstString(""));
@@ -251,8 +251,8 @@ TokenVerifier::TokenVerifier(std::string body) {
   // We only care about tokens and not their original source locations. If we
   // move the whole expression to only be in one line we can simplify the
   // following code that extracts the token contents.
-  llvm::replace(body, '\n', ' ');
-  llvm::replace(body, '\r', ' ');
+  std::replace(body.begin(), body.end(), '\n', ' ');
+  std::replace(body.begin(), body.end(), '\r', ' ');
 
   FileSystemOptions file_opts;
   FileManager file_mgr(file_opts,
@@ -260,8 +260,10 @@ TokenVerifier::TokenVerifier(std::string body) {
 
   // Let's build the actual source code Clang needs and setup some utility
   // objects.
-  DiagnosticOptions diags_opts;
-  DiagnosticsEngine diags(DiagnosticIDs::create(), diags_opts);
+  llvm::IntrusiveRefCntPtr<DiagnosticIDs> diag_ids(new DiagnosticIDs());
+  llvm::IntrusiveRefCntPtr<DiagnosticOptions> diags_opts(
+      new DiagnosticOptions());
+  DiagnosticsEngine diags(diag_ids, diags_opts);
   clang::SourceManager SM(diags, file_mgr);
   auto buf = llvm::MemoryBuffer::getMemBuffer(body);
 
@@ -383,11 +385,10 @@ bool ClangExpressionSourceCode::GetText(
             block->CalculateSymbolContext(&sc);
 
             if (sc.comp_unit) {
-              if (auto err = decl_vendor->AddModulesForCompileUnit(
-                      *sc.comp_unit, modules_for_macros))
-                LLDB_LOG_ERROR(
-                    GetLog(LLDBLog::Expressions), std::move(err),
-                    "Error while loading hand-imported modules:\n{0}");
+              StreamString error_stream;
+
+              decl_vendor->AddModulesForCompileUnit(
+                  *sc.comp_unit, modules_for_macros, error_stream);
             }
           }
         }
@@ -416,7 +417,7 @@ bool ClangExpressionSourceCode::GetText(
     if (sc.comp_unit && sc.line_entry.IsValid()) {
       DebugMacros *dm = sc.comp_unit->GetDebugMacros();
       if (dm) {
-        AddMacroState state(sc.line_entry.GetFile(), sc.line_entry.line);
+        AddMacroState state(sc.line_entry.file, sc.line_entry.line);
         AddMacros(dm, sc.comp_unit, state, debug_macros_stream);
       }
     }

@@ -15,8 +15,6 @@
 #include "mlir/Dialect/SPIRV/IR/SPIRVTypes.h"
 #include "mlir/Interfaces/CallInterfaces.h"
 
-#include "llvm/Support/InterleavedRange.h"
-
 #include "SPIRVOpUtils.h"
 #include "SPIRVParsingUtils.h"
 
@@ -89,9 +87,7 @@ ParseResult BranchConditionalOp::parse(OpAsmParser &parser,
         parser.parseRSquare())
       return failure();
 
-    StringAttr branchWeightsAttrName =
-        BranchConditionalOp::getBranchWeightsAttrName(result.name);
-    result.addAttribute(branchWeightsAttrName,
+    result.addAttribute(kBranchWeightAttrName,
                         builder.getArrayAttr({trueWeight, falseWeight}));
   }
 
@@ -121,9 +117,12 @@ ParseResult BranchConditionalOp::parse(OpAsmParser &parser,
 void BranchConditionalOp::print(OpAsmPrinter &printer) {
   printer << ' ' << getCondition();
 
-  if (std::optional<ArrayAttr> weights = getBranchWeights()) {
-    printer << ' '
-            << llvm::interleaved_array(weights->getAsValueRange<IntegerAttr>());
+  if (auto weights = getBranchWeights()) {
+    printer << " [";
+    llvm::interleaveComma(weights->getValue(), printer, [&](Attribute a) {
+      printer << llvm::cast<IntegerAttr>(a).getInt();
+    });
+    printer << "]";
   }
 
   printer << ", ";
@@ -151,26 +150,22 @@ LogicalResult BranchConditionalOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult FunctionCallOp::verify() {
-  if (getNumResults() > 1) {
-    return emitOpError(
-               "expected callee function to have 0 or 1 result, but provided ")
-           << getNumResults();
-  }
-  return success();
-}
-
-LogicalResult
-FunctionCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   auto fnName = getCalleeAttr();
 
-  auto funcOp =
-      symbolTable.lookupNearestSymbolFrom<spirv::FuncOp>(*this, fnName);
+  auto funcOp = dyn_cast_or_null<spirv::FuncOp>(
+      SymbolTable::lookupNearestSymbolFrom((*this)->getParentOp(), fnName));
   if (!funcOp) {
     return emitOpError("callee function '")
            << fnName.getValue() << "' not found in nearest symbol table";
   }
 
   auto functionType = funcOp.getFunctionType();
+
+  if (getNumResults() > 1) {
+    return emitOpError(
+               "expected callee function to have 0 or 1 result, but provided ")
+           << getNumResults();
+  }
 
   if (functionType.getNumInputs() != getNumOperands()) {
     return emitOpError("has incorrect number of operands for callee: expected ")
@@ -204,11 +199,11 @@ FunctionCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 CallInterfaceCallable FunctionCallOp::getCallableForCallee() {
-  return (*this)->getAttrOfType<SymbolRefAttr>(getCalleeAttrName());
+  return (*this)->getAttrOfType<SymbolRefAttr>(kCallee);
 }
 
 void FunctionCallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
-  (*this)->setAttr(getCalleeAttrName(), cast<SymbolRefAttr>(callee));
+  (*this)->setAttr(kCallee, callee.get<SymbolRefAttr>());
 }
 
 Operation::operand_range FunctionCallOp::getArgOperands() {
@@ -233,11 +228,6 @@ ParseResult LoopOp::parse(OpAsmParser &parser, OperationState &result) {
   if (parseControlAttribute<spirv::LoopControlAttr, spirv::LoopControl>(parser,
                                                                         result))
     return failure();
-
-  if (succeeded(parser.parseOptionalArrow()))
-    if (parser.parseTypeList(result.types))
-      return failure();
-
   return parser.parseRegion(*result.addRegion(), /*arguments=*/{});
 }
 
@@ -245,10 +235,6 @@ void LoopOp::print(OpAsmPrinter &printer) {
   auto control = getLoopControl();
   if (control != spirv::LoopControl::None)
     printer << " control(" << spirv::stringifyLoopControl(control) << ")";
-  if (getNumResults() > 0) {
-    printer << " -> ";
-    printer << getResultTypes();
-  }
   printer << ' ';
   printer.printRegion(getRegion(), /*printEntryBlockArgs=*/false,
                       /*printBlockTerminators=*/true);
@@ -267,14 +253,8 @@ static bool hasOneBranchOpTo(Block &srcBlock, Block &dstBlock) {
 
 /// Returns true if the given `block` only contains one `spirv.mlir.merge` op.
 static bool isMergeBlock(Block &block) {
-  return llvm::hasSingleElement(block) && isa<spirv::MergeOp>(block.front());
-}
-
-/// Returns true if a `spirv.mlir.merge` op outside the merge block.
-static bool hasOtherMerge(Region &region) {
-  return !region.empty() && llvm::any_of(region.getOps(), [&](Operation &op) {
-    return isa<spirv::MergeOp>(op) && op.getBlock() != &region.back();
-  });
+  return !block.empty() && std::next(block.begin()) == block.end() &&
+         isa<spirv::MergeOp>(block.front());
 }
 
 LogicalResult LoopOp::verifyRegions() {
@@ -316,11 +296,8 @@ LogicalResult LoopOp::verifyRegions() {
   if (!isMergeBlock(merge))
     return emitOpError("last block must be the merge block with only one "
                        "'spirv.mlir.merge' op");
-  if (hasOtherMerge(region))
-    return emitOpError(
-        "should not have 'spirv.mlir.merge' op outside the merge block");
 
-  if (region.hasOneBlock())
+  if (std::next(region.begin()) == region.end())
     return emitOpError(
         "must have an entry block branching to the loop header block");
   // The first block is the entry block.
@@ -388,14 +365,33 @@ Block *LoopOp::getMergeBlock() {
   return &getBody().back();
 }
 
-void LoopOp::addEntryAndMergeBlock(OpBuilder &builder) {
+void LoopOp::addEntryAndMergeBlock() {
   assert(getBody().empty() && "entry and merge block already exist");
-  OpBuilder::InsertionGuard g(builder);
-  builder.createBlock(&getBody());
-  builder.createBlock(&getBody());
+  getBody().push_back(new Block());
+  auto *mergeBlock = new Block();
+  getBody().push_back(mergeBlock);
+  OpBuilder builder = OpBuilder::atBlockEnd(mergeBlock);
 
   // Add a spirv.mlir.merge op into the merge block.
-  spirv::MergeOp::create(builder, getLoc());
+  builder.create<spirv::MergeOp>(getLoc());
+}
+
+//===----------------------------------------------------------------------===//
+// spirv.mlir.merge
+//===----------------------------------------------------------------------===//
+
+LogicalResult MergeOp::verify() {
+  auto *parentOp = (*this)->getParentOp();
+  if (!parentOp || !isa<spirv::SelectionOp, spirv::LoopOp>(parentOp))
+    return emitOpError(
+        "expected parent op to be 'spirv.mlir.selection' or 'spirv.mlir.loop'");
+
+  // TODO: This check should be done in `verifyRegions` of parent op.
+  Block &parentLastBlock = (*this)->getParentRegion()->back();
+  if (getOperation() != parentLastBlock.getTerminator())
+    return emitOpError("can only be used in the last block of "
+                       "'spirv.mlir.selection' or 'spirv.mlir.loop'");
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -464,11 +460,6 @@ ParseResult SelectionOp::parse(OpAsmParser &parser, OperationState &result) {
   if (parseControlAttribute<spirv::SelectionControlAttr,
                             spirv::SelectionControl>(parser, result))
     return failure();
-
-  if (succeeded(parser.parseOptionalArrow()))
-    if (parser.parseTypeList(result.types))
-      return failure();
-
   return parser.parseRegion(*result.addRegion(), /*arguments=*/{});
 }
 
@@ -476,10 +467,6 @@ void SelectionOp::print(OpAsmPrinter &printer) {
   auto control = getSelectionControl();
   if (control != spirv::SelectionControl::None)
     printer << " control(" << spirv::stringifySelectionControl(control) << ")";
-  if (getNumResults() > 0) {
-    printer << " -> ";
-    printer << getResultTypes();
-  }
   printer << ' ';
   printer.printRegion(getRegion(), /*printEntryBlockArgs=*/false,
                       /*printBlockTerminators=*/true);
@@ -519,11 +506,8 @@ LogicalResult SelectionOp::verifyRegions() {
   if (!isMergeBlock(region.back()))
     return emitOpError("last block must be the merge block with only one "
                        "'spirv.mlir.merge' op");
-  if (hasOtherMerge(region))
-    return emitOpError(
-        "should not have 'spirv.mlir.merge' op outside the merge block");
 
-  if (region.hasOneBlock())
+  if (std::next(region.begin()) == region.end())
     return emitOpError("must have a selection header block");
 
   return success();
@@ -541,13 +525,14 @@ Block *SelectionOp::getMergeBlock() {
   return &getBody().back();
 }
 
-void SelectionOp::addMergeBlock(OpBuilder &builder) {
+void SelectionOp::addMergeBlock() {
   assert(getBody().empty() && "entry and merge block already exist");
-  OpBuilder::InsertionGuard guard(builder);
-  builder.createBlock(&getBody());
+  auto *mergeBlock = new Block();
+  getBody().push_back(mergeBlock);
+  OpBuilder builder = OpBuilder::atBlockEnd(mergeBlock);
 
   // Add a spirv.mlir.merge op into the merge block.
-  spirv::MergeOp::create(builder, getLoc());
+  builder.create<spirv::MergeOp>(getLoc());
 }
 
 SelectionOp
@@ -555,9 +540,9 @@ SelectionOp::createIfThen(Location loc, Value condition,
                           function_ref<void(OpBuilder &builder)> thenBody,
                           OpBuilder &builder) {
   auto selectionOp =
-      spirv::SelectionOp::create(builder, loc, spirv::SelectionControl::None);
+      builder.create<spirv::SelectionOp>(loc, spirv::SelectionControl::None);
 
-  selectionOp.addMergeBlock(builder);
+  selectionOp.addMergeBlock();
   Block *mergeBlock = selectionOp.getMergeBlock();
   Block *thenBlock = nullptr;
 
@@ -566,17 +551,17 @@ SelectionOp::createIfThen(Location loc, Value condition,
     OpBuilder::InsertionGuard guard(builder);
     thenBlock = builder.createBlock(mergeBlock);
     thenBody(builder);
-    spirv::BranchOp::create(builder, loc, mergeBlock);
+    builder.create<spirv::BranchOp>(loc, mergeBlock);
   }
 
   // Build the header block.
   {
     OpBuilder::InsertionGuard guard(builder);
     builder.createBlock(thenBlock);
-    spirv::BranchConditionalOp::create(builder, loc, condition, thenBlock,
-                                       /*trueArguments=*/ArrayRef<Value>(),
-                                       mergeBlock,
-                                       /*falseArguments=*/ArrayRef<Value>());
+    builder.create<spirv::BranchConditionalOp>(
+        loc, condition, thenBlock,
+        /*trueArguments=*/ArrayRef<Value>(), mergeBlock,
+        /*falseArguments=*/ArrayRef<Value>());
   }
 
   return selectionOp;

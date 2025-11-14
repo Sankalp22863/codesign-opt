@@ -1,5 +1,4 @@
 //===----------------------------------------------------------------------===//
-//
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
@@ -12,7 +11,8 @@
 // TODO FMT This test should not require std::to_chars(floating-point)
 // XFAIL: availability-fp_to_chars-missing
 
-// REQUIRES: libcpp-has-no-unicode
+// Force unicode to be disabled.
+// ADDITIONAL_COMPILE_FLAGS: -D_LIBCPP_HAS_NO_UNICODE
 
 // <format>
 

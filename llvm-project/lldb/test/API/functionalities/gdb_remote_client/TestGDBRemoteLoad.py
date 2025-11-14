@@ -6,6 +6,9 @@ from lldbsuite.test.lldbgdbclient import GDBRemoteTestBase
 
 
 class TestGDBRemoteLoad(GDBRemoteTestBase):
+    @expectedFailureAll(
+        archs=["aarch64"], oslist=["freebsd"], bugnumber="llvm.org/pr49414"
+    )
     def test_module_load_address(self):
         """Test that setting the load address of a module uses virtual addresses"""
         target = self.createTarget("a.yaml")
@@ -17,14 +20,20 @@ class TestGDBRemoteLoad(GDBRemoteTestBase):
         self.assertTrue(address.IsValid())
         self.assertEqual(".data", address.GetSection().GetName())
 
+    @expectedFailureAll(
+        archs=["aarch64"], oslist=["freebsd"], bugnumber="llvm.org/pr49414"
+    )
     def test_ram_load(self):
         """Test loading an object file to a target's ram"""
         target = self.createTarget("a.yaml")
         process = self.connect(target)
         self.dbg.HandleCommand("target modules load -l -s0")
-        self.assertPacketLogReceived(["M1000,4:c3c3c3c3", "M1004,2:3232"])
+        self.assertPacketLogContains(["M1000,4:c3c3c3c3", "M1004,2:3232"])
 
     @skipIfXmlSupportMissing
+    @expectedFailureAll(
+        archs=["aarch64"], oslist=["freebsd"], bugnumber="llvm.org/pr49414"
+    )
     def test_flash_load(self):
         """Test loading an object file to a target's flash memory"""
 
@@ -63,7 +72,7 @@ class TestGDBRemoteLoad(GDBRemoteTestBase):
         target = self.createTarget("a.yaml")
         process = self.connect(target)
         self.dbg.HandleCommand("target modules load -l -s0")
-        self.assertPacketLogReceived(
+        self.assertPacketLogContains(
             [
                 "vFlashErase:1000,100",
                 "vFlashWrite:1000:\xc3\xc3\xc3\xc3",

@@ -63,17 +63,15 @@ export int aa = 43;
   std::string BMIPath = llvm::Twine(TestDir + "/a.pcm").str();
 
   {
+    IntrusiveRefCntPtr<DiagnosticsEngine> Diags =
+        CompilerInstance::createDiagnostics(new DiagnosticOptions());
     CreateInvocationOptions CIOpts;
+    CIOpts.Diags = Diags;
     CIOpts.VFS = llvm::vfs::createPhysicalFileSystem();
 
-    DiagnosticOptions DiagOpts;
-    IntrusiveRefCntPtr<DiagnosticsEngine> Diags =
-        CompilerInstance::createDiagnostics(*CIOpts.VFS, DiagOpts);
-    CIOpts.Diags = Diags;
-
-    const char *Args[] = {"clang++",       "-std=c++20",
-                          "--precompile",  "-working-directory",
-                          TestDir.c_str(), "a.cppm"};
+    const char *Args[] = {
+        "clang++",       "-std=c++20", "--precompile", "-working-directory",
+        TestDir.c_str(), "a.cppm",     "-o",           BMIPath.c_str()};
     std::shared_ptr<CompilerInvocation> Invocation =
         createInvocation(Args, CIOpts);
     EXPECT_TRUE(Invocation);
@@ -86,28 +84,28 @@ export int aa = 43;
 
     Buf->release();
 
-    CompilerInstance Instance(std::move(Invocation));
-    Instance.setDiagnostics(Diags);
+    CompilerInstance Instance;
+    Instance.setDiagnostics(Diags.get());
+    Instance.setInvocation(Invocation);
 
-    Instance.getFrontendOpts().OutputFile = BMIPath;
-
-    Instance.createVirtualFileSystem(CIOpts.VFS);
-    Instance.createFileManager();
+    if (auto VFSWithRemapping = createVFSFromCompilerInvocation(
+            Instance.getInvocation(), Instance.getDiagnostics(), CIOpts.VFS))
+      CIOpts.VFS = VFSWithRemapping;
+    Instance.createFileManager(CIOpts.VFS);
 
     Instance.getHeaderSearchOpts().ValidateASTInputFilesContent = true;
 
-    GenerateReducedModuleInterfaceAction Action;
+    GenerateModuleInterfaceAction Action;
     EXPECT_TRUE(Instance.ExecuteAction(Action));
     EXPECT_FALSE(Diags->hasErrorOccurred());
   }
 
   {
-    CreateInvocationOptions CIOpts;
-    CIOpts.VFS = llvm::vfs::createPhysicalFileSystem();
-    DiagnosticOptions DiagOpts;
     IntrusiveRefCntPtr<DiagnosticsEngine> Diags =
-        CompilerInstance::createDiagnostics(*CIOpts.VFS, DiagOpts);
+        CompilerInstance::createDiagnostics(new DiagnosticOptions());
+    CreateInvocationOptions CIOpts;
     CIOpts.Diags = Diags;
+    CIOpts.VFS = llvm::vfs::createPhysicalFileSystem();
 
     std::string BMIPath = llvm::Twine(TestDir + "/a.pcm").str();
     const char *Args[] = {
@@ -118,12 +116,12 @@ export int aa = 43;
     EXPECT_TRUE(Invocation);
     Invocation->getFrontendOpts().DisableFree = false;
 
-    CompilerInstance Clang(std::move(Invocation));
+    CompilerInstance Clang;
 
-    Clang.setDiagnostics(Diags);
-    Clang.createVirtualFileSystem(CIOpts.VFS);
-    Clang.createFileManager();
-    Clang.createSourceManager();
+    Clang.setInvocation(Invocation);
+    Clang.setDiagnostics(Diags.get());
+    FileManager *FM = Clang.createFileManager(CIOpts.VFS);
+    Clang.createSourceManager(*FM);
 
     EXPECT_TRUE(Clang.createTarget());
     Clang.createPreprocessor(TU_Complete);

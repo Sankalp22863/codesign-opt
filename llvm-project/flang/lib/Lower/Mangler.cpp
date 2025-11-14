@@ -110,7 +110,7 @@ std::string Fortran::lower::mangle::mangleName(
     return fir::NameUniquer::doVariable(modules, procs, blockId, symbolName);
   };
 
-  return Fortran::common::visit(
+  return std::visit(
       Fortran::common::visitors{
           [&](const Fortran::semantics::MainProgramDetails &) {
             return fir::NameUniquer::doProgramEntry().str();
@@ -119,7 +119,8 @@ std::string Fortran::lower::mangle::mangleName(
             // Mangle external procedure without any scope prefix.
             if (!keepExternalInScope &&
                 Fortran::semantics::IsExternal(ultimateSymbol))
-              return fir::NameUniquer::doProcedure({}, {}, symbolName);
+              return fir::NameUniquer::doProcedure(std::nullopt, std::nullopt,
+                                                   symbolName);
             // A separate module procedure must be mangled according to its
             // declaration scope, not its definition scope.
             const Fortran::semantics::Symbol *interface = &ultimateSymbol;
@@ -141,7 +142,8 @@ std::string Fortran::lower::mangle::mangleName(
             }
             // Otherwise, this is an external procedure, with or without an
             // explicit EXTERNAL attribute. Mangle it without any prefix.
-            return fir::NameUniquer::doProcedure({}, {}, symbolName);
+            return fir::NameUniquer::doProcedure(std::nullopt, std::nullopt,
+                                                 symbolName);
           },
           [&](const Fortran::semantics::ObjectEntityDetails &) {
             return mangleObject();
@@ -163,16 +165,6 @@ std::string Fortran::lower::mangle::mangleName(
             return mangleName(procBinding.symbol(), scopeBlockIdMap,
                               keepExternalInScope, underscoring);
           },
-          [&](const Fortran::semantics::GenericDetails &generic)
-              -> std::string {
-            if (generic.specific())
-              return mangleName(*generic.specific(), scopeBlockIdMap,
-                                keepExternalInScope, underscoring);
-            else
-              llvm::report_fatal_error(
-                  "attempt to mangle a generic name but "
-                  "it has no specific procedure of the same name");
-          },
           [&](const Fortran::semantics::DerivedTypeDetails &) -> std::string {
             // Derived type mangling must use mangleName(DerivedTypeSpec) so
             // that kind type parameter values can be mangled.
@@ -190,8 +182,7 @@ Fortran::lower::mangle::mangleName(const Fortran::semantics::Symbol &symbol,
                                    bool underscoring) {
   assert((symbol.owner().kind() !=
               Fortran::semantics::Scope::Kind::BlockConstruct ||
-          symbol.has<Fortran::semantics::SubprogramDetails>() ||
-          Fortran::semantics::IsBindCProcedure(symbol)) &&
+          symbol.has<Fortran::semantics::SubprogramDetails>()) &&
          "block object mangling must specify a scopeBlockIdMap");
   ScopeBlockIdMap scopeBlockIdMap;
   return mangleName(symbol, scopeBlockIdMap, keepExternalInScope, underscoring);
@@ -224,18 +215,8 @@ std::string Fortran::lower::mangle::mangleName(
       assert(paramExpr && "derived type kind param not explicit");
       std::optional<int64_t> init =
           Fortran::evaluate::ToInt64(paramValue->GetExplicit());
-      // TODO: put the assertion check back when parametrized derived types
-      // are supported:
-      // assert(init && "derived type kind param is not constant");
-      //
-      // The init parameter above will require a FoldingContext for proper
-      // expression evaluation to an integer constant, otherwise the
-      // compiler may crash here (see example in issue #127424).
-      if (!init) {
-        TODO_NOLOC("parameterized derived types");
-      } else {
-        kinds.emplace_back(*init);
-      }
+      assert(init && "derived type kind param is not constant");
+      kinds.emplace_back(*init);
     }
   }
   return fir::NameUniquer::doType(modules, procs, blockId, symbolName, kinds);
@@ -274,8 +255,6 @@ static std::string typeToString(Fortran::common::TypeCategory cat, int kind,
   switch (cat) {
   case Fortran::common::TypeCategory::Integer:
     return "i" + std::to_string(kind);
-  case Fortran::common::TypeCategory::Unsigned:
-    return "u" + std::to_string(kind);
   case Fortran::common::TypeCategory::Real:
     return "r" + std::to_string(kind);
   case Fortran::common::TypeCategory::Complex:

@@ -35,6 +35,7 @@ namespace llvm {
 class Argument;
 class BasicBlock;
 class BranchProbabilityInfo;
+class DbgDeclareInst;
 class Function;
 class Instruction;
 class MachineFunction;
@@ -72,8 +73,8 @@ public:
   /// allocated to hold a pointer to the hidden sret parameter.
   Register DemoteRegister;
 
-  /// A mapping from LLVM basic block number to their machine block.
-  SmallVector<MachineBasicBlock *> MBBMap;
+  /// MBBMap - A mapping from LLVM basic blocks to their machine code entry.
+  DenseMap<const BasicBlock*, MachineBasicBlock *> MBBMap;
 
   /// ValueMap - Since we emit code for the function a basic block at a time,
   /// we must remember which virtual registers hold the values for
@@ -171,28 +172,26 @@ public:
   /// for a value.
   DenseMap<const Value *, ISD::NodeType> PreferredExtendType;
 
-  /// The set of basic blocks visited thus far by instruction selection. Indexed
-  /// by basic block number.
-  SmallVector<bool> VisitedBBs;
+  /// VisitedBBs - The set of basic blocks visited thus far by instruction
+  /// selection.
+  SmallPtrSet<const BasicBlock*, 4> VisitedBBs;
 
   /// PHINodesToUpdate - A list of phi instructions whose operand list will
   /// be updated after processing the current basic block.
   /// TODO: This isn't per-function state, it's per-basic-block state. But
   /// there's no other convenient place for it to live right now.
-  std::vector<std::pair<MachineInstr*, Register>> PHINodesToUpdate;
+  std::vector<std::pair<MachineInstr*, unsigned> > PHINodesToUpdate;
   unsigned OrigNumPHINodesToUpdate;
 
   /// If the current MBB is a landing pad, the exception pointer and exception
   /// selector registers are copied into these virtual registers by
   /// SelectionDAGISel::PrepareEHLandingPad().
-  Register ExceptionPointerVirtReg, ExceptionSelectorVirtReg;
+  unsigned ExceptionPointerVirtReg, ExceptionSelectorVirtReg;
 
-  /// The current call site index being processed, if any. 0 if none.
-  unsigned CurCallSite = 0;
-
-  /// Collection of dbg_declare instructions handled after argument
+  /// Collection of dbg.declare instructions handled after argument
   /// lowering and before ISel proper.
-  SmallPtrSet<const DbgVariableRecord *, 8> PreprocessedDVRDeclares;
+  SmallPtrSet<const DbgDeclareInst *, 8> PreprocessedDbgDeclares;
+  SmallPtrSet<const DPValue *, 8> PreprocessedDPVDeclares;
 
   /// set - Initialize this FunctionLoweringInfo with the given Function
   /// and its associated MachineFunction.
@@ -210,18 +209,21 @@ public:
     return ValueMap.count(V);
   }
 
-  MachineBasicBlock *getMBB(const BasicBlock *BB) const {
-    assert(BB->getNumber() < MBBMap.size() && "uninitialized MBBMap?");
-    return MBBMap[BB->getNumber()];
-  }
-
   Register CreateReg(MVT VT, bool isDivergent = false);
 
   Register CreateRegs(const Value *V);
 
   Register CreateRegs(Type *Ty, bool isDivergent = false);
 
-  Register InitializeRegForValue(const Value *V);
+  Register InitializeRegForValue(const Value *V) {
+    // Tokens never live in vregs.
+    if (V->getType()->isTokenTy())
+      return 0;
+    Register &R = ValueMap[V];
+    assert(R == 0 && "Already initialized this value register!");
+    assert(VirtReg2Value.empty());
+    return R = CreateRegs(V);
+  }
 
   /// GetLiveOutRegInfo - Gets LiveOutInfo for a register, returning NULL if the
   /// register is a PHI destination and the PHI's LiveOutInfo is not valid.
@@ -286,12 +288,6 @@ public:
 
   Register getCatchPadExceptionPointerVReg(const Value *CPI,
                                            const TargetRegisterClass *RC);
-
-  /// Set the call site currently being processed.
-  void setCurrentCallSite(unsigned Site) { CurCallSite = Site; }
-
-  /// Get the call site currently being processed, if any. Return zero if none.
-  unsigned getCurrentCallSite() { return CurCallSite; }
 
 private:
   /// LiveOutRegInfo - Information about live out vregs.

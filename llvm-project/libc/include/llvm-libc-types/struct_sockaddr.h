@@ -6,16 +6,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIBC_TYPES_STRUCT_SOCKADDR_H
-#define LLVM_LIBC_TYPES_STRUCT_SOCKADDR_H
+#ifndef __LLVM_LIBC_TYPES_STRUCT_SOCKADDR_H__
+#define __LLVM_LIBC_TYPES_STRUCT_SOCKADDR_H__
 
-#include "sa_family_t.h"
+#include <llvm-libc-types/sa_family_t.h>
 
 struct sockaddr {
   sa_family_t sa_family;
   // sa_data is a variable length array. It is provided with a length of one
   // here as a placeholder.
-  char sa_data[1];
+  char sa_data[];
 };
 
-#endif // LLVM_LIBC_TYPES_STRUCT_SOCKADDR_H
+#endif // __LLVM_LIBC_TYPES_STRUCT_SOCKADDR_H__

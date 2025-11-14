@@ -32,7 +32,6 @@
 #include "clang/AST/ASTConsumer.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/LLVM.h"
-#include "clang/Frontend/ASTUnit.h"
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/PCHContainerOperations.h"
 #include "clang/Tooling/ArgumentsAdjusters.h"
@@ -224,11 +223,7 @@ buildASTFromCode(StringRef Code, StringRef FileName = "input.cc",
 /// \param PCHContainerOps The PCHContainerOperations for loading and creating
 /// clang modules.
 ///
-/// \param Adjuster A function to filter the command line arguments as
-/// specified.
-///
-/// \param BaseFS FileSystem for managing and looking up files.
-/// VirtualMappedFiles takes precedence.
+/// \param Adjuster A function to filter the command line arguments as specified.
 ///
 /// \return The resulting AST or null if an error occurred.
 std::unique_ptr<ASTUnit> buildASTFromCodeWithArgs(
@@ -238,10 +233,7 @@ std::unique_ptr<ASTUnit> buildASTFromCodeWithArgs(
         std::make_shared<PCHContainerOperations>(),
     ArgumentsAdjuster Adjuster = getClangStripDependencyFileAdjuster(),
     const FileContentMappings &VirtualMappedFiles = FileContentMappings(),
-    DiagnosticConsumer *DiagConsumer = nullptr,
-    IntrusiveRefCntPtr<llvm::vfs::FileSystem> BaseFS =
-        llvm::vfs::getRealFileSystem(),
-    CaptureDiagsKind CaptureKind = CaptureDiagsKind::None);
+    DiagnosticConsumer *DiagConsumer = nullptr);
 
 /// Utility to run a FrontendAction in a single clang invocation.
 class ToolInvocation {

@@ -41,11 +41,12 @@ convertExprToHLFIR(mlir::Location loc, Fortran::lower::AbstractConverter &,
                    const Fortran::lower::SomeExpr &, Fortran::lower::SymMap &,
                    Fortran::lower::StatementContext &);
 
-inline fir::ExtendedValue translateToExtendedValue(
-    mlir::Location loc, fir::FirOpBuilder &builder, hlfir::Entity entity,
-    Fortran::lower::StatementContext &context, bool contiguityHint = false) {
+inline fir::ExtendedValue
+translateToExtendedValue(mlir::Location loc, fir::FirOpBuilder &builder,
+                         hlfir::Entity entity,
+                         Fortran::lower::StatementContext &context) {
   auto [exv, exvCleanup] =
-      hlfir::translateToExtendedValue(loc, builder, entity, contiguityHint);
+      hlfir::translateToExtendedValue(loc, builder, entity);
   if (exvCleanup)
     context.attachCleanup(*exvCleanup);
   return exv;
@@ -136,15 +137,6 @@ hlfir::ElementalAddrOp convertVectorSubscriptedExprToElementalAddr(
     mlir::Location loc, Fortran::lower::AbstractConverter &,
     const Fortran::lower::SomeExpr &, Fortran::lower::SymMap &,
     Fortran::lower::StatementContext &);
-
-/// Lower a designator containing vector subscripts, creating a hlfir::Entity
-/// representing the first element in the vector subscripted array. This is a
-/// helper which calls convertVectorSubscriptedExprToElementalAddr and lowers
-/// the hlfir::ElementalAddrOp.
-hlfir::Entity genVectorSubscriptedDesignatorFirstElementAddress(
-    mlir::Location loc, Fortran::lower::AbstractConverter &converter,
-    const Fortran::lower::SomeExpr &expr, Fortran::lower::SymMap &symMap,
-    Fortran::lower::StatementContext &stmtCtx);
 
 } // namespace Fortran::lower
 

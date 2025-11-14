@@ -8,9 +8,6 @@
 
 #include "ABIInfoImpl.h"
 #include "TargetInfo.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/StringExtras.h"
-#include "llvm/IR/CallingConv.h"
 #include "llvm/IR/IntrinsicsNVPTX.h"
 
 using namespace clang;
@@ -35,8 +32,8 @@ public:
   ABIArgInfo classifyArgumentType(QualType Ty) const;
 
   void computeInfo(CGFunctionInfo &FI) const override;
-  RValue EmitVAArg(CodeGenFunction &CGF, Address VAListAddr, QualType Ty,
-                   AggValueSlot Slot) const override;
+  Address EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
+                    QualType Ty) const override;
   bool isUnsupportedType(QualType T) const;
   ABIArgInfo coerceToIntArrayWithLimit(QualType Ty, unsigned MaxSize) const;
 };
@@ -49,10 +46,6 @@ public:
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &M) const override;
   bool shouldEmitStaticExternCAliases() const override;
-
-  llvm::Constant *getNullPointer(const CodeGen::CodeGenModule &CGM,
-                                 llvm::PointerType *T,
-                                 QualType QT) const override;
 
   llvm::Type *getCUDADeviceBuiltinSurfaceDeviceType() const override {
     // On the device side, surface reference is represented as an object handle
@@ -78,10 +71,6 @@ public:
     return true;
   }
 
-  unsigned getDeviceKernelCallingConv() const override {
-    return llvm::CallingConv::PTX_Kernel;
-  }
-
   // Adds a NamedMDNode with GV, Name, and Operand as operands, and adds the
   // resulting MDNode to the nvvm.annotations MDNode.
   static void addNVVMMetadata(llvm::GlobalValue *GV, StringRef Name,
@@ -92,7 +81,7 @@ private:
                                            LValue Src) {
     llvm::Value *Handle = nullptr;
     llvm::Constant *C =
-        llvm::dyn_cast<llvm::Constant>(Src.getAddress().emitRawPointer(CGF));
+        llvm::dyn_cast<llvm::Constant>(Src.getAddress(CGF).getPointer());
     // Lookup `addrspacecast` through the constant pointer if any.
     if (auto *ASC = llvm::dyn_cast_or_null<llvm::AddrSpaceCastOperator>(C))
       C = llvm::cast<llvm::Constant>(ASC->getPointerOperand());
@@ -126,9 +115,10 @@ bool NVPTXABIInfo::isUnsupportedType(QualType T) const {
     return true;
   if (const auto *AT = T->getAsArrayTypeUnsafe())
     return isUnsupportedType(AT->getElementType());
-  const auto *RD = T->getAsRecordDecl();
-  if (!RD)
+  const auto *RT = T->getAs<RecordType>();
+  if (!RT)
     return false;
+  const RecordDecl *RD = RT->getDecl();
 
   // If this is a C++ record, check the bases first.
   if (const CXXRecordDecl *CXXRD = dyn_cast<CXXRecordDecl>(RD))
@@ -168,8 +158,8 @@ ABIArgInfo NVPTXABIInfo::classifyReturnType(QualType RetTy) const {
     return ABIArgInfo::getDirect();
 
   // Treat an enum type as its underlying type.
-  if (const auto *ED = RetTy->getAsEnumDecl())
-    RetTy = ED->getIntegerType();
+  if (const EnumType *EnumTy = RetTy->getAs<EnumType>())
+    RetTy = EnumTy->getDecl()->getIntegerType();
 
   return (isPromotableIntegerTypeForABI(RetTy) ? ABIArgInfo::getExtend(RetTy)
                                                : ABIArgInfo::getDirect());
@@ -177,8 +167,8 @@ ABIArgInfo NVPTXABIInfo::classifyReturnType(QualType RetTy) const {
 
 ABIArgInfo NVPTXABIInfo::classifyArgumentType(QualType Ty) const {
   // Treat an enum type as its underlying type.
-  if (const auto *ED = Ty->getAsEnumDecl())
-    Ty = ED->getIntegerType();
+  if (const EnumType *EnumTy = Ty->getAs<EnumType>())
+    Ty = EnumTy->getDecl()->getIntegerType();
 
   // Return aggregates type as indirect by value
   if (isAggregateTypeForABI(Ty)) {
@@ -192,18 +182,14 @@ ABIArgInfo NVPTXABIInfo::classifyArgumentType(QualType Ty) const {
         return ABIArgInfo::getDirect(
             CGInfo.getCUDADeviceBuiltinTextureDeviceType());
     }
-    return getNaturalAlignIndirect(
-        Ty, /* AddrSpace */ getDataLayout().getAllocaAddrSpace(),
-        /* byval */ true);
+    return getNaturalAlignIndirect(Ty, /* byval */ true);
   }
 
   if (const auto *EIT = Ty->getAs<BitIntType>()) {
     if ((EIT->getNumBits() > 128) ||
         (!getContext().getTargetInfo().hasInt128Type() &&
          EIT->getNumBits() > 64))
-      return getNaturalAlignIndirect(
-          Ty, /* AddrSpace */ getDataLayout().getAllocaAddrSpace(),
-          /* byval */ true);
+      return getNaturalAlignIndirect(Ty, /* byval */ true);
   }
 
   return (isPromotableIntegerTypeForABI(Ty) ? ABIArgInfo::getExtend(Ty)
@@ -213,11 +199,8 @@ ABIArgInfo NVPTXABIInfo::classifyArgumentType(QualType Ty) const {
 void NVPTXABIInfo::computeInfo(CGFunctionInfo &FI) const {
   if (!getCXXABI().classifyReturnType(FI))
     FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
-
-  for (auto &&[ArgumentsCount, I] : llvm::enumerate(FI.arguments()))
-    I.info = ArgumentsCount < FI.getNumRequiredArgs()
-                 ? classifyArgumentType(I.type)
-                 : ABIArgInfo::getDirect();
+  for (auto &I : FI.arguments())
+    I.info = classifyArgumentType(I.type);
 
   // Always honor user-specified calling convention.
   if (FI.getCallingConvention() != llvm::CallingConv::C)
@@ -226,12 +209,9 @@ void NVPTXABIInfo::computeInfo(CGFunctionInfo &FI) const {
   FI.setEffectiveCallingConvention(getRuntimeCC());
 }
 
-RValue NVPTXABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
-                               QualType Ty, AggValueSlot Slot) const {
-  return emitVoidPtrVAArg(CGF, VAListAddr, Ty, /*IsIndirect=*/false,
-                          getContext().getTypeInfoInChars(Ty),
-                          CharUnits::fromQuantity(1),
-                          /*AllowHigherAlign=*/true, Slot);
+Address NVPTXABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
+                                QualType Ty) const {
+  llvm_unreachable("NVPTX does not support varargs");
 }
 
 void NVPTXTargetCodeGenInfo::setTargetAttributes(
@@ -250,35 +230,40 @@ void NVPTXTargetCodeGenInfo::setTargetAttributes(
   }
 
   const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D);
-  if (!FD)
-    return;
+  if (!FD) return;
 
   llvm::Function *F = cast<llvm::Function>(GV);
 
-  // Perform special handling in OpenCL/CUDA mode
-  if (M.getLangOpts().OpenCL || M.getLangOpts().CUDA) {
-    // Use function attributes to check for kernel functions
+  // Perform special handling in OpenCL mode
+  if (M.getLangOpts().OpenCL) {
+    // Use OpenCL function attributes to check for kernel functions
     // By default, all functions are device functions
-    if (FD->hasAttr<DeviceKernelAttr>() || FD->hasAttr<CUDAGlobalAttr>()) {
-      // OpenCL/CUDA kernel functions get kernel metadata
+    if (FD->hasAttr<OpenCLKernelAttr>()) {
+      // OpenCL __kernel functions get kernel metadata
+      // Create !{<func-ref>, metadata !"kernel", i32 1} node
+      addNVVMMetadata(F, "kernel", 1);
       // And kernel functions are not subject to inlining
       F->addFnAttr(llvm::Attribute::NoInline);
-      if (FD->hasAttr<CUDAGlobalAttr>()) {
-        F->setCallingConv(getDeviceKernelCallingConv());
-
-        for (auto IV : llvm::enumerate(FD->parameters()))
-          if (IV.value()->hasAttr<CUDAGridConstantAttr>())
-            F->addParamAttr(
-                IV.index(),
-                llvm::Attribute::get(F->getContext(), "nvvm.grid_constant"));
-      }
-      if (CUDALaunchBoundsAttr *Attr = FD->getAttr<CUDALaunchBoundsAttr>())
-        M.handleCUDALaunchBoundsAttr(F, Attr);
     }
   }
+
+  // Perform special handling in CUDA mode.
+  if (M.getLangOpts().CUDA) {
+    // CUDA __global__ functions get a kernel metadata entry.  Since
+    // __global__ functions cannot be called from the device, we do not
+    // need to set the noinline attribute.
+    if (FD->hasAttr<CUDAGlobalAttr>()) {
+      // Create !{<func-ref>, metadata !"kernel", i32 1} node
+      addNVVMMetadata(F, "kernel", 1);
+    }
+    if (CUDALaunchBoundsAttr *Attr = FD->getAttr<CUDALaunchBoundsAttr>())
+      M.handleCUDALaunchBoundsAttr(F, Attr);
+  }
+
   // Attach kernel metadata directly if compiling for NVPTX.
-  if (FD->hasAttr<DeviceKernelAttr>())
-    F->setCallingConv(getDeviceKernelCallingConv());
+  if (FD->hasAttr<NVPTXKernelAttr>()) {
+    addNVVMMetadata(F, "kernel", 1);
+  }
 }
 
 void NVPTXTargetCodeGenInfo::addNVVMMetadata(llvm::GlobalValue *GV,
@@ -289,11 +274,10 @@ void NVPTXTargetCodeGenInfo::addNVVMMetadata(llvm::GlobalValue *GV,
   // Get "nvvm.annotations" metadata node
   llvm::NamedMDNode *MD = M->getOrInsertNamedMetadata("nvvm.annotations");
 
-  SmallVector<llvm::Metadata *, 5> MDVals = {
+  llvm::Metadata *MDVals[] = {
       llvm::ConstantAsMetadata::get(GV), llvm::MDString::get(Ctx, Name),
       llvm::ConstantAsMetadata::get(
           llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), Operand))};
-
   // Append metadata to nvvm.annotations
   MD->addOperand(llvm::MDNode::get(Ctx, MDVals));
 }
@@ -301,34 +285,24 @@ void NVPTXTargetCodeGenInfo::addNVVMMetadata(llvm::GlobalValue *GV,
 bool NVPTXTargetCodeGenInfo::shouldEmitStaticExternCAliases() const {
   return false;
 }
-
-llvm::Constant *
-NVPTXTargetCodeGenInfo::getNullPointer(const CodeGen::CodeGenModule &CGM,
-                                       llvm::PointerType *PT,
-                                       QualType QT) const {
-  auto &Ctx = CGM.getContext();
-  if (PT->getAddressSpace() != Ctx.getTargetAddressSpace(LangAS::opencl_local))
-    return llvm::ConstantPointerNull::get(PT);
-
-  auto NPT = llvm::PointerType::get(
-      PT->getContext(), Ctx.getTargetAddressSpace(LangAS::opencl_generic));
-  return llvm::ConstantExpr::getAddrSpaceCast(
-      llvm::ConstantPointerNull::get(NPT), PT);
 }
-} // namespace
 
 void CodeGenModule::handleCUDALaunchBoundsAttr(llvm::Function *F,
                                                const CUDALaunchBoundsAttr *Attr,
                                                int32_t *MaxThreadsVal,
                                                int32_t *MinBlocksVal,
                                                int32_t *MaxClusterRankVal) {
+  // Create !{<func-ref>, metadata !"maxntidx", i32 <val>} node
   llvm::APSInt MaxThreads(32);
   MaxThreads = Attr->getMaxThreads()->EvaluateKnownConstInt(getContext());
   if (MaxThreads > 0) {
     if (MaxThreadsVal)
       *MaxThreadsVal = MaxThreads.getExtValue();
-    if (F)
-      F->addFnAttr("nvvm.maxntid", llvm::utostr(MaxThreads.getExtValue()));
+    if (F) {
+      // Create !{<func-ref>, metadata !"maxntidx", i32 <val>} node
+      NVPTXTargetCodeGenInfo::addNVVMMetadata(F, "maxntidx",
+                                              MaxThreads.getExtValue());
+    }
   }
 
   // min and max blocks is an optional argument for CUDALaunchBoundsAttr. If it
@@ -340,8 +314,11 @@ void CodeGenModule::handleCUDALaunchBoundsAttr(llvm::Function *F,
     if (MinBlocks > 0) {
       if (MinBlocksVal)
         *MinBlocksVal = MinBlocks.getExtValue();
-      if (F)
-        F->addFnAttr("nvvm.minctasm", llvm::utostr(MinBlocks.getExtValue()));
+      if (F) {
+        // Create !{<func-ref>, metadata !"minctasm", i32 <val>} node
+        NVPTXTargetCodeGenInfo::addNVVMMetadata(F, "minctasm",
+                                                MinBlocks.getExtValue());
+      }
     }
   }
   if (Attr->getMaxBlocks()) {
@@ -350,9 +327,11 @@ void CodeGenModule::handleCUDALaunchBoundsAttr(llvm::Function *F,
     if (MaxBlocks > 0) {
       if (MaxClusterRankVal)
         *MaxClusterRankVal = MaxBlocks.getExtValue();
-      if (F)
-        F->addFnAttr("nvvm.maxclusterrank",
-                     llvm::utostr(MaxBlocks.getExtValue()));
+      if (F) {
+        // Create !{<func-ref>, metadata !"maxclusterrank", i32 <val>} node
+        NVPTXTargetCodeGenInfo::addNVVMMetadata(F, "maxclusterrank",
+                                                MaxBlocks.getExtValue());
+      }
     }
   }
 }

@@ -16,11 +16,12 @@
 #include "llvm/CodeGen/GlobalISel/CombinerHelper.h"
 #include "llvm/CodeGen/GlobalISel/CombinerInfo.h"
 #include "llvm/CodeGen/GlobalISel/GIMatchTableExecutorImpl.h"
-#include "llvm/CodeGen/GlobalISel/GISelValueTracking.h"
+#include "llvm/CodeGen/GlobalISel/GISelKnownBits.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 
 #define GET_GICOMBINER_DEPS
@@ -38,14 +39,15 @@ namespace {
 
 class RISCVO0PreLegalizerCombinerImpl : public Combiner {
 protected:
-  const CombinerHelper Helper;
+  // TODO: Make CombinerHelper methods const.
+  mutable CombinerHelper Helper;
   const RISCVO0PreLegalizerCombinerImplRuleConfig &RuleConfig;
   const RISCVSubtarget &STI;
 
 public:
   RISCVO0PreLegalizerCombinerImpl(
       MachineFunction &MF, CombinerInfo &CInfo, const TargetPassConfig *TPC,
-      GISelValueTracking &VT, GISelCSEInfo *CSEInfo,
+      GISelKnownBits &KB, GISelCSEInfo *CSEInfo,
       const RISCVO0PreLegalizerCombinerImplRuleConfig &RuleConfig,
       const RISCVSubtarget &STI);
 
@@ -65,11 +67,11 @@ private:
 
 RISCVO0PreLegalizerCombinerImpl::RISCVO0PreLegalizerCombinerImpl(
     MachineFunction &MF, CombinerInfo &CInfo, const TargetPassConfig *TPC,
-    GISelValueTracking &VT, GISelCSEInfo *CSEInfo,
+    GISelKnownBits &KB, GISelCSEInfo *CSEInfo,
     const RISCVO0PreLegalizerCombinerImplRuleConfig &RuleConfig,
     const RISCVSubtarget &STI)
-    : Combiner(MF, CInfo, TPC, &VT, CSEInfo),
-      Helper(Observer, B, /*IsPreLegalize*/ true, &VT), RuleConfig(RuleConfig),
+    : Combiner(MF, CInfo, TPC, &KB, CSEInfo),
+      Helper(Observer, B, /*IsPreLegalize*/ true, &KB), RuleConfig(RuleConfig),
       STI(STI),
 #define GET_GICOMBINER_CONSTRUCTOR_INITS
 #include "RISCVGenO0PreLegalizeGICombiner.inc"
@@ -103,51 +105,51 @@ void RISCVO0PreLegalizerCombiner::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<TargetPassConfig>();
   AU.setPreservesCFG();
   getSelectionDAGFallbackAnalysisUsage(AU);
-  AU.addRequired<GISelValueTrackingAnalysisLegacy>();
-  AU.addPreserved<GISelValueTrackingAnalysisLegacy>();
+  AU.addRequired<GISelKnownBitsAnalysis>();
+  AU.addPreserved<GISelKnownBitsAnalysis>();
   MachineFunctionPass::getAnalysisUsage(AU);
 }
 
 RISCVO0PreLegalizerCombiner::RISCVO0PreLegalizerCombiner()
     : MachineFunctionPass(ID) {
+  initializeRISCVO0PreLegalizerCombinerPass(*PassRegistry::getPassRegistry());
+
   if (!RuleConfig.parseCommandLineOption())
     report_fatal_error("Invalid rule identifier");
 }
 
 bool RISCVO0PreLegalizerCombiner::runOnMachineFunction(MachineFunction &MF) {
-  if (MF.getProperties().hasFailedISel())
+  if (MF.getProperties().hasProperty(
+          MachineFunctionProperties::Property::FailedISel))
     return false;
   auto &TPC = getAnalysis<TargetPassConfig>();
 
   const Function &F = MF.getFunction();
-  GISelValueTracking *VT =
-      &getAnalysis<GISelValueTrackingAnalysisLegacy>().get(MF);
+  GISelKnownBits *KB = &getAnalysis<GISelKnownBitsAnalysis>().get(MF);
 
   const RISCVSubtarget &ST = MF.getSubtarget<RISCVSubtarget>();
 
   CombinerInfo CInfo(/*AllowIllegalOps*/ true, /*ShouldLegalizeIllegal*/ false,
                      /*LegalizerInfo*/ nullptr, /*EnableOpt*/ false,
                      F.hasOptSize(), F.hasMinSize());
-  // Disable fixed-point iteration in the Combiner. This improves compile-time
-  // at the cost of possibly missing optimizations. See PR#94291 for details.
-  CInfo.MaxIterations = 1;
-
-  RISCVO0PreLegalizerCombinerImpl Impl(MF, CInfo, &TPC, *VT,
+  RISCVO0PreLegalizerCombinerImpl Impl(MF, CInfo, &TPC, *KB,
                                        /*CSEInfo*/ nullptr, RuleConfig, ST);
   return Impl.combineMachineInstrs();
 }
 
 char RISCVO0PreLegalizerCombiner::ID = 0;
 INITIALIZE_PASS_BEGIN(RISCVO0PreLegalizerCombiner, DEBUG_TYPE,
-                      "Combine RISC-V machine instrs before legalization",
-                      false, false)
+                      "Combine RISC-V machine instrs before legalization", false,
+                      false)
 INITIALIZE_PASS_DEPENDENCY(TargetPassConfig)
-INITIALIZE_PASS_DEPENDENCY(GISelValueTrackingAnalysisLegacy)
+INITIALIZE_PASS_DEPENDENCY(GISelKnownBitsAnalysis)
 INITIALIZE_PASS_DEPENDENCY(GISelCSEAnalysisWrapperPass)
 INITIALIZE_PASS_END(RISCVO0PreLegalizerCombiner, DEBUG_TYPE,
                     "Combine RISC-V machine instrs before legalization", false,
                     false)
 
-FunctionPass *llvm::createRISCVO0PreLegalizerCombiner() {
+namespace llvm {
+FunctionPass *createRISCVO0PreLegalizerCombiner() {
   return new RISCVO0PreLegalizerCombiner();
 }
+} // end namespace llvm

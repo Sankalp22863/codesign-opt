@@ -166,8 +166,7 @@ class ObjCAtTryStmt final
     : public Stmt,
       private llvm::TrailingObjects<ObjCAtTryStmt, Stmt *> {
   friend TrailingObjects;
-
-  size_t numTrailingStatements() const {
+  size_t numTrailingObjects(OverloadToken<Stmt *>) const {
     return 1 + NumCatchStmts + HasFinally;
   }
 
@@ -178,16 +177,15 @@ class ObjCAtTryStmt final
   unsigned NumCatchStmts : 16;
 
   // Whether this statement has a \@finally statement.
-  LLVM_PREFERRED_TYPE(bool)
-  unsigned HasFinally : 1;
+  bool HasFinally : 1;
 
   /// Retrieve the statements that are stored after this \@try statement.
   ///
   /// The order of the statements in memory follows the order in the source,
   /// with the \@try body first, followed by the \@catch statements (if any)
   /// and, finally, the \@finally (if it exists).
-  Stmt **getStmts() { return getTrailingObjects(); }
-  Stmt *const *getStmts() const { return getTrailingObjects(); }
+  Stmt **getStmts() { return getTrailingObjects<Stmt *>(); }
+  Stmt *const *getStmts() const { return getTrailingObjects<Stmt *>(); }
 
   ObjCAtTryStmt(SourceLocation atTryLoc, Stmt *atTryStmt,
                 Stmt **CatchStmts, unsigned NumCatchStmts,
@@ -263,7 +261,8 @@ public:
   }
 
   child_range children() {
-    return child_range(getStmts(), getStmts() + numTrailingStatements());
+    return child_range(
+        getStmts(), getStmts() + numTrailingObjects(OverloadToken<Stmt *>()));
   }
 
   const_child_range children() const {

@@ -29,7 +29,6 @@ void SymbolTable::addFile(InputFile *file, StringRef symName) {
   // Lazy object file
   if (file->lazy) {
     if (auto *f = dyn_cast<BitcodeFile>(file)) {
-      ctx.lazyBitcodeFiles.push_back(f);
       f->parseLazy();
     } else {
       cast<ObjFile>(file)->parseLazy();
@@ -39,9 +38,6 @@ void SymbolTable::addFile(InputFile *file, StringRef symName) {
 
   // .so file
   if (auto *f = dyn_cast<SharedFile>(file)) {
-    // If we are not reporting undefined symbols that we don't actualy
-    // parse the shared library symbol table.
-    f->parse();
     ctx.sharedFiles.push_back(f);
     return;
   }
@@ -53,7 +49,7 @@ void SymbolTable::addFile(InputFile *file, StringRef symName) {
     return;
   }
 
-  if (ctx.arg.trace)
+  if (config->trace)
     message(toString(file));
 
   // LLVM bitcode file
@@ -82,13 +78,16 @@ void SymbolTable::compileBitcodeFiles() {
   // Prevent further LTO objects being included
   BitcodeFile::doneLTO = true;
 
+  if (ctx.bitcodeFiles.empty())
+    return;
+
   // Compile bitcode files and replace bitcode symbols.
   lto.reset(new BitcodeCompiler);
   for (BitcodeFile *f : ctx.bitcodeFiles)
     lto->add(*f);
 
-  for (auto &file : lto->compile()) {
-    auto *obj = cast<ObjFile>(file);
+  for (StringRef filename : lto->compile()) {
+    auto *obj = make<ObjFile>(MemoryBufferRef(filename, "lto.tmp"), "");
     obj->parse(true);
     ctx.objectFiles.push_back(obj);
   }
@@ -125,7 +124,7 @@ std::pair<Symbol *, bool> SymbolTable::insertName(StringRef name) {
   sym->canInline = true;
   sym->traced = trace;
   sym->forceExport = false;
-  sym->referenced = !ctx.arg.gcSections;
+  sym->referenced = !config->gcSections;
   symVector.emplace_back(sym);
   return {sym, true};
 }
@@ -235,7 +234,7 @@ DefinedFunction *SymbolTable::addSyntheticFunction(StringRef name,
 DefinedData *SymbolTable::addOptionalDataSymbol(StringRef name,
                                                 uint64_t value) {
   Symbol *s = find(name);
-  if (!s && (ctx.arg.exportAll || ctx.arg.exportedSymbols.count(name) != 0))
+  if (!s && (config->exportAll || config->exportedSymbols.count(name) != 0))
     s = insertName(name).first;
   else if (!s || s->isDefined())
     return nullptr;
@@ -310,117 +309,11 @@ static bool shouldReplace(const Symbol *existing, InputFile *newFile,
     return true;
   }
 
-  // Similarly with shared symbols
-  if (existing->isShared()) {
-    LLVM_DEBUG(dbgs() << "replacing existing shared symbol\n");
-    return true;
-  }
-
   // Neither symbol is week. They conflict.
-  if (ctx.arg.allowMultipleDefinition)
-    return false;
-
-  errorOrWarn("duplicate symbol: " + toString(*existing) + "\n>>> defined in " +
-              toString(existing->getFile()) + "\n>>> defined in " +
-              toString(newFile));
+  error("duplicate symbol: " + toString(*existing) + "\n>>> defined in " +
+        toString(existing->getFile()) + "\n>>> defined in " +
+        toString(newFile));
   return true;
-}
-
-static void reportFunctionSignatureMismatch(StringRef symName,
-                                            FunctionSymbol *sym,
-                                            const WasmSignature *signature,
-                                            InputFile *file,
-                                            bool isError = true) {
-  std::string msg =
-      ("function signature mismatch: " + symName + "\n>>> defined as " +
-       toString(*sym->signature) + " in " + toString(sym->getFile()) +
-       "\n>>> defined as " + toString(*signature) + " in " + toString(file))
-          .str();
-  if (isError)
-    error(msg);
-  else
-    warn(msg);
-}
-
-static void reportFunctionSignatureMismatch(StringRef symName,
-                                            FunctionSymbol *a,
-                                            FunctionSymbol *b,
-                                            bool isError = true) {
-  reportFunctionSignatureMismatch(symName, a, b->signature, b->getFile(),
-                                  isError);
-}
-
-Symbol *SymbolTable::addSharedFunction(StringRef name, uint32_t flags,
-                                       InputFile *file,
-                                       const WasmSignature *sig) {
-  LLVM_DEBUG(dbgs() << "addSharedFunction: " << name << " [" << toString(*sig)
-                    << "]\n");
-  Symbol *s;
-  bool wasInserted;
-  std::tie(s, wasInserted) = insert(name, file);
-
-  auto replaceSym = [&](Symbol *sym) {
-    replaceSymbol<SharedFunctionSymbol>(sym, name, flags, file, sig);
-  };
-
-  if (wasInserted || s->isLazy()) {
-    replaceSym(s);
-    return s;
-  }
-
-  auto existingFunction = dyn_cast<FunctionSymbol>(s);
-  if (!existingFunction) {
-    reportTypeError(s, file, WASM_SYMBOL_TYPE_FUNCTION);
-    return s;
-  }
-
-  // Shared symbols should never replace locally-defined ones
-  if (s->isDefined()) {
-    return s;
-  }
-
-  LLVM_DEBUG(dbgs() << "resolving existing undefined symbol: " << s->getName()
-                    << "\n");
-
-  bool checkSig = true;
-  if (auto ud = dyn_cast<UndefinedFunction>(existingFunction))
-    checkSig = ud->isCalledDirectly;
-
-  if (checkSig && !signatureMatches(existingFunction, sig)) {
-    if (ctx.arg.shlibSigCheck) {
-      reportFunctionSignatureMismatch(name, existingFunction, sig, file);
-    } else {
-      // With --no-shlib-sigcheck we ignore the signature of the function as
-      // defined by the shared library and instead use the signature as
-      // expected by the program being linked.
-      sig = existingFunction->signature;
-    }
-  }
-
-  replaceSym(s);
-  return s;
-}
-
-Symbol *SymbolTable::addSharedData(StringRef name, uint32_t flags,
-                                   InputFile *file) {
-  LLVM_DEBUG(dbgs() << "addSharedData: " << name << "\n");
-  Symbol *s;
-  bool wasInserted;
-  std::tie(s, wasInserted) = insert(name, file);
-
-  if (wasInserted || s->isLazy()) {
-    replaceSymbol<SharedData>(s, name, flags, file);
-    return s;
-  }
-
-  // Shared symbols should never replace locally-defined ones
-  if (s->isDefined()) {
-    return s;
-  }
-
-  checkDataType(s, file);
-  replaceSymbol<SharedData>(s, name, flags, file);
-  return s;
 }
 
 Symbol *SymbolTable::addDefinedFunction(StringRef name, uint32_t flags,
@@ -645,7 +538,7 @@ Symbol *SymbolTable::addUndefinedFunction(StringRef name,
       lazy->signature = sig;
     } else {
       lazy->extract();
-      if (!ctx.arg.whyExtract.empty())
+      if (!config->whyExtract.empty())
         ctx.whyExtractRecords.emplace_back(toString(file), s->getFile(), *s);
     }
   } else {
@@ -658,18 +551,10 @@ Symbol *SymbolTable::addUndefinedFunction(StringRef name,
       existingFunction->signature = sig;
     auto *existingUndefined = dyn_cast<UndefinedFunction>(existingFunction);
     if (isCalledDirectly && !signatureMatches(existingFunction, sig)) {
-      if (existingFunction->isShared()) {
-        // Special handling for when the existing function is a shared symbol
-        if (ctx.arg.shlibSigCheck) {
-          reportFunctionSignatureMismatch(name, existingFunction, sig, file);
-        } else {
-          existingFunction->signature = sig;
-        }
-      }
       // If the existing undefined functions is not called directly then let
       // this one take precedence.  Otherwise the existing function is either
       // directly called or defined, in which case we need a function variant.
-      else if (existingUndefined && !existingUndefined->isCalledDirectly)
+      if (existingUndefined && !existingUndefined->isCalledDirectly)
         replaceSym();
       else if (getFunctionVariant(s, sig, file, &s))
         replaceSym();
@@ -792,29 +677,29 @@ Symbol *SymbolTable::addUndefinedTag(StringRef name,
 }
 
 TableSymbol *SymbolTable::createUndefinedIndirectFunctionTable(StringRef name) {
-  WasmLimits limits{0, 0, 0, 0}; // Set by the writer.
+  WasmLimits limits{0, 0, 0}; // Set by the writer.
   WasmTableType *type = make<WasmTableType>();
   type->ElemType = ValType::FUNCREF;
   type->Limits = limits;
-  uint32_t flags = ctx.arg.exportTable ? 0 : WASM_SYMBOL_VISIBILITY_HIDDEN;
+  StringRef module(defaultModule);
+  uint32_t flags = config->exportTable ? 0 : WASM_SYMBOL_VISIBILITY_HIDDEN;
   flags |= WASM_SYMBOL_UNDEFINED;
-  Symbol *sym =
-      addUndefinedTable(name, name, defaultModule, flags, nullptr, type);
+  Symbol *sym = addUndefinedTable(name, name, module, flags, nullptr, type);
   sym->markLive();
-  sym->forceExport = ctx.arg.exportTable;
+  sym->forceExport = config->exportTable;
   return cast<TableSymbol>(sym);
 }
 
 TableSymbol *SymbolTable::createDefinedIndirectFunctionTable(StringRef name) {
   const uint32_t invalidIndex = -1;
-  WasmLimits limits{0, 0, 0, 0}; // Set by the writer.
+  WasmLimits limits{0, 0, 0}; // Set by the writer.
   WasmTableType type{ValType::FUNCREF, limits};
   WasmTable desc{invalidIndex, type, name};
   InputTable *table = make<InputTable>(desc, nullptr);
-  uint32_t flags = ctx.arg.exportTable ? 0 : WASM_SYMBOL_VISIBILITY_HIDDEN;
+  uint32_t flags = config->exportTable ? 0 : WASM_SYMBOL_VISIBILITY_HIDDEN;
   TableSymbol *sym = addSyntheticTable(name, flags, table);
   sym->markLive();
-  sym->forceExport = ctx.arg.exportTable;
+  sym->forceExport = config->exportTable;
   return sym;
 }
 
@@ -838,15 +723,12 @@ TableSymbol *SymbolTable::resolveIndirectFunctionTable(bool required) {
     }
   }
 
-  if (ctx.arg.importTable) {
-    if (existing) {
-      existing->importModule = defaultModule;
-      existing->importName = functionTableName;
+  if (config->importTable) {
+    if (existing)
       return cast<TableSymbol>(existing);
-    }
     if (required)
       return createUndefinedIndirectFunctionTable(functionTableName);
-  } else if ((existing && existing->isLive()) || ctx.arg.exportTable ||
+  } else if ((existing && existing->isLive()) || config->exportTable ||
              required) {
     // A defined table is required.  Either because the user request an exported
     // table or because the table symbol is already live.  The existing table is
@@ -893,7 +775,7 @@ void SymbolTable::addLazy(StringRef name, InputFile *file) {
   LLVM_DEBUG(dbgs() << "replacing existing undefined\n");
   const InputFile *oldFile = s->getFile();
   LazySymbol(name, 0, file).extract();
-  if (!ctx.arg.whyExtract.empty())
+  if (!config->whyExtract.empty())
     ctx.whyExtractRecords.emplace_back(toString(oldFile), s->getFile(), *s);
 }
 
@@ -1017,8 +899,8 @@ void SymbolTable::handleWeakUndefines() {
 }
 
 DefinedFunction *SymbolTable::createUndefinedStub(const WasmSignature &sig) {
-  if (auto it = stubFunctions.find(sig); it != stubFunctions.end())
-    return it->second;
+  if (stubFunctions.count(sig))
+    return stubFunctions[sig];
   LLVM_DEBUG(dbgs() << "createUndefinedStub: " << toString(sig) << "\n");
   auto *sym = reinterpret_cast<DefinedFunction *>(make<SymbolUnion>());
   sym->isUsedInRegularObj = true;
@@ -1031,6 +913,20 @@ DefinedFunction *SymbolTable::createUndefinedStub(const WasmSignature &sig) {
   replaceWithUnreachable(sym, sig, "undefined_stub");
   stubFunctions[sig] = sym;
   return sym;
+}
+
+static void reportFunctionSignatureMismatch(StringRef symName,
+                                            FunctionSymbol *a,
+                                            FunctionSymbol *b, bool isError) {
+  std::string msg = ("function signature mismatch: " + symName +
+                     "\n>>> defined as " + toString(*a->signature) + " in " +
+                     toString(a->getFile()) + "\n>>> defined as " +
+                     toString(*b->signature) + " in " + toString(b->getFile()))
+                        .str();
+  if (isError)
+    error(msg);
+  else
+    warn(msg);
 }
 
 // Remove any variant symbols that were created due to function signature
@@ -1066,7 +962,7 @@ void SymbolTable::handleSymbolVariants() {
     if (!defined) {
       reportFunctionSignatureMismatch(symName,
                                       cast<FunctionSymbol>(variants[0]),
-                                      cast<FunctionSymbol>(variants[1]));
+                                      cast<FunctionSymbol>(variants[1]), true);
       return;
     }
 

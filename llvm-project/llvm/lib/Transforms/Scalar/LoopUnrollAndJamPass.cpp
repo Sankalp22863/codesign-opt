@@ -34,6 +34,7 @@
 #include "llvm/IR/PassManager.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Scalar/LoopPassManager.h"
@@ -326,7 +327,8 @@ tryToUnrollAndJamLoop(Loop *L, DominatorTree &DT, LoopInfo *LI,
   UnrollCostEstimator OuterUCE(L, TTI, EphValues, UP.BEInsns);
 
   if (!InnerUCE.canUnroll() || !OuterUCE.canUnroll()) {
-    LLVM_DEBUG(dbgs() << "  Loop not considered unrollable\n");
+    LLVM_DEBUG(dbgs() << "  Not unrolling loop which contains instructions"
+                      << " which cannot be duplicated or have invalid cost.\n");
     return LoopUnrollResult::Unmodified;
   }
 
@@ -339,10 +341,7 @@ tryToUnrollAndJamLoop(Loop *L, DominatorTree &DT, LoopInfo *LI,
     LLVM_DEBUG(dbgs() << "  Not unrolling loop with inlinable calls.\n");
     return LoopUnrollResult::Unmodified;
   }
-  // FIXME: The call to canUnroll() allows some controlled convergent
-  // operations, but we block them here for future changes.
-  if (InnerUCE.Convergence != ConvergenceKind::None ||
-      OuterUCE.Convergence != ConvergenceKind::None) {
+  if (InnerUCE.Convergent || OuterUCE.Convergent) {
     LLVM_DEBUG(
         dbgs() << "  Not unrolling loop with convergent instructions.\n");
     return LoopUnrollResult::Unmodified;
@@ -425,7 +424,7 @@ static bool tryToUnrollAndJamLoop(LoopNest &LN, DominatorTree &DT, LoopInfo &LI,
                                   const TargetTransformInfo &TTI,
                                   AssumptionCache &AC, DependenceInfo &DI,
                                   OptimizationRemarkEmitter &ORE, int OptLevel,
-                                  LPMUpdater &U, bool &AnyLoopRemoved) {
+                                  LPMUpdater &U) {
   bool DidSomething = false;
   ArrayRef<Loop *> Loops = LN.getLoops();
   Loop *OutmostLoop = &LN.getOutermostLoop();
@@ -441,11 +440,8 @@ static bool tryToUnrollAndJamLoop(LoopNest &LN, DominatorTree &DT, LoopInfo &LI,
         tryToUnrollAndJamLoop(L, DT, &LI, SE, TTI, AC, DI, ORE, OptLevel);
     if (Result != LoopUnrollResult::Unmodified)
       DidSomething = true;
-    if (Result == LoopUnrollResult::FullyUnrolled) {
-      if (L == OutmostLoop)
-        U.markLoopAsDeleted(*L, LoopName);
-      AnyLoopRemoved = true;
-    }
+    if (L == OutmostLoop && Result == LoopUnrollResult::FullyUnrolled)
+      U.markLoopAsDeleted(*L, LoopName);
   }
 
   return DidSomething;
@@ -460,13 +456,11 @@ PreservedAnalyses LoopUnrollAndJamPass::run(LoopNest &LN,
   DependenceInfo DI(&F, &AR.AA, &AR.SE, &AR.LI);
   OptimizationRemarkEmitter ORE(&F);
 
-  bool AnyLoopRemoved = false;
   if (!tryToUnrollAndJamLoop(LN, AR.DT, AR.LI, AR.SE, AR.TTI, AR.AC, DI, ORE,
-                             OptLevel, U, AnyLoopRemoved))
+                             OptLevel, U))
     return PreservedAnalyses::all();
 
   auto PA = getLoopPassPreservedAnalyses();
-  if (!AnyLoopRemoved)
-    PA.preserve<LoopNestAnalysis>();
+  PA.preserve<LoopNestAnalysis>();
   return PA;
 }

@@ -16,10 +16,7 @@
 #include "ResourceScriptStmt.h"
 #include "ResourceVisitor.h"
 
-#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Endian.h"
-
-#include <map>
 
 namespace llvm {
 
@@ -71,7 +68,6 @@ public:
   Error visitLanguageStmt(const LanguageResource *) override;
   Error visitStyleStmt(const StyleStmt *) override;
   Error visitVersionStmt(const VersionStmt *) override;
-  Error visitMenuStmt(const MenuStmt *) override;
 
   // Stringtables are output at the end of .res file. We need a separate
   // function to do it.
@@ -96,11 +92,10 @@ public:
     };
     std::optional<FontInfo> Font;
     IntOrString Class;
-    IntOrString Menu;
 
     ObjectInfo()
         : LanguageInfo(0), Characteristics(0), VersionInfo(0),
-          Class(StringRef()), Menu(StringRef()) {}
+          Class(StringRef()) {}
   } ObjectData;
 
   struct StringTableInfo {

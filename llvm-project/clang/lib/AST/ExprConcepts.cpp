@@ -23,6 +23,10 @@
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/SourceLocation.h"
+#include "llvm/Support/TrailingObjects.h"
+#include <algorithm>
+#include <string>
+#include <utility>
 
 using namespace clang;
 
@@ -41,10 +45,10 @@ ConceptSpecializationExpr::ConceptSpecializationExpr(
   assert(!Loc->getNestedNameSpecifierLoc() ||
          (!Loc->getNestedNameSpecifierLoc()
                .getNestedNameSpecifier()
-               .isInstantiationDependent() &&
+               ->isInstantiationDependent() &&
           !Loc->getNestedNameSpecifierLoc()
                .getNestedNameSpecifier()
-               .containsUnexpandedParameterPack()));
+               ->containsUnexpandedParameterPack()));
   assert((!isValueDependent() || isInstantiationDependent()) &&
          "should not be value-dependent");
 }
@@ -93,7 +97,8 @@ ConceptSpecializationExpr::Create(const ASTContext &C, ConceptReference *Loc,
 const TypeConstraint *
 concepts::ExprRequirement::ReturnTypeRequirement::getTypeConstraint() const {
   assert(isTypeConstraint());
-  auto TPL = cast<TemplateParameterList *>(TypeConstraintInfo.getPointer());
+  auto TPL =
+      TypeConstraintInfo.getPointer().get<TemplateParameterList *>();
   return cast<TemplateTypeParmDecl>(TPL->getParam(0))
       ->getTypeConstraint();
 }
@@ -143,8 +148,10 @@ RequiresExpr::RequiresExpr(ASTContext &C, SourceLocation RequiresKWLoc,
     if (RequirementContainsError(R))
       setDependence(getDependence() | ExprDependence::Error);
   }
-  llvm::copy(LocalParameters, getTrailingObjects<ParmVarDecl *>());
-  llvm::copy(Requirements, getTrailingObjects<concepts::Requirement *>());
+  std::copy(LocalParameters.begin(), LocalParameters.end(),
+            getTrailingObjects<ParmVarDecl *>());
+  std::copy(Requirements.begin(), Requirements.end(),
+            getTrailingObjects<concepts::Requirement *>());
   RequiresExprBits.IsSatisfied |= Dependent;
   // FIXME: move the computing dependency logic to ComputeDependence.h
   if (ContainsUnexpandedParameterPack)

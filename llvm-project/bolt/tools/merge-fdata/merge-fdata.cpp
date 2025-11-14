@@ -22,7 +22,6 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/ThreadPool.h"
 #include <algorithm>
-#include <fstream>
 #include <mutex>
 #include <unordered_map>
 
@@ -31,7 +30,7 @@ using namespace llvm::yaml::bolt;
 
 namespace opts {
 
-static cl::OptionCategory MergeFdataCategory("merge-fdata options");
+cl::OptionCategory MergeFdataCategory("merge-fdata options");
 
 enum SortType : char {
   ST_NONE,
@@ -120,14 +119,14 @@ void mergeProfileHeaders(BinaryProfileHeader &MergedHeader,
   if (!MergedHeader.Id.empty() && (MergedHeader.Id != Header.Id))
     errs() << "WARNING: build-ids in merged profiles do not match\n";
 
-  // Cannot merge samples profile with brstack profile.
+  // Cannot merge samples profile with LBR profile.
   if (!MergedHeader.Flags)
     MergedHeader.Flags = Header.Flags;
 
-  constexpr auto Mask = llvm::bolt::BinaryFunction::PF_BRANCH |
-                        llvm::bolt::BinaryFunction::PF_BASIC;
+  constexpr auto Mask = llvm::bolt::BinaryFunction::PF_LBR |
+                        llvm::bolt::BinaryFunction::PF_SAMPLE;
   if ((MergedHeader.Flags & Mask) != (Header.Flags & Mask)) {
-    errs() << "ERROR: cannot merge brstack profile with non-brstack profile\n";
+    errs() << "ERROR: cannot merge LBR profile with non-LBR profile\n";
     exit(1);
   }
   MergedHeader.Flags = MergedHeader.Flags | Header.Flags;
@@ -146,10 +145,6 @@ void mergeProfileHeaders(BinaryProfileHeader &MergedHeader,
     errs() << "WARNING: merging profiles with different sampling events\n";
     MergedHeader.EventNames += "," + Header.EventNames;
   }
-
-  if (MergedHeader.HashFunction != Header.HashFunction)
-    report_error("merge conflict",
-                 "cannot merge profiles with different hash functions");
 }
 
 void mergeBasicBlockProfile(BinaryBasicBlockProfile &MergedBB,
@@ -266,79 +261,63 @@ bool isYAML(const StringRef Filename) {
 void mergeLegacyProfiles(const SmallVectorImpl<std::string> &Filenames) {
   errs() << "Using legacy profile format.\n";
   std::optional<bool> BoltedCollection;
-  std::optional<bool> NoLBRCollection;
   std::mutex BoltedCollectionMutex;
-  struct CounterTy {
-    uint64_t Exec{0};
-    uint64_t Mispred{0};
-    CounterTy &operator+=(const CounterTy &O) {
-      Exec += O.Exec;
-      Mispred += O.Mispred;
-      return *this;
-    }
-    CounterTy operator+(const CounterTy &O) { return *this += O; }
-  };
-  typedef StringMap<CounterTy> ProfileTy;
+  typedef StringMap<uint64_t> ProfileTy;
 
   auto ParseProfile = [&](const std::string &Filename, auto &Profiles) {
     const llvm::thread::id tid = llvm::this_thread::get_id();
 
     if (isYAML(Filename))
       report_error(Filename, "cannot mix YAML and legacy formats");
+    ErrorOr<std::unique_ptr<MemoryBuffer>> MB =
+        MemoryBuffer::getFileOrSTDIN(Filename);
+    if (std::error_code EC = MB.getError())
+      report_error(Filename, EC);
 
-    std::ifstream FdataFile(Filename, std::ios::in);
-    std::string FdataLine;
-    std::getline(FdataFile, FdataLine);
-
-    auto checkMode = [&](const std::string &Key, std::optional<bool> &Flag) {
-      const bool KeyIsSet = FdataLine.rfind(Key, 0) == 0;
-
-      if (!Flag.has_value())
-        Flag = KeyIsSet;
-      else if (*Flag != KeyIsSet)
-        report_error(Filename, "cannot mix profile with and without " + Key);
-      if (KeyIsSet)
-        // Advance line
-        std::getline(FdataFile, FdataLine);
-    };
-
+    StringRef Buf = MB.get()->getBuffer();
     ProfileTy *Profile;
     {
       std::lock_guard<std::mutex> Lock(BoltedCollectionMutex);
       // Check if the string "boltedcollection" is in the first line
-      checkMode("boltedcollection", BoltedCollection);
-      // Check if the string "no_lbr" is in the first line
-      // (or second line if BoltedCollection is true)
-      checkMode("no_lbr", NoLBRCollection);
+      if (Buf.starts_with("boltedcollection\n")) {
+        if (!BoltedCollection.value_or(true))
+          report_error(
+              Filename,
+              "cannot mix profile collected in BOLT and non-BOLT deployments");
+        BoltedCollection = true;
+        Buf = Buf.drop_front(17);
+      } else {
+        if (BoltedCollection.value_or(false))
+          report_error(
+              Filename,
+              "cannot mix profile collected in BOLT and non-BOLT deployments");
+        BoltedCollection = false;
+      }
+
       Profile = &Profiles[tid];
     }
 
-    do {
-      StringRef Line(FdataLine);
-      CounterTy Count;
-      auto [Signature, ExecCount] = Line.rsplit(' ');
-      if (ExecCount.getAsInteger(10, Count.Exec))
-        report_error(Filename, "Malformed / corrupted execution count");
-      // Only LBR profile has misprediction field
-      if (!NoLBRCollection.value_or(false)) {
-        auto [SignatureLBR, MispredCount] = Signature.rsplit(' ');
-        Signature = SignatureLBR;
-        if (MispredCount.getAsInteger(10, Count.Mispred))
-          report_error(Filename, "Malformed / corrupted misprediction count");
-      }
-
+    SmallVector<StringRef> Lines;
+    SplitString(Buf, Lines, "\n");
+    for (StringRef Line : Lines) {
+      size_t Pos = Line.rfind(" ");
+      if (Pos == StringRef::npos)
+        report_error(Filename, "Malformed / corrupted profile");
+      StringRef Signature = Line.substr(0, Pos);
+      uint64_t Count;
+      if (Line.substr(Pos + 1, Line.size() - Pos).getAsInteger(10, Count))
+        report_error(Filename, "Malformed / corrupted profile counter");
       Count += Profile->lookup(Signature);
       Profile->insert_or_assign(Signature, Count);
-    } while (std::getline(FdataFile, FdataLine));
+    }
   };
 
   // The final reduction has non-trivial cost, make sure each thread has at
   // least 4 tasks.
   ThreadPoolStrategy S = optimal_concurrency(
       std::max(Filenames.size() / 4, static_cast<size_t>(1)));
-  DefaultThreadPool Pool(S);
-  DenseMap<llvm::thread::id, ProfileTy> ParsedProfiles(
-      Pool.getMaxConcurrency());
+  ThreadPool Pool(S);
+  DenseMap<llvm::thread::id, ProfileTy> ParsedProfiles(Pool.getThreadCount());
   for (const auto &Filename : Filenames)
     Pool.async(ParseProfile, std::cref(Filename), std::ref(ParsedProfiles));
   Pool.wait();
@@ -346,20 +325,14 @@ void mergeLegacyProfiles(const SmallVectorImpl<std::string> &Filenames) {
   ProfileTy MergedProfile;
   for (const auto &[Thread, Profile] : ParsedProfiles)
     for (const auto &[Key, Value] : Profile) {
-      CounterTy Count = MergedProfile.lookup(Key) + Value;
+      uint64_t Count = MergedProfile.lookup(Key) + Value;
       MergedProfile.insert_or_assign(Key, Count);
     }
 
   if (BoltedCollection.value_or(false))
     output() << "boltedcollection\n";
-  if (NoLBRCollection.value_or(false))
-    output() << "no_lbr\n";
-  for (const auto &[Key, Value] : MergedProfile) {
-    output() << Key << " ";
-    if (!NoLBRCollection.value_or(false))
-      output() << Value.Mispred << " ";
-    output() << Value.Exec << "\n";
-  }
+  for (const auto &[Key, Value] : MergedProfile)
+    output() << Key << " " << Value << "\n";
 
   errs() << "Profile from " << Filenames.size() << " files merged.\n";
 }
@@ -412,14 +385,12 @@ int main(int argc, char **argv) {
   // Merged information for all functions.
   StringMap<BinaryFunctionProfile> MergedBFs;
 
-  bool FirstHeader = true;
   for (std::string &InputDataFilename : Inputs) {
     ErrorOr<std::unique_ptr<MemoryBuffer>> MB =
         MemoryBuffer::getFileOrSTDIN(InputDataFilename);
     if (std::error_code EC = MB.getError())
       report_error(InputDataFilename, EC);
     yaml::Input YamlInput(MB.get()->getBuffer());
-    YamlInput.setAllowUnknownKeys(true);
 
     errs() << "Merging data from " << InputDataFilename << "...\n";
 
@@ -436,12 +407,7 @@ int main(int argc, char **argv) {
     }
 
     // Merge the header.
-    if (FirstHeader) {
-      MergedHeader = BP.Header;
-      FirstHeader = false;
-    } else {
-      mergeProfileHeaders(MergedHeader, BP.Header);
-    }
+    mergeProfileHeaders(MergedHeader, BP.Header);
 
     // Do the function merge.
     for (BinaryFunctionProfile &BF : BP.Functions) {

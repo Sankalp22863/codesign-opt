@@ -17,7 +17,6 @@
 #include "lldb/Utility/Stream.h"
 #include "lldb/Utility/StringList.h"
 #include "lldb/Utility/Timer.h"
-#include "lldb/lldb-forward.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FormatAdapters.h"
 #include <memory>
@@ -46,8 +45,8 @@ public:
         m_script_interpreter(script_interpreter),
         m_active_io_handler(active_io_handler) {
     llvm::cantFail(m_script_interpreter.GetLua().ChangeIO(
-        debugger.GetOutputFileSP()->GetStream(),
-        debugger.GetErrorFileSP()->GetStream()));
+        debugger.GetOutputFile().GetStream(),
+        debugger.GetErrorFile().GetStream()));
     llvm::cantFail(m_script_interpreter.EnterSession(debugger.GetID()));
   }
 
@@ -77,13 +76,8 @@ public:
     }
     if (instructions == nullptr)
       return;
-    if (interactive) {
-      if (lldb::LockableStreamFileSP output_sp =
-              io_handler.GetOutputStreamFileSP()) {
-        LockedStreamFile locked_stream = output_sp->Lock();
-        locked_stream << instructions;
-      }
-    }
+    if (interactive)
+      *io_handler.GetOutputStreamFileSP() << instructions;
   }
 
   bool IOHandlerIsInputComplete(IOHandler &io_handler,
@@ -118,11 +112,8 @@ public:
       for (BreakpointOptions &bp_options : *bp_options_vec) {
         Status error = m_script_interpreter.SetBreakpointCommandCallback(
             bp_options, data.c_str(), /*is_callback=*/false);
-        if (error.Fail()) {
-          LockedStreamFile locked_stream =
-              io_handler.GetErrorStreamFileSP()->Lock();
-          locked_stream << error.AsCString() << '\n';
-        }
+        if (error.Fail())
+          *io_handler.GetErrorStreamFileSP() << error.AsCString() << '\n';
       }
       io_handler.SetIsDone(true);
     } break;
@@ -139,11 +130,8 @@ public:
         io_handler.SetIsDone(true);
         return;
       }
-      if (llvm::Error error = m_script_interpreter.GetLua().Run(data)) {
-        LockedStreamFile locked_stream =
-            io_handler.GetErrorStreamFileSP()->Lock();
-        locked_stream << toString(std::move(error));
-      }
+      if (llvm::Error error = m_script_interpreter.GetLua().Run(data))
+        *io_handler.GetErrorStreamFileSP() << toString(std::move(error));
       break;
     }
   }
@@ -228,12 +216,11 @@ void ScriptInterpreterLua::ExecuteInterpreterLoop() {
 bool ScriptInterpreterLua::LoadScriptingModule(
     const char *filename, const LoadScriptOptions &options,
     lldb_private::Status &error, StructuredData::ObjectSP *module_sp,
-    FileSpec extra_search_dir, lldb::TargetSP loaded_into_target_sp) {
+    FileSpec extra_search_dir) {
 
   if (llvm::Error e = m_lua->LoadModule(filename)) {
-    error = Status::FromErrorStringWithFormatv(
-        "lua failed to import '{0}': {1}\n", filename,
-        llvm::toString(std::move(e)));
+    error.SetErrorStringWithFormatv("lua failed to import '{0}': {1}\n",
+                                    filename, llvm::toString(std::move(e)));
     return false;
   }
   return true;
@@ -301,7 +288,7 @@ bool ScriptInterpreterLua::BreakpointCallbackFunction(
   llvm::Expected<bool> BoolOrErr = lua.CallBreakpointCallback(
       baton, stop_frame_sp, bp_loc_sp, bp_option_data->m_extra_args_sp);
   if (llvm::Error E = BoolOrErr.takeError()) {
-    *debugger.GetAsyncErrorStream() << toString(std::move(E));
+    debugger.GetErrorStream() << toString(std::move(E));
     return true;
   }
 
@@ -328,7 +315,7 @@ bool ScriptInterpreterLua::WatchpointCallbackFunction(
   llvm::Expected<bool> BoolOrErr =
       lua.CallWatchpointCallback(baton, stop_frame_sp, wp_sp);
   if (llvm::Error E = BoolOrErr.takeError()) {
-    *debugger.GetAsyncErrorStream() << toString(std::move(E));
+    debugger.GetErrorStream() << toString(std::move(E));
     return true;
   }
 
@@ -370,16 +357,16 @@ Status ScriptInterpreterLua::SetBreakpointCommandCallback(
 Status ScriptInterpreterLua::RegisterBreakpointCallback(
     BreakpointOptions &bp_options, const char *command_body_text,
     StructuredData::ObjectSP extra_args_sp) {
+  Status error;
   auto data_up = std::make_unique<CommandDataLua>(extra_args_sp);
-  llvm::Error err =
-      m_lua->RegisterBreakpointCallback(data_up.get(), command_body_text);
-  if (err)
-    return Status::FromError(std::move(err));
+  error = m_lua->RegisterBreakpointCallback(data_up.get(), command_body_text);
+  if (error.Fail())
+    return error;
   auto baton_sp =
       std::make_shared<BreakpointOptions::CommandBaton>(std::move(data_up));
   bp_options.SetCallback(ScriptInterpreterLua::BreakpointCallbackFunction,
                          baton_sp);
-  return {};
+  return error;
 }
 
 void ScriptInterpreterLua::SetWatchpointCommandCallback(
@@ -391,16 +378,16 @@ void ScriptInterpreterLua::SetWatchpointCommandCallback(
 Status ScriptInterpreterLua::RegisterWatchpointCallback(
     WatchpointOptions *wp_options, const char *command_body_text,
     StructuredData::ObjectSP extra_args_sp) {
+  Status error;
   auto data_up = std::make_unique<WatchpointOptions::CommandData>();
-  llvm::Error err =
-      m_lua->RegisterWatchpointCallback(data_up.get(), command_body_text);
-  if (err)
-    return Status::FromError(std::move(err));
+  error = m_lua->RegisterWatchpointCallback(data_up.get(), command_body_text);
+  if (error.Fail())
+    return error;
   auto baton_sp =
       std::make_shared<WatchpointOptions::CommandBaton>(std::move(data_up));
   wp_options->SetCallback(ScriptInterpreterLua::WatchpointCallbackFunction,
                           baton_sp);
-  return {};
+  return error;
 }
 
 lldb::ScriptInterpreterSP

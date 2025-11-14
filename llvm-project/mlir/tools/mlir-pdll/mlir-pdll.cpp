@@ -19,7 +19,6 @@
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include "llvm/Support/VirtualFileSystem.h"
 #include <set>
 
 using namespace mlir;
@@ -42,7 +41,6 @@ processBuffer(raw_ostream &os, std::unique_ptr<llvm::MemoryBuffer> chunkBuffer,
               bool dumpODS, std::set<std::string> *includedFiles) {
   llvm::SourceMgr sourceMgr;
   sourceMgr.setIncludeDirs(includeDirs);
-  sourceMgr.setVirtualFileSystem(llvm::vfs::getRealFileSystem());
   sourceMgr.AddNewSourceBuffer(std::move(chunkBuffer), SMLoc());
 
   // If we are dumping ODS information, also enable documentation to ensure the
@@ -138,20 +136,11 @@ int main(int argc, char **argv) {
       llvm::cl::desc(
           "Print out the parsed ODS information from the input file"),
       llvm::cl::init(false));
-  llvm::cl::opt<std::string> inputSplitMarker{
-      "split-input-file", llvm::cl::ValueOptional,
-      llvm::cl::callback([&](const std::string &str) {
-        // Implicit value: use default marker if flag was used without value.
-        if (str.empty())
-          inputSplitMarker.setValue(kDefaultSplitMarker);
-      }),
-      llvm::cl::desc("Split the input file into chunks using the given or "
-                     "default marker and process each chunk independently"),
-      llvm::cl::init("")};
-  llvm::cl::opt<std::string> outputSplitMarker(
-      "output-split-marker",
-      llvm::cl::desc("Split marker to use for merging the ouput"),
-      llvm::cl::init(kDefaultSplitMarker));
+  llvm::cl::opt<bool> splitInputFile(
+      "split-input-file",
+      llvm::cl::desc("Split the input file into pieces and process each "
+                     "chunk independently"),
+      llvm::cl::init(false));
   llvm::cl::opt<enum OutputType> outputType(
       "x", llvm::cl::init(OutputType::AST),
       llvm::cl::desc("The type of output desired"),
@@ -168,15 +157,6 @@ int main(int argc, char **argv) {
   llvm::cl::opt<bool> writeIfChanged(
       "write-if-changed",
       llvm::cl::desc("Only write to the output file if it changed"));
-
-  // `ResetCommandLineParser` at the above unregistered the "D" option
-  // of `llvm-tblgen`, which causes tblgen usage to fail due to
-  // "Unknnown command line argument '-D...`" when a macros name is
-  // present. The following is a workaround to re-register it again.
-  llvm::cl::list<std::string> macroNames(
-      "D",
-      llvm::cl::desc("Name of the macro to be defined -- ignored by mlir-pdll"),
-      llvm::cl::value_desc("macro name"), llvm::cl::Prefix);
 
   llvm::InitLLVM y(argc, argv);
   llvm::cl::ParseCommandLineOptions(argc, argv, "PDLL Frontend");
@@ -203,17 +183,11 @@ int main(int argc, char **argv) {
   llvm::raw_string_ostream outputStrOS(outputStr);
   auto processFn = [&](std::unique_ptr<llvm::MemoryBuffer> chunkBuffer,
                        raw_ostream &os) {
-    // Split does not guarantee null-termination. Make a copy of the buffer to
-    // ensure null-termination.
-    if (!chunkBuffer->getBuffer().ends_with('\0')) {
-      chunkBuffer = llvm::MemoryBuffer::getMemBufferCopy(
-          chunkBuffer->getBuffer(), chunkBuffer->getBufferIdentifier());
-    }
     return processBuffer(os, std::move(chunkBuffer), outputType, includeDirs,
                          dumpODS, includedFiles);
   };
   if (failed(splitAndProcessBuffer(std::move(inputFile), processFn, outputStrOS,
-                                   inputSplitMarker, outputSplitMarker)))
+                                   splitInputFile)))
     return 1;
 
   // Write the output.
@@ -224,7 +198,7 @@ int main(int argc, char **argv) {
     // any.
     if (auto existingOrErr =
             llvm::MemoryBuffer::getFile(outputFilename, /*IsText=*/true))
-      if (std::move(existingOrErr.get())->getBuffer() == outputStr)
+      if (std::move(existingOrErr.get())->getBuffer() == outputStrOS.str())
         shouldWriteOutput = false;
   }
 
@@ -236,7 +210,7 @@ int main(int argc, char **argv) {
       llvm::errs() << errorMessage << "\n";
       return 1;
     }
-    outputFile->os() << outputStr;
+    outputFile->os() << outputStrOS.str();
     outputFile->keep();
   }
 

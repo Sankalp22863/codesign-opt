@@ -11,15 +11,18 @@ set(LLDB_LIBEDIT_LIBS)
 
 if (LLDB_ENABLE_CURSES)
   list(APPEND LLDB_CURSES_LIBS ${PANEL_LIBRARIES} ${CURSES_LIBRARIES})
+  if(LLVM_ENABLE_TERMINFO)
+    list(APPEND LLDB_CURSES_LIBS ${Terminfo_LIBRARIES})
+  endif()
   if (LLVM_BUILD_STATIC)
     list(APPEND LLDB_CURSES_LIBS gpm)
   endif()
 endif()
 
-add_lldb_library(lldbCore NO_PLUGIN_DEPENDENCIES
+# TODO: Add property `NO_PLUGIN_DEPENDENCIES` to lldbCore
+add_lldb_library(lldbCore
   Address.cpp
   AddressRange.cpp
-  AddressRangeListImpl.cpp
   AddressResolver.cpp
   AddressResolverFileLine.cpp
   Communication.cpp
@@ -27,7 +30,6 @@ add_lldb_library(lldbCore NO_PLUGIN_DEPENDENCIES
   Debugger.cpp
   DebuggerEvents.cpp
   Declaration.cpp
-  DemangledNameInfo.cpp
   Disassembler.cpp
   DumpDataExtractor.cpp
   DumpRegisterValue.cpp
@@ -46,28 +48,34 @@ add_lldb_library(lldbCore NO_PLUGIN_DEPENDENCIES
   Opcode.cpp
   PluginManager.cpp
   Progress.cpp
-  ProtocolServer.cpp
-  Statusline.cpp
   RichManglingContext.cpp
   SearchFilter.cpp
   Section.cpp
   SourceLocationSpec.cpp
   SourceManager.cpp
   StreamAsynchronousIO.cpp
-  Telemetry.cpp
   ThreadedCommunication.cpp
   UserSettingsController.cpp
   Value.cpp
+  ValueObject.cpp
+  ValueObjectCast.cpp
+  ValueObjectChild.cpp
+  ValueObjectConstResult.cpp
+  ValueObjectConstResultCast.cpp
+  ValueObjectConstResultChild.cpp
+  ValueObjectConstResultImpl.cpp
+  ValueObjectDynamicValue.cpp
+  ValueObjectList.cpp
+  ValueObjectMemory.cpp
+  ValueObjectRegister.cpp
+  ValueObjectSyntheticFilter.cpp
+  ValueObjectUpdater.cpp
+  ValueObjectVariable.cpp
+  ValueObjectVTable.cpp
 
-  ADDITIONAL_HEADER_DIRS
-    ${LLDB_INCLUDE_DIR}/lldb/Core
   DEPENDS
     clang-tablegen-targets
-  LINK_COMPONENTS
-    Support
-    Demangle
-    TargetParser
-    Telemetry
+
   LINK_LIBS
     lldbBreakpoint
     lldbDataFormatters
@@ -77,12 +85,17 @@ add_lldb_library(lldbCore NO_PLUGIN_DEPENDENCIES
     lldbSymbol
     lldbTarget
     lldbUtility
-    lldbValueObject
-    lldbVersion
+    lldbPluginCPlusPlusLanguage
+    lldbPluginObjCLanguage
     ${LLDB_CURSES_LIBS}
 
   CLANG_LIBS
     clangDriver
+
+  LINK_COMPONENTS
+    Support
+    Demangle
+    TargetParser
   )
 
 add_dependencies(lldbCore

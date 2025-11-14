@@ -22,10 +22,6 @@
 #include "lldb/Utility/Status.h"
 #include "lldb/Utility/StructuredData.h"
 
-namespace llvm {
-class MemoryBuffer;
-}
-
 namespace lldb_private {
 class TypeSummaryOptions {
 public:
@@ -48,7 +44,7 @@ private:
 
 class TypeSummaryImpl {
 public:
-  enum class Kind { eSummaryString, eScript, eBytecode, eCallback, eInternal };
+  enum class Kind { eSummaryString, eScript, eCallback, eInternal };
 
   virtual ~TypeSummaryImpl() = default;
 
@@ -253,10 +249,6 @@ public:
 
   void SetOptions(uint32_t value) { m_flags.SetValue(value); }
 
-  uint32_t GetPtrMatchDepth() { return m_ptr_match_depth; }
-
-  void SetPtrMatchDepth(uint32_t value) { m_ptr_match_depth = value; }
-
   // we are using a ValueObject* instead of a ValueObjectSP because we do not
   // need to hold on to this for extended periods of time and we trust the
   // ValueObject to stay around for as long as it is required for us to
@@ -266,14 +258,6 @@ public:
 
   virtual std::string GetDescription() = 0;
 
-  /// Get the name of the Type Summary Provider, either a C++ class, a summary
-  /// string, or a script function name.
-  virtual std::string GetName() = 0;
-
-  /// Get the name of the kind of Summary Provider, either c++, summary string,
-  /// script or python.
-  virtual std::string GetSummaryKindName();
-
   uint32_t &GetRevision() { return m_my_revision; }
 
   typedef std::shared_ptr<TypeSummaryImpl> SharedPointer;
@@ -282,12 +266,10 @@ protected:
   uint32_t m_my_revision = 0;
   Flags m_flags;
 
-  TypeSummaryImpl(Kind kind, const TypeSummaryImpl::Flags &flags,
-                  uint32_t ptr_match_depth = 1);
+  TypeSummaryImpl(Kind kind, const TypeSummaryImpl::Flags &flags);
 
 private:
   Kind m_kind;
-  uint32_t m_ptr_match_depth = 1;
   TypeSummaryImpl(const TypeSummaryImpl &) = delete;
   const TypeSummaryImpl &operator=(const TypeSummaryImpl &) = delete;
 };
@@ -298,8 +280,7 @@ struct StringSummaryFormat : public TypeSummaryImpl {
   FormatEntity::Entry m_format;
   Status m_error;
 
-  StringSummaryFormat(const TypeSummaryImpl::Flags &flags, const char *f,
-                      uint32_t ptr_match_depth = 1);
+  StringSummaryFormat(const TypeSummaryImpl::Flags &flags, const char *f);
 
   ~StringSummaryFormat() override = default;
 
@@ -311,8 +292,6 @@ struct StringSummaryFormat : public TypeSummaryImpl {
                     const TypeSummaryOptions &options) override;
 
   std::string GetDescription() override;
-
-  std::string GetName() override;
 
   static bool classof(const TypeSummaryImpl *S) {
     return S->GetKind() == Kind::eSummaryString;
@@ -335,8 +314,7 @@ struct CXXFunctionSummaryFormat : public TypeSummaryImpl {
   std::string m_description;
 
   CXXFunctionSummaryFormat(const TypeSummaryImpl::Flags &flags, Callback impl,
-                           const char *description,
-                           uint32_t ptr_match_depth = 1);
+                           const char *description);
 
   ~CXXFunctionSummaryFormat() override = default;
 
@@ -362,8 +340,6 @@ struct CXXFunctionSummaryFormat : public TypeSummaryImpl {
     return S->GetKind() == Kind::eCallback;
   }
 
-  std::string GetName() override;
-
   typedef std::shared_ptr<CXXFunctionSummaryFormat> SharedPointer;
 
 private:
@@ -376,13 +352,11 @@ private:
 struct ScriptSummaryFormat : public TypeSummaryImpl {
   std::string m_function_name;
   std::string m_python_script;
-  std::string m_script_formatter_name;
   StructuredData::ObjectSP m_script_function_sp;
 
   ScriptSummaryFormat(const TypeSummaryImpl::Flags &flags,
                       const char *function_name,
-                      const char *python_script = nullptr,
-                      uint32_t ptr_match_depth = 1);
+                      const char *python_script = nullptr);
 
   ~ScriptSummaryFormat() override = default;
 
@@ -410,8 +384,6 @@ struct ScriptSummaryFormat : public TypeSummaryImpl {
 
   std::string GetDescription() override;
 
-  std::string GetName() override;
-
   static bool classof(const TypeSummaryImpl *S) {
     return S->GetKind() == Kind::eScript;
   }
@@ -422,23 +394,6 @@ private:
   ScriptSummaryFormat(const ScriptSummaryFormat &) = delete;
   const ScriptSummaryFormat &operator=(const ScriptSummaryFormat &) = delete;
 };
-
-/// A summary formatter that is defined in LLDB formmater bytecode.
-class BytecodeSummaryFormat : public TypeSummaryImpl {
-  std::unique_ptr<llvm::MemoryBuffer> m_bytecode;
-
-public:
-  BytecodeSummaryFormat(const TypeSummaryImpl::Flags &flags,
-                        std::unique_ptr<llvm::MemoryBuffer> bytecode);
-  bool FormatObject(ValueObject *valobj, std::string &dest,
-                    const TypeSummaryOptions &options) override;
-  std::string GetDescription() override;
-  std::string GetName() override;
-  static bool classof(const TypeSummaryImpl *S) {
-    return S->GetKind() == Kind::eBytecode;
-  }
-};
-
 } // namespace lldb_private
 
 #endif // LLDB_DATAFORMATTERS_TYPESUMMARY_H

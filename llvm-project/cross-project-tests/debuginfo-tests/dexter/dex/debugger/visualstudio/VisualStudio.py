@@ -7,9 +7,9 @@
 """Interface for communicating with the Visual Studio debugger via DTE."""
 
 import abc
+import imp
 import os
 import sys
-from enum import IntEnum
 from pathlib import PurePath, Path
 from collections import defaultdict, namedtuple
 
@@ -18,16 +18,15 @@ from dex.debugger.DebuggerBase import DebuggerBase, watch_is_active
 from dex.dextIR import FrameIR, LocIR, StepIR, StopReason, ValueIR
 from dex.dextIR import StackFrame, SourceLocation, ProgramState
 from dex.utils.Exceptions import Error, LoadDebuggerException
-from dex.utils.Imports import load_module
 from dex.utils.ReturnCode import ReturnCode
+
 
 def _load_com_module():
     try:
-        return load_module(
-            "ComInterface",
-            os.path.join(os.path.dirname(__file__), "windows"),
-            "ComInterface.py",
+        module_info = imp.find_module(
+            "ComInterface", [os.path.join(os.path.dirname(__file__), "windows")]
         )
+        return imp.load_module("ComInterface", *module_info)
     except ImportError as e:
         raise LoadDebuggerException(e, sys.exc_info())
 
@@ -37,26 +36,6 @@ def _load_com_module():
 # properties we set through dexter currently.
 VSBreakpoint = namedtuple("VSBreakpoint", "path, line, col, cond")
 
-
-# Visual Studio events.
-# https://learn.microsoft.com/en-us/dotnet/api/envdte.dbgeventreason?view=visualstudiosdk-2022
-class DbgEvent(IntEnum):
-    dbgEventReasonNone = 1
-    dbgEventReasonGo = 2
-    dbgEventReasonAttachProgram = 3
-    dbgEventReasonDetachProgram = 4
-    dbgEventReasonLaunchProgram = 5
-    dbgEventReasonEndProgram = 6
-    dbgEventReasonStopDebugging = 7
-    dbgEventReasonStep = 8
-    dbgEventReasonBreakpoint = 9
-    dbgEventReasonExceptionThrown = 10
-    dbgEventReasonExceptionNotHandled = 11
-    dbgEventReasonUserBreak = 12
-    dbgEventReasonContextSwitch = 13
-
-    first = dbgEventReasonNone
-    last = dbgEventReasonContextSwitch
 
 class VisualStudio(
     DebuggerBase, metaclass=abc.ABCMeta
@@ -256,7 +235,7 @@ class VisualStudio(
         for bp in self._debugger.Breakpoints:
             # We're looking at the user-set breakpoints so there should be no
             # Parent.
-            assert bp.Parent is None
+            assert bp.Parent == None
             this_vsbp = VSBreakpoint(
                 PurePath(bp.File), bp.FileLine, bp.FileColumn, bp.Condition
             )
@@ -308,7 +287,7 @@ class VisualStudio(
         self.context.logger.note("Launching VS debugger...")
         self._fn_go(False)
 
-    def step_in(self):
+    def step(self):
         self._fn_step(False)
 
     def go(self) -> ReturnCode:
@@ -327,20 +306,6 @@ class VisualStudio(
                     idx, len(stack_frames)
                 )
             )
-
-    def _translate_stop_reason(self, reason):
-        if reason == DbgEvent.dbgEventReasonNone:
-            return None
-        if reason == DbgEvent.dbgEventReasonBreakpoint:
-            return StopReason.BREAKPOINT
-        if reason == DbgEvent.dbgEventReasonStep:
-            return StopReason.STEP
-        if reason == DbgEvent.dbgEventReasonEndProgram:
-            return StopReason.PROGRAM_EXIT
-        if reason == DbgEvent.dbgEventReasonExceptionNotHandled:
-            return StopReason.ERROR
-        assert reason <= DbgEvent.last and reason >= DbgEvent.first
-        return StopReason.OTHER
 
     def _get_step_info(self, watches, step_index):
         thread = self._debugger.CurrentThread
@@ -382,13 +347,16 @@ class VisualStudio(
             frames[0].loc = loc
             state_frames[0].location = SourceLocation(**self._location)
 
-        stop_reason = self._translate_stop_reason(self._debugger.LastBreakReason)
+        reason = StopReason.BREAKPOINT
+        if loc.path is None:  # pylint: disable=no-member
+            reason = StopReason.STEP
+
         program_state = ProgramState(frames=state_frames)
 
         return StepIR(
             step_index=step_index,
             frames=frames,
-            stop_reason=stop_reason,
+            stop_reason=reason,
             program_state=program_state,
         )
 

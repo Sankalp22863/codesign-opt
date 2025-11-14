@@ -6,7 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 // UNSUPPORTED: c++03, c++11, c++14, c++17
+// XFAIL: availability-synchronization_library-missing
 // XFAIL: !has-64-bit-atomics
+// UNSUPPORTED: !non-lockfree-atomics
 
 // void wait(T old, memory_order order = memory_order::seq_cst) const volatile noexcept;
 // void wait(T old, memory_order order = memory_order::seq_cst) const noexcept;
@@ -15,7 +17,6 @@
 #include <cassert>
 #include <concepts>
 #include <type_traits>
-#include <utility>
 #include <vector>
 
 #include "test_helper.h"
@@ -116,7 +117,7 @@ void test() {
 int main(int, char**) {
   test<float>();
   test<double>();
-  // TODO https://llvm.org/PR48634
+  // TODO https://github.com/llvm/llvm-project/issues/47978
   // test<long double>();
 
   return 0;

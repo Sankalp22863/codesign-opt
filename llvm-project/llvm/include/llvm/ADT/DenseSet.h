@@ -14,10 +14,8 @@
 #ifndef LLVM_ADT_DENSESET_H
 #define LLVM_ADT_DENSESET_H
 
-#include "llvm/ADT/ADL.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseMapInfo.h"
-#include "llvm/ADT/STLForwardCompat.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/type_traits.h"
 #include <cstddef>
@@ -79,13 +77,9 @@ public:
     insert(Elems.begin(), Elems.end());
   }
 
-  template <typename Range>
-  DenseSetImpl(llvm::from_range_t, Range &&R)
-      : DenseSetImpl(adl_begin(R), adl_end(R)) {}
-
-  [[nodiscard]] bool empty() const { return TheMap.empty(); }
-  [[nodiscard]] size_type size() const { return TheMap.size(); }
-  [[nodiscard]] size_t getMemorySize() const { return TheMap.getMemorySize(); }
+  bool empty() const { return TheMap.empty(); }
+  size_type size() const { return TheMap.size(); }
+  size_t getMemorySize() const { return TheMap.getMemorySize(); }
 
   /// Grow the DenseSet so that it has at least Size buckets. Will not shrink
   /// the Size of the set.
@@ -95,90 +89,101 @@ public:
   /// before resizing again.
   void reserve(size_t Size) { TheMap.reserve(Size); }
 
-  void clear() { TheMap.clear(); }
-
-  bool erase(const ValueT &V) { return TheMap.erase(V); }
-
-  void swap(DenseSetImpl &RHS) { TheMap.swap(RHS.TheMap); }
-
-private:
-  template <bool IsConst> class DenseSetIterator {
-    friend class DenseSetImpl;
-
-    using MapIteratorT =
-        std::conditional_t<IsConst, typename MapTy::const_iterator,
-                           typename MapTy::iterator>;
-
-    MapIteratorT I;
-
-  public:
-    using difference_type = typename MapIteratorT::difference_type;
-    using iterator_category = std::forward_iterator_tag;
-    using value_type = ValueT;
-    using pointer =
-        std::conditional_t<IsConst, const value_type *, value_type *>;
-    using reference =
-        std::conditional_t<IsConst, const value_type &, value_type &>;
-
-    DenseSetIterator() = default;
-    DenseSetIterator(MapIteratorT I) : I(I) {}
-
-    // Allow conversion from iterator to const_iterator.
-    template <bool C = IsConst, typename = std::enable_if_t<C>>
-    DenseSetIterator(const DenseSetIterator<false> &Other) : I(Other.I) {}
-
-    reference operator*() const { return I->getFirst(); }
-    pointer operator->() const { return &I->getFirst(); }
-
-    DenseSetIterator &operator++() {
-      ++I;
-      return *this;
-    }
-    DenseSetIterator operator++(int) {
-      auto T = *this;
-      ++I;
-      return T;
-    }
-
-    friend bool operator==(const DenseSetIterator &LHS,
-                           const DenseSetIterator &RHS) {
-      return LHS.I == RHS.I;
-    }
-    friend bool operator!=(const DenseSetIterator &LHS,
-                           const DenseSetIterator &RHS) {
-      return LHS.I != RHS.I;
-    }
-  };
-
-public:
-  using iterator = DenseSetIterator<false>;
-  using const_iterator = DenseSetIterator<true>;
-
-  [[nodiscard]] iterator begin() { return iterator(TheMap.begin()); }
-  [[nodiscard]] iterator end() { return iterator(TheMap.end()); }
-
-  [[nodiscard]] const_iterator begin() const {
-    return const_iterator(TheMap.begin());
-  }
-  [[nodiscard]] const_iterator end() const {
-    return const_iterator(TheMap.end());
-  }
-
-  [[nodiscard]] iterator find(const_arg_type_t<ValueT> V) {
-    return iterator(TheMap.find(V));
-  }
-  [[nodiscard]] const_iterator find(const_arg_type_t<ValueT> V) const {
-    return const_iterator(TheMap.find(V));
-  }
-
-  /// Check if the set contains the given element.
-  [[nodiscard]] bool contains(const_arg_type_t<ValueT> V) const {
-    return TheMap.contains(V);
+  void clear() {
+    TheMap.clear();
   }
 
   /// Return 1 if the specified key is in the set, 0 otherwise.
-  [[nodiscard]] size_type count(const_arg_type_t<ValueT> V) const {
+  size_type count(const_arg_type_t<ValueT> V) const {
     return TheMap.count(V);
+  }
+
+  bool erase(const ValueT &V) {
+    return TheMap.erase(V);
+  }
+
+  void swap(DenseSetImpl &RHS) { TheMap.swap(RHS.TheMap); }
+
+  // Iterators.
+
+  class ConstIterator;
+
+  class Iterator {
+    typename MapTy::iterator I;
+    friend class DenseSetImpl;
+    friend class ConstIterator;
+
+  public:
+    using difference_type = typename MapTy::iterator::difference_type;
+    using value_type = ValueT;
+    using pointer = value_type *;
+    using reference = value_type &;
+    using iterator_category = std::forward_iterator_tag;
+
+    Iterator() = default;
+    Iterator(const typename MapTy::iterator &i) : I(i) {}
+
+    ValueT &operator*() { return I->getFirst(); }
+    const ValueT &operator*() const { return I->getFirst(); }
+    ValueT *operator->() { return &I->getFirst(); }
+    const ValueT *operator->() const { return &I->getFirst(); }
+
+    Iterator& operator++() { ++I; return *this; }
+    Iterator operator++(int) { auto T = *this; ++I; return T; }
+    friend bool operator==(const Iterator &X, const Iterator &Y) {
+      return X.I == Y.I;
+    }
+    friend bool operator!=(const Iterator &X, const Iterator &Y) {
+      return X.I != Y.I;
+    }
+  };
+
+  class ConstIterator {
+    typename MapTy::const_iterator I;
+    friend class DenseSetImpl;
+    friend class Iterator;
+
+  public:
+    using difference_type = typename MapTy::const_iterator::difference_type;
+    using value_type = ValueT;
+    using pointer = const value_type *;
+    using reference = const value_type &;
+    using iterator_category = std::forward_iterator_tag;
+
+    ConstIterator() = default;
+    ConstIterator(const Iterator &B) : I(B.I) {}
+    ConstIterator(const typename MapTy::const_iterator &i) : I(i) {}
+
+    const ValueT &operator*() const { return I->getFirst(); }
+    const ValueT *operator->() const { return &I->getFirst(); }
+
+    ConstIterator& operator++() { ++I; return *this; }
+    ConstIterator operator++(int) { auto T = *this; ++I; return T; }
+    friend bool operator==(const ConstIterator &X, const ConstIterator &Y) {
+      return X.I == Y.I;
+    }
+    friend bool operator!=(const ConstIterator &X, const ConstIterator &Y) {
+      return X.I != Y.I;
+    }
+  };
+
+  using iterator = Iterator;
+  using const_iterator = ConstIterator;
+
+  iterator begin() { return Iterator(TheMap.begin()); }
+  iterator end() { return Iterator(TheMap.end()); }
+
+  const_iterator begin() const { return ConstIterator(TheMap.begin()); }
+  const_iterator end() const { return ConstIterator(TheMap.end()); }
+
+  iterator find(const_arg_type_t<ValueT> V) { return Iterator(TheMap.find(V)); }
+  const_iterator find(const_arg_type_t<ValueT> V) const {
+    return ConstIterator(TheMap.find(V));
+  }
+
+  /// Check if the set contains the given element.
+  bool contains(const_arg_type_t<ValueT> V) const {
+    return TheMap.find(V) != TheMap.end();
   }
 
   /// Alternative version of find() which allows a different, and possibly less
@@ -187,24 +192,25 @@ public:
   /// getHashValue(LookupKeyT) and isEqual(LookupKeyT, KeyT) for each key type
   /// used.
   template <class LookupKeyT>
-  [[nodiscard]] iterator find_as(const LookupKeyT &Val) {
-    return iterator(TheMap.find_as(Val));
+  iterator find_as(const LookupKeyT &Val) {
+    return Iterator(TheMap.find_as(Val));
   }
   template <class LookupKeyT>
-  [[nodiscard]]
   const_iterator find_as(const LookupKeyT &Val) const {
-    return const_iterator(TheMap.find_as(Val));
+    return ConstIterator(TheMap.find_as(Val));
   }
 
-  void erase(iterator I) { return TheMap.erase(I.I); }
-  void erase(const_iterator CI) { return TheMap.erase(CI.I); }
+  void erase(Iterator I) { return TheMap.erase(I.I); }
+  void erase(ConstIterator CI) { return TheMap.erase(CI.I); }
 
   std::pair<iterator, bool> insert(const ValueT &V) {
-    return TheMap.try_emplace(V);
+    detail::DenseSetEmpty Empty;
+    return TheMap.try_emplace(V, Empty);
   }
 
   std::pair<iterator, bool> insert(ValueT &&V) {
-    return TheMap.try_emplace(std::move(V));
+    detail::DenseSetEmpty Empty;
+    return TheMap.try_emplace(std::move(V), Empty);
   }
 
   /// Alternative version of insert that uses a different (and possibly less
@@ -220,13 +226,10 @@ public:
   }
 
   // Range insertion of values.
-  template <typename InputIt> void insert(InputIt I, InputIt E) {
+  template<typename InputIt>
+  void insert(InputIt I, InputIt E) {
     for (; I != E; ++I)
       insert(*I);
-  }
-
-  template <typename Range> void insert_range(Range &&R) {
-    insert(adl_begin(R), adl_end(R));
   }
 };
 
@@ -237,9 +240,8 @@ public:
 /// Equivalent to N calls to RHS.count. Amortized complexity is linear, worst
 /// case is O(N^2) (if every hash collides).
 template <typename ValueT, typename MapTy, typename ValueInfoT>
-[[nodiscard]] bool
-operator==(const DenseSetImpl<ValueT, MapTy, ValueInfoT> &LHS,
-           const DenseSetImpl<ValueT, MapTy, ValueInfoT> &RHS) {
+bool operator==(const DenseSetImpl<ValueT, MapTy, ValueInfoT> &LHS,
+                const DenseSetImpl<ValueT, MapTy, ValueInfoT> &RHS) {
   if (LHS.size() != RHS.size())
     return false;
 
@@ -254,30 +256,24 @@ operator==(const DenseSetImpl<ValueT, MapTy, ValueInfoT> &LHS,
 ///
 /// Equivalent to !(LHS == RHS). See operator== for performance notes.
 template <typename ValueT, typename MapTy, typename ValueInfoT>
-[[nodiscard]] bool
-operator!=(const DenseSetImpl<ValueT, MapTy, ValueInfoT> &LHS,
-           const DenseSetImpl<ValueT, MapTy, ValueInfoT> &RHS) {
+bool operator!=(const DenseSetImpl<ValueT, MapTy, ValueInfoT> &LHS,
+                const DenseSetImpl<ValueT, MapTy, ValueInfoT> &RHS) {
   return !(LHS == RHS);
 }
-
-template <typename ValueT, typename ValueInfoT>
-using DenseSet = DenseSetImpl<
-    ValueT, DenseMap<ValueT, DenseSetEmpty, ValueInfoT, DenseSetPair<ValueT>>,
-    ValueInfoT>;
-
-template <typename ValueT, unsigned InlineBuckets, typename ValueInfoT>
-using SmallDenseSet =
-    DenseSetImpl<ValueT,
-                 SmallDenseMap<ValueT, DenseSetEmpty, InlineBuckets, ValueInfoT,
-                               DenseSetPair<ValueT>>,
-                 ValueInfoT>;
 
 } // end namespace detail
 
 /// Implements a dense probed hash-table based set.
 template <typename ValueT, typename ValueInfoT = DenseMapInfo<ValueT>>
-class DenseSet : public detail::DenseSet<ValueT, ValueInfoT> {
-  using BaseT = detail::DenseSet<ValueT, ValueInfoT>;
+class DenseSet : public detail::DenseSetImpl<
+                     ValueT, DenseMap<ValueT, detail::DenseSetEmpty, ValueInfoT,
+                                      detail::DenseSetPair<ValueT>>,
+                     ValueInfoT> {
+  using BaseT =
+      detail::DenseSetImpl<ValueT,
+                           DenseMap<ValueT, detail::DenseSetEmpty, ValueInfoT,
+                                    detail::DenseSetPair<ValueT>>,
+                           ValueInfoT>;
 
 public:
   using BaseT::BaseT;
@@ -288,8 +284,14 @@ public:
 template <typename ValueT, unsigned InlineBuckets = 4,
           typename ValueInfoT = DenseMapInfo<ValueT>>
 class SmallDenseSet
-    : public detail::SmallDenseSet<ValueT, InlineBuckets, ValueInfoT> {
-  using BaseT = detail::SmallDenseSet<ValueT, InlineBuckets, ValueInfoT>;
+    : public detail::DenseSetImpl<
+          ValueT, SmallDenseMap<ValueT, detail::DenseSetEmpty, InlineBuckets,
+                                ValueInfoT, detail::DenseSetPair<ValueT>>,
+          ValueInfoT> {
+  using BaseT = detail::DenseSetImpl<
+      ValueT, SmallDenseMap<ValueT, detail::DenseSetEmpty, InlineBuckets,
+                            ValueInfoT, detail::DenseSetPair<ValueT>>,
+      ValueInfoT>;
 
 public:
   using BaseT::BaseT;

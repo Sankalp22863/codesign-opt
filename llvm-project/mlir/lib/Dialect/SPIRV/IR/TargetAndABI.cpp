@@ -8,6 +8,7 @@
 
 #include "mlir/Dialect/SPIRV/IR/TargetAndABI.h"
 #include "mlir/Dialect/SPIRV/IR/SPIRVEnums.h"
+#include "mlir/Dialect/SPIRV/IR/SPIRVTypes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
@@ -22,17 +23,20 @@ using namespace mlir;
 
 spirv::TargetEnv::TargetEnv(spirv::TargetEnvAttr targetAttr)
     : targetAttr(targetAttr) {
-  givenExtensions.insert_range(targetAttr.getExtensions());
+  for (spirv::Extension ext : targetAttr.getExtensions())
+    givenExtensions.insert(ext);
 
   // Add extensions implied by the current version.
-  givenExtensions.insert_range(
-      spirv::getImpliedExtensions(targetAttr.getVersion()));
+  for (spirv::Extension ext :
+       spirv::getImpliedExtensions(targetAttr.getVersion()))
+    givenExtensions.insert(ext);
 
   for (spirv::Capability cap : targetAttr.getCapabilities()) {
     givenCapabilities.insert(cap);
 
     // Add capabilities implied by the current capability.
-    givenCapabilities.insert_range(spirv::getRecursiveImpliedCapabilities(cap));
+    for (spirv::Capability c : spirv::getRecursiveImpliedCapabilities(cap))
+      givenCapabilities.insert(c);
   }
 }
 
@@ -116,16 +120,17 @@ bool spirv::needsInterfaceVarABIAttrs(spirv::TargetEnvAttr targetAttr) {
 
 StringRef spirv::getEntryPointABIAttrName() { return "spirv.entry_point_abi"; }
 
-spirv::EntryPointABIAttr spirv::getEntryPointABIAttr(
-    MLIRContext *context, ArrayRef<int32_t> workgroupSize,
-    std::optional<int> subgroupSize, std::optional<int> targetWidth) {
+spirv::EntryPointABIAttr
+spirv::getEntryPointABIAttr(MLIRContext *context,
+                            ArrayRef<int32_t> workgroupSize,
+                            std::optional<int> subgroupSize) {
   DenseI32ArrayAttr workgroupSizeAttr;
   if (!workgroupSize.empty()) {
     assert(workgroupSize.size() == 3);
     workgroupSizeAttr = DenseI32ArrayAttr::get(context, workgroupSize);
   }
-  return spirv::EntryPointABIAttr::get(context, workgroupSizeAttr, subgroupSize,
-                                       targetWidth);
+  return spirv::EntryPointABIAttr::get(context, workgroupSizeAttr,
+                                       subgroupSize);
 }
 
 spirv::EntryPointABIAttr spirv::lookupEntryPointABI(Operation *op) {

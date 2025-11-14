@@ -17,16 +17,6 @@ using namespace llvm;
 
 #define DEBUG_TYPE "systemz-selectiondag-info"
 
-bool SystemZSelectionDAGInfo::isTargetMemoryOpcode(unsigned Opcode) const {
-  return Opcode >= SystemZISD::FIRST_MEMORY_OPCODE &&
-         Opcode <= SystemZISD::LAST_MEMORY_OPCODE;
-}
-
-bool SystemZSelectionDAGInfo::isTargetStrictFPOpcode(unsigned Opcode) const {
-  return Opcode >= SystemZISD::FIRST_STRICTFP_OPCODE &&
-         Opcode <= SystemZISD::LAST_STRICTFP_OPCODE;
-}
-
 static unsigned getMemMemLenAdj(unsigned Op) {
   return Op == SystemZISD::MEMSET_MVC ? 2 : 1;
 }
@@ -63,7 +53,7 @@ static SDValue emitMemMemReg(SelectionDAG &DAG, const SDLoc &DL, unsigned Op,
   int64_t Adj = getMemMemLenAdj(Op);
   SDValue LenAdj = DAG.getNode(ISD::ADD, DL, MVT::i64,
                                DAG.getZExtOrTrunc(Size, DL, MVT::i64),
-                               DAG.getSignedConstant(0 - Adj, DL, MVT::i64));
+                               DAG.getConstant(0 - Adj, DL, MVT::i64));
   return createMemMemNode(DAG, DL, Op, Chain, Dst, Src, LenAdj, Byte);
 }
 
@@ -181,7 +171,8 @@ static SDValue addIPMSequence(const SDLoc &DL, SDValue CCReg,
 
 std::pair<SDValue, SDValue> SystemZSelectionDAGInfo::EmitTargetCodeForMemcmp(
     SelectionDAG &DAG, const SDLoc &DL, SDValue Chain, SDValue Src1,
-    SDValue Src2, SDValue Size, const CallInst *CI) const {
+    SDValue Src2, SDValue Size, MachinePointerInfo Op1PtrInfo,
+    MachinePointerInfo Op2PtrInfo) const {
   SDValue CCReg;
   // Swap operands to invert CC == 1 vs. CC == 2 cases.
   if (auto *CSize = dyn_cast<ConstantSDNode>(Size)) {
@@ -263,7 +254,7 @@ static std::pair<SDValue, SDValue> getBoundedStrlen(SelectionDAG &DAG,
 
 std::pair<SDValue, SDValue> SystemZSelectionDAGInfo::EmitTargetCodeForStrlen(
     SelectionDAG &DAG, const SDLoc &DL, SDValue Chain, SDValue Src,
-    const CallInst *CI) const {
+    MachinePointerInfo SrcPtrInfo) const {
   EVT PtrVT = Src.getValueType();
   return getBoundedStrlen(DAG, DL, Chain, Src, DAG.getConstant(0, DL, PtrVT));
 }

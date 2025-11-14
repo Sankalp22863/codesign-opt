@@ -41,13 +41,9 @@ getMachOFatMemoryBuffers(StringRef Filename, MemoryBuffer &Mem,
   return Buffers;
 }
 
-BinaryHolder::BinaryHolder(IntrusiveRefCntPtr<vfs::FileSystem> VFS,
-                           BinaryHolder::Options Opts)
-    : VFS(VFS), Opts(Opts) {}
-
 Error BinaryHolder::ArchiveEntry::load(IntrusiveRefCntPtr<vfs::FileSystem> VFS,
                                        StringRef Filename,
-                                       TimestampTy Timestamp, Options Opts) {
+                                       TimestampTy Timestamp, bool Verbose) {
   StringRef ArchiveFilename = getArchiveAndObjectName(Filename).first;
 
   // Try to load archive and force it to be memory mapped.
@@ -59,7 +55,7 @@ Error BinaryHolder::ArchiveEntry::load(IntrusiveRefCntPtr<vfs::FileSystem> VFS,
 
   MemBuffer = std::move(*ErrOrBuff);
 
-  if (Opts.Verbose)
+  if (Verbose)
     WithColor::note() << "loaded archive '" << ArchiveFilename << "'\n";
 
   // Load one or more archive buffers, depending on whether we're dealing with
@@ -92,7 +88,7 @@ Error BinaryHolder::ArchiveEntry::load(IntrusiveRefCntPtr<vfs::FileSystem> VFS,
 
 Error BinaryHolder::ObjectEntry::load(IntrusiveRefCntPtr<vfs::FileSystem> VFS,
                                       StringRef Filename, TimestampTy Timestamp,
-                                      Options Opts) {
+                                      bool Verbose) {
   // Try to load regular binary and force it to be memory mapped.
   auto ErrOrBuff = (Filename == "-")
                        ? MemoryBuffer::getSTDIN()
@@ -100,7 +96,7 @@ Error BinaryHolder::ObjectEntry::load(IntrusiveRefCntPtr<vfs::FileSystem> VFS,
   if (auto Err = ErrOrBuff.getError())
     return errorCodeToError(Err);
 
-  if (Opts.Warn && Filename != "-" && Timestamp != sys::TimePoint<>()) {
+  if (Filename != "-" && Timestamp != sys::TimePoint<>()) {
     llvm::ErrorOr<vfs::Status> Stat = VFS->status(Filename);
     if (!Stat)
       return errorCodeToError(Stat.getError());
@@ -114,7 +110,7 @@ Error BinaryHolder::ObjectEntry::load(IntrusiveRefCntPtr<vfs::FileSystem> VFS,
 
   MemBuffer = std::move(*ErrOrBuff);
 
-  if (Opts.Verbose)
+  if (Verbose)
     WithColor::note() << "loaded object.\n";
 
   // Load one or more object buffers, depending on whether we're dealing with a
@@ -168,7 +164,7 @@ BinaryHolder::ObjectEntry::getObject(const Triple &T) const {
 Expected<const BinaryHolder::ObjectEntry &>
 BinaryHolder::ArchiveEntry::getObjectEntry(StringRef Filename,
                                            TimestampTy Timestamp,
-                                           Options Opts) {
+                                           bool Verbose) {
   StringRef ArchiveFilename;
   StringRef ObjectFilename;
   std::tie(ArchiveFilename, ObjectFilename) = getArchiveAndObjectName(Filename);
@@ -176,8 +172,8 @@ BinaryHolder::ArchiveEntry::getObjectEntry(StringRef Filename,
 
   // Try the cache first.
   std::lock_guard<std::mutex> Lock(MemberCacheMutex);
-  if (auto It = MemberCache.find(Key); It != MemberCache.end())
-    return *It->second;
+  if (MemberCache.count(Key))
+    return *MemberCache[Key];
 
   // Create a new ObjectEntry, but don't add it to the cache yet. Loading of
   // the archive members might fail and we don't want to lock the whole archive
@@ -196,7 +192,7 @@ BinaryHolder::ArchiveEntry::getObjectEntry(StringRef Filename,
           if (Timestamp != sys::TimePoint<>() &&
               Timestamp != std::chrono::time_point_cast<std::chrono::seconds>(
                                ModTimeOrErr.get())) {
-            if (Opts.Verbose)
+            if (Verbose)
               WithColor::warning()
                   << *NameOrErr
                   << ": timestamp mismatch between archive member ("
@@ -205,7 +201,7 @@ BinaryHolder::ArchiveEntry::getObjectEntry(StringRef Filename,
             continue;
           }
 
-          if (Opts.Verbose)
+          if (Verbose)
             WithColor::note() << "found member in archive.\n";
 
           auto ErrOrMem = Child.getMemoryBufferRef();
@@ -228,12 +224,13 @@ BinaryHolder::ArchiveEntry::getObjectEntry(StringRef Filename,
   if (OE->Objects.empty())
     return errorCodeToError(errc::no_such_file_or_directory);
 
-  return *(MemberCache[Key] = std::move(OE));
+  MemberCache[Key] = std::move(OE);
+  return *MemberCache[Key];
 }
 
 Expected<const BinaryHolder::ObjectEntry &>
 BinaryHolder::getObjectEntry(StringRef Filename, TimestampTy Timestamp) {
-  if (Opts.Verbose)
+  if (Verbose)
     WithColor::note() << "trying to open '" << Filename << "'\n";
 
   // If this is an archive, we might have either the object or the archive
@@ -242,19 +239,19 @@ BinaryHolder::getObjectEntry(StringRef Filename, TimestampTy Timestamp) {
     StringRef ArchiveFilename = getArchiveAndObjectName(Filename).first;
     std::lock_guard<std::mutex> Lock(ArchiveCacheMutex);
     ArchiveRefCounter[ArchiveFilename]++;
-    if (auto It = ArchiveCache.find(ArchiveFilename);
-        It != ArchiveCache.end()) {
-      return It->second->getObjectEntry(Filename, Timestamp, Opts);
+    if (ArchiveCache.count(ArchiveFilename)) {
+      return ArchiveCache[ArchiveFilename]->getObjectEntry(Filename, Timestamp,
+                                                           Verbose);
     } else {
       auto AE = std::make_unique<ArchiveEntry>();
-      auto Err = AE->load(VFS, Filename, Timestamp, Opts);
+      auto Err = AE->load(VFS, Filename, Timestamp, Verbose);
       if (Err) {
         // Don't return the error here: maybe the file wasn't an archive.
         llvm::consumeError(std::move(Err));
       } else {
-        auto &Cache = ArchiveCache[ArchiveFilename];
-        Cache = std::move(AE);
-        return Cache->getObjectEntry(Filename, Timestamp, Opts);
+        ArchiveCache[ArchiveFilename] = std::move(AE);
+        return ArchiveCache[ArchiveFilename]->getObjectEntry(
+            Filename, Timestamp, Verbose);
       }
     }
   }
@@ -265,7 +262,7 @@ BinaryHolder::getObjectEntry(StringRef Filename, TimestampTy Timestamp) {
   ObjectRefCounter[Filename]++;
   if (!ObjectCache.count(Filename)) {
     auto OE = std::make_unique<ObjectEntry>();
-    auto Err = OE->load(VFS, Filename, Timestamp, Opts);
+    auto Err = OE->load(VFS, Filename, Timestamp, Verbose);
     if (Err)
       return std::move(Err);
     ObjectCache[Filename] = std::move(OE);
@@ -282,19 +279,21 @@ void BinaryHolder::clear() {
 }
 
 void BinaryHolder::eraseObjectEntry(StringRef Filename) {
-  if (Opts.Verbose)
+  if (Verbose)
     WithColor::note() << "erasing '" << Filename << "' from cache\n";
 
   if (isArchive(Filename)) {
     StringRef ArchiveFilename = getArchiveAndObjectName(Filename).first;
     std::lock_guard<std::mutex> Lock(ArchiveCacheMutex);
-    if (--ArchiveRefCounter[ArchiveFilename] == 0)
+    ArchiveRefCounter[ArchiveFilename]--;
+    if (ArchiveRefCounter[ArchiveFilename] == 0)
       ArchiveCache.erase(ArchiveFilename);
     return;
   }
 
   std::lock_guard<std::mutex> Lock(ObjectCacheMutex);
-  if (--ObjectRefCounter[Filename] == 0)
+  ObjectRefCounter[Filename]--;
+  if (ObjectRefCounter[Filename] == 0)
     ObjectCache.erase(Filename);
 }
 

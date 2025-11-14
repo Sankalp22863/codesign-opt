@@ -6,14 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "hdr/signal_macros.h"
 #include "memory_utils/memory_check_utils.h"
-#include "src/__support/macros/config.h"
 #include "src/string/memcmp.h"
 #include "test/UnitTest/Test.h"
 #include "test/UnitTest/TestLogger.h"
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
 TEST(LlvmLibcMemcmpTest, CmpZeroByte) {
   const char *lhs = "ab";
@@ -66,13 +64,4 @@ TEST(LlvmLibcMemcmpTest, SizeSweep) {
   }
 }
 
-#if defined(LIBC_ADD_NULL_CHECKS)
-
-TEST(LlvmLibcMemcmpTest, CrashOnNullPtr) {
-  ASSERT_DEATH([]() { LIBC_NAMESPACE::memcmp(nullptr, nullptr, 1); },
-               WITH_SIGNAL(-1));
-}
-
-#endif // defined(LIBC_ADD_NULL_CHECKS)
-
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

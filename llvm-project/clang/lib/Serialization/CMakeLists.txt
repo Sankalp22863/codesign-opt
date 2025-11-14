@@ -1,7 +1,6 @@
 set(LLVM_LINK_COMPONENTS
   BitReader
   BitstreamReader
-  Object
   Support
   TargetParser
   )
@@ -18,13 +17,10 @@ add_clang_library(clangSerialization
   GeneratePCH.cpp
   GlobalModuleIndex.cpp
   InMemoryModuleCache.cpp
-  ModuleCache.cpp
   ModuleFile.cpp
   ModuleFileExtension.cpp
   ModuleManager.cpp
   PCHContainerOperations.cpp
-  ObjectFilePCHContainerReader.cpp
-  TemplateArgumentHasher.cpp
 
   ADDITIONAL_HEADERS
   ASTCommon.h

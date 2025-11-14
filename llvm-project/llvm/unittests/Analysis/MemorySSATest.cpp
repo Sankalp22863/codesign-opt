@@ -18,7 +18,6 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
 #include "llvm/Support/SourceMgr.h"
 #include "gtest/gtest.h"
 
@@ -70,8 +69,7 @@ protected:
 
 public:
   MemorySSATest()
-      : M("MemorySSATest", C), B(C), DL(DLString), TLII(M.getTargetTriple()),
-        TLI(TLII), F(nullptr) {}
+      : M("MemorySSATest", C), B(C), DL(DLString), TLI(TLII), F(nullptr) {}
 };
 
 TEST_F(MemorySSATest, CreateALoad) {
@@ -316,7 +314,7 @@ TEST_F(MemorySSATest, MoveAStore) {
   MemorySSA &MSSA = *Analyses->MSSA;
   MemorySSAUpdater Updater(&MSSA);
   // Move the store
-  SideStore->moveBefore(Entry->getTerminator()->getIterator());
+  SideStore->moveBefore(Entry->getTerminator());
   MemoryAccess *EntryStoreAccess = MSSA.getMemoryAccess(EntryStore);
   MemoryAccess *SideStoreAccess = MSSA.getMemoryAccess(SideStore);
   MemoryAccess *NewStoreAccess = Updater.createMemoryAccessAfter(
@@ -352,7 +350,7 @@ TEST_F(MemorySSATest, MoveAStoreUpdater) {
   MemorySSAUpdater Updater(&MSSA);
 
   // Move the store
-  SideStore->moveBefore(Entry->getTerminator()->getIterator());
+  SideStore->moveBefore(Entry->getTerminator());
   auto *EntryStoreAccess = MSSA.getMemoryAccess(EntryStore);
   auto *SideStoreAccess = MSSA.getMemoryAccess(SideStore);
   auto *NewStoreAccess = Updater.createMemoryAccessAfter(
@@ -462,7 +460,7 @@ TEST_F(MemorySSATest, MoveAStoreAllAround) {
   EXPECT_EQ(MergePhi->getIncomingValue(0), EntryStoreAccess);
   EXPECT_EQ(MergePhi->getIncomingValue(1), SideStoreAccess);
   // Now move it before the load
-  SideStore->moveBefore(MergeLoad->getIterator());
+  SideStore->moveBefore(MergeLoad);
   Updater.moveBefore(SideStoreAccess, LoadAccess);
   EXPECT_EQ(MergePhi->getIncomingValue(0), EntryStoreAccess);
   EXPECT_EQ(MergePhi->getIncomingValue(1), EntryStoreAccess);
@@ -706,7 +704,7 @@ TEST_F(MemorySSATest, PartialWalkerCacheWithPhis) {
   BasicBlock *IfThen = BasicBlock::Create(C, "B", F);
   BasicBlock *IfEnd = BasicBlock::Create(C, "C", F);
 
-  B.CreateCondBr(PoisonValue::get(Type::getInt1Ty(C)), IfThen, IfEnd);
+  B.CreateCondBr(UndefValue::get(Type::getInt1Ty(C)), IfThen, IfEnd);
 
   B.SetInsertPoint(IfThen);
   Instruction *FirstStore = B.CreateStore(Zero, AllocA);
@@ -841,7 +839,7 @@ TEST_F(MemorySSATest, MoveAboveMemoryDef) {
   MemorySSAWalker &Walker = *Analyses->Walker;
 
   MemorySSAUpdater Updater(&MSSA);
-  StoreC->moveBefore(StoreB->getIterator());
+  StoreC->moveBefore(StoreB);
   Updater.moveBefore(cast<MemoryDef>(MSSA.getMemoryAccess(StoreC)),
                      cast<MemoryDef>(MSSA.getMemoryAccess(StoreB)));
 
@@ -875,6 +873,7 @@ TEST_F(MemorySSATest, Irreducible) {
   // }
   // use(x)
 
+  SmallVector<PHINode *, 8> Inserted;
   IRBuilder<> B(C);
   F = Function::Create(FunctionType::get(B.getVoidTy(), {B.getPtrTy()}, false),
                        GlobalValue::ExternalLinkage, "F", &M);
@@ -1086,17 +1085,16 @@ TEST_F(MemorySSATest, TestStoreMayAlias) {
 
 TEST_F(MemorySSATest, LifetimeMarkersAreClobbers) {
   // Example code:
-  // define void @a() {
-  //   %foo = alloca i32
-  //   %bar = getelementptr i8, ptr %foo, i64 1
-  //   %baz = getelementptr i8, ptr %foo, i64 2
-  //   store i8 0, ptr %foo
-  //   store i8 0, ptr %bar
-  //   call void @llvm.lifetime.end.p0(ptr %foo)
-  //   call void @llvm.lifetime.start.p0(ptr %foo)
-  //   store i8 0, ptr %foo
-  //   store i8 0, ptr %bar
-  //   call void @llvm.memset.p0i8(ptr %baz, i8 0, i64 1)
+  // define void @a(i8* %foo) {
+  //   %bar = getelementptr i8, i8* %foo, i64 1
+  //   %baz = getelementptr i8, i8* %foo, i64 2
+  //   store i8 0, i8* %foo
+  //   store i8 0, i8* %bar
+  //   call void @llvm.lifetime.end.p0i8(i64 3, i8* %foo)
+  //   call void @llvm.lifetime.start.p0i8(i64 3, i8* %foo)
+  //   store i8 0, i8* %foo
+  //   store i8 0, i8* %bar
+  //   call void @llvm.memset.p0i8(i8* %baz, i8 0, i64 1)
   //   ret void
   // }
   //
@@ -1105,14 +1103,14 @@ TEST_F(MemorySSATest, LifetimeMarkersAreClobbers) {
   // it.
 
   IRBuilder<> B(C);
-  F = Function::Create(FunctionType::get(B.getVoidTy(), {}, false),
+  F = Function::Create(FunctionType::get(B.getVoidTy(), {B.getPtrTy()}, false),
                        GlobalValue::ExternalLinkage, "F", &M);
 
   // Make blocks
   BasicBlock *Entry = BasicBlock::Create(C, "entry", F);
 
   B.SetInsertPoint(Entry);
-  Value *Foo = B.CreateAlloca(B.getInt32Ty());
+  Value *Foo = &*F->arg_begin();
 
   Value *Bar = B.CreatePtrAdd(Foo, B.getInt64(1), "bar");
   Value *Baz = B.CreatePtrAdd(Foo, B.getInt64(2), "baz");
@@ -1120,8 +1118,14 @@ TEST_F(MemorySSATest, LifetimeMarkersAreClobbers) {
   B.CreateStore(B.getInt8(0), Foo);
   B.CreateStore(B.getInt8(0), Bar);
 
-  B.CreateLifetimeEnd(Foo);
-  Instruction *LifetimeStart = B.CreateLifetimeStart(Foo);
+  auto GetLifetimeIntrinsic = [&](Intrinsic::ID ID) {
+    return Intrinsic::getDeclaration(&M, ID, {Foo->getType()});
+  };
+
+  B.CreateCall(GetLifetimeIntrinsic(Intrinsic::lifetime_end),
+               {B.getInt64(3), Foo});
+  Instruction *LifetimeStart = B.CreateCall(
+      GetLifetimeIntrinsic(Intrinsic::lifetime_start), {B.getInt64(3), Foo});
 
   Instruction *FooStore = B.CreateStore(B.getInt8(0), Foo);
   Instruction *BarStore = B.CreateStore(B.getInt8(0), Bar);
@@ -1573,7 +1577,7 @@ TEST_F(MemorySSATest, TestLoopInvariantEntryBlockPointer) {
   for (auto &BB : *F) {
     if (BB.getName() == "exit") {
       // Get the store instruction
-      auto *SI = &*BB.getFirstNonPHIIt();
+      auto *SI = BB.getFirstNonPHI();
       // Get the memory access and location
       MemoryAccess *MA = MSSA.getMemoryAccess(SI);
       MemoryLocation ML = MemoryLocation::get(SI);
@@ -1697,7 +1701,7 @@ TEST_F(MemorySSATest, TestVisitedBlocks) {
     // Move %v1 before the terminator of %header.i.check
     BasicBlock *BB = getBasicBlockByName(*F, "header.i.check");
     Instruction *LI = getInstructionByName(*F, "v1");
-    LI->moveBefore(BB->getTerminator()->getIterator());
+    LI->moveBefore(BB->getTerminator());
     if (MemoryUseOrDef *MUD = MSSA.getMemoryAccess(LI))
       Updater.moveToPlace(MUD, BB, MemorySSA::BeforeTerminator);
 
@@ -1720,7 +1724,7 @@ TEST_F(MemorySSATest, TestVisitedBlocks) {
     // Move %v2 before the terminator of %preheader.i
     BasicBlock *BB = getBasicBlockByName(*F, "preheader.i");
     Instruction *LI = getInstructionByName(*F, "v2");
-    LI->moveBefore(BB->getTerminator()->getIterator());
+    LI->moveBefore(BB->getTerminator());
     // Check that there is no assertion of "Incomplete phi during partial
     // rename"
     if (MemoryUseOrDef *MUD = MSSA.getMemoryAccess(LI))

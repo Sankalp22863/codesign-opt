@@ -18,7 +18,6 @@ class LiveIntervals;
 class MachineBlockFrequencyInfo;
 class MachineFunction;
 class MachineLoopInfo;
-class ProfileSummaryInfo;
 class VirtRegMap;
 
   /// Normalize the spill weight of a live interval
@@ -48,7 +47,6 @@ class VirtRegMap;
     LiveIntervals &LIS;
     const VirtRegMap &VRM;
     const MachineLoopInfo &Loops;
-    ProfileSummaryInfo *PSI;
     const MachineBlockFrequencyInfo &MBFI;
 
     /// Returns true if Reg of live interval LI is used in instruction with many
@@ -58,9 +56,8 @@ class VirtRegMap;
   public:
     VirtRegAuxInfo(MachineFunction &MF, LiveIntervals &LIS,
                    const VirtRegMap &VRM, const MachineLoopInfo &Loops,
-                   const MachineBlockFrequencyInfo &MBFI,
-                   ProfileSummaryInfo *PSI = nullptr)
-        : MF(MF), LIS(LIS), VRM(VRM), Loops(Loops), PSI(PSI), MBFI(MBFI) {}
+                   const MachineBlockFrequencyInfo &MBFI)
+        : MF(MF), LIS(LIS), VRM(VRM), Loops(Loops), MBFI(MBFI) {}
 
     virtual ~VirtRegAuxInfo() = default;
 
@@ -73,7 +70,7 @@ class VirtRegMap;
 
     /// Return the preferred allocation register for reg, given a COPY
     /// instruction.
-    static Register copyHint(const MachineInstr *MI, Register Reg,
+    static Register copyHint(const MachineInstr *MI, unsigned Reg,
                              const TargetRegisterInfo &TRI,
                              const MachineRegisterInfo &MRI);
 
@@ -81,14 +78,6 @@ class VirtRegMap;
     static bool isRematerializable(const LiveInterval &LI,
                                    const LiveIntervals &LIS,
                                    const VirtRegMap &VRM,
-                                   const MachineRegisterInfo &MRI,
-                                   const TargetInstrInfo &TII);
-
-    /// \returns true if all registers used by \p MI are also available with the
-    /// same value at \p UseIdx.
-    static bool allUsesAvailableAt(const MachineInstr *MI, SlotIndex UseIdx,
-                                   const LiveIntervals &LIS,
-                                   const MachineRegisterInfo &MRI,
                                    const TargetInstrInfo &TII);
 
   protected:

@@ -1,12 +1,5 @@
 ! RUN: %python %S/test_errors.py %s %flang_fc1 -pedantic
-module m1
- contains
-  real function rf2(x)
-    rf2 = x
-  end
-end
-module m2
-  use m1
+module m
   real, target :: x = 1.
  contains
   function rpf(x)
@@ -24,12 +17,8 @@ module m2
     print *, x
   end
   subroutine test2
-    !PORTABILITY: Name 'rf' from host scope should have a type declaration before its local statement function definition [-Wstatement-function-extensions]
-    rf(x) = 1.
-  end
-  subroutine test2b
-    !PORTABILITY: Name 'rf2' from host scope should have a type declaration before its local statement function definition [-Wstatement-function-extensions]
-    rf2(x) = 1.
+    !PORTABILITY: Name 'rf' from host scope should have a type declaration before its local statement function definition
+    rf(x) = 3.
   end
   subroutine test3
     external sf
@@ -43,7 +32,7 @@ module m2
     f() = 1. ! statement function of same name as function
   end
   function g() result(r)
-    !WARNING: Name 'g' from host scope should have a type declaration before its local statement function definition [-Wstatement-function-extensions]
+    !WARNING: Name 'g' from host scope should have a type declaration before its local statement function definition
     !ERROR: 'g' is already declared in this scoping unit
     g() = 1. ! statement function of same name as function
   end

@@ -954,28 +954,28 @@ def PdWriteVEXTRACTF128rr : SchedWriteRes<[PdFPU01, PdFPFMA]> {
   let Latency = 2;
   let ReleaseAtCycles = [1, 2];
 }
-def : InstRW<[PdWriteVEXTRACTF128rr], (instrs VEXTRACTF128rri)>;
+def : InstRW<[PdWriteVEXTRACTF128rr], (instrs VEXTRACTF128rr)>;
 
 def PdWriteVEXTRACTF128mr : SchedWriteRes<[PdFPU01, PdFPFMA]> {
   let Latency = 7;
   let ReleaseAtCycles = [1, 4];
   let NumMicroOps = 2;
 }
-def : InstRW<[PdWriteVEXTRACTF128mr], (instrs VEXTRACTF128mri)>;
+def : InstRW<[PdWriteVEXTRACTF128mr], (instrs VEXTRACTF128mr)>;
 
 def PdWriteVPERM2F128rr : SchedWriteRes<[PdFPU01, PdFPFMA]> {
   let Latency = 4;
   let ReleaseAtCycles = [1, 6];
   let NumMicroOps = 8;
 }
-def : InstRW<[PdWriteVPERM2F128rr], (instrs VPERM2F128rri)>;
+def : InstRW<[PdWriteVPERM2F128rr], (instrs VPERM2F128rr)>;
 
 def PdWriteVPERM2F128rm : SchedWriteRes<[PdFPU01, PdFPFMA]> {
   let Latency = 8; // 4 + 4
   let ReleaseAtCycles = [1, 8];
   let NumMicroOps = 10;
 }
-def : InstRW<[PdWriteVPERM2F128rm], (instrs VPERM2F128rmi)>;
+def : InstRW<[PdWriteVPERM2F128rm], (instrs VPERM2F128rm)>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Conversions.
@@ -1275,12 +1275,12 @@ def : InstRW<[WritePHAdd.Folded], (instrs PHADDDrm, PHSUBDrm,
 
 defm : PdWriteResXMMPair<WriteCLMul, [PdFPU0, PdFPMMA], 12, [1, 7], 5, 1>;
 
-def PdWriteVPCLMULQDQrri : SchedWriteRes<[PdFPU0, PdFPMMA]> {
+def PdWriteVPCLMULQDQrr : SchedWriteRes<[PdFPU0, PdFPMMA]> {
   let Latency = 12;
   let ReleaseAtCycles = [1, 7];
   let NumMicroOps = 6;
 }
-def : InstRW<[PdWriteVPCLMULQDQrri], (instrs VPCLMULQDQrri)>;
+def : InstRW<[PdWriteVPCLMULQDQrr], (instrs VPCLMULQDQrr)>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // SSE4A instructions.

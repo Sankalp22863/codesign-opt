@@ -14,6 +14,9 @@
 
 #include "InterferenceCache.h"
 #include "RegAllocBase.h"
+#include "RegAllocEvictionAdvisor.h"
+#include "RegAllocPriorityAdvisor.h"
+#include "SpillPlacement.h"
 #include "SplitKit.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/BitVector.h"
@@ -22,17 +25,14 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CodeGen/CalcSpillWeights.h"
-#include "llvm/CodeGen/LiveDebugVariables.h"
 #include "llvm/CodeGen/LiveInterval.h"
 #include "llvm/CodeGen/LiveRangeEdit.h"
-#include "llvm/CodeGen/LiveStacks.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/RegAllocEvictionAdvisor.h"
-#include "llvm/CodeGen/RegAllocPriorityAdvisor.h"
+#include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/RegisterClassInfo.h"
-#include "llvm/CodeGen/SpillPlacement.h"
 #include "llvm/CodeGen/Spiller.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <queue>
@@ -42,7 +42,7 @@ namespace llvm {
 class AllocationOrder;
 class AnalysisUsage;
 class EdgeBundles;
-class LiveDebugVariablesWrapperLegacy;
+class LiveDebugVariables;
 class LiveIntervals;
 class LiveRegMatrix;
 class MachineBasicBlock;
@@ -56,12 +56,11 @@ class SlotIndexes;
 class TargetInstrInfo;
 class VirtRegMap;
 
-class LLVM_LIBRARY_VISIBILITY RAGreedy : public RegAllocBase,
+class LLVM_LIBRARY_VISIBILITY RAGreedy : public MachineFunctionPass,
+                                         public RegAllocBase,
                                          private LiveRangeEdit::Delegate {
-public:
-  struct RequiredAnalyses;
-
   // Interface to eviction advisers
+public:
   /// Track allocation stage and eviction loop prevention during allocation.
   class ExtraRegInfo final {
     // RegInfo - Keep additional information about each live range.
@@ -179,10 +178,6 @@ private:
   EdgeBundles *Bundles = nullptr;
   SpillPlacement *SpillPlacer = nullptr;
   LiveDebugVariables *DebugVars = nullptr;
-  LiveStacks *LSS = nullptr; // Used by InlineSpiller
-  // Proxy for the advisors
-  RegAllocEvictionAdvisorProvider *EvictProvider = nullptr;
-  RegAllocPriorityAdvisorProvider *PriorityProvider = nullptr;
 
   // state
   std::unique_ptr<Spiller> SpillerInstance;
@@ -286,8 +281,14 @@ private:
   bool ReverseLocalAssignment = false;
 
 public:
-  RAGreedy(RequiredAnalyses &Analyses, const RegAllocFilterFunc F = nullptr);
+  RAGreedy(const RegClassFilterFunc F = allocateAllRegClasses);
 
+  /// Return the pass name.
+  StringRef getPassName() const override { return "Greedy Register Allocator"; }
+
+  /// RAGreedy analysis usage.
+  void getAnalysisUsage(AnalysisUsage &AU) const override;
+  void releaseMemory() override;
   Spiller &spiller() override { return *SpillerInstance; }
   void enqueueImpl(const LiveInterval *LI) override;
   const LiveInterval *dequeue() override;
@@ -296,9 +297,19 @@ public:
   void aboutToRemoveInterval(const LiveInterval &) override;
 
   /// Perform register allocation.
-  bool run(MachineFunction &mf);
+  bool runOnMachineFunction(MachineFunction &mf) override;
 
-  void releaseMemory();
+  MachineFunctionProperties getRequiredProperties() const override {
+    return MachineFunctionProperties().set(
+        MachineFunctionProperties::Property::NoPHIs);
+  }
+
+  MachineFunctionProperties getClearedProperties() const override {
+    return MachineFunctionProperties().set(
+        MachineFunctionProperties::Property::IsSSA);
+  }
+
+  static char ID;
 
 private:
   MCRegister selectOrSplitImpl(const LiveInterval &,
@@ -347,9 +358,8 @@ private:
                                     BlockFrequency &BestCost,
                                     unsigned &NumCands, bool IgnoreCSR);
   /// Perform region splitting.
-  MCRegister doRegionSplit(const LiveInterval &VirtReg, unsigned BestCand,
-                           bool HasCompact,
-                           SmallVectorImpl<Register> &NewVRegs);
+  unsigned doRegionSplit(const LiveInterval &VirtReg, unsigned BestCand,
+                         bool HasCompact, SmallVectorImpl<Register> &NewVRegs);
   /// Try to split VirtReg around physical Hint register.
   bool trySplitAroundHintReg(MCPhysReg Hint, const LiveInterval &VirtReg,
                              SmallVectorImpl<Register> &NewVRegs,
@@ -361,18 +371,18 @@ private:
                                    uint8_t &CostPerUseLimit,
                                    SmallVectorImpl<Register> &NewVRegs);
   void initializeCSRCost();
-  MCRegister tryBlockSplit(const LiveInterval &, AllocationOrder &,
-                           SmallVectorImpl<Register> &);
-  MCRegister tryInstructionSplit(const LiveInterval &, AllocationOrder &,
-                                 SmallVectorImpl<Register> &);
-  MCRegister tryLocalSplit(const LiveInterval &, AllocationOrder &,
-                           SmallVectorImpl<Register> &);
-  MCRegister trySplit(const LiveInterval &, AllocationOrder &,
-                      SmallVectorImpl<Register> &, const SmallVirtRegSet &);
-  MCRegister tryLastChanceRecoloring(const LiveInterval &, AllocationOrder &,
-                                     SmallVectorImpl<Register> &,
-                                     SmallVirtRegSet &, RecoloringStack &,
-                                     unsigned);
+  unsigned tryBlockSplit(const LiveInterval &, AllocationOrder &,
+                         SmallVectorImpl<Register> &);
+  unsigned tryInstructionSplit(const LiveInterval &, AllocationOrder &,
+                               SmallVectorImpl<Register> &);
+  unsigned tryLocalSplit(const LiveInterval &, AllocationOrder &,
+                         SmallVectorImpl<Register> &);
+  unsigned trySplit(const LiveInterval &, AllocationOrder &,
+                    SmallVectorImpl<Register> &, const SmallVirtRegSet &);
+  unsigned tryLastChanceRecoloring(const LiveInterval &, AllocationOrder &,
+                                   SmallVectorImpl<Register> &,
+                                   SmallVirtRegSet &, RecoloringStack &,
+                                   unsigned);
   bool tryRecoloringCandidates(PQueue &, SmallVectorImpl<Register> &,
                                SmallVirtRegSet &, RecoloringStack &, unsigned);
   void tryHintRecoloring(const LiveInterval &);
@@ -415,7 +425,7 @@ private:
                ZeroCostFoldedReloads || Copies);
     }
 
-    void add(const RAGreedyStats &other) {
+    void add(RAGreedyStats other) {
       Reloads += other.Reloads;
       FoldedReloads += other.FoldedReloads;
       ZeroCostFoldedReloads += other.ZeroCostFoldedReloads;

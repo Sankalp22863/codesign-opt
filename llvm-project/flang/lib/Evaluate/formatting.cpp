@@ -7,15 +7,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "flang/Evaluate/formatting.h"
+#include "flang/Common/Fortran.h"
 #include "flang/Evaluate/call.h"
 #include "flang/Evaluate/constant.h"
 #include "flang/Evaluate/expression.h"
 #include "flang/Evaluate/fold.h"
 #include "flang/Evaluate/tools.h"
 #include "flang/Parser/characters.h"
-#include "flang/Semantics/semantics.h"
 #include "flang/Semantics/symbol.h"
-#include "flang/Support/Fortran.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace Fortran::evaluate {
@@ -54,7 +53,7 @@ static void ShapeAsFortran(llvm::raw_ostream &o,
 
 template <typename RESULT, typename VALUE>
 llvm::raw_ostream &ConstantBase<RESULT, VALUE>::AsFortran(
-    llvm::raw_ostream &o) const {
+    llvm::raw_ostream &o, const parser::CharBlock *derivedTypeRename) const {
   bool hasNonDefaultLowerBound{printLbounds && HasNonDefaultLowerBound()};
   if (Rank() > 1 || hasNonDefaultLowerBound) {
     o << "reshape(";
@@ -71,8 +70,6 @@ llvm::raw_ostream &ConstantBase<RESULT, VALUE>::AsFortran(
     }
     if constexpr (Result::category == TypeCategory::Integer) {
       o << value.SignedDecimal() << '_' << Result::kind;
-    } else if constexpr (Result::category == TypeCategory::Unsigned) {
-      o << value.UnsignedDecimal() << "U_" << Result::kind;
     } else if constexpr (Result::category == TypeCategory::Real ||
         Result::category == TypeCategory::Complex) {
       value.AsFortran(o, Result::kind);
@@ -88,7 +85,8 @@ llvm::raw_ostream &ConstantBase<RESULT, VALUE>::AsFortran(
         o << ".false." << '_' << Result::kind;
       }
     } else {
-      StructureConstructor{result_.derivedTypeSpec(), value}.AsFortran(o);
+      StructureConstructor{result_.derivedTypeSpec(), value}.AsFortran(
+          o, derivedTypeRename);
     }
   }
   if (Rank() > 0) {
@@ -96,14 +94,6 @@ llvm::raw_ostream &ConstantBase<RESULT, VALUE>::AsFortran(
   }
   ShapeAsFortran(o, shape(), lbounds(), hasNonDefaultLowerBound);
   return o;
-}
-
-template <typename RESULT, typename VALUE>
-std::string ConstantBase<RESULT, VALUE>::AsFortran() const {
-  std::string result;
-  llvm::raw_string_ostream sstream(result);
-  AsFortran(sstream);
-  return result;
 }
 
 template <int KIND>
@@ -134,98 +124,9 @@ llvm::raw_ostream &Constant<Type<TypeCategory::Character, KIND>>::AsFortran(
   return o;
 }
 
-template <int KIND>
-std::string Constant<Type<TypeCategory::Character, KIND>>::AsFortran() const {
-  std::string result;
-  llvm::raw_string_ostream sstream(result);
-  AsFortran(sstream);
-  return result;
-}
-
-llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const Symbol &symbol,
-    std::optional<parser::CharBlock> name = std::nullopt) {
-  const auto &renamings{symbol.owner().context().moduleFileOutputRenamings()};
-  if (auto iter{renamings.find(&symbol.GetUltimate())};
-      iter != renamings.end()) {
-    return o << iter->second.ToString();
-  } else if (name) {
-    return o << name->ToString();
-  } else {
-    return o << symbol.name().ToString();
-  }
-}
-
-llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const std::string &lit) {
-  return o << parser::QuoteCharacterLiteral(lit);
-}
-
-llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const std::u16string &lit) {
-  return o << parser::QuoteCharacterLiteral(lit);
-}
-
-llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const std::u32string &lit) {
-  return o << parser::QuoteCharacterLiteral(lit);
-}
-
-template <typename A>
-llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const A &x) {
-  return x.AsFortran(o);
-}
-
-template <typename A>
-llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, common::Reference<A> x) {
-  return EmitVar(o, *x);
-}
-
-template <typename A>
-llvm::raw_ostream &EmitVar(
-    llvm::raw_ostream &o, const A *p, const char *kw = nullptr) {
-  if (p) {
-    if (kw) {
-      o << kw;
-    }
-    EmitVar(o, *p);
-  }
-  return o;
-}
-
-template <typename A>
-llvm::raw_ostream &EmitVar(
-    llvm::raw_ostream &o, const std::optional<A> &x, const char *kw = nullptr) {
-  if (x) {
-    if (kw) {
-      o << kw;
-    }
-    EmitVar(o, *x);
-  }
-  return o;
-}
-
-template <typename A, bool COPY>
-llvm::raw_ostream &EmitVar(llvm::raw_ostream &o,
-    const common::Indirection<A, COPY> &p, const char *kw = nullptr) {
-  if (kw) {
-    o << kw;
-  }
-  EmitVar(o, p.value());
-  return o;
-}
-
-template <typename A>
-llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const std::shared_ptr<A> &p) {
-  CHECK(p);
-  return EmitVar(o, *p);
-}
-
-template <typename... A>
-llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const std::variant<A...> &u) {
-  common::visit([&](const auto &x) { EmitVar(o, x); }, u);
-  return o;
-}
-
 llvm::raw_ostream &ActualArgument::AssumedType::AsFortran(
     llvm::raw_ostream &o) const {
-  return EmitVar(o, *symbol_);
+  return o << symbol_->name().ToString();
 }
 
 llvm::raw_ostream &ActualArgument::AsFortran(llvm::raw_ostream &o) const {
@@ -250,13 +151,6 @@ llvm::raw_ostream &ActualArgument::AsFortran(llvm::raw_ostream &o) const {
     o << ')';
   }
   return o;
-}
-
-std::string ActualArgument::AsFortran() const {
-  std::string result;
-  llvm::raw_string_ostream sstream(result);
-  AsFortran(sstream);
-  return result;
 }
 
 llvm::raw_ostream &SpecificIntrinsic::AsFortran(llvm::raw_ostream &o) const {
@@ -504,8 +398,7 @@ llvm::raw_ostream &Convert<TO, FROMCAT>::AsFortran(llvm::raw_ostream &o) const {
           TO::category == TypeCategory::Real ||
           TO::category == TypeCategory::Complex ||
           TO::category == TypeCategory::Character ||
-          TO::category == TypeCategory::Logical ||
-          TO::category == TypeCategory::Unsigned,
+          TO::category == TypeCategory::Logical,
       "Convert<> to bad category!");
   if constexpr (TO::category == TypeCategory::Character) {
     this->left().AsFortran(o << "achar(iachar(") << ')';
@@ -515,10 +408,8 @@ llvm::raw_ostream &Convert<TO, FROMCAT>::AsFortran(llvm::raw_ostream &o) const {
     this->left().AsFortran(o << "real(");
   } else if constexpr (TO::category == TypeCategory::Complex) {
     this->left().AsFortran(o << "cmplx(");
-  } else if constexpr (TO::category == TypeCategory::Logical) {
-    this->left().AsFortran(o << "logical(");
   } else {
-    this->left().AsFortran(o << "uint(");
+    this->left().AsFortran(o << "logical(");
   }
   return o << ",kind=" << TO::kind << ')';
 }
@@ -592,7 +483,7 @@ std::string ExpressionBase<RESULT>::AsFortran() const {
   std::string buf;
   llvm::raw_string_ostream ss{buf};
   AsFortran(ss);
-  return buf;
+  return ss.str();
 }
 
 template <typename RESULT>
@@ -613,37 +504,15 @@ llvm::raw_ostream &ExpressionBase<RESULT>::AsFortran(
   return o;
 }
 
-static std::string DerivedTypeSpecAsFortran(
-    const semantics::DerivedTypeSpec &spec) {
-  std::string buf;
-  llvm::raw_string_ostream ss{buf};
-  EmitVar(ss, spec.typeSymbol(), spec.name());
-  char ch{'('};
-  for (const auto &[name, value] : spec.parameters()) {
-    ss << ch << name.ToString() << '=';
-    ch = ',';
-    if (value.isAssumed()) {
-      ss << '*';
-    } else if (value.isDeferred()) {
-      ss << ':';
-    } else {
-      value.GetExplicit()->AsFortran(ss);
-    }
-  }
-  if (ch != '(') {
-    ss << ')';
-  }
-  return buf;
-}
-
-llvm::raw_ostream &StructureConstructor::AsFortran(llvm::raw_ostream &o) const {
-  o << DerivedTypeSpecAsFortran(result_.derivedTypeSpec());
+llvm::raw_ostream &StructureConstructor::AsFortran(
+    llvm::raw_ostream &o, const parser::CharBlock *derivedTypeRename) const {
+  o << DerivedTypeSpecAsFortran(result_.derivedTypeSpec(), derivedTypeRename);
   if (values_.empty()) {
     o << '(';
   } else {
     char ch{'('};
     for (const auto &[symbol, value] : values_) {
-      value.value().AsFortran(EmitVar(o << ch, *symbol) << '=');
+      value.value().AsFortran(o << ch << symbol->name().ToString() << '=');
       ch = ',';
     }
   }
@@ -670,10 +539,10 @@ std::string DynamicType::AsFortran() const {
       result += length->AsFortran();
     }
     return result + ')';
-  } else if (IsAssumedType()) {
-    return "TYPE(*)";
   } else if (IsUnlimitedPolymorphic()) {
     return "CLASS(*)";
+  } else if (IsAssumedType()) {
+    return "TYPE(*)";
   } else if (IsTypelessIntrinsicArgument()) {
     return "(typeless intrinsic function argument)";
   } else {
@@ -697,6 +566,101 @@ std::string SomeDerived::AsFortran() const {
   } else {
     return "TYPE("s + DerivedTypeSpecAsFortran(derivedTypeSpec()) + ')';
   }
+}
+
+std::string DerivedTypeSpecAsFortran(const semantics::DerivedTypeSpec &spec,
+    const parser::CharBlock *derivedTypeRename) {
+  std::string buf;
+  llvm::raw_string_ostream ss{buf};
+  ss << (derivedTypeRename ? *derivedTypeRename : spec.name()).ToString();
+  char ch{'('};
+  for (const auto &[name, value] : spec.parameters()) {
+    ss << ch << name.ToString() << '=';
+    ch = ',';
+    if (value.isAssumed()) {
+      ss << '*';
+    } else if (value.isDeferred()) {
+      ss << ':';
+    } else {
+      value.GetExplicit()->AsFortran(ss);
+    }
+  }
+  if (ch != '(') {
+    ss << ')';
+  }
+  return ss.str();
+}
+
+llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const Symbol &symbol) {
+  return o << symbol.name().ToString();
+}
+
+llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const std::string &lit) {
+  return o << parser::QuoteCharacterLiteral(lit);
+}
+
+llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const std::u16string &lit) {
+  return o << parser::QuoteCharacterLiteral(lit);
+}
+
+llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const std::u32string &lit) {
+  return o << parser::QuoteCharacterLiteral(lit);
+}
+
+template <typename A>
+llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const A &x) {
+  return x.AsFortran(o);
+}
+
+template <typename A>
+llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, common::Reference<A> x) {
+  return EmitVar(o, *x);
+}
+
+template <typename A>
+llvm::raw_ostream &EmitVar(
+    llvm::raw_ostream &o, const A *p, const char *kw = nullptr) {
+  if (p) {
+    if (kw) {
+      o << kw;
+    }
+    EmitVar(o, *p);
+  }
+  return o;
+}
+
+template <typename A>
+llvm::raw_ostream &EmitVar(
+    llvm::raw_ostream &o, const std::optional<A> &x, const char *kw = nullptr) {
+  if (x) {
+    if (kw) {
+      o << kw;
+    }
+    EmitVar(o, *x);
+  }
+  return o;
+}
+
+template <typename A, bool COPY>
+llvm::raw_ostream &EmitVar(llvm::raw_ostream &o,
+    const common::Indirection<A, COPY> &p, const char *kw = nullptr) {
+  if (kw) {
+    o << kw;
+  }
+  EmitVar(o, p.value());
+  return o;
+}
+
+template <typename A>
+llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const std::shared_ptr<A> &p) {
+  CHECK(p);
+  return EmitVar(o, *p);
+}
+
+template <typename... A>
+llvm::raw_ostream &EmitVar(llvm::raw_ostream &o, const std::variant<A...> &u) {
+  common::visit([&](const auto &x) { EmitVar(o, x); }, u);
+  return o;
 }
 
 llvm::raw_ostream &BaseObject::AsFortran(llvm::raw_ostream &o) const {
@@ -746,8 +710,24 @@ llvm::raw_ostream &ArrayRef::AsFortran(llvm::raw_ostream &o) const {
 }
 
 llvm::raw_ostream &CoarrayRef::AsFortran(llvm::raw_ostream &o) const {
-  base().AsFortran(o);
-  char separator{'['};
+  bool first{true};
+  for (const Symbol &part : base_) {
+    if (first) {
+      first = false;
+    } else {
+      o << '%';
+    }
+    EmitVar(o, part);
+  }
+  char separator{'('};
+  for (const auto &sscript : subscript_) {
+    EmitVar(o << separator, sscript);
+    separator = ',';
+  }
+  if (separator == ',') {
+    o << ')';
+  }
+  separator = '[';
   for (const auto &css : cosubscript_) {
     EmitVar(o << separator, css);
     separator = ',';
@@ -757,10 +737,8 @@ llvm::raw_ostream &CoarrayRef::AsFortran(llvm::raw_ostream &o) const {
     separator = ',';
   }
   if (team_) {
-    EmitVar(o << separator, team_,
-        std::holds_alternative<Expr<SomeInteger>>(team_->value().u)
-            ? "TEAM_NUMBER="
-            : "TEAM=");
+    EmitVar(
+        o << separator, team_, teamIsTeamNumber_ ? "TEAM_NUMBER=" : "TEAM=");
   }
   return o << ']';
 }

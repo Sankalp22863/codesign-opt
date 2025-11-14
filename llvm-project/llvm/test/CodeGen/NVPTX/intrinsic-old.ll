@@ -1,10 +1,21 @@
-; RUN: llc < %s -mtriple=nvptx -mcpu=sm_20 | FileCheck -allow-deprecated-dag-overlap %s
-; RUN: llc < %s -mtriple=nvptx64 -mcpu=sm_20 | FileCheck -allow-deprecated-dag-overlap %s
-; RUN: %if ptxas-ptr32 %{ llc < %s -mtriple=nvptx -mcpu=sm_20 | %ptxas-verify %}
-; RUN: %if ptxas %{ llc < %s -mtriple=nvptx64 -mcpu=sm_20 | %ptxas-verify %}
+; RUN: llc < %s -march=nvptx -mcpu=sm_20 | FileCheck -allow-deprecated-dag-overlap %s
+; RUN: llc < %s -march=nvptx64 -mcpu=sm_20 | FileCheck -allow-deprecated-dag-overlap %s
+; RUN: opt < %s -S -mtriple=nvptx-nvidia-cuda -passes=nvvm-intr-range \
+; RUN:   | FileCheck -allow-deprecated-dag-overlap --check-prefix=RANGE --check-prefix=RANGE_20 %s
+; RUN: opt < %s -S -mtriple=nvptx-nvidia-cuda -passes=nvvm-intr-range \
+; RUN:   | FileCheck -allow-deprecated-dag-overlap --check-prefix=RANGE --check-prefix=RANGE_20 %s
+; RUN: opt < %s -S -mtriple=nvptx-nvidia-cuda \
+; RUN:    -passes=nvvm-intr-range -nvvm-intr-range-sm=30 \
+; RUN:   | FileCheck -allow-deprecated-dag-overlap --check-prefix=RANGE --check-prefix=RANGE_30 %s
+; RUN: opt < %s -S -mtriple=nvptx-nvidia-cuda \
+; RUN:    -passes=nvvm-intr-range -nvvm-intr-range-sm=30 \
+; RUN:   | FileCheck -allow-deprecated-dag-overlap --check-prefix=RANGE --check-prefix=RANGE_30 %s
+; RUN: %if ptxas && !ptxas-12.0 %{ llc < %s -march=nvptx -mcpu=sm_20 | %ptxas-verify %}
+; RUN: %if ptxas %{ llc < %s -march=nvptx64 -mcpu=sm_20 | %ptxas-verify %}
 
 define ptx_device i32 @test_tid_x() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %tid.x;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.tid.x(), !range ![[BLK_IDX_XY:[0-9]+]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
 	ret i32 %x
@@ -12,6 +23,7 @@ define ptx_device i32 @test_tid_x() {
 
 define ptx_device i32 @test_tid_y() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %tid.y;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.tid.y(), !range ![[BLK_IDX_XY]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.tid.y()
 	ret i32 %x
@@ -19,6 +31,7 @@ define ptx_device i32 @test_tid_y() {
 
 define ptx_device i32 @test_tid_z() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %tid.z;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.tid.z(), !range ![[BLK_IDX_Z:[0-9]+]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.tid.z()
 	ret i32 %x
@@ -33,6 +46,7 @@ define ptx_device i32 @test_tid_w() {
 
 define ptx_device i32 @test_ntid_x() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %ntid.x;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.ntid.x(), !range ![[BLK_SIZE_XY:[0-9]+]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.ntid.x()
 	ret i32 %x
@@ -40,6 +54,7 @@ define ptx_device i32 @test_ntid_x() {
 
 define ptx_device i32 @test_ntid_y() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %ntid.y;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.ntid.y(), !range ![[BLK_SIZE_XY]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.ntid.y()
 	ret i32 %x
@@ -47,6 +62,7 @@ define ptx_device i32 @test_ntid_y() {
 
 define ptx_device i32 @test_ntid_z() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %ntid.z;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.ntid.z(), !range ![[BLK_SIZE_Z:[0-9]+]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.ntid.z()
 	ret i32 %x
@@ -61,6 +77,7 @@ define ptx_device i32 @test_ntid_w() {
 
 define ptx_device i32 @test_laneid() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %laneid;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.laneid(), !range ![[LANEID:[0-9]+]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.laneid()
 	ret i32 %x
@@ -68,6 +85,7 @@ define ptx_device i32 @test_laneid() {
 
 define ptx_device i32 @test_warpsize() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, WARP_SZ;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.warpsize(), !range ![[WARPSIZE:[0-9]+]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.warpsize()
 	ret i32 %x
@@ -89,6 +107,7 @@ define ptx_device i32 @test_nwarpid() {
 
 define ptx_device i32 @test_ctaid_y() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %ctaid.y;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.ctaid.y(), !range ![[GRID_IDX_YZ:[0-9]+]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.y()
 	ret i32 %x
@@ -96,6 +115,7 @@ define ptx_device i32 @test_ctaid_y() {
 
 define ptx_device i32 @test_ctaid_z() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %ctaid.z;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.ctaid.z(), !range ![[GRID_IDX_YZ]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.z()
 	ret i32 %x
@@ -103,6 +123,8 @@ define ptx_device i32 @test_ctaid_z() {
 
 define ptx_device i32 @test_ctaid_x() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %ctaid.x;
+; RANGE_30: call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x(), !range ![[GRID_IDX_X:[0-9]+]]
+; RANGE_20: call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x(), !range ![[GRID_IDX_YZ]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()
 	ret i32 %x
@@ -117,6 +139,7 @@ define ptx_device i32 @test_ctaid_w() {
 
 define ptx_device i32 @test_nctaid_y() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %nctaid.y;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.nctaid.y(), !range ![[GRID_SIZE_YZ:[0-9]+]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.y()
 	ret i32 %x
@@ -124,6 +147,7 @@ define ptx_device i32 @test_nctaid_y() {
 
 define ptx_device i32 @test_nctaid_z() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %nctaid.z;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.nctaid.z(), !range ![[GRID_SIZE_YZ]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.z()
 	ret i32 %x
@@ -131,6 +155,8 @@ define ptx_device i32 @test_nctaid_z() {
 
 define ptx_device i32 @test_nctaid_x() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %nctaid.x;
+; RANGE_30: call i32 @llvm.nvvm.read.ptx.sreg.nctaid.x(), !range ![[GRID_SIZE_X:[0-9]+]]
+; RANGE_20: call i32 @llvm.nvvm.read.ptx.sreg.nctaid.x(), !range ![[GRID_SIZE_YZ]]
 ; CHECK: ret;
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.x()
 	ret i32 %x
@@ -138,7 +164,7 @@ define ptx_device i32 @test_nctaid_x() {
 
 define ptx_device i32 @test_already_has_range_md() {
 ; CHECK: mov.u32 %r{{[0-9]+}}, %nctaid.x;
-; CHECK: ret;
+; RANGE: call i32 @llvm.nvvm.read.ptx.sreg.nctaid.x(), !range ![[ALREADY:[0-9]+]]
 	%x = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.x(), !range !0
 	ret i32 %x
 }
@@ -300,3 +326,15 @@ declare i32 @llvm.nvvm.read.ptx.sreg.pm3()
 declare void @llvm.nvvm.bar.sync(i32 %i)
 
 !0 = !{i32 0, i32 19}
+; RANGE-DAG: ![[ALREADY]] = !{i32 0, i32 19}
+; RANGE-DAG: ![[BLK_IDX_XY]] = !{i32 0, i32 1024}
+; RANGE-DAG: ![[BLK_IDX_XY]] = !{i32 0, i32 1024}
+; RANGE-DAG: ![[BLK_IDX_Z]] = !{i32 0, i32 64}
+; RANGE-DAG: ![[BLK_SIZE_XY]] = !{i32 1, i32 1025}
+; RANGE-DAG: ![[BLK_SIZE_Z]] = !{i32 1, i32 65}
+; RANGE-DAG: ![[LANEID]] = !{i32 0, i32 32}
+; RANGE-DAG: ![[WARPSIZE]] = !{i32 32, i32 33}
+; RANGE_30-DAG: ![[GRID_IDX_X]] = !{i32 0, i32 2147483647}
+; RANGE-DAG: ![[GRID_IDX_YZ]] = !{i32 0, i32 65535}
+; RANGE_30-DAG: ![[GRID_SIZE_X]] = !{i32 1, i32 -2147483648}
+; RANGE-DAG: ![[GRID_SIZE_YZ]] = !{i32 1, i32 65536}

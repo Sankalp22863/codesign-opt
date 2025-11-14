@@ -12,19 +12,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "ReduceMetadata.h"
+#include "Delta.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 
 using namespace llvm;
-
-extern cl::OptionCategory LLVMReduceOptions;
-
-static cl::opt<bool> AggressiveMetadataReduction(
-    "aggressive-named-md-reduction",
-    cl::desc("Reduce named metadata without taking its type into account"),
-    cl::cat(LLVMReduceOptions));
 
 static bool shouldKeepDebugIntrinsicMetadata(Instruction &I, MDNode &MD) {
   return isa<DILocation>(MD) && isa<DbgInfoIntrinsic>(I);
@@ -47,36 +41,34 @@ static constexpr StringLiteral ListNamedMetadata[] = {
 };
 
 /// Remove unneeded arguments to named metadata.
-void llvm::reduceNamedMetadataDeltaPass(Oracle &O, ReducerWorkItem &WorkItem) {
+static void reduceNamedMetadataOperands(Oracle &O, ReducerWorkItem &WorkItem) {
   Module &M = WorkItem.getModule();
 
-  for (NamedMDNode &I : M.named_metadata()) {
-    // If we don't want to reduce mindlessly, check if our node is part of
-    // ListNamedMetadata before reducing it
-    if (!AggressiveMetadataReduction &&
-        !is_contained(ListNamedMetadata, I.getName()))
+  for (StringRef MDName : ListNamedMetadata) {
+    NamedMDNode *NamedNode = M.getNamedMetadata(MDName);
+    if (!NamedNode)
       continue;
 
     bool MadeChange = false;
-    SmallVector<MDNode *> KeptOperands;
-    for (auto J : seq<unsigned>(0, I.getNumOperands())) {
+    SmallVector<MDNode *, 16> KeptOperands;
+    for (auto I : seq<unsigned>(0, NamedNode->getNumOperands())) {
       if (O.shouldKeep())
-        KeptOperands.push_back(I.getOperand(J));
+        KeptOperands.push_back(NamedNode->getOperand(I));
       else
         MadeChange = true;
     }
 
     if (MadeChange) {
-      I.clearOperands();
+      NamedNode->clearOperands();
       for (MDNode *KeptOperand : KeptOperands)
-        I.addOperand(KeptOperand);
+        NamedNode->addOperand(KeptOperand);
     }
   }
 }
 
 /// Removes all the Named and Unnamed Metadata Nodes, as well as any debug
 /// functions that aren't inside the desired Chunks.
-void llvm::reduceMetadataDeltaPass(Oracle &O, ReducerWorkItem &WorkItem) {
+static void extractMetadataFromModule(Oracle &O, ReducerWorkItem &WorkItem) {
   Module &Program = WorkItem.getModule();
 
   // Get out-of-chunk Named metadata nodes
@@ -120,4 +112,12 @@ void llvm::reduceMetadataDeltaPass(Oracle &O, ReducerWorkItem &WorkItem) {
       }
     }
   }
+}
+
+void llvm::reduceMetadataDeltaPass(TestRunner &Test) {
+  runDeltaPass(Test, extractMetadataFromModule, "Reducing Metadata");
+}
+
+void llvm::reduceNamedMetadataDeltaPass(TestRunner &Test) {
+  runDeltaPass(Test, reduceNamedMetadataOperands, "Reducing Named Metadata");
 }

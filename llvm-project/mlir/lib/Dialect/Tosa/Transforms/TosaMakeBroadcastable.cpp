@@ -11,14 +11,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/Dialect/Tosa/Transforms/Passes.h"
 #include "mlir/Dialect/Tosa/Utils/ConversionUtils.h"
+#include "mlir/Dialect/Tosa/Utils/QuantUtils.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace mlir {
 namespace tosa {
-#define GEN_PASS_DEF_TOSAMAKEBROADCASTABLEPASS
+#define GEN_PASS_DEF_TOSAMAKEBROADCASTABLE
 #include "mlir/Dialect/Tosa/Transforms/Passes.h.inc"
 } // namespace tosa
 } // namespace mlir
@@ -110,7 +113,7 @@ struct ConvertTosaOp<tosa::MulOp> : public OpRewritePattern<tosa::MulOp> {
 
     Value input1 = tosaBinaryOp.getInput1();
     Value input2 = tosaBinaryOp.getInput2();
-    Value shift = tosaBinaryOp.getShift();
+    int32_t shift = tosaBinaryOp.getShift();
     Value output = tosaBinaryOp.getResult();
     auto outputType = dyn_cast<RankedTensorType>(output.getType());
     if (!outputType)
@@ -216,7 +219,7 @@ namespace {
 /// Pass that enables broadcast by making all input arrays have the same
 /// number of dimensions. Insert RESHAPE operations to lower rank operand
 struct TosaMakeBroadcastable
-    : public tosa::impl::TosaMakeBroadcastablePassBase<TosaMakeBroadcastable> {
+    : public tosa::impl::TosaMakeBroadcastableBase<TosaMakeBroadcastable> {
 public:
   void runOnOperation() override {
     auto func = getOperation();
@@ -229,7 +232,7 @@ public:
     patterns.add<ConvertTosaOp<tosa::AddOp>>(ctx);
     patterns.add<ConvertTosaOp<tosa::SubOp>>(ctx);
     patterns.add<ConvertTosaOp<tosa::MulOp>>(ctx);
-    patterns.add<ConvertTosaOp<tosa::IntDivOp>>(ctx);
+    patterns.add<ConvertTosaOp<tosa::DivOp>>(ctx);
     patterns.add<ConvertTosaOp<tosa::MaximumOp>>(ctx);
     patterns.add<ConvertTosaOp<tosa::MinimumOp>>(ctx);
     patterns.add<ConvertTosaOp<tosa::EqualOp>>(ctx);
@@ -243,7 +246,11 @@ public:
     patterns.add<ConvertTosaOp<tosa::LogicalXorOp>>(ctx);
     patterns.add<ConvertTosaOp<tosa::SelectOp>>(ctx);
     patterns.add<ConvertTosaOp<tosa::PowOp>>(ctx);
-    (void)applyPatternsGreedily(func, std::move(patterns));
+    (void)applyPatternsAndFoldGreedily(func, std::move(patterns));
   }
 };
 } // namespace
+
+std::unique_ptr<Pass> mlir::tosa::createTosaMakeBroadcastablePass() {
+  return std::make_unique<TosaMakeBroadcastable>();
+}

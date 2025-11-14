@@ -137,7 +137,7 @@ SBBreakpointLocation SBBreakpoint::FindLocationByAddress(addr_t vm_addr) {
           bkpt_sp->GetTarget().GetAPIMutex());
       Address address;
       Target &target = bkpt_sp->GetTarget();
-      if (!target.ResolveLoadAddress(vm_addr, address)) {
+      if (!target.GetSectionLoadList().ResolveLoadAddress(vm_addr, address)) {
         address.SetRawAddress(vm_addr);
       }
       sb_bp_location.SetLocation(bkpt_sp->FindLocationByAddress(address));
@@ -157,7 +157,7 @@ break_id_t SBBreakpoint::FindLocationIDByAddress(addr_t vm_addr) {
         bkpt_sp->GetTarget().GetAPIMutex());
     Address address;
     Target &target = bkpt_sp->GetTarget();
-    if (!target.ResolveLoadAddress(vm_addr, address)) {
+    if (!target.GetSectionLoadList().ResolveLoadAddress(vm_addr, address)) {
       address.SetRawAddress(vm_addr);
     }
     break_id = bkpt_sp->FindLocationIDByAddress(address);
@@ -275,11 +275,7 @@ void SBBreakpoint::SetCondition(const char *condition) {
   if (bkpt_sp) {
     std::lock_guard<std::recursive_mutex> guard(
         bkpt_sp->GetTarget().GetAPIMutex());
-    // Treat a null pointer as resetting the condition.
-    if (!condition)
-      bkpt_sp->SetCondition(StopCondition());
-    else
-      bkpt_sp->SetCondition(StopCondition(condition));
+    bkpt_sp->SetCondition(condition);
   }
 }
 
@@ -292,10 +288,7 @@ const char *SBBreakpoint::GetCondition() {
 
   std::lock_guard<std::recursive_mutex> guard(
       bkpt_sp->GetTarget().GetAPIMutex());
-  StopCondition cond = bkpt_sp->GetCondition();
-  if (!cond)
-    return nullptr;
-  return ConstString(cond.GetText()).GetCString();
+  return ConstString(bkpt_sp->GetConditionText()).GetCString();
 }
 
 void SBBreakpoint::SetAutoContinue(bool auto_continue) {
@@ -349,7 +342,7 @@ uint32_t SBBreakpoint::GetIgnoreCount() const {
   return count;
 }
 
-void SBBreakpoint::SetThreadID(lldb::tid_t tid) {
+void SBBreakpoint::SetThreadID(tid_t tid) {
   LLDB_INSTRUMENT_VA(this, tid);
 
   BreakpointSP bkpt_sp = GetSP();
@@ -360,10 +353,10 @@ void SBBreakpoint::SetThreadID(lldb::tid_t tid) {
   }
 }
 
-lldb::tid_t SBBreakpoint::GetThreadID() {
+tid_t SBBreakpoint::GetThreadID() {
   LLDB_INSTRUMENT_VA(this);
 
-  lldb::tid_t tid = LLDB_INVALID_THREAD_ID;
+  tid_t tid = LLDB_INVALID_THREAD_ID;
   BreakpointSP bkpt_sp = GetSP();
   if (bkpt_sp) {
     std::lock_guard<std::recursive_mutex> guard(
@@ -547,18 +540,17 @@ SBError SBBreakpoint::AddLocation(SBAddress &address) {
   SBError error;
 
   if (!address.IsValid()) {
-    error = Status::FromErrorString("Can't add an invalid address.");
+    error.SetErrorString("Can't add an invalid address.");
     return error;
   }
 
   if (!bkpt_sp) {
-    error = Status::FromErrorString("No breakpoint to add a location to.");
+    error.SetErrorString("No breakpoint to add a location to.");
     return error;
   }
 
   if (!llvm::isa<BreakpointResolverScripted>(bkpt_sp->GetResolver().get())) {
-    error =
-        Status::FromErrorString("Only a scripted resolver can add locations.");
+    error.SetErrorString("Only a scripted resolver can add locations.");
     return error;
   }
 
@@ -568,19 +560,10 @@ SBError SBBreakpoint::AddLocation(SBAddress &address) {
     StreamString s;
     address.get()->Dump(&s, &bkpt_sp->GetTarget(),
                         Address::DumpStyleModuleWithFileAddress);
-    error = Status::FromErrorStringWithFormat(
-        "Address: %s didn't pass the filter.", s.GetData());
+    error.SetErrorStringWithFormat("Address: %s didn't pass the filter.",
+                                   s.GetData());
   }
   return error;
-}
-
-SBBreakpointLocation SBBreakpoint::AddFacadeLocation() {
-  BreakpointSP bkpt_sp = GetSP();
-  if (!bkpt_sp)
-    return {};
-
-  BreakpointLocationSP loc_sp = bkpt_sp->AddFacadeLocation();
-  return SBBreakpointLocation(loc_sp);
 }
 
 SBStructuredData SBBreakpoint::SerializeToStructuredData() {
@@ -638,9 +621,9 @@ SBError SBBreakpoint::SetScriptCallbackFunction(
                                                callback_function_name,
                                                extra_args.m_impl_up
                                                    ->GetObjectSP());
-    sb_error.SetError(std::move(error));
+    sb_error.SetError(error);
   } else
-    sb_error = Status::FromErrorString("invalid breakpoint");
+    sb_error.SetErrorString("invalid breakpoint");
 
   return sb_error;
 }
@@ -661,9 +644,9 @@ SBError SBBreakpoint::SetScriptCallbackBody(const char *callback_body_text) {
             .GetScriptInterpreter()
             ->SetBreakpointCommandCallback(bp_options, callback_body_text,
                                            /*is_callback=*/false);
-    sb_error.SetError(std::move(error));
+    sb_error.SetError(error);
   } else
-    sb_error = Status::FromErrorString("invalid breakpoint");
+    sb_error.SetErrorString("invalid breakpoint");
 
   return sb_error;
 }
@@ -686,9 +669,9 @@ SBError SBBreakpoint::AddNameWithErrorHandling(const char *new_name) {
         bkpt_sp->GetTarget().GetAPIMutex());
     Status error;
     bkpt_sp->GetTarget().AddNameToBreakpoint(bkpt_sp, new_name, error);
-    status.SetError(std::move(error));
+    status.SetError(error);
   } else {
-    status = Status::FromErrorString("invalid breakpoint");
+    status.SetErrorString("invalid breakpoint");
   }
 
   return status;
@@ -731,7 +714,7 @@ void SBBreakpoint::GetNames(SBStringList &names) {
         bkpt_sp->GetTarget().GetAPIMutex());
     std::vector<std::string> names_vec;
     bkpt_sp->GetNames(names_vec);
-    for (const std::string &name : names_vec) {
+    for (std::string name : names_vec) {
       names.AppendString(name.c_str());
     }
   }
@@ -795,18 +778,6 @@ bool SBBreakpoint::IsHardware() const {
   if (bkpt_sp)
     return bkpt_sp->IsHardware();
   return false;
-}
-
-lldb::SBError SBBreakpoint::SetIsHardware(bool is_hardware) {
-  LLDB_INSTRUMENT_VA(this, is_hardware);
-
-  BreakpointSP bkpt_sp = GetSP();
-  if (bkpt_sp) {
-    std::lock_guard<std::recursive_mutex> guard(
-        bkpt_sp->GetTarget().GetAPIMutex());
-    return SBError(Status::FromError(bkpt_sp->SetIsHardware(is_hardware)));
-  }
-  return SBError();
 }
 
 BreakpointSP SBBreakpoint::GetSP() const { return m_opaque_wp.lock(); }

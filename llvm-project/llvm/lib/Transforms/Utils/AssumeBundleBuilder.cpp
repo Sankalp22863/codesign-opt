@@ -20,17 +20,16 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/DebugCounter.h"
 #include "llvm/Transforms/Utils/Local.h"
 
 using namespace llvm;
 
 namespace llvm {
-LLVM_ABI cl::opt<bool> ShouldPreserveAllAttributes(
+cl::opt<bool> ShouldPreserveAllAttributes(
     "assume-preserve-all", cl::init(false), cl::Hidden,
-    cl::desc("enable preservation of all attributes. even those that are "
-             "unlikely to be useful"));
+    cl::desc("enable preservation of all attrbitues. even those that are "
+             "unlikely to be usefull"));
 
 cl::opt<bool> EnableKnowledgeRetention(
     "enable-knowledge-retention", cl::init(false), cl::Hidden,
@@ -115,12 +114,12 @@ struct AssumeBuilderState {
       : M(M), InstBeingModified(I), AC(AC), DT(DT) {}
 
   bool tryToPreserveWithoutAddingAssume(RetainedKnowledge RK) {
-    if (!InstBeingModified || !RK.WasOn || !AC)
+    if (!InstBeingModified || !RK.WasOn)
       return false;
     bool HasBeenPreserved = false;
     Use* ToUpdate = nullptr;
     getKnowledgeForValue(
-        RK.WasOn, {RK.AttrKind}, *AC,
+        RK.WasOn, {RK.AttrKind}, AC,
         [&](RetainedKnowledge RKOther, Instruction *Assume,
             const CallInst::BundleOpInfo *Bundle) {
           if (!isValidAssumeForContext(Assume, InstBeingModified, DT))
@@ -179,9 +178,11 @@ struct AssumeBuilderState {
     if (tryToPreserveWithoutAddingAssume(RK))
       return;
     MapKey Key{RK.WasOn, RK.AttrKind};
-    auto [Lookup, Inserted] = AssumedKnowledgeMap.try_emplace(Key, RK.ArgValue);
-    if (Inserted)
+    auto Lookup = AssumedKnowledgeMap.find(Key);
+    if (Lookup == AssumedKnowledgeMap.end()) {
+      AssumedKnowledgeMap[Key] = RK.ArgValue;
       return;
+    }
     assert(((Lookup->second == 0 && RK.ArgValue == 0) ||
             (Lookup->second != 0 && RK.ArgValue != 0)) &&
            "inconsistent argument value");
@@ -224,8 +225,7 @@ struct AssumeBuilderState {
       return nullptr;
     if (!DebugCounter::shouldExecute(BuildAssumeCounter))
       return nullptr;
-    Function *FnAssume =
-        Intrinsic::getOrInsertDeclaration(M, Intrinsic::assume);
+    Function *FnAssume = Intrinsic::getDeclaration(M, Intrinsic::assume);
     LLVMContext &C = M->getContext();
     SmallVector<OperandBundleDef, 8> OpBundle;
     for (auto &MapElem : AssumedKnowledgeMap) {
@@ -297,7 +297,7 @@ bool llvm::salvageKnowledge(Instruction *I, AssumptionCache *AC,
   AssumeBuilderState Builder(I->getModule(), I, AC, DT);
   Builder.addInstruction(I);
   if (auto *Intr = Builder.build()) {
-    Intr->insertBefore(I->getIterator());
+    Intr->insertBefore(I);
     Changed = true;
     if (AC)
       AC->registerAssumption(Intr);
@@ -320,7 +320,7 @@ RetainedKnowledge llvm::simplifyRetainedKnowledge(AssumeInst *Assume,
                                                   AssumptionCache *AC,
                                                   DominatorTree *DT) {
   AssumeBuilderState Builder(Assume->getModule(), Assume, AC, DT);
-  RK = canonicalizedKnowledge(RK, Assume->getDataLayout());
+  RK = canonicalizedKnowledge(RK, Assume->getModule()->getDataLayout());
 
   if (!Builder.isKnowledgeWorthPreserving(RK))
     return RetainedKnowledge::none();
@@ -411,7 +411,7 @@ struct AssumeSimplify {
             CleanupToDo.insert(Assume);
             if (BOI.Begin != BOI.End) {
               Use *U = &Assume->op_begin()[BOI.Begin + ABA_WasOn];
-              U->set(PoisonValue::get(U->get()->getType()));
+              U->set(UndefValue::get(U->get()->getType()));
             }
             BOI.Tag = IgnoreTag;
           };
@@ -473,9 +473,9 @@ struct AssumeSimplify {
     AssumeBuilderState Builder(F.getParent());
 
     /// For now it is initialized to the best value it could have
-    BasicBlock::iterator InsertPt = BB->getFirstNonPHIIt();
+    Instruction *InsertPt = BB->getFirstNonPHI();
     if (isa<LandingPadInst>(InsertPt))
-      InsertPt = std::next(InsertPt);
+      InsertPt = InsertPt->getNextNode();
     for (IntrinsicInst *I : make_range(Begin, End)) {
       CleanupToDo.insert(I);
       for (CallInst::BundleOpInfo &BOI : I->bundle_op_infos()) {
@@ -486,8 +486,8 @@ struct AssumeSimplify {
         Builder.addKnowledge(RK);
         if (auto *I = dyn_cast_or_null<Instruction>(RK.WasOn))
           if (I->getParent() == InsertPt->getParent() &&
-              (InsertPt->comesBefore(I) || &*InsertPt == I))
-            InsertPt = I->getNextNode()->getIterator();
+              (InsertPt->comesBefore(I) || InsertPt == I))
+            InsertPt = I->getNextNode();
       }
     }
 
@@ -497,7 +497,7 @@ struct AssumeSimplify {
       for (auto It = (*Begin)->getIterator(), E = InsertPt->getIterator();
            It != E; --It)
         if (!isGuaranteedToTransferExecutionToSuccessor(&*It)) {
-          InsertPt = std::next(It);
+          InsertPt = It->getNextNode();
           break;
         }
     auto *MergedAssume = Builder.build();

@@ -14,7 +14,7 @@
 #define LLVM_LIB_TARGET_NVPTX_NVPTXTARGETMACHINE_H
 
 #include "NVPTXSubtarget.h"
-#include "llvm/CodeGen/CodeGenTargetMachineImpl.h"
+#include "llvm/Target/TargetMachine.h"
 #include <optional>
 #include <utility>
 
@@ -22,8 +22,10 @@ namespace llvm {
 
 /// NVPTXTargetMachine
 ///
-class NVPTXTargetMachine : public CodeGenTargetMachineImpl {
+class NVPTXTargetMachine : public LLVMTargetMachine {
   bool is64bit;
+  // Use 32-bit pointers for accessing const/local/short AS.
+  bool UseShortPointers;
   std::unique_ptr<TargetLoweringObjectFile> TLOF;
   NVPTX::DrvInterface drvInterface;
   NVPTXSubtarget Subtarget;
@@ -44,6 +46,7 @@ public:
   }
   const NVPTXSubtarget *getSubtargetImpl() const { return &Subtarget; }
   bool is64Bit() const { return is64bit; }
+  bool useShortPointers() const { return UseShortPointers; }
   NVPTX::DrvInterface getDrvInterface() const { return drvInterface; }
   UniqueStringSaver &getStrPool() const {
     return const_cast<UniqueStringSaver &>(StrPool);
@@ -64,9 +67,10 @@ public:
   createMachineFunctionInfo(BumpPtrAllocator &Allocator, const Function &F,
                             const TargetSubtargetInfo *STI) const override;
 
-  void registerEarlyDefaultAliasAnalyses(AAManager &AAM) override;
+  void registerDefaultAliasAnalyses(AAManager &AAM) override;
 
-  void registerPassBuilderCallbacks(PassBuilder &PB) override;
+  void registerPassBuilderCallbacks(PassBuilder &PB,
+                                    bool PopulateClassToPassNames) override;
 
   TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
 

@@ -10,13 +10,23 @@
 #define LLVM_MC_MCTARGETOPTIONS_H
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/Support/CodeGen.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/Compression.h"
 #include <string>
 #include <vector>
 
 namespace llvm {
+
+enum class ExceptionHandling {
+  None,     ///< No exception support
+  DwarfCFI, ///< DWARF-like instruction based exceptions
+  SjLj,     ///< setjmp/longjmp based exceptions
+  ARM,      ///< ARM EHABI
+  WinEH,    ///< Windows Exception Handling
+  Wasm,     ///< WebAssembly Exception Handling
+  AIX,      ///< AIX Exception Handling
+  ZOS,      ///< z/OS MVS Exception Handling. Very similar to DwarfCFI, but the PPA1
+            ///< is used instead of an .eh_frame section.
+};
 
 enum class EmitDwarfUnwindType {
   Always,          // Always emit dwarf unwind
@@ -41,7 +51,6 @@ public:
   bool MCNoTypeCheck : 1;
   bool MCSaveTempLabels : 1;
   bool MCIncrementalLinkerCompatible : 1;
-  bool FDPIC : 1;
   bool ShowMCEncoding : 1;
   bool ShowMCInst : 1;
   bool AsmVerbose : 1;
@@ -50,19 +59,6 @@ public:
   bool PreserveAsmComments : 1;
 
   bool Dwarf64 : 1;
-
-  // Use CREL relocation format for ELF.
-  bool Crel = false;
-
-  bool ImplicitMapSyms = false;
-
-  // If true, prefer R_X86_64_[REX_]GOTPCRELX to R_X86_64_GOTPCREL on x86-64
-  // ELF.
-  bool X86RelaxRelocations = true;
-
-  bool X86Sse2Avx = false;
-
-  std::optional<unsigned> OutputAsmVariant;
 
   EmitDwarfUnwindType EmitDwarfUnwind;
 
@@ -79,46 +75,36 @@ public:
   };
   DwarfDirectory MCUseDwarfDirectory;
 
-  // Whether to compress DWARF debug sections.
-  DebugCompressionType CompressDebugSections = DebugCompressionType::None;
-
   std::string ABIName;
   std::string AssemblyLanguage;
   std::string SplitDwarfFile;
   std::string AsSecureLogFile;
 
-  // Used for codeview debug info. These will be set as compiler path and commandline arguments in LF_BUILDINFO
-  std::string Argv0;
-  std::string CommandlineArgs;
+  const char *Argv0 = nullptr;
+  ArrayRef<std::string> CommandLineArgs;
 
   /// Additional paths to search for `.include` directives when using the
   /// integrated assembler.
   std::vector<std::string> IASSearchPaths;
 
-  // InstPrinter options.
-  std::vector<std::string> InstPrinterOptions;
-
   // Whether to emit compact-unwind for non-canonical personality
   // functions on Darwins.
   bool EmitCompactUnwindNonCanonical : 1;
 
-  // Whether to emit SFrame unwind sections.
-  bool EmitSFrameUnwind : 1;
-
   // Whether or not to use full register names on PowerPC.
   bool PPCUseFullRegisterNames : 1;
 
-  LLVM_ABI MCTargetOptions();
+  MCTargetOptions();
 
   /// getABIName - If this returns a non-empty string this represents the
   /// textual name of the ABI that we want the backend to use, e.g. o32, or
   /// aapcs-linux.
-  LLVM_ABI StringRef getABIName() const;
+  StringRef getABIName() const;
 
   /// getAssemblyLanguage - If this returns a non-empty string this represents
   /// the textual name of the assembly language that we will use for this
   /// target, e.g. masm.
-  LLVM_ABI StringRef getAssemblyLanguage() const;
+  StringRef getAssemblyLanguage() const;
 };
 
 } // end namespace llvm

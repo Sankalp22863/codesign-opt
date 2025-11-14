@@ -33,9 +33,7 @@
 #ifndef LLVM_CLANG_INTERPRETER_VALUE_H
 #define LLVM_CLANG_INTERPRETER_VALUE_H
 
-#include "llvm/Config/llvm-config.h" // for LLVM_BUILD_LLVM_DYLIB, LLVM_BUILD_SHARED_LIBS
 #include "llvm/Support/Compiler.h"
-#include <cassert>
 #include <cstdint>
 
 // NOTE: Since the REPL itself could also include this runtime, extreme caution
@@ -78,7 +76,6 @@ class QualType;
   X(bool, Bool)                                                                \
   X(char, Char_S)                                                              \
   X(signed char, SChar)                                                        \
-  X(unsigned char, Char_U)                                                     \
   X(unsigned char, UChar)                                                      \
   X(short, Short)                                                              \
   X(unsigned short, UShort)                                                    \
@@ -98,7 +95,6 @@ class REPL_EXTERNAL_VISIBILITY Value {
     REPL_BUILTIN_TYPES
 #undef X
     void *m_Ptr;
-    unsigned char m_RawBits[sizeof(long double) * 8]; // widest type
   };
 
 public:
@@ -113,7 +109,7 @@ public:
   };
 
   Value() = default;
-  Value(const Interpreter *In, void *Ty);
+  Value(Interpreter *In, void *Ty);
   Value(const Value &RHS);
   Value(Value &&RHS) noexcept;
   Value &operator=(const Value &RHS);
@@ -126,7 +122,9 @@ public:
   void dump() const;
   void clear();
 
+  ASTContext &getASTContext();
   const ASTContext &getASTContext() const;
+  Interpreter &getInterpreter();
   const Interpreter &getInterpreter() const;
   QualType getType() const;
 
@@ -140,7 +138,6 @@ public:
 
   void *getPtr() const;
   void setPtr(void *Ptr) { Data.m_Ptr = Ptr; }
-  void setRawBits(void *Ptr, unsigned NBits = sizeof(Storage));
 
 #define X(type, name)                                                          \
   void set##name(type Val) { Data.m_##name = Val; }                            \
@@ -194,7 +191,7 @@ protected:
     }
   };
 
-  const Interpreter *Interp = nullptr;
+  Interpreter *Interp = nullptr;
   void *OpaqueType = nullptr;
   Storage Data;
   Kind ValueKind = K_Unspecified;
@@ -206,5 +203,6 @@ template <> inline void *Value::as() const {
     return Data.m_Ptr;
   return (void *)as<uintptr_t>();
 }
+
 } // namespace clang
 #endif

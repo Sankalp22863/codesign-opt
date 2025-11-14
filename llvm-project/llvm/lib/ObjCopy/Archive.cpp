@@ -11,16 +11,17 @@
 #include "llvm/ObjCopy/MultiFormatConfig.h"
 #include "llvm/ObjCopy/ObjCopy.h"
 #include "llvm/Object/Error.h"
+#include "llvm/Object/MachO.h"
 #include "llvm/Support/FileOutputBuffer.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
 
-using namespace llvm;
-using namespace llvm::objcopy;
+namespace llvm {
+namespace objcopy {
+
 using namespace llvm::object;
 
 Expected<std::vector<NewArchiveMember>>
-objcopy::createNewArchiveMembers(const MultiFormatConfig &Config,
-                                 const Archive &Ar) {
+createNewArchiveMembers(const MultiFormatConfig &Config, const Archive &Ar) {
   std::vector<NewArchiveMember> NewArchiveMembers;
   Error Err = Error::success();
   for (const Archive::Child &Child : Ar.children(Err)) {
@@ -94,8 +95,8 @@ static Error deepWriteArchive(StringRef ArcName,
   return Error::success();
 }
 
-Error objcopy::executeObjcopyOnArchive(const MultiFormatConfig &Config,
-                                       const object::Archive &Ar) {
+Error executeObjcopyOnArchive(const MultiFormatConfig &Config,
+                              const object::Archive &Ar) {
   Expected<std::vector<NewArchiveMember>> NewArchiveMembersOrErr =
       createNewArchiveMembers(Config, Ar);
   if (!NewArchiveMembersOrErr)
@@ -107,3 +108,6 @@ Error objcopy::executeObjcopyOnArchive(const MultiFormatConfig &Config,
                           Ar.kind(), CommonConfig.DeterministicArchives,
                           Ar.isThin());
 }
+
+} // end namespace objcopy
+} // end namespace llvm

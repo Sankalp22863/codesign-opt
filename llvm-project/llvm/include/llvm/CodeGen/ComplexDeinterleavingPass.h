@@ -24,10 +24,10 @@ class TargetMachine;
 struct ComplexDeinterleavingPass
     : public PassInfoMixin<ComplexDeinterleavingPass> {
 private:
-  const TargetMachine *TM;
+  TargetMachine *TM;
 
 public:
-  ComplexDeinterleavingPass(const TargetMachine &TM) : TM(&TM) {}
+  ComplexDeinterleavingPass(TargetMachine *TM) : TM(TM) {}
 
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
 };
@@ -35,7 +35,6 @@ public:
 enum class ComplexDeinterleavingOperation {
   CAdd,
   CMulPartial,
-  CDot,
   // The following 'operations' are used to represent internal states. Backends
   // are not expected to try and support these in any capacity.
   Deinterleave,
@@ -44,7 +43,6 @@ enum class ComplexDeinterleavingOperation {
   ReductionPHI,
   ReductionOperation,
   ReductionSelect,
-  ReductionSingle
 };
 
 enum class ComplexDeinterleavingRotation {

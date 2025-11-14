@@ -42,18 +42,6 @@ public:
       return flavor_string.c_str();
     }
 
-    const char *GetCPUString() {
-      if (cpu_string.empty() || cpu_string == "default")
-        return nullptr;
-      return cpu_string.c_str();
-    }
-
-    const char *GetFeaturesString() {
-      if (features_string.empty() || features_string == "default")
-        return nullptr;
-      return features_string.c_str();
-    }
-
     Status OptionParsingFinished(ExecutionContext *execution_context) override;
 
     bool show_mixed; // Show mixed source/assembly
@@ -70,15 +58,12 @@ public:
     bool frame_line = false;
     std::string plugin_name;
     std::string flavor_string;
-    std::string cpu_string;
-    std::string features_string;
     ArchSpec arch;
     bool some_location_specified = false; // If no location was specified, we'll
                                           // select "at_pc".  This should be set
     // in SetOptionValue if anything the selects a location is set.
     lldb::addr_t symbol_containing_addr = 0;
     bool force = false;
-    bool enable_variable_annotations = false;
   };
 
   CommandObjectDisassemble(CommandInterpreter &interpreter);
@@ -101,8 +86,7 @@ protected:
   llvm::Expected<std::vector<AddressRange>> GetPCRanges();
   llvm::Expected<std::vector<AddressRange>> GetStartEndAddressRanges();
 
-  llvm::Expected<std::vector<AddressRange>>
-  CheckRangeSize(std::vector<AddressRange> ranges, llvm::StringRef what);
+  llvm::Error CheckRangeSize(const AddressRange &range, llvm::StringRef what);
 
   CommandOptions m_options;
 };

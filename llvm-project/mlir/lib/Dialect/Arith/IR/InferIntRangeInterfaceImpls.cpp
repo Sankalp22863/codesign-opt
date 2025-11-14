@@ -10,6 +10,7 @@
 #include "mlir/Interfaces/InferIntRangeInterface.h"
 #include "mlir/Interfaces/Utils/InferIntRangeCommon.h"
 
+#include "llvm/Support/Debug.h"
 #include <optional>
 
 #define DEBUG_TYPE "int-range-analysis"
@@ -18,44 +19,16 @@ using namespace mlir;
 using namespace mlir::arith;
 using namespace mlir::intrange;
 
-static intrange::OverflowFlags
-convertArithOverflowFlags(arith::IntegerOverflowFlags flags) {
-  intrange::OverflowFlags retFlags = intrange::OverflowFlags::None;
-  if (bitEnumContainsAny(flags, arith::IntegerOverflowFlags::nsw))
-    retFlags |= intrange::OverflowFlags::Nsw;
-  if (bitEnumContainsAny(flags, arith::IntegerOverflowFlags::nuw))
-    retFlags |= intrange::OverflowFlags::Nuw;
-  return retFlags;
-}
-
 //===----------------------------------------------------------------------===//
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
 void arith::ConstantOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
                                           SetIntRangeFn setResultRange) {
-  if (auto scalarCstAttr = llvm::dyn_cast_or_null<IntegerAttr>(getValue())) {
-    const APInt &value = scalarCstAttr.getValue();
+  auto constAttr = llvm::dyn_cast_or_null<IntegerAttr>(getValue());
+  if (constAttr) {
+    const APInt &value = constAttr.getValue();
     setResultRange(getResult(), ConstantIntRanges::constant(value));
-    return;
-  }
-  if (auto arrayCstAttr =
-          llvm::dyn_cast_or_null<DenseIntElementsAttr>(getValue())) {
-    if (arrayCstAttr.isSplat()) {
-      setResultRange(getResult(), ConstantIntRanges::constant(
-                                      arrayCstAttr.getSplatValue<APInt>()));
-      return;
-    }
-
-    std::optional<ConstantIntRanges> result;
-    for (const APInt &val : arrayCstAttr) {
-      auto range = ConstantIntRanges::constant(val);
-      result = (result ? result->rangeUnion(range) : range);
-    }
-
-    assert(result && "Zero-sized vectors are not allowed");
-    setResultRange(getResult(), *result);
-    return;
   }
 }
 
@@ -65,8 +38,7 @@ void arith::ConstantOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
 
 void arith::AddIOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
                                       SetIntRangeFn setResultRange) {
-  setResultRange(getResult(), inferAdd(argRanges, convertArithOverflowFlags(
-                                                      getOverflowFlags())));
+  setResultRange(getResult(), inferAdd(argRanges));
 }
 
 //===----------------------------------------------------------------------===//
@@ -75,8 +47,7 @@ void arith::AddIOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
 
 void arith::SubIOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
                                       SetIntRangeFn setResultRange) {
-  setResultRange(getResult(), inferSub(argRanges, convertArithOverflowFlags(
-                                                      getOverflowFlags())));
+  setResultRange(getResult(), inferSub(argRanges));
 }
 
 //===----------------------------------------------------------------------===//
@@ -85,8 +56,7 @@ void arith::SubIOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
 
 void arith::MulIOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
                                       SetIntRangeFn setResultRange) {
-  setResultRange(getResult(), inferMul(argRanges, convertArithOverflowFlags(
-                                                      getOverflowFlags())));
+  setResultRange(getResult(), inferMul(argRanges));
 }
 
 //===----------------------------------------------------------------------===//
@@ -312,24 +282,18 @@ void arith::CmpIOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
 // SelectOp
 //===----------------------------------------------------------------------===//
 
-void arith::SelectOp::inferResultRangesFromOptional(
-    ArrayRef<IntegerValueRange> argRanges, SetIntLatticeFn setResultRange) {
-  std::optional<APInt> mbCondVal =
-      argRanges[0].isUninitialized()
-          ? std::nullopt
-          : argRanges[0].getValue().getConstantValue();
-
-  const IntegerValueRange &trueCase = argRanges[1];
-  const IntegerValueRange &falseCase = argRanges[2];
+void arith::SelectOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
+                                        SetIntRangeFn setResultRange) {
+  std::optional<APInt> mbCondVal = argRanges[0].getConstantValue();
 
   if (mbCondVal) {
     if (mbCondVal->isZero())
-      setResultRange(getResult(), falseCase);
+      setResultRange(getResult(), argRanges[2]);
     else
-      setResultRange(getResult(), trueCase);
+      setResultRange(getResult(), argRanges[1]);
     return;
   }
-  setResultRange(getResult(), IntegerValueRange::join(trueCase, falseCase));
+  setResultRange(getResult(), argRanges[1].rangeUnion(argRanges[2]));
 }
 
 //===----------------------------------------------------------------------===//
@@ -338,8 +302,7 @@ void arith::SelectOp::inferResultRangesFromOptional(
 
 void arith::ShLIOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
                                       SetIntRangeFn setResultRange) {
-  setResultRange(getResult(), inferShl(argRanges, convertArithOverflowFlags(
-                                                      getOverflowFlags())));
+  setResultRange(getResult(), inferShl(argRanges));
 }
 
 //===----------------------------------------------------------------------===//

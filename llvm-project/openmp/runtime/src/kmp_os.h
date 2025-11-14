@@ -75,9 +75,8 @@
 #error Unknown compiler
 #endif
 
-#if (KMP_OS_LINUX || KMP_OS_WINDOWS || KMP_OS_FREEBSD || KMP_OS_NETBSD ||      \
-     KMP_OS_DRAGONFLY || KMP_OS_AIX) &&                                        \
-    !KMP_OS_WASI && !KMP_OS_EMSCRIPTEN
+#if (KMP_OS_LINUX || KMP_OS_WINDOWS || KMP_OS_FREEBSD || KMP_OS_AIX) &&        \
+    !KMP_OS_WASI
 #define KMP_AFFINITY_SUPPORTED 1
 #if KMP_OS_WINDOWS && KMP_ARCH_X86_64
 #define KMP_GROUP_AFFINITY 1
@@ -179,11 +178,11 @@ typedef unsigned long long kmp_uint64;
 #endif /* KMP_OS_UNIX */
 
 #if KMP_ARCH_X86 || KMP_ARCH_ARM || KMP_ARCH_MIPS || KMP_ARCH_WASM ||          \
-    KMP_ARCH_PPC || KMP_ARCH_AARCH64_32 || KMP_ARCH_SPARC32
+    KMP_ARCH_PPC
 #define KMP_SIZE_T_SPEC KMP_UINT32_SPEC
 #elif KMP_ARCH_X86_64 || KMP_ARCH_PPC64 || KMP_ARCH_AARCH64 ||                 \
     KMP_ARCH_MIPS64 || KMP_ARCH_RISCV64 || KMP_ARCH_LOONGARCH64 ||             \
-    KMP_ARCH_VE || KMP_ARCH_S390X || KMP_ARCH_SPARC64
+    KMP_ARCH_VE || KMP_ARCH_S390X
 #define KMP_SIZE_T_SPEC KMP_UINT64_SPEC
 #else
 #error "Can't determine size_t printf format specifier."
@@ -219,8 +218,7 @@ typedef kmp_uint32 kmp_uint;
 
 // stdarg handling
 #if (KMP_ARCH_ARM || KMP_ARCH_X86_64 || KMP_ARCH_AARCH64 || KMP_ARCH_WASM) &&  \
-    (KMP_OS_FREEBSD || KMP_OS_NETBSD || KMP_OS_OPENBSD || KMP_OS_DRAGONFLY ||  \
-     KMP_OS_LINUX || KMP_OS_WASI)
+    (KMP_OS_FREEBSD || KMP_OS_LINUX || KMP_OS_WASI)
 typedef va_list *kmp_va_list;
 #define kmp_va_deref(ap) (*(ap))
 #define kmp_va_addr_of(ap) (&(ap))
@@ -470,7 +468,7 @@ enum kmp_mem_fence_type {
 #pragma intrinsic(InterlockedExchangeAdd)
 #pragma intrinsic(InterlockedCompareExchange)
 #pragma intrinsic(InterlockedExchange)
-#if !KMP_32_BIT_ARCH
+#if !(KMP_COMPILER_ICX && KMP_32_BIT_ARCH)
 #pragma intrinsic(InterlockedExchange64)
 #endif
 #endif
@@ -1052,8 +1050,7 @@ extern kmp_real64 __kmp_xchg_real64(volatile kmp_real64 *p, kmp_real64 v);
 
 #if KMP_ARCH_PPC64 || KMP_ARCH_ARM || KMP_ARCH_AARCH64 || KMP_ARCH_MIPS ||     \
     KMP_ARCH_MIPS64 || KMP_ARCH_RISCV64 || KMP_ARCH_LOONGARCH64 ||             \
-    KMP_ARCH_VE || KMP_ARCH_S390X || KMP_ARCH_PPC || KMP_ARCH_AARCH64_32 ||    \
-    KMP_ARCH_SPARC
+    KMP_ARCH_VE || KMP_ARCH_S390X || KMP_ARCH_PPC
 #if KMP_OS_WINDOWS
 #undef KMP_MB
 #define KMP_MB() std::atomic_thread_fence(std::memory_order_seq_cst)
@@ -1295,7 +1292,7 @@ bool __kmp_atomic_compare_store_rel(std::atomic<T> *p, T expected, T desired) {
 extern void *__kmp_lookup_symbol(const char *name, bool next = false);
 #define KMP_DLSYM(name) __kmp_lookup_symbol(name)
 #define KMP_DLSYM_NEXT(name) __kmp_lookup_symbol(name, true)
-#elif KMP_OS_WASI || KMP_OS_EMSCRIPTEN
+#elif KMP_OS_WASI
 #define KMP_DLSYM(name) nullptr
 #define KMP_DLSYM_NEXT(name) nullptr
 #else

@@ -16,7 +16,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/CodeGen/StackFrameLayoutAnalysisPass.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -35,6 +34,8 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <sstream>
+
 using namespace llvm;
 
 #define DEBUG_TYPE "stack-frame-layout"
@@ -44,16 +45,12 @@ namespace {
 /// StackFrameLayoutAnalysisPass - This is a pass to dump the stack frame of a
 /// MachineFunction.
 ///
-struct StackFrameLayoutAnalysis {
+struct StackFrameLayoutAnalysisPass : public MachineFunctionPass {
   using SlotDbgMap = SmallDenseMap<int, SetVector<const DILocalVariable *>>;
-  MachineOptimizationRemarkEmitter &ORE;
-
-  StackFrameLayoutAnalysis(MachineOptimizationRemarkEmitter &ORE) : ORE(ORE) {}
+  static char ID;
 
   enum SlotType {
     Spill,          // a Spill slot
-    Fixed,          // a Fixed slot (e.g. arguments passed on the stack)
-    VariableSized,  // a variable sized object
     StackProtector, // Stack Protector slot
     Variable,       // a slot used to store a local data (could be a tmp)
     Invalid         // It's an error for a slot to have this type
@@ -63,46 +60,39 @@ struct StackFrameLayoutAnalysis {
     int Slot;
     int Size;
     int Align;
-    StackOffset Offset;
+    int Offset;
     SlotType SlotTy;
-    bool Scalable;
 
-    SlotData(const MachineFrameInfo &MFI, const StackOffset Offset,
-             const int Idx)
+    SlotData(const MachineFrameInfo &MFI, const int ValOffset, const int Idx)
         : Slot(Idx), Size(MFI.getObjectSize(Idx)),
-          Align(MFI.getObjectAlign(Idx).value()), Offset(Offset),
-          SlotTy(Invalid), Scalable(false) {
-      Scalable = MFI.hasScalableStackID(Idx);
+          Align(MFI.getObjectAlign(Idx).value()),
+          Offset(MFI.getObjectOffset(Idx) - ValOffset), SlotTy(Invalid) {
       if (MFI.isSpillSlotObjectIndex(Idx))
         SlotTy = SlotType::Spill;
-      else if (MFI.isFixedObjectIndex(Idx))
-        SlotTy = SlotType::Fixed;
-      else if (MFI.isVariableSizedObjectIndex(Idx))
-        SlotTy = SlotType::VariableSized;
-      else if (MFI.hasStackProtectorIndex() &&
-               Idx == MFI.getStackProtectorIndex())
+      else if (Idx == MFI.getStackProtectorIndex())
         SlotTy = SlotType::StackProtector;
       else
         SlotTy = SlotType::Variable;
     }
 
-    bool isVarSize() const { return SlotTy == SlotType::VariableSized; }
-
-    // We use this to sort in reverse order, so that the layout is displayed
-    // correctly. Variable sized slots are sorted to the end of the list, as
-    // offsets are currently incorrect for these but they reside at the end of
-    // the stack frame. The Slot index is used to ensure deterministic order
-    // when offsets are equal.
-    bool operator<(const SlotData &Rhs) const {
-      return std::make_tuple(!isVarSize(),
-                             Offset.getFixed() + Offset.getScalable(), Slot) >
-             std::make_tuple(!Rhs.isVarSize(),
-                             Rhs.Offset.getFixed() + Rhs.Offset.getScalable(),
-                             Rhs.Slot);
-    }
+    // we use this to sort in reverse order, so that the layout is displayed
+    // correctly
+    bool operator<(const SlotData &Rhs) const { return Offset > Rhs.Offset; }
   };
 
-  bool run(MachineFunction &MF) {
+  StackFrameLayoutAnalysisPass() : MachineFunctionPass(ID) {}
+
+  StringRef getPassName() const override {
+    return "Stack Frame Layout Analysis";
+  }
+
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.setPreservesAll();
+    MachineFunctionPass::getAnalysisUsage(AU);
+    AU.addRequired<MachineOptimizationRemarkEmitterPass>();
+  }
+
+  bool runOnMachineFunction(MachineFunction &MF) override {
     // TODO: We should implement a similar filter for remarks:
     //   -Rpass-func-filter=<regex>
     if (!isFunctionInPrintList(MF.getName()))
@@ -117,7 +107,7 @@ struct StackFrameLayoutAnalysis {
                                           &MF.front());
     Rem << ("\nFunction: " + MF.getName()).str();
     emitStackFrameLayoutRemarks(MF, Rem);
-    ORE.emit(Rem);
+    getAnalysis<MachineOptimizationRemarkEmitterPass>().getORE().emit(Rem);
     return false;
   }
 
@@ -125,10 +115,6 @@ struct StackFrameLayoutAnalysis {
     switch (Ty) {
     case SlotType::Spill:
       return "Spill";
-    case SlotType::Fixed:
-      return "Fixed";
-    case SlotType::VariableSized:
-      return "VariableSized";
     case SlotType::StackProtector:
       return "Protector";
     case SlotType::Variable:
@@ -157,29 +143,17 @@ struct StackFrameLayoutAnalysis {
     // For example we store the Offset in YAML as:
     //    ...
     //    - Offset: -8
-    //    - ScalableOffset: -16
-    // Note: the ScalableOffset entries are added only for slots with non-zero
-    // scalable offsets.
     //
-    // But we print it to the CLI as:
+    // But we print it to the CLI as
     //   Offset: [SP-8]
-    //
-    // Or with non-zero scalable offset:
-    //   Offset: [SP-8-16 x vscale]
 
     // Negative offsets will print a leading `-`, so only add `+`
     std::string Prefix =
-        formatv("\nOffset: [SP{0}", (D.Offset.getFixed() < 0) ? "" : "+").str();
-    Rem << Prefix << ore::NV("Offset", D.Offset.getFixed());
-
-    if (D.Offset.getScalable()) {
-      Rem << ((D.Offset.getScalable() < 0) ? "" : "+")
-          << ore::NV("ScalableOffset", D.Offset.getScalable()) << " x vscale";
-    }
-
-    Rem << "], Type: " << ore::NV("Type", getTypeString(D.SlotTy))
+        formatv("\nOffset: [SP{0}", (D.Offset < 0) ? "" : "+").str();
+    Rem << Prefix << ore::NV("Offset", D.Offset)
+        << "], Type: " << ore::NV("Type", getTypeString(D.SlotTy))
         << ", Align: " << ore::NV("Align", D.Align)
-        << ", Size: " << ore::NV("Size", ElementCount::get(D.Size, D.Scalable));
+        << ", Size: " << ore::NV("Size", D.Size);
   }
 
   void emitSourceLocRemark(const MachineFunction &MF, const DILocalVariable *N,
@@ -190,22 +164,17 @@ struct StackFrameLayoutAnalysis {
     Rem << "\n    " << ore::NV("DataLoc", Loc);
   }
 
-  StackOffset getStackOffset(const MachineFunction &MF,
-                             const MachineFrameInfo &MFI,
-                             const TargetFrameLowering *FI, int FrameIdx) {
-    if (!FI)
-      return StackOffset::getFixed(MFI.getObjectOffset(FrameIdx));
-
-    return FI->getFrameIndexReferenceFromSP(MF, FrameIdx);
-  }
-
   void emitStackFrameLayoutRemarks(MachineFunction &MF,
                                    MachineOptimizationRemarkAnalysis &Rem) {
     const MachineFrameInfo &MFI = MF.getFrameInfo();
     if (!MFI.hasStackObjects())
       return;
 
+    // ValOffset is the offset to the local area from the SP at function entry.
+    // To display the true offset from SP, we need to subtract ValOffset from
+    // MFI's ObjectOffset.
     const TargetFrameLowering *FI = MF.getSubtarget().getFrameLowering();
+    const int ValOffset = (FI ? FI->getOffsetOfLocalArea() : 0);
 
     LLVM_DEBUG(dbgs() << "getStackProtectorIndex =="
                       << MFI.getStackProtectorIndex() << "\n");
@@ -219,7 +188,7 @@ struct StackFrameLayoutAnalysis {
          Idx != EndIdx; ++Idx) {
       if (MFI.isDeadObjectIndex(Idx))
         continue;
-      SlotInfo.emplace_back(MFI, getStackOffset(MF, MFI, FI, Idx), Idx);
+      SlotInfo.emplace_back(MFI, ValOffset, Idx);
     }
 
     // sort the ordering, to match the actual layout in memory
@@ -269,44 +238,17 @@ struct StackFrameLayoutAnalysis {
   }
 };
 
-class StackFrameLayoutAnalysisLegacy : public MachineFunctionPass {
-public:
-  static char ID;
-
-  StackFrameLayoutAnalysisLegacy() : MachineFunctionPass(ID) {}
-
-  StringRef getPassName() const override {
-    return "Stack Frame Layout Analysis";
-  }
-
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
-    AU.setPreservesAll();
-    MachineFunctionPass::getAnalysisUsage(AU);
-    AU.addRequired<MachineOptimizationRemarkEmitterPass>();
-  }
-
-  bool runOnMachineFunction(MachineFunction &MF) override {
-    auto &ORE = getAnalysis<MachineOptimizationRemarkEmitterPass>().getORE();
-    return StackFrameLayoutAnalysis(ORE).run(MF);
-  }
-};
-
-char StackFrameLayoutAnalysisLegacy::ID = 0;
+char StackFrameLayoutAnalysisPass::ID = 0;
 } // namespace
 
-PreservedAnalyses
-llvm::StackFrameLayoutAnalysisPass::run(MachineFunction &MF,
-                                        MachineFunctionAnalysisManager &MFAM) {
-  auto &ORE = MFAM.getResult<MachineOptimizationRemarkEmitterAnalysis>(MF);
-  StackFrameLayoutAnalysis(ORE).run(MF);
-  return PreservedAnalyses::all();
-}
-
-char &llvm::StackFrameLayoutAnalysisPassID = StackFrameLayoutAnalysisLegacy::ID;
-INITIALIZE_PASS(StackFrameLayoutAnalysisLegacy, "stack-frame-layout",
+char &llvm::StackFrameLayoutAnalysisPassID = StackFrameLayoutAnalysisPass::ID;
+INITIALIZE_PASS(StackFrameLayoutAnalysisPass, "stack-frame-layout",
                 "Stack Frame Layout", false, false)
 
+namespace llvm {
 /// Returns a newly-created StackFrameLayout pass.
-MachineFunctionPass *llvm::createStackFrameLayoutAnalysisPass() {
-  return new StackFrameLayoutAnalysisLegacy();
+MachineFunctionPass *createStackFrameLayoutAnalysisPass() {
+  return new StackFrameLayoutAnalysisPass();
 }
+
+} // namespace llvm

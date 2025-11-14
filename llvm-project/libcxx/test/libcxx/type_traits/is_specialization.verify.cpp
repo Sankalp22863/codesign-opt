@@ -13,9 +13,10 @@
 //
 // Tests the ill-formed instantiations.
 
-#include <__type_traits/is_specialization.h>
+#include <type_traits>
+
 #include <array>
 #include <utility>
 
-// expected-error-re@*:* {{{{could not match _Size against 'type-parameter-0-0'|different template parameters|template argument for non-type template parameter must be an expression}}}}
+// expected-error@+1 {{template template argument has different template parameters than its corresponding template template parameter}}
 static_assert(!std::__is_specialization_v<std::pair<int, std::size_t>, std::array>);

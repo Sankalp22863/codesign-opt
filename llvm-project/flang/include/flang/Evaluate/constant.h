@@ -11,8 +11,8 @@
 
 #include "formatting.h"
 #include "type.h"
+#include "flang/Common/default-kinds.h"
 #include "flang/Common/reference.h"
-#include "flang/Support/default-kinds.h"
 #include <map>
 #include <vector>
 
@@ -65,7 +65,6 @@ public:
   ~ConstantBounds();
   const ConstantSubscripts &shape() const { return shape_; }
   int Rank() const { return GetRank(shape_); }
-  static constexpr int Corank() { return 0; }
   Constant<SubscriptInteger> SHAPE() const;
 
   // It is possible in this representation for a constant array to have
@@ -110,12 +109,8 @@ public:
   using Result = RESULT;
   using Element = ELEMENT;
 
-  // Constructor for creating ConstantBase from an actual value (i.e.
-  // literals, etc.)
-  template <typename A,
-      typename = std::enable_if_t<std::is_convertible_v<A, Element>>>
+  template <typename A>
   ConstantBase(const A &x, Result res = Result{}) : result_{res}, values_{x} {}
-
   ConstantBase(ELEMENT &&x, Result res = Result{})
       : result_{res}, values_{std::move(x)} {}
   ConstantBase(
@@ -128,19 +123,18 @@ public:
   bool empty() const { return values_.empty(); }
   std::size_t size() const { return values_.size(); }
   const std::vector<Element> &values() const { return values_; }
-  Result &result() { return result_; }
-  const Result &result() const { return result_; }
+  constexpr Result result() const { return result_; }
 
   constexpr DynamicType GetType() const { return result_.GetType(); }
-  llvm::raw_ostream &AsFortran(llvm::raw_ostream &) const;
-  std::string AsFortran() const;
+  llvm::raw_ostream &AsFortran(llvm::raw_ostream &,
+      const parser::CharBlock *derivedTypeRename = nullptr) const;
 
 protected:
   std::vector<Element> Reshape(const ConstantSubscripts &) const;
   std::size_t CopyFrom(const ConstantBase &source, std::size_t count,
       ConstantSubscripts &resultSubscripts, const std::vector<int> *dimOrder);
 
-  Result result_; // usually empty except for Real & Complex
+  Result result_;
   std::vector<Element> values_;
 };
 
@@ -192,8 +186,6 @@ public:
 
   const Scalar<Result> &values() const { return values_; }
   ConstantSubscript LEN() const { return length_; }
-  bool wasHollerith() const { return wasHollerith_; }
-  void set_wasHollerith(bool yes = true) { wasHollerith_ = yes; }
 
   std::optional<Scalar<Result>> GetScalarValue() const {
     if (Rank() == 0) {
@@ -211,7 +203,6 @@ public:
 
   Constant Reshape(ConstantSubscripts &&) const;
   llvm::raw_ostream &AsFortran(llvm::raw_ostream &) const;
-  std::string AsFortran() const;
   DynamicType GetType() const { return {KIND, length_}; }
   std::size_t CopyFrom(const Constant &source, std::size_t count,
       ConstantSubscripts &resultSubscripts, const std::vector<int> *dimOrder);
@@ -219,7 +210,6 @@ public:
 private:
   Scalar<Result> values_; // one contiguous string
   ConstantSubscript length_;
-  bool wasHollerith_{false};
 };
 
 class StructureConstructor;

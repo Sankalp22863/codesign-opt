@@ -49,8 +49,6 @@
 #ifndef LLVM_CLANG_ASTMATCHERS_ASTMATCHERSMACROS_H
 #define LLVM_CLANG_ASTMATCHERS_ASTMATCHERSMACROS_H
 
-#include "clang/Support/Compiler.h"
-
 /// AST_MATCHER_FUNCTION(ReturnType, DefineMatcher) { ... }
 /// defines a zero parameter function named DefineMatcher() that returns a
 /// ReturnType object.
@@ -106,7 +104,7 @@
   };                                                                           \
   }                                                                            \
   inline ::clang::ast_matchers::internal::Matcher<Type> DefineMatcher() {      \
-    return ::clang::ast_matchers::internal::Matcher(                           \
+    return ::clang::ast_matchers::internal::makeMatcher(                       \
         new internal::matcher_##DefineMatcher##Matcher());                     \
   }                                                                            \
   inline bool internal::matcher_##DefineMatcher##Matcher::matches(             \
@@ -150,7 +148,7 @@
   }                                                                            \
   inline ::clang::ast_matchers::internal::Matcher<Type> DefineMatcher(         \
       ParamType const &Param) {                                                \
-    return ::clang::ast_matchers::internal::Matcher(                           \
+    return ::clang::ast_matchers::internal::makeMatcher(                       \
         new internal::matcher_##DefineMatcher##OverloadId##Matcher(Param));    \
   }                                                                            \
   typedef ::clang::ast_matchers::internal::Matcher<Type> (                     \
@@ -200,7 +198,7 @@
   }                                                                            \
   inline ::clang::ast_matchers::internal::Matcher<Type> DefineMatcher(         \
       ParamType1 const &Param1, ParamType2 const &Param2) {                    \
-    return ::clang::ast_matchers::internal::Matcher(                           \
+    return ::clang::ast_matchers::internal::makeMatcher(                       \
         new internal::matcher_##DefineMatcher##OverloadId##Matcher(Param1,     \
                                                                    Param2));   \
   }                                                                            \
@@ -369,7 +367,7 @@
     static QualType (T::*value())() const { return &T::FunctionName; }         \
   };                                                                           \
   }                                                                            \
-  CLANG_ABI extern const ::clang::ast_matchers::internal::                     \
+  extern const ::clang::ast_matchers::internal::                               \
       TypeTraversePolymorphicMatcher<                                          \
           QualType,                                                            \
           ::clang::ast_matchers::internal::TypeMatcher##MatcherName##Getter,   \
@@ -409,7 +407,7 @@
     static TypeLoc (T::*value())() const { return &T::FunctionName##Loc; }     \
   };                                                                           \
   }                                                                            \
-  CLANG_ABI extern const ::clang::ast_matchers::internal::                     \
+  extern const ::clang::ast_matchers::internal::                               \
       TypeTraversePolymorphicMatcher<                                          \
           TypeLoc,                                                             \
           ::clang::ast_matchers::internal::                                    \
@@ -476,7 +474,7 @@
   }                                                                            \
   inline ::clang::ast_matchers::internal::Matcher<Type> DefineMatcher(         \
       llvm::StringRef Param, llvm::Regex::RegexFlags RegexFlags) {             \
-    return ::clang::ast_matchers::internal::Matcher(                           \
+    return ::clang::ast_matchers::internal::makeMatcher(                       \
         new internal::matcher_##DefineMatcher##OverloadId##Matcher(            \
             ::clang::ast_matchers::internal::createAndVerifyRegex(             \
                 Param, RegexFlags, #DefineMatcher)));                          \

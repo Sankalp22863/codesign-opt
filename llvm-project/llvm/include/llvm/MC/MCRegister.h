@@ -51,17 +51,22 @@ public:
                 "Reg isn't large enough to hold full range.");
   static constexpr unsigned NoRegister = 0u;
   static constexpr unsigned FirstPhysicalReg = 1u;
-  static constexpr unsigned LastPhysicalReg = (1u << 30) - 1;
+  static constexpr unsigned FirstStackSlot = 1u << 30;
+  static constexpr unsigned VirtualRegFlag = 1u << 31;
+
+  /// This is the portion of the positive number space that is not a physical
+  /// register. StackSlot values do not exist in the MC layer, see
+  /// Register::isStackSlot() for the more information on them.
+  ///
+  static constexpr bool isStackSlot(unsigned Reg) {
+    return FirstStackSlot <= Reg && Reg < VirtualRegFlag;
+  }
 
   /// Return true if the specified register number is in
   /// the physical register namespace.
   static constexpr bool isPhysicalRegister(unsigned Reg) {
-    return FirstPhysicalReg <= Reg && Reg <= LastPhysicalReg;
+    return FirstPhysicalReg <= Reg && Reg < FirstStackSlot;
   }
-
-  /// Return true if the specified register number is in the physical register
-  /// namespace.
-  constexpr bool isPhysical() const { return isPhysicalRegister(Reg); }
 
   constexpr operator unsigned() const { return Reg; }
 
@@ -86,6 +91,7 @@ public:
   /// Comparisons against register constants. E.g.
   /// * R == AArch64::WZR
   /// * R == 0
+  /// * R == VirtRegMap::NO_PHYS_REG
   constexpr bool operator==(unsigned Other) const { return Reg == Other; }
   constexpr bool operator!=(unsigned Other) const { return Reg != Other; }
   constexpr bool operator==(int Other) const { return Reg == unsigned(Other); }
@@ -101,17 +107,17 @@ public:
 
 // Provide DenseMapInfo for MCRegister
 template <> struct DenseMapInfo<MCRegister> {
-  static inline MCRegister getEmptyKey() {
+  static inline unsigned getEmptyKey() {
     return DenseMapInfo<unsigned>::getEmptyKey();
   }
-  static inline MCRegister getTombstoneKey() {
+  static inline unsigned getTombstoneKey() {
     return DenseMapInfo<unsigned>::getTombstoneKey();
   }
   static unsigned getHashValue(const MCRegister &Val) {
     return DenseMapInfo<unsigned>::getHashValue(Val.id());
   }
   static bool isEqual(const MCRegister &LHS, const MCRegister &RHS) {
-    return LHS == RHS;
+    return DenseMapInfo<unsigned>::isEqual(LHS.id(), RHS.id());
   }
 };
 

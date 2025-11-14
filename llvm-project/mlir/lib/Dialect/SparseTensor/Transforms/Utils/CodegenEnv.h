@@ -49,14 +49,10 @@ public:
 
   linalg::GenericOp op() const { return linalgOp; }
   const SparsificationOptions &options() const { return sparseOptions; }
-  bool generatingSparseIterator() const {
-    return sparseOptions.sparseEmitStrategy ==
-           SparseEmitStrategy::kSparseIterator;
-  }
   Merger &merger() { return latticeMerger; }
   LoopEmitter &emitter() { return loopEmitter; }
 
-  void startEmit(SparseEmitStrategy emitStrategy);
+  void startEmit();
 
   /// Generates loop boundary statements (entering/exiting loops). The function
   /// passes and updates the passed-in parameters.

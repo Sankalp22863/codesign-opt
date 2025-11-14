@@ -1,11 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -std=c++98 -verify=expected,cxx98,cxx98-11 -fblocks %s
-// RUN: %clang_cc1 -fsyntax-only -std=c++11 -verify=expected,since-cxx11,cxx98-11 -fblocks %s
-// RUN: %clang_cc1 -fsyntax-only -std=c++14 -verify=expected,since-cxx11 -fblocks %s
-// RUN: %clang_cc1 -fsyntax-only -std=c++17 -verify=expected,since-cxx11 -fblocks %s
-// RUN: %clang_cc1 -fsyntax-only -std=c++20 -verify=expected,since-cxx11,since-cxx20 -fblocks %s
-// RUN: %clang_cc1 -fsyntax-only -std=c++23 -verify=expected,since-cxx11,since-cxx20 -fblocks %s
-// RUN: %clang_cc1 -fsyntax-only -std=c++26 -verify=expected,since-cxx11,since-cxx20 -fblocks %s
-
+// RUN: %clang_cc1 -fsyntax-only -std=c++98 -verify -fblocks %s 
 namespace A {
   struct C {
     static int cx;
@@ -15,9 +8,7 @@ namespace A {
     static int Ag1();
     static int Ag2();
   };
-  int ax;
-  // expected-note@-1 {{'ax' declared here}}
-  // expected-note@-2 {{'::A::ax' declared here}}
+  int ax; // expected-note {{'ax' declared here}}
   void Af();
 }
 
@@ -34,7 +25,7 @@ int A::C::cx = 17;
 
 static int A::C::cx2 = 17; // expected-error{{'static' can}}
 
-class C2 { // #defined-here-C2
+class C2 {
   void m(); // expected-note{{member declaration does not match because it is not const qualified}}
 
   void f(const int& parm); // expected-note{{type of 1st parameter of member declaration does not match definition ('const int &' vs 'int')}}
@@ -45,10 +36,8 @@ class C2 { // #defined-here-C2
 };
 
 void C2::m() const { } // expected-error{{out-of-line definition of 'm' does not match any declaration in 'C2'}}
-                       // expected-note@#defined-here-C2{{defined here}}
 
 void C2::f(int) { } // expected-error{{out-of-line definition of 'f' does not match any declaration in 'C2'}}
-                    // expected-note@#defined-here-C2{{defined here}}
 
 void C2::m() {
   x = 0;
@@ -76,7 +65,7 @@ A::C c1;
 struct A::C c2;
 struct S : public A::C {};
 struct A::undef; // expected-error {{no struct named 'undef' in namespace 'A'}}
-                 // expected-error@-1 {{forward declaration of struct cannot have a nested name specifier}}
+
 namespace A2 {
   typedef int INT;
   struct RC;
@@ -102,7 +91,7 @@ void f3() {
   N::x = 0; // expected-error {{'N' is not a class, namespace, or enumeration}}
   { int A;           A::ax = 0; }
   { typedef int A;   A::ax = 0; } // expected-error{{'A' (aka 'int') is not a class, namespace, or enumeration}}
-  { typedef A::C A;  A::ax = 0; } // expected-error {{no member named 'ax' in 'A::C'; did you mean '::A::ax'?}}
+  { typedef A::C A;  A::ax = 0; } // expected-error {{no member named 'ax'}}
   { typedef A::C A;  A::cx = 0; }
 }
 
@@ -120,26 +109,25 @@ void A2::CC::NC::m(); // expected-error{{out-of-line declaration of a member mus
 
 namespace E {
   int X = 5;
-
+  
   namespace Nested {
     enum E {
       X = 0
     };
 
     int f() {
-      return E::X; // cxx98-warning{{use of enumeration in a nested name specifier is a C++11 extension}}
+      return E::X; // expected-warning{{use of enumeration in a nested name specifier is a C++11 extension}}
     }
   }
 }
 
 
-class Operators { // #defined-here-Operators
+class Operators {
   Operators operator+(const Operators&) const; // expected-note{{member declaration does not match because it is const qualified}}
   operator bool();
 };
 
 Operators Operators::operator+(const Operators&) { // expected-error{{out-of-line definition of 'operator+' does not match any declaration in 'Operators'}}
-                                                   // expected-note@#defined-here-Operators{{defined here}}
   Operators ops;
   return ops;
 }
@@ -155,16 +143,15 @@ Operators::operator bool() {
 
 namespace A {
   void g(int&); // expected-note{{type of 1st parameter of member declaration does not match definition ('int &' vs 'const int &')}}
-}
+} 
 
 void A::f() {} // expected-error-re{{out-of-line definition of 'f' does not match any declaration in namespace 'A'{{$}}}}
 
 void A::g(const int&) { } // expected-error{{out-of-line definition of 'g' does not match any declaration in namespace 'A'}}
 
-struct Struct { }; // #defined-here-Struct
+struct Struct { };
 
 void Struct::f() { } // expected-error{{out-of-line definition of 'f' does not match any declaration in 'Struct'}}
-                     // expected-note@#defined-here-Struct{{defined here}}
 
 void global_func(int);
 void global_func2(int);
@@ -179,9 +166,8 @@ void ::global_func2(int) { } // expected-warning{{extra qualification on member 
 
 void N::f() { } // okay
 
-// FIXME (GH147000): duplicate diagnostics
-struct Y;  // expected-note{{forward declaration of 'Y'}} since-cxx20-note{{forward declaration of 'Y'}}
-Y::foo y; // expected-error{{incomplete type 'Y' named in nested name specifier}} since-cxx20-error{{incomplete type 'Y' named in nested name specifier}}
+struct Y;  // expected-note{{forward declaration of 'Y'}}
+Y::foo y; // expected-error{{incomplete type 'Y' named in nested name specifier}}
 
 namespace PR25156 {
 struct Y;  // expected-note{{forward declaration of 'PR25156::Y'}}
@@ -199,9 +185,7 @@ bool (foo_S::value);
 
 
 namespace somens {
-  struct a { };
-  // expected-note@-1 {{candidate constructor (the implicit copy constructor)}}
-  // since-cxx11-note@-2 {{candidate constructor (the implicit move constructor)}}
+  struct a { }; // expected-note{{candidate constructor (the implicit copy constructor)}}
 }
 
 template <typename T>
@@ -296,11 +280,9 @@ template<typename T>
 struct A {
 protected:
   struct B;
-  struct B::C;
-  // expected-error@-1 {{requires a template parameter list}}
-  // expected-error@-2 {{no struct named 'C'}}
-  // expected-error@-3 {{non-friend class member 'C' cannot have a qualified name}}
-  // expected-error@-4 {{forward declaration of struct cannot have a nested name specifier}}
+  struct B::C; // expected-error {{requires a template parameter list}} \
+               // expected-error {{no struct named 'C'}} \
+    // expected-error{{non-friend class member 'C' cannot have a qualified name}}
 };
 
 template<typename T>
@@ -310,7 +292,6 @@ protected:
 };
 template <typename T>
 struct A2<T>::B::C; // expected-error {{no struct named 'C'}}
-                    // expected-error@-1 {{forward declaration of struct cannot have a nested name specifier}}
 }
 
 namespace PR13033 {
@@ -421,8 +402,7 @@ T1<C2::N1> var_1a;
 T1<C2:N1> var_1b;  // expected-error{{unexpected ':' in nested name specifier; did you mean '::'?}}
 template<int N> int F() {}
 int (*X1)() = (B1::B2 ? F<1> : F<2>);
-int (*X2)() = (B1:B2 ? F<1> : F<2>);  // expected-error{{unexpected ':' in nested name specifier; did you mean '::'?}} \
-                                         expected-note{{'PR18587::X2' declared here}}
+int (*X2)() = (B1:B2 ? F<1> : F<2>);  // expected-error{{unexpected ':' in nested name specifier; did you mean '::'?}}
 
 // Bit fields + templates
 struct S7a {
@@ -444,22 +424,21 @@ namespace PR16951 {
     };
   }
 
-  int x1 = ns::an_enumeration::ENUMERATOR; // cxx98-warning{{use of enumeration in a nested name specifier is a C++11 extension}}
+  int x1 = ns::an_enumeration::ENUMERATOR; // expected-warning{{use of enumeration in a nested name specifier is a C++11 extension}}
 
-  int x2 = ns::an_enumeration::ENUMERATOR::vvv; // cxx98-warning{{use of enumeration in a nested name specifier is a C++11 extension}} \
+  int x2 = ns::an_enumeration::ENUMERATOR::vvv; // expected-warning{{use of enumeration in a nested name specifier is a C++11 extension}} \
                                                 // expected-error{{'ENUMERATOR' is not a class, namespace, or enumeration}} \
 
-  int x3 = ns::an_enumeration::X; // cxx98-warning {{use of enumeration in a nested name specifier is a C++11 extension}} \
+  int x3 = ns::an_enumeration::X; // expected-warning{{use of enumeration in a nested name specifier is a C++11 extension}} \
                                   // expected-error{{no member named 'X'}}
 
   enum enumerator_2 {
     ENUMERATOR_2
   };
 
-  int x4 = enumerator_2::ENUMERATOR_2; // cxx98-warning{{use of enumeration in a nested name specifier is a C++11 extension}}
-  int x5 = enumerator_2::X2; // cxx98-warning{{use of enumeration in a nested name specifier is a C++11 extension}} \
-                             // expected-error{{no member named 'X2' in 'PR16951::enumerator_2'}} \
-                             // expected-error{{cannot initialize a variable of type 'int' with an lvalue of type 'int (*)()'}}
+  int x4 = enumerator_2::ENUMERATOR_2; // expected-warning{{use of enumeration in a nested name specifier is a C++11 extension}}
+  int x5 = enumerator_2::X2; // expected-warning{{use of enumeration in a nested name specifier is a C++11 extension}} \
+                             // expected-error{{no member named 'X2' in 'PR16951::enumerator_2'}}
 
 }
 
@@ -476,7 +455,7 @@ namespace A {
 class B {
   typedef C D; // expected-error{{unknown type name 'C'}}
   A::D::F;
-  // expected-error@-1{{'A::D' (aka 'int') is not a class, namespace, or enumeration}}
+  // expected-error@-1{{'PR30619::A::B::D' (aka 'int') is not a class, namespace, or enumeration}}
 };
 }
 }
@@ -499,20 +478,4 @@ struct x; // expected-note {{template is declared here}}
 
 template <typename T>
 int issue55962 = x::a; // expected-error {{use of class template 'x' requires template arguments}} \
-                       // cxx98-11-warning {{variable templates are a C++14 extension}}
-
-namespace ForwardDeclared {
-  typedef class A B;
-  struct A {
-    enum C {};
-    void F(B::C);
-  };
-}
-
-namespace GH63254 {
-template <typename...> struct V {}; // cxx98-warning {{variadic templates are a C++11 extension}}
-struct S : V<> {
-  using S::V; // expected-error {{using declaration refers to its own class}}
-  V<> v; // no crash
-};
-}
+                       // expected-warning {{variable templates are a C++14 extension}}

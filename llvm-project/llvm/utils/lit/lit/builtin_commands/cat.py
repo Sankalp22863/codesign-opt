@@ -1,12 +1,16 @@
 import getopt
 import sys
-from io import StringIO
+
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
 
 
 def convertToCaretAndMNotation(data):
     newdata = StringIO()
     if isinstance(data, str):
-        data = bytearray(data.encode())
+        data = bytearray(data)
 
     for intval in data:
         if intval == 9 or intval == 10:
@@ -49,29 +53,12 @@ def main(argv):
             import os, msvcrt
 
             msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
-    if len(filenames) == 0:
-        sys.stdout.write(sys.stdin.read())
-        sys.exit(0)
     for filename in filenames:
         try:
-            contents = None
-            is_text = False
-            try:
-                if sys.platform != "win32":
-                    fileToCat = open(filename, "r")
-                    contents = fileToCat.read()
-                    is_text = True
-            except:
-                pass
-
-            if contents is None:
-                fileToCat = open(filename, "rb")
-                contents = fileToCat.read()
-
+            fileToCat = open(filename, "rb")
+            contents = fileToCat.read()
             if show_nonprinting:
                 contents = convertToCaretAndMNotation(contents)
-            elif is_text:
-                contents = contents.encode()
             writer.write(contents)
             sys.stdout.flush()
             fileToCat.close()

@@ -25,10 +25,8 @@
 #include <array>
 #include <concepts>
 #include <functional>
-#include <memory>
 #include <random>
 #include <ranges>
-#include <vector>
 
 #include "almost_satisfies_types.h"
 #include "test_iterators.h"
@@ -248,7 +246,7 @@ void test_complexity() {
     std::ranges::sort_heap(first, last, &MyInt::Comp);
     LIBCPP_ASSERT(stats.copied == 0);
     LIBCPP_ASSERT(stats.moved <= 2 * n + n * logn);
-#if defined(_LIBCPP_HARDENING_MODE) && _LIBCPP_HARDENING_MODE != _LIBCPP_HARDENING_MODE_DEBUG
+#if _LIBCPP_HARDENING_MODE != _LIBCPP_HARDENING_MODE_DEBUG
     LIBCPP_ASSERT(stats.compared <= n * logn);
 #else
     LIBCPP_ASSERT(stats.compared <= 2 * n * logn + debug_comparisons);

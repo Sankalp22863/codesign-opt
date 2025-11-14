@@ -502,25 +502,6 @@ func.func @succeededOilistTrivial() {
 
 // -----
 
-// CHECK-LABEL: @succeededOilistTrivialProperties
-func.func @succeededOilistTrivialProperties() {
-  // CHECK: test.oilist_with_keywords_only_properties keyword
-  test.oilist_with_keywords_only_properties keyword
-  // CHECK: test.oilist_with_keywords_only_properties otherKeyword
-  test.oilist_with_keywords_only_properties otherKeyword
-  // CHECK: test.oilist_with_keywords_only_properties keyword otherKeyword
-  test.oilist_with_keywords_only_properties keyword otherKeyword
-  // CHECK: test.oilist_with_keywords_only_properties keyword otherKeyword
-  test.oilist_with_keywords_only_properties otherKeyword keyword
-  // CHECK: test.oilist_with_keywords_only_properties thirdKeyword
-  test.oilist_with_keywords_only_properties thirdKeyword
-  // CHECK: test.oilist_with_keywords_only_properties keyword thirdKeyword
-  test.oilist_with_keywords_only_properties keyword thirdKeyword
-  return
-}
-
-// -----
-
 // CHECK-LABEL: @succeededOilistSimple
 func.func @succeededOilistSimple(%arg0 : i32, %arg1 : i32, %arg2 : i32) {
   // CHECK: test.oilist_with_simple_args keyword %{{.*}} : i32
@@ -591,13 +572,15 @@ func.func @failedHasDominanceScopeOutsideDominanceFreeScope() -> () {
 
 // Ensure that SSACFG regions of operations in GRAPH regions are
 // checked for dominance
-func.func @illegalInsideDominanceFreeScope(%cond: i1) -> () {
+func.func @illegalInsideDominanceFreeScope() -> () {
   test.graph_region {
-    scf.if %cond {
+    func.func @test() -> i1 {
+    ^bb1:
       // expected-error @+1 {{operand #0 does not dominate this use}}
       %2:3 = "bar"(%1) : (i64) -> (i1,i1,i1)
       // expected-note @+1 {{operand defined here}}
-      %1 = "baz"(%2#0) : (i1) -> (i64)
+	   %1 = "baz"(%2#0) : (i1) -> (i64)
+      return %2#1 : i1
     }
     "terminator"() : () -> ()
   }
@@ -608,21 +591,20 @@ func.func @illegalInsideDominanceFreeScope(%cond: i1) -> () {
 
 // Ensure that SSACFG regions of operations in GRAPH regions are
 // checked for dominance
-func.func @illegalCFGInsideDominanceFreeScope(%cond: i1) -> () {
+func.func @illegalCDFGInsideDominanceFreeScope() -> () {
   test.graph_region {
-    scf.if %cond {
-      "test.ssacfg_region"() ({
-      ^bb1:
-        // expected-error @+1 {{operand #0 does not dominate this use}}
-        %2:3 = "bar"(%1) : (i64) -> (i1,i1,i1)
-        cf.br ^bb4
-      ^bb2:
-        cf.br ^bb2
-      ^bb4:
-        %1 = "foo"() : ()->i64   // expected-note {{operand defined here}}
-      }) : () -> ()
+    func.func @test() -> i1 {
+    ^bb1:
+      // expected-error @+1 {{operand #0 does not dominate this use}}
+      %2:3 = "bar"(%1) : (i64) -> (i1,i1,i1)
+      cf.br ^bb4
+    ^bb2:
+      cf.br ^bb2
+    ^bb4:
+      %1 = "foo"() : ()->i64   // expected-note {{operand defined here}}
+		return %2#1 : i1
     }
-    "terminator"() : () -> ()
+     "terminator"() : () -> ()
   }
   return
 }

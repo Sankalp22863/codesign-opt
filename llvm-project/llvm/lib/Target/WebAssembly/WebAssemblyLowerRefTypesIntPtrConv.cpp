@@ -68,11 +68,12 @@ bool WebAssemblyLowerRefTypesIntPtrConv::runOnFunction(Function &F) {
         !(ITP && WebAssembly::isWebAssemblyReferenceType(ITP->getDestTy())))
       continue;
 
-    I->replaceAllUsesWith(PoisonValue::get(I->getType()));
+    UndefValue *U = UndefValue::get(I->getType());
+    I->replaceAllUsesWith(U);
 
     Function *TrapIntrin =
-        Intrinsic::getOrInsertDeclaration(F.getParent(), Intrinsic::debugtrap);
-    CallInst::Create(TrapIntrin, {}, "", I->getIterator());
+        Intrinsic::getDeclaration(F.getParent(), Intrinsic::debugtrap);
+    CallInst::Create(TrapIntrin, {}, "", &*I);
 
     worklist.insert(&*I);
   }

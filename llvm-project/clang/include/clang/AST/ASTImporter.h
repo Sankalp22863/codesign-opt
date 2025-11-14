@@ -62,8 +62,7 @@ class TypeSourceInfo;
   class ASTImporter {
     friend class ASTNodeImporter;
   public:
-    using NonEquivalentDeclSet =
-        llvm::DenseSet<std::tuple<Decl *, Decl *, int>>;
+    using NonEquivalentDeclSet = llvm::DenseSet<std::pair<Decl *, Decl *>>;
     using ImportedCXXBaseSpecifierMap =
         llvm::DenseMap<const CXXBaseSpecifier *, CXXBaseSpecifier *>;
 
@@ -259,6 +258,7 @@ class TypeSourceInfo;
     FoundDeclsTy findDeclsInToCtx(DeclContext *DC, DeclarationName Name);
 
     void AddToLookupTable(Decl *ToD);
+    llvm::Error ImportAttrs(Decl *ToD, Decl *FromD);
 
   protected:
     /// Can be overwritten by subclasses to implement their own import logic.
@@ -404,7 +404,7 @@ class TypeSourceInfo;
     ///
     /// \returns The equivalent nested-name-specifier in the "to"
     /// context, or the import error.
-    llvm::Expected<NestedNameSpecifier> Import(NestedNameSpecifier FromNNS);
+    llvm::Expected<NestedNameSpecifier *> Import(NestedNameSpecifier *FromNNS);
 
     /// Import the given nested-name-specifier-loc from the "from"
     /// context into the "to" context.
@@ -446,14 +446,6 @@ class TypeSourceInfo;
     /// returns nullptr only if the FromId was nullptr.
     IdentifierInfo *Import(const IdentifierInfo *FromId);
 
-    /// Import the given identifier or overloaded operator from the "from"
-    /// context into the "to" context.
-    ///
-    /// \returns The equivalent identifier or overloaded operator in the "to"
-    /// context.
-    IdentifierOrOverloadedOperator
-    Import(IdentifierOrOverloadedOperator FromIO);
-
     /// Import the given Objective-C selector from the "from"
     /// context into the "to" context.
     ///
@@ -492,11 +484,6 @@ class TypeSourceInfo;
     /// Import the definition of the given declaration, including all of
     /// the declarations it contains.
     [[nodiscard]] llvm::Error ImportDefinition(Decl *From);
-
-    llvm::Error
-    ImportTemplateArguments(ArrayRef<TemplateArgument> FromArgs,
-                            SmallVectorImpl<TemplateArgument> &ToArgs);
-    Expected<TemplateArgument> Import(const TemplateArgument &From);
 
     /// Cope with a name conflict when importing a declaration into the
     /// given context.
@@ -592,7 +579,7 @@ class TypeSourceInfo;
     /// F should be a field (or indirect field) declaration.
     /// \returns The index of the field in its parent context (starting from 0).
     /// On error `std::nullopt` is returned (parent context is non-record).
-    static UnsignedOrNone getFieldIndex(Decl *F);
+    static std::optional<unsigned> getFieldIndex(Decl *F);
   };
 
 } // namespace clang

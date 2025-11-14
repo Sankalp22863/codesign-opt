@@ -9,7 +9,6 @@
 #include "lldb/Interpreter/OptionValueDictionary.h"
 
 #include "lldb/DataFormatters/FormatManager.h"
-#include "lldb/Interpreter/OptionValue.h"
 #include "lldb/Interpreter/OptionValueEnumeration.h"
 #include "lldb/Interpreter/OptionValueString.h"
 #include "lldb/Utility/Args.h"
@@ -31,13 +30,8 @@ void OptionValueDictionary::DumpValue(const ExecutionContext *exe_ctx,
   }
   if (dump_mask & eDumpOptionValue) {
     const bool one_line = dump_mask & eDumpOptionCommand;
-    if (dump_mask & (eDumpOptionType | eDumpOptionDefaultValue)) {
+    if (dump_mask & eDumpOptionType)
       strm.PutCString(" =");
-      if (dump_mask & eDumpOptionDefaultValue && !m_values.empty()) {
-        DefaultValueFormat label(strm);
-        strm.PutCString("empty");
-      }
-    }
 
     if (!one_line)
       strm.IndentMore();
@@ -94,7 +88,7 @@ void OptionValueDictionary::DumpValue(const ExecutionContext *exe_ctx,
 }
 
 llvm::json::Value
-OptionValueDictionary::ToJSON(const ExecutionContext *exe_ctx) const {
+OptionValueDictionary::ToJSON(const ExecutionContext *exe_ctx) {
   llvm::json::Object dict;
   for (const auto &value : m_values) {
     dict.try_emplace(value.first(), value.second->ToJSON(exe_ctx));
@@ -126,17 +120,17 @@ Status OptionValueDictionary::SetArgs(const Args &args,
   case eVarSetOperationReplace:
   case eVarSetOperationAssign:
     if (argc == 0) {
-      error = Status::FromErrorString(
+      error.SetErrorString(
           "assign operation takes one or more key=value arguments");
       return error;
     }
     for (const auto &entry : args) {
       if (entry.ref().empty()) {
-        error = Status::FromErrorString("empty argument");
+        error.SetErrorString("empty argument");
         return error;
       }
       if (!entry.ref().contains('=')) {
-        error = Status::FromErrorString(
+        error.SetErrorString(
             "assign operation takes one or more key=value arguments");
         return error;
       }
@@ -145,7 +139,7 @@ Status OptionValueDictionary::SetArgs(const Args &args,
       std::tie(key, value) = entry.ref().split('=');
       bool key_valid = false;
       if (key.empty()) {
-        error = Status::FromErrorString("empty dictionary key");
+        error.SetErrorString("empty dictionary key");
         return error;
       }
 
@@ -172,7 +166,7 @@ Status OptionValueDictionary::SetArgs(const Args &args,
         key_valid = true;
       }
       if (!key_valid) {
-        error = Status::FromErrorStringWithFormat(
+        error.SetErrorStringWithFormat(
             "invalid key \"%s\", the key must be a bare string or "
             "surrounded by brackets with optional quotes: [<key>] or "
             "['<key>'] or [\"<key>\"]",
@@ -197,9 +191,8 @@ Status OptionValueDictionary::SetArgs(const Args &args,
           m_value_was_set = true;
           SetValueForKey(key, value_sp, true);
         } else {
-          error = Status::FromErrorString(
-              "dictionaries that can contain multiple types "
-              "must subclass OptionValueArray");
+          error.SetErrorString("dictionaries that can contain multiple types "
+                               "must subclass OptionValueArray");
         }
       }
     }
@@ -210,15 +203,14 @@ Status OptionValueDictionary::SetArgs(const Args &args,
       for (size_t i = 0; i < argc; ++i) {
         llvm::StringRef key(args.GetArgumentAtIndex(i));
         if (!DeleteValueForKey(key)) {
-          error = Status::FromErrorStringWithFormat(
+          error.SetErrorStringWithFormat(
               "no value found named '%s', aborting remove operation",
               key.data());
           break;
         }
       }
     } else {
-      error = Status::FromErrorString(
-          "remove operation takes one or more key arguments");
+      error.SetErrorString("remove operation takes one or more key arguments");
     }
     break;
 
@@ -250,12 +242,11 @@ OptionValueDictionary::GetSubValue(const ExecutionContext *exe_ctx,
   llvm::StringRef left, temp;
   std::tie(left, temp) = name.split('[');
   if (left.size() == name.size()) {
-    error = Status::FromErrorStringWithFormat(
-        "invalid value path '%s', %s values only "
-        "support '[<key>]' subvalues where <key> "
-        "a string value optionally delimited by "
-        "single or double quotes",
-        name.str().c_str(), GetTypeAsCString());
+    error.SetErrorStringWithFormat("invalid value path '%s', %s values only "
+      "support '[<key>]' subvalues where <key> "
+      "a string value optionally delimited by "
+      "single or double quotes",
+      name.str().c_str(), GetTypeAsCString());
     return nullptr;
   }
   assert(!temp.empty());
@@ -271,20 +262,18 @@ OptionValueDictionary::GetSubValue(const ExecutionContext *exe_ctx,
   std::tie(key, sub_name) = temp.split(']');
 
   if (!key.consume_back(quote_char) || key.empty()) {
-    error = Status::FromErrorStringWithFormat(
-        "invalid value path '%s', "
-        "key names must be formatted as ['<key>'] where <key> "
-        "is a string that doesn't contain quotes and the quote"
-        " char is optional",
-        name.str().c_str());
+    error.SetErrorStringWithFormat("invalid value path '%s', "
+      "key names must be formatted as ['<key>'] where <key> "
+      "is a string that doesn't contain quotes and the quote"
+      " char is optional", name.str().c_str());
     return nullptr;
   }
 
   value_sp = GetValueForKey(key);
   if (!value_sp) {
-    error = Status::FromErrorStringWithFormat(
-        "dictionary does not contain a value for the key name '%s'",
-        key.str().c_str());
+    error.SetErrorStringWithFormat(
+      "dictionary does not contain a value for the key name '%s'",
+      key.str().c_str());
     return nullptr;
   }
 
@@ -303,8 +292,7 @@ Status OptionValueDictionary::SetSubValue(const ExecutionContext *exe_ctx,
     error = value_sp->SetValueFromString(value, op);
   else {
     if (error.AsCString() == nullptr)
-      error = Status::FromErrorStringWithFormat("invalid value path '%s'",
-                                                name.str().c_str());
+      error.SetErrorStringWithFormat("invalid value path '%s'", name.str().c_str());
   }
   return error;
 }

@@ -6,7 +6,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-// REQUIRES: can-create-symlinks
 // UNSUPPORTED: c++03, c++11, c++14
 
 // <filesystem>
@@ -44,7 +43,7 @@ static void test_signature() {
     file_status es = e.symlink_status(eec);
     assert(ps.type() == es.type());
     assert(ps.permissions() == es.permissions());
-    assert(pec.default_error_condition() == eec.default_error_condition());
+    assert(pec == eec);
   }
   for (const auto& p : TestCases) {
     const directory_entry e(p);

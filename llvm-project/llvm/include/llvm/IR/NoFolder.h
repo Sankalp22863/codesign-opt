@@ -28,13 +28,12 @@
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/Support/Compiler.h"
 
 namespace llvm {
 
 /// NoFolder - Create "constants" (actually, instructions) with no folding.
-class LLVM_ABI NoFolder final : public IRBuilderFolder {
-  LLVM_DECLARE_VIRTUAL_ANCHOR_FUNCTION();
+class NoFolder final : public IRBuilderFolder {
+  virtual void anchor();
 
 public:
   explicit NoFolder() = default;
@@ -71,12 +70,12 @@ public:
     return nullptr;
   }
 
-  Value *FoldCmp(CmpInst::Predicate P, Value *LHS, Value *RHS) const override {
+  Value *FoldICmp(CmpInst::Predicate P, Value *LHS, Value *RHS) const override {
     return nullptr;
   }
 
   Value *FoldGEP(Type *Ty, Value *Ptr, ArrayRef<Value *> IdxList,
-                 GEPNoWrapFlags NW) const override {
+                 bool IsInBounds = false) const override {
     return nullptr;
   }
 
@@ -113,11 +112,6 @@ public:
     return nullptr;
   }
 
-  Value *FoldBinaryIntrinsic(Intrinsic::ID ID, Value *LHS, Value *RHS, Type *Ty,
-                             Instruction *FMFSource) const override {
-    return nullptr;
-  }
-
   //===--------------------------------------------------------------------===//
   // Cast/Conversion Operators
   //===--------------------------------------------------------------------===//
@@ -129,6 +123,15 @@ public:
   Instruction *CreatePointerBitCastOrAddrSpaceCast(
       Constant *C, Type *DestTy) const override {
     return CastInst::CreatePointerBitCastOrAddrSpaceCast(C, DestTy);
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Compare Instructions
+  //===--------------------------------------------------------------------===//
+
+  Instruction *CreateFCmp(CmpInst::Predicate P,
+                          Constant *LHS, Constant *RHS) const override {
+    return new FCmpInst(P, LHS, RHS);
   }
 };
 

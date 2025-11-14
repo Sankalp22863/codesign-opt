@@ -9,6 +9,8 @@
 #ifndef LLVM_TOOLS_DSYMUTIL_LINKOPTIONS_H
 #define LLVM_TOOLS_DSYMUTIL_LINKOPTIONS_H
 
+#include "SymbolMap.h"
+
 #include "llvm/ADT/Twine.h"
 #include "llvm/Remarks/RemarkFormat.h"
 #include "llvm/Support/VirtualFileSystem.h"
@@ -37,9 +39,6 @@ enum class DsymutilDWARFLinkerType : uint8_t {
 struct LinkOptions {
   /// Verbosity
   bool Verbose = false;
-
-  /// Quiet
-  bool Quiet = false;
 
   /// Statistics
   bool Statistics = false;
@@ -88,6 +87,9 @@ struct LinkOptions {
   /// The Resources directory in the .dSYM bundle.
   std::optional<std::string> ResourceDir;
 
+  /// Symbol map translator.
+  SymbolMapTranslator Translator;
+
   /// Virtual File System.
   llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS =
       vfs::getRealFileSystem();
@@ -114,13 +116,6 @@ struct LinkOptions {
   /// Whether all remarks should be kept or only remarks with valid debug
   /// locations.
   bool RemarksKeepAll = true;
-
-  /// Whether or not to copy binary swiftmodules built from textual
-  /// .swiftinterface files into the dSYM bundle. These typically come only
-  /// from the SDK (since textual interfaces require library evolution) and
-  /// thus are a waste of space to copy into the bundle. Turn this on if the
-  /// swiftmodules are different from those in the SDK.
-  bool IncludeSwiftModulesFromInterface = false;
   /// @}
 
   LinkOptions() = default;

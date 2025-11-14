@@ -18,13 +18,10 @@
 namespace clang {
 namespace clangd {
 
-CharSourceRange MacroOccurrence::toSourceRange(const SourceManager &SM) const {
-  auto MainFile = SM.getMainFileID();
-  return syntax::FileRange(MainFile, StartOffset, EndOffset).toCharRange(SM);
-}
-
 Range MacroOccurrence::toRange(const SourceManager &SM) const {
-  return halfOpenToRange(SM, toSourceRange(SM));
+  auto MainFile = SM.getMainFileID();
+  return halfOpenToRange(
+      SM, syntax::FileRange(MainFile, StartOffset, EndOffset).toCharRange(SM));
 }
 
 void CollectMainFileMacros::add(const Token &MacroNameTok, const MacroInfo *MI,
@@ -35,7 +32,6 @@ void CollectMainFileMacros::add(const Token &MacroNameTok, const MacroInfo *MI,
   if (Loc.isInvalid() || Loc.isMacroID())
     return;
 
-  assert(isInsideMainFile(Loc, SM));
   auto Name = MacroNameTok.getIdentifierInfo()->getName();
   Out.Names.insert(Name);
   size_t Start = SM.getFileOffset(Loc);

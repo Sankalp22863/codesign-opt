@@ -24,16 +24,18 @@ using namespace llvm::logicalview;
 void LVSymbolTable::add(StringRef Name, LVScope *Function,
                         LVSectionIndex SectionIndex) {
   std::string SymbolName(Name);
-  auto [It, Inserted] =
-      SymbolNames.try_emplace(SymbolName, Function, 0, SectionIndex, false);
-  if (!Inserted) {
+  if (SymbolNames.find(SymbolName) == SymbolNames.end()) {
+    SymbolNames.emplace(
+        std::piecewise_construct, std::forward_as_tuple(SymbolName),
+        std::forward_as_tuple(Function, 0, SectionIndex, false));
+  } else {
     // Update a recorded entry with its logical scope and section index.
-    It->second.Scope = Function;
+    SymbolNames[SymbolName].Scope = Function;
     if (SectionIndex)
-      It->second.SectionIndex = SectionIndex;
+      SymbolNames[SymbolName].SectionIndex = SectionIndex;
   }
 
-  if (Function && It->second.IsComdat)
+  if (Function && SymbolNames[SymbolName].IsComdat)
     Function->setIsComdat();
 
   LLVM_DEBUG({ print(dbgs()); });
@@ -42,13 +44,15 @@ void LVSymbolTable::add(StringRef Name, LVScope *Function,
 void LVSymbolTable::add(StringRef Name, LVAddress Address,
                         LVSectionIndex SectionIndex, bool IsComdat) {
   std::string SymbolName(Name);
-  auto [It, Inserted] = SymbolNames.try_emplace(SymbolName, nullptr, Address,
-                                                SectionIndex, IsComdat);
-  if (!Inserted)
+  if (SymbolNames.find(SymbolName) == SymbolNames.end())
+    SymbolNames.emplace(
+        std::piecewise_construct, std::forward_as_tuple(SymbolName),
+        std::forward_as_tuple(nullptr, Address, SectionIndex, IsComdat));
+  else
     // Update a recorded symbol name with its logical scope.
-    It->second.Address = Address;
+    SymbolNames[SymbolName].Address = Address;
 
-  LVScope *Function = It->second.Scope;
+  LVScope *Function = SymbolNames[SymbolName].Scope;
   if (Function && IsComdat)
     Function->setIsComdat();
   LLVM_DEBUG({ print(dbgs()); });
@@ -61,24 +65,20 @@ LVSectionIndex LVSymbolTable::update(LVScope *Function) {
     Name = Function->getName();
   std::string SymbolName(Name);
 
-  if (SymbolName.empty())
-    return SectionIndex;
-
-  auto It = SymbolNames.find(SymbolName);
-  if (It == SymbolNames.end())
+  if (SymbolName.empty() || (SymbolNames.find(SymbolName) == SymbolNames.end()))
     return SectionIndex;
 
   // Update a recorded entry with its logical scope, only if the scope has
   // ranges. That is the case when in DWARF there are 2 DIEs connected via
   // the DW_AT_specification.
   if (Function->getHasRanges()) {
-    It->second.Scope = Function;
-    SectionIndex = It->second.SectionIndex;
+    SymbolNames[SymbolName].Scope = Function;
+    SectionIndex = SymbolNames[SymbolName].SectionIndex;
   } else {
     SectionIndex = UndefinedSectionIndex;
   }
 
-  if (It->second.IsComdat)
+  if (SymbolNames[SymbolName].IsComdat)
     Function->setIsComdat();
 
   LLVM_DEBUG({ print(dbgs()); });
@@ -87,20 +87,20 @@ LVSectionIndex LVSymbolTable::update(LVScope *Function) {
 
 const LVSymbolTableEntry &LVSymbolTable::getEntry(StringRef Name) {
   static LVSymbolTableEntry Empty = LVSymbolTableEntry();
-  LVSymbolNames::iterator Iter = SymbolNames.find(Name);
+  LVSymbolNames::iterator Iter = SymbolNames.find(std::string(Name));
   return Iter != SymbolNames.end() ? Iter->second : Empty;
 }
 LVAddress LVSymbolTable::getAddress(StringRef Name) {
-  LVSymbolNames::iterator Iter = SymbolNames.find(Name);
+  LVSymbolNames::iterator Iter = SymbolNames.find(std::string(Name));
   return Iter != SymbolNames.end() ? Iter->second.Address : 0;
 }
 LVSectionIndex LVSymbolTable::getIndex(StringRef Name) {
-  LVSymbolNames::iterator Iter = SymbolNames.find(Name);
+  LVSymbolNames::iterator Iter = SymbolNames.find(std::string(Name));
   return Iter != SymbolNames.end() ? Iter->second.SectionIndex
                                    : getReader().getDotTextSectionIndex();
 }
 bool LVSymbolTable::getIsComdat(StringRef Name) {
-  LVSymbolNames::iterator Iter = SymbolNames.find(Name);
+  LVSymbolNames::iterator Iter = SymbolNames.find(std::string(Name));
   return Iter != SymbolNames.end() ? Iter->second.IsComdat : false;
 }
 
@@ -146,30 +146,6 @@ bool LVBinaryReader::getSymbolTableIsComdat(StringRef Name) {
 
 void LVBinaryReader::mapVirtualAddress(const object::ObjectFile &Obj) {
   for (const object::SectionRef &Section : Obj.sections()) {
-    LLVM_DEBUG({
-      Expected<StringRef> SectionNameOrErr = Section.getName();
-      StringRef Name;
-      if (!SectionNameOrErr)
-        consumeError(SectionNameOrErr.takeError());
-      else
-        Name = *SectionNameOrErr;
-      dbgs() << "Index: " << format_decimal(Section.getIndex(), 3) << ", "
-             << "Address: " << hexValue(Section.getAddress()) << ", "
-             << "Size: " << hexValue(Section.getSize()) << ", "
-             << "Name: " << Name << "\n";
-      dbgs() << "isCompressed:   " << Section.isCompressed() << ", "
-             << "isText:         " << Section.isText() << ", "
-             << "isData:         " << Section.isData() << ", "
-             << "isBSS:          " << Section.isBSS() << ", "
-             << "isVirtual:      " << Section.isVirtual() << "\n";
-      dbgs() << "isBitcode:      " << Section.isBitcode() << ", "
-             << "isStripped:     " << Section.isStripped() << ", "
-             << "isBerkeleyText: " << Section.isBerkeleyText() << ", "
-             << "isBerkeleyData: " << Section.isBerkeleyData() << ", "
-             << "isDebugSection: " << Section.isDebugSection() << "\n";
-      dbgs() << "\n";
-    });
-
     if (!Section.isText() || Section.isVirtual() || !Section.getSize())
       continue;
 
@@ -184,14 +160,9 @@ void LVBinaryReader::mapVirtualAddress(const object::ObjectFile &Obj) {
       consumeError(SectionNameOrErr.takeError());
       continue;
     }
-    if (*SectionNameOrErr == ".text" || *SectionNameOrErr == "CODE" ||
-        *SectionNameOrErr == ".code") {
+    if ((*SectionNameOrErr).equals(".text") ||
+        (*SectionNameOrErr).equals(".code"))
       DotTextSectionIndex = Section.getIndex();
-      // If the object is WebAssembly, update the address offset that
-      // will be added to DWARF DW_AT_* attributes.
-      if (Obj.isWasm())
-        WasmCodeSectionOffset = Section.getAddress();
-    }
   }
 
   // Process the symbol table.
@@ -274,13 +245,11 @@ void LVBinaryReader::mapVirtualAddress(const object::COFFObjectFile &COFFObj) {
   });
 }
 
-Error LVBinaryReader::loadGenericTargetInfo(StringRef TripleName,
-                                            StringRef TheFeatures,
-                                            StringRef TheCPU) {
-  Triple TheTriple(TripleName);
+Error LVBinaryReader::loadGenericTargetInfo(StringRef TheTriple,
+                                            StringRef TheFeatures) {
   std::string TargetLookupError;
   const Target *TheTarget =
-      TargetRegistry::lookupTarget(TheTriple, TargetLookupError);
+      TargetRegistry::lookupTarget(std::string(TheTriple), TargetLookupError);
   if (!TheTarget)
     return createStringError(errc::invalid_argument, TargetLookupError.c_str());
 
@@ -288,7 +257,7 @@ Error LVBinaryReader::loadGenericTargetInfo(StringRef TripleName,
   MCRegisterInfo *RegisterInfo = TheTarget->createMCRegInfo(TheTriple);
   if (!RegisterInfo)
     return createStringError(errc::invalid_argument,
-                             "no register info for target " + TripleName);
+                             "no register info for target " + TheTriple);
   MRI.reset(RegisterInfo);
 
   // Assembler properties and features.
@@ -296,22 +265,23 @@ Error LVBinaryReader::loadGenericTargetInfo(StringRef TripleName,
   MCAsmInfo *AsmInfo(TheTarget->createMCAsmInfo(*MRI, TheTriple, MCOptions));
   if (!AsmInfo)
     return createStringError(errc::invalid_argument,
-                             "no assembly info for target " + TripleName);
+                             "no assembly info for target " + TheTriple);
   MAI.reset(AsmInfo);
 
   // Target subtargets.
+  StringRef CPU;
   MCSubtargetInfo *SubtargetInfo(
-      TheTarget->createMCSubtargetInfo(TheTriple, TheCPU, TheFeatures));
+      TheTarget->createMCSubtargetInfo(TheTriple, CPU, TheFeatures));
   if (!SubtargetInfo)
     return createStringError(errc::invalid_argument,
-                             "no subtarget info for target " + TripleName);
+                             "no subtarget info for target " + TheTriple);
   STI.reset(SubtargetInfo);
 
   // Instructions Info.
   MCInstrInfo *InstructionInfo(TheTarget->createMCInstrInfo());
   if (!InstructionInfo)
     return createStringError(errc::invalid_argument,
-                             "no instruction info for target " + TripleName);
+                             "no instruction info for target " + TheTriple);
   MII.reset(InstructionInfo);
 
   MC = std::make_unique<MCContext>(Triple(TheTriple), MAI.get(), MRI.get(),
@@ -321,7 +291,7 @@ Error LVBinaryReader::loadGenericTargetInfo(StringRef TripleName,
   MCDisassembler *DisAsm(TheTarget->createMCDisassembler(*STI, *MC));
   if (!DisAsm)
     return createStringError(errc::invalid_argument,
-                             "no disassembler for target " + TripleName);
+                             "no disassembler for target " + TheTriple);
   MD.reset(DisAsm);
 
   MCInstPrinter *InstructionPrinter(TheTarget->createMCInstPrinter(
@@ -329,7 +299,7 @@ Error LVBinaryReader::loadGenericTargetInfo(StringRef TripleName,
   if (!InstructionPrinter)
     return createStringError(errc::invalid_argument,
                              "no target assembly language printer for target " +
-                                 TripleName);
+                                 TheTriple);
   MIP.reset(InstructionPrinter);
   InstructionPrinter->setPrintImmHex(true);
 
@@ -366,6 +336,30 @@ LVBinaryReader::getSection(LVScope *Scope, LVAddress Address,
   if (Iter != SectionAddresses.begin())
     --Iter;
   return std::make_pair(Iter->first, Iter->second);
+}
+
+void LVBinaryReader::addSectionRange(LVSectionIndex SectionIndex,
+                                     LVScope *Scope) {
+  LVRange *ScopesWithRanges = getSectionRanges(SectionIndex);
+  ScopesWithRanges->addEntry(Scope);
+}
+
+void LVBinaryReader::addSectionRange(LVSectionIndex SectionIndex,
+                                     LVScope *Scope, LVAddress LowerAddress,
+                                     LVAddress UpperAddress) {
+  LVRange *ScopesWithRanges = getSectionRanges(SectionIndex);
+  ScopesWithRanges->addEntry(Scope, LowerAddress, UpperAddress);
+}
+
+LVRange *LVBinaryReader::getSectionRanges(LVSectionIndex SectionIndex) {
+  // Check if we already have a mapping for this section index.
+  LVSectionRanges::iterator IterSection = SectionRanges.find(SectionIndex);
+  if (IterSection == SectionRanges.end())
+    IterSection =
+        SectionRanges.emplace(SectionIndex, std::make_unique<LVRange>()).first;
+  LVRange *Range = IterSection->second.get();
+  assert(Range && "Range is null.");
+  return Range;
 }
 
 Error LVBinaryReader::createInstructions(LVScope *Scope,
@@ -410,15 +404,6 @@ Error LVBinaryReader::createInstructions(LVScope *Scope,
 
   ArrayRef<uint8_t> Bytes = arrayRefFromStringRef(*SectionContentsOrErr);
   uint64_t Offset = Address - SectionAddress;
-  if (Offset > Bytes.size()) {
-    LLVM_DEBUG({
-      dbgs() << "offset (" << hexValue(Offset) << ") is beyond section size ("
-             << hexValue(Bytes.size()) << "); malformed input?\n";
-    });
-    return createStringError(
-        errc::bad_address,
-        "Failed to parse instructions; offset beyond section size");
-  }
   uint8_t const *Begin = Bytes.data() + Offset;
   uint8_t const *End = Bytes.data() + Offset + Size;
 
@@ -787,8 +772,9 @@ void LVBinaryReader::processLines(LVLines *DebugLines,
 
   // Find the indexes for the lines whose address is zero.
   std::vector<size_t> AddressZero;
-  LVLines::iterator It = llvm::find_if(
-      *DebugLines, [](LVLine *Line) { return !Line->getAddress(); });
+  LVLines::iterator It =
+      std::find_if(std::begin(*DebugLines), std::end(*DebugLines),
+                   [](LVLine *Line) { return !Line->getAddress(); });
   while (It != std::end(*DebugLines)) {
     AddressZero.emplace_back(std::distance(std::begin(*DebugLines), It));
     It = std::find_if(std::next(It), std::end(*DebugLines),
@@ -915,8 +901,8 @@ void LVBinaryReader::includeInlineeLines(LVSectionIndex SectionIndex,
     if (InlineeLines->size()) {
       // First address of inlinee code.
       uint64_t InlineeStart = (InlineeLines->front())->getAddress();
-      LVLines::iterator Iter =
-          llvm::find_if(CULines, [&](LVLine *Item) -> bool {
+      LVLines::iterator Iter = std::find_if(
+          CULines.begin(), CULines.end(), [&](LVLine *Item) -> bool {
             return Item->getAddress() == InlineeStart;
           });
       if (Iter != CULines.end()) {

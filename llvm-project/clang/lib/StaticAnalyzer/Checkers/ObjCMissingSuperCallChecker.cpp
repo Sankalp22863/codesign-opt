@@ -12,16 +12,17 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
+#include "clang/Analysis/PathDiagnostic.h"
 #include "clang/AST/DeclObjC.h"
-#include "clang/AST/DynamicRecursiveASTVisitor.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprObjC.h"
-#include "clang/Analysis/PathDiagnostic.h"
-#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
@@ -37,11 +38,11 @@ struct SelectorDescriptor {
 // FindSuperCallVisitor - Identify specific calls to the superclass.
 //===----------------------------------------------------------------------===//
 
-class FindSuperCallVisitor : public DynamicRecursiveASTVisitor {
+class FindSuperCallVisitor : public RecursiveASTVisitor<FindSuperCallVisitor> {
 public:
   explicit FindSuperCallVisitor(Selector S) : DoesCallSuper(false), Sel(S) {}
 
-  bool VisitObjCMessageExpr(ObjCMessageExpr *E) override {
+  bool VisitObjCMessageExpr(ObjCMessageExpr *E) {
     if (E->getSelector() == Sel)
       if (E->getReceiverKind() == ObjCMessageExpr::SuperInstance)
         DoesCallSuper = true;
@@ -106,7 +107,7 @@ void ObjCSuperCallChecker::fillSelectors(ASTContext &Ctx,
     assert(Descriptor.ArgumentCount <= 1); // No multi-argument selectors yet.
 
     // Get the selector.
-    const IdentifierInfo *II = &Ctx.Idents.get(Descriptor.SelectorName);
+    IdentifierInfo *II = &Ctx.Idents.get(Descriptor.SelectorName);
 
     Selector Sel = Ctx.Selectors.getSelector(Descriptor.ArgumentCount, &II);
     ClassSelectors.insert(Sel);

@@ -33,13 +33,13 @@ public:
       : ExegesisTarget(PPCCpuPfmCounters, PPC_MC::isOpcodeAvailable) {}
 
 private:
-  std::vector<MCInst> setRegTo(const MCSubtargetInfo &STI, MCRegister Reg,
+  std::vector<MCInst> setRegTo(const MCSubtargetInfo &STI, unsigned Reg,
                                const APInt &Value) const override;
   bool matchesArch(Triple::ArchType Arch) const override {
     return Arch == Triple::ppc64le;
   }
-  MCRegister getScratchMemoryRegister(const Triple &) const override;
-  void fillMemoryOperands(InstructionTemplate &IT, MCRegister Reg,
+  unsigned getScratchMemoryRegister(const Triple &) const override;
+  void fillMemoryOperands(InstructionTemplate &IT, unsigned Reg,
                           unsigned Offset) const override;
 };
 } // end anonymous namespace
@@ -55,7 +55,7 @@ static unsigned getLoadImmediateOpcode(unsigned RegBitWidth) {
 }
 
 // Generates instruction to load an immediate value into a register.
-static MCInst loadImmediate(MCRegister Reg, unsigned RegBitWidth,
+static MCInst loadImmediate(unsigned Reg, unsigned RegBitWidth,
                             const APInt &Value) {
   if (Value.getBitWidth() > RegBitWidth)
     llvm_unreachable("Value must fit in the Register");
@@ -67,7 +67,7 @@ static MCInst loadImmediate(MCRegister Reg, unsigned RegBitWidth,
       .addImm(Value.getZExtValue());
 }
 
-MCRegister
+unsigned
 ExegesisPowerPCTarget::getScratchMemoryRegister(const Triple &TT) const {
   // R13 is reserved as Thread Pointer, we won't use threading in benchmark, so
   // use it as scratch memory register
@@ -75,7 +75,7 @@ ExegesisPowerPCTarget::getScratchMemoryRegister(const Triple &TT) const {
 }
 
 void ExegesisPowerPCTarget::fillMemoryOperands(InstructionTemplate &IT,
-                                               MCRegister Reg,
+                                               unsigned Reg,
                                                unsigned Offset) const {
   int MemOpIdx = 0;
   if (IT.getInstr().hasTiedRegisters())
@@ -93,7 +93,7 @@ void ExegesisPowerPCTarget::fillMemoryOperands(InstructionTemplate &IT,
 }
 
 std::vector<MCInst> ExegesisPowerPCTarget::setRegTo(const MCSubtargetInfo &STI,
-                                                    MCRegister Reg,
+                                                    unsigned Reg,
                                                     const APInt &Value) const {
   // X11 is optional use in function linkage, should be the least used one
   // Use it as scratch reg to load immediate.

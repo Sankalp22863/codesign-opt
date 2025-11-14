@@ -2,7 +2,7 @@
 // RUN: split-file %s %t
 // RUN: sed -e "s|DIR|%/t|g" %t/build/compile-commands.json.in > %t/build/compile-commands.json
 // RUN: clang-scan-deps -compilation-database %t/build/compile-commands.json \
-// RUN:   -j 1 -format experimental-full --optimize-args=header-search,system-warnings,vfs,canonicalize-macros > %t/deps.db
+// RUN:   -j 1 -format experimental-full --optimize-args=all > %t/deps.db
 // RUN: cat %t/deps.db | sed 's:\\\\\?:/:g' | FileCheck %s -DPREFIX=%/t
 
 // Check that there are two separate modules hashes. One for each working dir.
@@ -17,7 +17,6 @@
 // CHECK-NEXT:       "context-hash": "{{.*}}",
 // CHECK-NEXT:       "file-deps": [
 // CHECK:            ],
-// CHECK-NEXT:       "link-libraries": [],
 // CHECK-NEXT:       "name": "A"
 // CHECK-NEXT:     },
 // CHECK-NEXT:     {
@@ -28,7 +27,6 @@
 // CHECK-NEXT:       "context-hash": "{{.*}}",
 // CHECK-NEXT:       "file-deps": [
 // CHECK:            ],
-// CHECK-NEXT:       "link-libraries": [],
 // CHECK-NEXT:       "name": "A"
 // CHECK-NEXT:     },
 // CHECK-NEXT:     {
@@ -40,7 +38,6 @@
 // CHECK-NEXT:       "context-hash": "{{.*}}",
 // CHECK-NEXT:       "file-deps": [
 // CHECK:            ],
-// CHECK-NEXT:       "link-libraries": [],
 // CHECK-NEXT:       "name": "B"
 // CHECK-NEXT:     },
 // CHECK-NEXT:     {
@@ -52,7 +49,6 @@
 // CHECK-NEXT:       "context-hash": "{{.*}}",
 // CHECK-NEXT:       "file-deps": [
 // CHECK:            ],
-// CHECK-NEXT:       "link-libraries": [],
 // CHECK-NEXT:       "name": "B"
 // CHECK-NEXT:     }
 // CHECK-NEXT:   ],

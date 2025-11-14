@@ -1,4 +1,5 @@
-//===----------------------------------------------------------------------===//
+//===--- OperatorsRepresentationCheck.cpp - clang-tidy
+//--------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -23,7 +24,7 @@ static StringRef getOperatorSpelling(SourceLocation Loc, ASTContext &Context) {
   if (Loc.isInvalid())
     return {};
 
-  const SourceManager &SM = Context.getSourceManager();
+  SourceManager &SM = Context.getSourceManager();
 
   Loc = SM.getSpellingLoc(Loc);
   if (Loc.isInvalid())
@@ -41,7 +42,7 @@ AST_MATCHER_P2(BinaryOperator, hasInvalidBinaryOperatorRepresentation,
   if (Node.getOpcode() != Kind || ExpectedRepresentation.empty())
     return false;
 
-  const StringRef Spelling =
+  StringRef Spelling =
       getOperatorSpelling(Node.getOperatorLoc(), Finder->getASTContext());
   return !Spelling.empty() && Spelling != ExpectedRepresentation;
 }
@@ -52,7 +53,7 @@ AST_MATCHER_P2(UnaryOperator, hasInvalidUnaryOperatorRepresentation,
   if (Node.getOpcode() != Kind || ExpectedRepresentation.empty())
     return false;
 
-  const StringRef Spelling =
+  StringRef Spelling =
       getOperatorSpelling(Node.getOperatorLoc(), Finder->getASTContext());
   return !Spelling.empty() && Spelling != ExpectedRepresentation;
 }
@@ -63,7 +64,7 @@ AST_MATCHER_P2(CXXOperatorCallExpr, hasInvalidOverloadedOperatorRepresentation,
   if (Node.getOperator() != Kind || ExpectedRepresentation.empty())
     return false;
 
-  const StringRef Spelling =
+  StringRef Spelling =
       getOperatorSpelling(Node.getOperatorLoc(), Finder->getASTContext());
   return !Spelling.empty() && Spelling != ExpectedRepresentation;
 }
@@ -297,9 +298,9 @@ void OperatorsRepresentationCheck::check(
   if (TokenRange.isInvalid())
     return;
 
-  const StringRef Spelling = Lexer::getSourceText(
-      TokenRange, *Result.SourceManager, Result.Context->getLangOpts());
-  const StringRef TranslatedSpelling = translate(Spelling);
+  StringRef Spelling = Lexer::getSourceText(TokenRange, *Result.SourceManager,
+                                            Result.Context->getLangOpts());
+  StringRef TranslatedSpelling = translate(Spelling);
 
   if (TranslatedSpelling.empty())
     return;
@@ -312,7 +313,7 @@ void OperatorsRepresentationCheck::check(
     SourceRepresentation = "a traditional";
     TargetRepresentation = "an alternative";
 
-    const StringRef SpellingEx = Lexer::getSourceText(
+    StringRef SpellingEx = Lexer::getSourceText(
         CharSourceRange::getCharRange(
             TokenRange.getBegin().getLocWithOffset(-1),
             TokenRange.getBegin().getLocWithOffset(Spelling.size() + 1U)),

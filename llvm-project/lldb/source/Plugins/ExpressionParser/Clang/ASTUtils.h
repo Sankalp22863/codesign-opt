@@ -9,39 +9,28 @@
 #ifndef LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_ASTUTILS_H
 #define LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_ASTUTILS_H
 
-#include "clang/Basic/ASTSourceDescriptor.h"
+#include "clang/Basic/Module.h"
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/MultiplexExternalSemaSource.h"
 #include "clang/Sema/Sema.h"
 #include "clang/Sema/SemaConsumer.h"
-#include "llvm/ADT/IntrusiveRefCntPtr.h"
-#include "llvm/Support/Casting.h"
 #include <optional>
-
-namespace clang {
-
-class Module;
-
-} // namespace clang
 
 namespace lldb_private {
 
-/// Wraps an ExternalASTSource into an ExternalSemaSource.
-///
-/// Assumes shared ownership of the underlying source.
+/// Wraps an ExternalASTSource into an ExternalSemaSource. Doesn't take
+/// ownership of the provided source.
 class ExternalASTSourceWrapper : public clang::ExternalSemaSource {
-  llvm::IntrusiveRefCntPtr<ExternalASTSource> m_Source;
+  ExternalASTSource *m_Source;
 
 public:
-  explicit ExternalASTSourceWrapper(
-      llvm::IntrusiveRefCntPtr<ExternalASTSource> Source)
-      : m_Source(std::move(Source)) {
+  ExternalASTSourceWrapper(ExternalASTSource *Source) : m_Source(Source) {
     assert(m_Source && "Can't wrap nullptr ExternalASTSource");
   }
 
   ~ExternalASTSourceWrapper() override;
 
-  clang::Decl *GetExternalDecl(clang::GlobalDeclID ID) override {
+  clang::Decl *GetExternalDecl(uint32_t ID) override {
     return m_Source->GetExternalDecl(ID);
   }
 
@@ -67,25 +56,13 @@ public:
     return m_Source->GetExternalCXXBaseSpecifiers(Offset);
   }
 
-  void updateOutOfDateIdentifier(const clang::IdentifierInfo &II) override {
+  void updateOutOfDateIdentifier(clang::IdentifierInfo &II) override {
     m_Source->updateOutOfDateIdentifier(II);
   }
 
-  bool FindExternalVisibleDeclsByName(
-      const clang::DeclContext *DC, clang::DeclarationName Name,
-      const clang::DeclContext *OriginalDC) override {
-    return m_Source->FindExternalVisibleDeclsByName(DC, Name, OriginalDC);
-  }
-
-  bool LoadExternalSpecializations(const clang::Decl *D,
-                                   bool OnlyPartial) override {
-    return m_Source->LoadExternalSpecializations(D, OnlyPartial);
-  }
-
-  bool LoadExternalSpecializations(
-      const clang::Decl *D,
-      llvm::ArrayRef<clang::TemplateArgument> TemplateArgs) override {
-    return m_Source->LoadExternalSpecializations(D, TemplateArgs);
+  bool FindExternalVisibleDeclsByName(const clang::DeclContext *DC,
+                                      clang::DeclarationName Name) override {
+    return m_Source->FindExternalVisibleDeclsByName(DC, Name);
   }
 
   void completeVisibleDeclsMap(const clang::DeclContext *DC) override {
@@ -151,24 +128,6 @@ public:
           &VirtualBaseOffsets) override {
     return m_Source->layoutRecordType(Record, Size, Alignment, FieldOffsets,
                                       BaseOffsets, VirtualBaseOffsets);
-  }
-
-  /// This gets called when Sema is reconciling undefined but used decls.
-  /// For LLDB's use-case, we never provide Clang with function definitions,
-  /// instead we rely on linkage names and symbol resolution to call the
-  /// correct funcitons during JITting. So this implementation clears
-  /// any "undefined" FunctionDecls that Clang found while parsing.
-  ///
-  /// \param[in,out] Undefined A set of used decls for which Clang has not
-  ///                          been provided a definition with.
-  ///
-  void ReadUndefinedButUsed(
-      llvm::MapVector<clang::NamedDecl *, clang::SourceLocation> &Undefined)
-      override {
-    Undefined.remove_if([](auto const &decl_loc_pair) {
-      const clang::NamedDecl *ND = decl_loc_pair.first;
-      return llvm::isa_and_present<clang::FunctionDecl>(ND);
-    });
   }
 };
 
@@ -285,53 +244,33 @@ class SemaSourceWithPriorities : public clang::ExternalSemaSource {
 
 private:
   /// The sources ordered in decreasing priority.
-  llvm::SmallVector<llvm::IntrusiveRefCntPtr<clang::ExternalSemaSource>, 2>
-      Sources;
+  llvm::SmallVector<clang::ExternalSemaSource *, 2> Sources;
 
 public:
   /// Construct a SemaSourceWithPriorities with a 'high quality' source that
   /// has the higher priority and a 'low quality' source that will be used
   /// as a fallback.
-  ///
-  /// This class assumes shared ownership of the sources provided to it.
-  SemaSourceWithPriorities(
-      llvm::IntrusiveRefCntPtr<clang::ExternalSemaSource> high_quality_source,
-      llvm::IntrusiveRefCntPtr<clang::ExternalSemaSource> low_quality_source) {
-    assert(high_quality_source);
-    assert(low_quality_source);
-
-    Sources.push_back(std::move(high_quality_source));
-    Sources.push_back(std::move(low_quality_source));
+  SemaSourceWithPriorities(clang::ExternalSemaSource &high_quality_source,
+                           clang::ExternalSemaSource &low_quality_source) {
+    Sources.push_back(&high_quality_source);
+    Sources.push_back(&low_quality_source);
   }
 
   ~SemaSourceWithPriorities() override;
+
+  void addSource(clang::ExternalSemaSource &source) {
+    Sources.push_back(&source);
+  }
 
   //===--------------------------------------------------------------------===//
   // ExternalASTSource.
   //===--------------------------------------------------------------------===//
 
-  clang::Decl *GetExternalDecl(clang::GlobalDeclID ID) override {
+  clang::Decl *GetExternalDecl(uint32_t ID) override {
     for (size_t i = 0; i < Sources.size(); ++i)
       if (clang::Decl *Result = Sources[i]->GetExternalDecl(ID))
         return Result;
     return nullptr;
-  }
-
-  bool LoadExternalSpecializations(const clang::Decl *D,
-                                   bool OnlyPartial) override {
-    bool newDeclFound = false;
-    for (size_t i = 0; i < Sources.size(); ++i)
-      newDeclFound |= Sources[i]->LoadExternalSpecializations(D, OnlyPartial);
-    return newDeclFound;
-  }
-
-  bool LoadExternalSpecializations(
-      const clang::Decl *D,
-      llvm::ArrayRef<clang::TemplateArgument> TemplateArgs) override {
-    bool newDeclFound = false;
-    for (size_t i = 0; i < Sources.size(); ++i)
-      newDeclFound |= Sources[i]->LoadExternalSpecializations(D, TemplateArgs);
-    return newDeclFound;
   }
 
   void CompleteRedeclChain(const clang::Decl *D) override {
@@ -374,7 +313,7 @@ public:
 
   clang::CXXCtorInitializer **
   GetExternalCXXCtorInitializers(uint64_t Offset) override {
-    for (const auto &S : Sources)
+    for (auto *S : Sources)
       if (auto *R = S->GetExternalCXXCtorInitializers(Offset))
         return R;
     return nullptr;
@@ -388,11 +327,10 @@ public:
     return EK_ReplyHazy;
   }
 
-  bool FindExternalVisibleDeclsByName(
-      const clang::DeclContext *DC, clang::DeclarationName Name,
-      const clang::DeclContext *OriginalDC) override {
+  bool FindExternalVisibleDeclsByName(const clang::DeclContext *DC,
+                                      clang::DeclarationName Name) override {
     for (size_t i = 0; i < Sources.size(); ++i)
-      if (Sources[i]->FindExternalVisibleDeclsByName(DC, Name, OriginalDC))
+      if (Sources[i]->FindExternalVisibleDeclsByName(DC, Name))
         return true;
     return false;
   }
@@ -422,7 +360,7 @@ public:
   }
 
   void CompleteType(clang::TagDecl *Tag) override {
-    for (const auto &S : Sources) {
+    for (clang::ExternalSemaSource *S : Sources) {
       S->CompleteType(Tag);
       // Stop after the first source completed the type.
       if (Tag->isCompleteDefinition())

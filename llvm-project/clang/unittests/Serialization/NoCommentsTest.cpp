@@ -83,26 +83,24 @@ export module Comments;
 void foo() {}
   )cpp");
 
-  CreateInvocationOptions CIOpts;
-  CIOpts.VFS = llvm::vfs::createPhysicalFileSystem();
-  DiagnosticOptions DiagOpts;
   IntrusiveRefCntPtr<DiagnosticsEngine> Diags =
-      CompilerInstance::createDiagnostics(*CIOpts.VFS, DiagOpts);
+      CompilerInstance::createDiagnostics(new DiagnosticOptions());
+  CreateInvocationOptions CIOpts;
   CIOpts.Diags = Diags;
+  CIOpts.VFS = llvm::vfs::createPhysicalFileSystem();
 
   std::string CacheBMIPath = llvm::Twine(TestDir + "/Comments.pcm").str();
-  const char *Args[] = {"clang++",       "-std=c++20",
-                        "--precompile",  "-working-directory",
-                        TestDir.c_str(), "Comments.cppm"};
+  const char *Args[] = {
+      "clang++",       "-std=c++20",    "--precompile", "-working-directory",
+      TestDir.c_str(), "Comments.cppm", "-o",           CacheBMIPath.c_str()};
   std::shared_ptr<CompilerInvocation> Invocation =
       createInvocation(Args, CIOpts);
   ASSERT_TRUE(Invocation);
 
-  CompilerInstance Instance(std::move(Invocation));
-  Instance.createVirtualFileSystem(CIOpts.VFS);
-  Instance.setDiagnostics(Diags);
-  Instance.getFrontendOpts().OutputFile = CacheBMIPath;
-  GenerateReducedModuleInterfaceAction Action;
+  CompilerInstance Instance;
+  Instance.setDiagnostics(Diags.get());
+  Instance.setInvocation(Invocation);
+  GenerateModuleInterfaceAction Action;
   ASSERT_TRUE(Instance.ExecuteAction(Action));
   ASSERT_FALSE(Diags->hasErrorOccurred());
 

@@ -16,7 +16,6 @@
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/Support/Compiler.h"
 
 namespace llvm {
 class MachineInstr;
@@ -53,11 +52,11 @@ public:
   /// For convenience, finishedChangingAllUsesOfReg() will report the completion
   /// of the changes. The use list may change between this call and
   /// finishedChangingAllUsesOfReg().
-  LLVM_ABI void changingAllUsesOfReg(const MachineRegisterInfo &MRI,
-                                     Register Reg);
+  void changingAllUsesOfReg(const MachineRegisterInfo &MRI, Register Reg);
   /// All instructions reported as changing by changingAllUsesOfReg() have
   /// finished being changed.
-  LLVM_ABI void finishedChangingAllUsesOfReg();
+  void finishedChangingAllUsesOfReg();
+
 };
 
 /// Simple wrapper observer that takes several observers, and calls
@@ -70,7 +69,8 @@ class GISelObserverWrapper : public MachineFunction::Delegate,
 
 public:
   GISelObserverWrapper() = default;
-  GISelObserverWrapper(ArrayRef<GISelChangeObserver *> Obs) : Observers(Obs) {}
+  GISelObserverWrapper(ArrayRef<GISelChangeObserver *> Obs)
+      : Observers(Obs.begin(), Obs.end()) {}
   // Adds an observer.
   void addObserver(GISelChangeObserver *O) { Observers.push_back(O); }
   // Removes an observer from the list and does nothing if observer is not
@@ -80,9 +80,6 @@ public:
     if (It != Observers.end())
       Observers.erase(It);
   }
-  // Removes all observers
-  void clearObservers() { Observers.clear(); }
-
   // API for Observer.
   void erasingInstr(MachineInstr &MI) override {
     for (auto &O : Observers)
@@ -113,9 +110,8 @@ class RAIIDelegateInstaller {
   MachineFunction::Delegate *Delegate;
 
 public:
-  LLVM_ABI RAIIDelegateInstaller(MachineFunction &MF,
-                                 MachineFunction::Delegate *Del);
-  LLVM_ABI ~RAIIDelegateInstaller();
+  RAIIDelegateInstaller(MachineFunction &MF, MachineFunction::Delegate *Del);
+  ~RAIIDelegateInstaller();
 };
 
 /// A simple RAII based Observer installer.
@@ -125,9 +121,8 @@ class RAIIMFObserverInstaller {
   MachineFunction &MF;
 
 public:
-  LLVM_ABI RAIIMFObserverInstaller(MachineFunction &MF,
-                                   GISelChangeObserver &Observer);
-  LLVM_ABI ~RAIIMFObserverInstaller();
+  RAIIMFObserverInstaller(MachineFunction &MF, GISelChangeObserver &Observer);
+  ~RAIIMFObserverInstaller();
 };
 
 /// Class to install both of the above.
@@ -139,21 +134,6 @@ public:
   RAIIMFObsDelInstaller(MachineFunction &MF, GISelObserverWrapper &Wrapper)
       : DelI(MF, &Wrapper), ObsI(MF, Wrapper) {}
   ~RAIIMFObsDelInstaller() = default;
-};
-
-/// A simple RAII based Observer installer.
-/// Use this in a scope to install the Observer to the MachineFunction and reset
-/// it at the end of the scope.
-class RAIITemporaryObserverInstaller {
-public:
-  LLVM_ABI
-  RAIITemporaryObserverInstaller(GISelObserverWrapper &Observers,
-                                 GISelChangeObserver &TemporaryObserver);
-  LLVM_ABI ~RAIITemporaryObserverInstaller();
-
-private:
-  GISelObserverWrapper &Observers;
-  GISelChangeObserver &TemporaryObserver;
 };
 
 } // namespace llvm

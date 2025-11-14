@@ -6,27 +6,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "lldb/Core/PluginManager.h"
 #include "lldb/Host/Config.h"
+#if LLDB_ENABLE_PYTHON
+// LLDB Python header must be included first
+#include "../lldb-python.h"
+#endif
+#include "lldb/Target/Process.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/lldb-enumerations.h"
 
 #if LLDB_ENABLE_PYTHON
 
-// clang-format off
-// LLDB Python header must be included first
-#include "../lldb-python.h"
-
 #include "../SWIGPythonBridge.h"
 #include "../ScriptInterpreterPythonImpl.h"
-#include "ScriptedThreadPythonInterface.h"
 #include "ScriptedProcessPythonInterface.h"
-
-// Included in this position to prevent redefinition of pid_t on Windows.
-#include "lldb/Target/Process.h"
-//clang-format off
-
+#include "ScriptedThreadPythonInterface.h"
 #include <optional>
 
 using namespace lldb;
@@ -54,8 +49,7 @@ StructuredData::DictionarySP ScriptedProcessPythonInterface::GetCapabilities() {
   StructuredData::DictionarySP dict =
       Dispatch<StructuredData::DictionarySP>("get_capabilities", error);
 
-  if (!ScriptedInterface::CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, dict,
-                                                    error))
+  if (!CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, dict, error))
     return {};
 
   return dict;
@@ -96,8 +90,7 @@ StructuredData::DictionarySP ScriptedProcessPythonInterface::GetThreadsInfo() {
   StructuredData::DictionarySP dict =
       Dispatch<StructuredData::DictionarySP>("get_threads_info", error);
 
-  if (!ScriptedInterface::CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, dict,
-                                                    error))
+  if (!CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, dict, error))
     return {};
 
   return dict;
@@ -111,10 +104,9 @@ bool ScriptedProcessPythonInterface::CreateBreakpoint(lldb::addr_t addr,
 
   // If there was an error on the python call, surface it to the user.
   if (py_error.Fail())
-    error = std::move(py_error);
+    error = py_error;
 
-  if (!ScriptedInterface::CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, obj,
-                                                    error))
+  if (!CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, obj, error))
     return {};
 
   return obj->GetBooleanValue();
@@ -128,7 +120,7 @@ lldb::DataExtractorSP ScriptedProcessPythonInterface::ReadMemoryAtAddress(
 
   // If there was an error on the python call, surface it to the user.
   if (py_error.Fail())
-    error = std::move(py_error);
+    error = py_error;
 
   return data_sp;
 }
@@ -139,13 +131,12 @@ lldb::offset_t ScriptedProcessPythonInterface::WriteMemoryAtAddress(
   StructuredData::ObjectSP obj =
       Dispatch("write_memory_at_address", py_error, addr, data_sp, error);
 
-  if (!ScriptedInterface::CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, obj,
-                                                    error))
+  if (!CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, obj, error))
     return LLDB_INVALID_OFFSET;
 
   // If there was an error on the python call, surface it to the user.
   if (py_error.Fail())
-    error = std::move(py_error);
+    error = py_error;
 
   return obj->GetUnsignedIntegerValue(LLDB_INVALID_OFFSET);
 }
@@ -155,8 +146,7 @@ StructuredData::ArraySP ScriptedProcessPythonInterface::GetLoadedImages() {
   StructuredData::ArraySP array =
       Dispatch<StructuredData::ArraySP>("get_loaded_images", error);
 
-  if (!ScriptedInterface::CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, array,
-                                                    error))
+  if (!CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, array, error))
     return {};
 
   return array;
@@ -166,8 +156,7 @@ lldb::pid_t ScriptedProcessPythonInterface::GetProcessID() {
   Status error;
   StructuredData::ObjectSP obj = Dispatch("get_process_id", error);
 
-  if (!ScriptedInterface::CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, obj,
-                                                    error))
+  if (!CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, obj, error))
     return LLDB_INVALID_PROCESS_ID;
 
   return obj->GetUnsignedIntegerValue(LLDB_INVALID_PROCESS_ID);
@@ -177,8 +166,7 @@ bool ScriptedProcessPythonInterface::IsAlive() {
   Status error;
   StructuredData::ObjectSP obj = Dispatch("is_alive", error);
 
-  if (!ScriptedInterface::CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, obj,
-                                                    error))
+  if (!CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, obj, error))
     return {};
 
   return obj->GetBooleanValue();
@@ -189,8 +177,7 @@ ScriptedProcessPythonInterface::GetScriptedThreadPluginName() {
   Status error;
   StructuredData::ObjectSP obj = Dispatch("get_scripted_thread_plugin", error);
 
-  if (!ScriptedInterface::CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, obj,
-                                                    error))
+  if (!CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, obj, error))
     return {};
 
   return obj->GetStringValue().str();
@@ -206,31 +193,10 @@ StructuredData::DictionarySP ScriptedProcessPythonInterface::GetMetadata() {
   StructuredData::DictionarySP dict =
       Dispatch<StructuredData::DictionarySP>("get_process_metadata", error);
 
-  if (!ScriptedInterface::CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, dict,
-                                                    error))
+  if (!CheckStructuredDataObject(LLVM_PRETTY_FUNCTION, dict, error))
     return {};
 
   return dict;
-}
-
-void ScriptedProcessPythonInterface::Initialize() {
-  const std::vector<llvm::StringRef> ci_usages = {
-      "process attach -C <script-name> [-k key -v value ...]",
-      "process launch -C <script-name> [-k key -v value ...]"};
-  const std::vector<llvm::StringRef> api_usages = {
-      "SBAttachInfo.SetScriptedProcessClassName",
-      "SBAttachInfo.SetScriptedProcessDictionary",
-      "SBTarget.Attach",
-      "SBLaunchInfo.SetScriptedProcessClassName",
-      "SBLaunchInfo.SetScriptedProcessDictionary",
-      "SBTarget.Launch"};
-  PluginManager::RegisterPlugin(
-      GetPluginNameStatic(), llvm::StringRef("Mock process state"),
-      CreateInstance, eScriptLanguagePython, {ci_usages, api_usages});
-}
-
-void ScriptedProcessPythonInterface::Terminate() {
-  PluginManager::UnregisterPlugin(CreateInstance);
 }
 
 #endif

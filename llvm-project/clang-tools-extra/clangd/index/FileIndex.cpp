@@ -48,12 +48,13 @@ SlabTuple indexSymbols(ASTContext &AST, Preprocessor &PP,
                        const MainFileMacros *MacroRefsToIndex,
                        const include_cleaner::PragmaIncludes &PI,
                        bool IsIndexMainAST, llvm::StringRef Version,
-                       bool CollectMainFileRefs, SymbolOrigin Origin) {
+                       bool CollectMainFileRefs) {
   SymbolCollector::Options CollectorOpts;
   CollectorOpts.CollectIncludePath = true;
   CollectorOpts.PragmaIncludes = &PI;
   CollectorOpts.CountReferences = false;
-  CollectorOpts.Origin = Origin;
+  CollectorOpts.Origin =
+      IsIndexMainAST ? SymbolOrigin::Open : SymbolOrigin::Preamble;
   CollectorOpts.CollectMainFileRefs = CollectMainFileRefs;
   // We want stdlib implementation details in the index only if we've opened the
   // file in question. This does means xrefs won't work, though.
@@ -79,8 +80,7 @@ SlabTuple indexSymbols(ASTContext &AST, Preprocessor &PP,
 
   SymbolCollector Collector(std::move(CollectorOpts));
   Collector.setPreprocessor(PP);
-  index::indexTopLevelDecls(AST, PP, DeclsToIndex, Collector,
-                            std::move(IndexOpts));
+  index::indexTopLevelDecls(AST, PP, DeclsToIndex, Collector, IndexOpts);
   if (MacroRefsToIndex)
     Collector.handleMacros(*MacroRefsToIndex);
 
@@ -221,28 +221,26 @@ FileShardedIndex::getShard(llvm::StringRef Uri) const {
 }
 
 SlabTuple indexMainDecls(ParsedAST &AST) {
-  return indexSymbols(AST.getASTContext(), AST.getPreprocessor(),
-                      AST.getLocalTopLevelDecls(), &AST.getMacros(),
-                      AST.getPragmaIncludes(),
-                      /*IsIndexMainAST=*/true, AST.version(),
-                      /*CollectMainFileRefs=*/true, SymbolOrigin::Open);
+  return indexSymbols(
+      AST.getASTContext(), AST.getPreprocessor(), AST.getLocalTopLevelDecls(),
+      &AST.getMacros(), AST.getPragmaIncludes(),
+      /*IsIndexMainAST=*/true, AST.version(), /*CollectMainFileRefs=*/true);
 }
 
 SlabTuple indexHeaderSymbols(llvm::StringRef Version, ASTContext &AST,
                              Preprocessor &PP,
-                             const include_cleaner::PragmaIncludes &PI,
-                             SymbolOrigin Origin) {
+                             const include_cleaner::PragmaIncludes &PI) {
   std::vector<Decl *> DeclsToIndex(
       AST.getTranslationUnitDecl()->decls().begin(),
       AST.getTranslationUnitDecl()->decls().end());
   return indexSymbols(AST, PP, DeclsToIndex,
                       /*MainFileMacros=*/nullptr, PI,
                       /*IsIndexMainAST=*/false, Version,
-                      /*CollectMainFileRefs=*/false, Origin);
+                      /*CollectMainFileRefs=*/false);
 }
 
-FileSymbols::FileSymbols(IndexContents IdxContents, bool SupportContainedRefs)
-    : IdxContents(IdxContents), SupportContainedRefs(SupportContainedRefs) {}
+FileSymbols::FileSymbols(IndexContents IdxContents)
+    : IdxContents(IdxContents) {}
 
 void FileSymbols::update(llvm::StringRef Key,
                          std::unique_ptr<SymbolSlab> Symbols,
@@ -372,7 +370,8 @@ FileSymbols::buildIndex(IndexType Type, DuplicateHandling DuplicateHandle,
   // relations being stored in both the shards containing their
   // subject and object.
   llvm::sort(AllRelations);
-  AllRelations.erase(llvm::unique(AllRelations), AllRelations.end());
+  AllRelations.erase(std::unique(AllRelations.begin(), AllRelations.end()),
+                     AllRelations.end());
 
   size_t StorageSize =
       RefsStorage.size() * sizeof(Ref) + SymsStorage.size() * sizeof(Symbol);
@@ -396,7 +395,7 @@ FileSymbols::buildIndex(IndexType Type, DuplicateHandling DuplicateHandle,
         std::move(AllRelations), std::move(Files), IdxContents,
         std::make_tuple(std::move(SymbolSlabs), std::move(RefSlabs),
                         std::move(RefsStorage), std::move(SymsStorage)),
-        StorageSize, SupportContainedRefs);
+        StorageSize);
   }
   llvm_unreachable("Unknown clangd::IndexType");
 }
@@ -420,12 +419,11 @@ void FileSymbols::profile(MemoryTree &MT) const {
   }
 }
 
-FileIndex::FileIndex(bool SupportContainedRefs)
+FileIndex::FileIndex()
     : MergedIndex(&MainFileIndex, &PreambleIndex),
-      PreambleSymbols(IndexContents::Symbols | IndexContents::Relations,
-                      SupportContainedRefs),
+      PreambleSymbols(IndexContents::Symbols | IndexContents::Relations),
       PreambleIndex(std::make_unique<MemIndex>()),
-      MainFileSymbols(IndexContents::All, SupportContainedRefs),
+      MainFileSymbols(IndexContents::All),
       MainFileIndex(std::make_unique<MemIndex>()) {}
 
 void FileIndex::updatePreamble(IndexFileIn IF) {
@@ -464,7 +462,7 @@ void FileIndex::updatePreamble(PathRef Path, llvm::StringRef Version,
                                const include_cleaner::PragmaIncludes &PI) {
   IndexFileIn IF;
   std::tie(IF.Symbols, std::ignore, IF.Relations) =
-      indexHeaderSymbols(Version, AST, PP, PI, SymbolOrigin::Preamble);
+      indexHeaderSymbols(Version, AST, PP, PI);
   updatePreamble(std::move(IF));
 }
 

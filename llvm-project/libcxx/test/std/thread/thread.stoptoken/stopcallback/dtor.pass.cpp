@@ -7,7 +7,9 @@
 //===----------------------------------------------------------------------===//
 //
 // UNSUPPORTED: no-threads
+// UNSUPPORTED: libcpp-has-no-experimental-stop_token
 // UNSUPPORTED: c++03, c++11, c++14, c++17
+// XFAIL: availability-synchronization_library-missing
 
 // ~stop_callback();
 
@@ -15,7 +17,6 @@
 #include <cassert>
 #include <chrono>
 #include <functional>
-#include <memory>
 #include <optional>
 #include <stop_token>
 #include <type_traits>

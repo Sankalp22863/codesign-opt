@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- UseOverrideCheck.cpp - clang-tidy --------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "UseOverrideCheck.h"
-#include "../utils/LexerUtils.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Lex/Lexer.h"
@@ -55,9 +54,9 @@ void UseOverrideCheck::registerMatchers(MatchFinder *Finder) {
 static SmallVector<Token, 16>
 parseTokens(CharSourceRange Range, const MatchFinder::MatchResult &Result) {
   const SourceManager &Sources = *Result.SourceManager;
-  const std::pair<FileID, unsigned> LocInfo =
+  std::pair<FileID, unsigned> LocInfo =
       Sources.getDecomposedLoc(Range.getBegin());
-  const StringRef File = Sources.getBufferData(LocInfo.first);
+  StringRef File = Sources.getBufferData(LocInfo.first);
   const char *TokenBegin = File.data() + LocInfo.second;
   Lexer RawLexer(Sources.getLocForStartOfFile(LocInfo.first),
                  Result.Context->getLangOpts(), File.begin(), TokenBegin,
@@ -103,12 +102,12 @@ void UseOverrideCheck::check(const MatchFinder::MatchResult &Result) {
       Method->isOutOfLine())
     return;
 
-  const bool HasVirtual = Method->isVirtualAsWritten();
-  const bool HasOverride = Method->getAttr<OverrideAttr>();
-  const bool HasFinal = Method->getAttr<FinalAttr>();
+  bool HasVirtual = Method->isVirtualAsWritten();
+  bool HasOverride = Method->getAttr<OverrideAttr>();
+  bool HasFinal = Method->getAttr<FinalAttr>();
 
-  const bool OnlyVirtualSpecified = HasVirtual && !HasOverride && !HasFinal;
-  const unsigned KeywordCount = HasVirtual + HasOverride + HasFinal;
+  bool OnlyVirtualSpecified = HasVirtual && !HasOverride && !HasFinal;
+  unsigned KeywordCount = HasVirtual + HasOverride + HasFinal;
 
   if ((!OnlyVirtualSpecified && KeywordCount == 1) ||
       (!HasVirtual && HasOverride && HasFinal && AllowOverrideAndFinal))
@@ -120,12 +119,12 @@ void UseOverrideCheck::check(const MatchFinder::MatchResult &Result) {
   } else if (KeywordCount == 0) {
     Message = "annotate this function with '%0' or (rarely) '%1'";
   } else {
-    const StringRef Redundant =
+    StringRef Redundant =
         HasVirtual ? (HasOverride && HasFinal && !AllowOverrideAndFinal
                           ? "'virtual' and '%0' are"
                           : "'virtual' is")
                    : "'%0' is";
-    const StringRef Correct = HasFinal ? "'%1'" : "'%0'";
+    StringRef Correct = HasFinal ? "'%1'" : "'%0'";
 
     Message = (llvm::Twine(Redundant) +
                " redundant since the function is already declared " + Correct)
@@ -135,7 +134,7 @@ void UseOverrideCheck::check(const MatchFinder::MatchResult &Result) {
   auto Diag = diag(Method->getLocation(), Message)
               << OverrideSpelling << FinalSpelling;
 
-  const CharSourceRange FileRange = Lexer::makeFileCharRange(
+  CharSourceRange FileRange = Lexer::makeFileCharRange(
       CharSourceRange::getTokenRange(Method->getSourceRange()), Sources,
       getLangOpts());
 
@@ -151,9 +150,9 @@ void UseOverrideCheck::check(const MatchFinder::MatchResult &Result) {
   if (!HasFinal && !HasOverride) {
     SourceLocation InsertLoc;
     std::string ReplacementText = (OverrideSpelling + " ").str();
-    const SourceLocation MethodLoc = Method->getLocation();
+    SourceLocation MethodLoc = Method->getLocation();
 
-    for (const Token T : Tokens) {
+    for (Token T : Tokens) {
       if (T.is(tok::kw___attribute) &&
           !Sources.isBeforeInTranslationUnit(T.getLocation(), MethodLoc)) {
         InsertLoc = T.getLocation();
@@ -164,7 +163,7 @@ void UseOverrideCheck::check(const MatchFinder::MatchResult &Result) {
     if (Method->hasAttrs()) {
       for (const clang::Attr *A : Method->getAttrs()) {
         if (!A->isImplicit() && !A->isInherited()) {
-          const SourceLocation Loc =
+          SourceLocation Loc =
               Sources.getExpansionLoc(A->getRange().getBegin());
           if ((!InsertLoc.isValid() ||
                Sources.isBeforeInTranslationUnit(Loc, InsertLoc)) &&
@@ -221,23 +220,17 @@ void UseOverrideCheck::check(const MatchFinder::MatchResult &Result) {
   }
 
   if (HasFinal && HasOverride && !AllowOverrideAndFinal) {
-    const SourceLocation OverrideLoc =
-        Method->getAttr<OverrideAttr>()->getLocation();
+    SourceLocation OverrideLoc = Method->getAttr<OverrideAttr>()->getLocation();
     Diag << FixItHint::CreateRemoval(
         CharSourceRange::getTokenRange(OverrideLoc, OverrideLoc));
   }
 
   if (HasVirtual) {
-    for (const Token Tok : Tokens) {
+    for (Token Tok : Tokens) {
       if (Tok.is(tok::kw_virtual)) {
-        std::optional<Token> NextToken =
-            utils::lexer::findNextTokenIncludingComments(
-                Tok.getEndLoc(), Sources, getLangOpts());
-        if (NextToken.has_value()) {
-          Diag << FixItHint::CreateRemoval(CharSourceRange::getCharRange(
-              Tok.getLocation(), NextToken->getLocation()));
-          break;
-        }
+        Diag << FixItHint::CreateRemoval(CharSourceRange::getTokenRange(
+            Tok.getLocation(), Tok.getLocation()));
+        break;
       }
     }
   }

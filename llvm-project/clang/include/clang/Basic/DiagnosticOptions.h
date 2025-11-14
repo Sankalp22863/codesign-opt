@@ -10,6 +10,7 @@
 #define LLVM_CLANG_BASIC_DIAGNOSTICOPTIONS_H
 
 #include "clang/Basic/LLVM.h"
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -66,7 +67,7 @@ inline DiagnosticLevelMask operator&(DiagnosticLevelMask LHS,
 raw_ostream& operator<<(raw_ostream& Out, DiagnosticLevelMask M);
 
 /// Options for controlling the compiler diagnostics engine.
-class DiagnosticOptions {
+class DiagnosticOptions : public RefCountedBase<DiagnosticOptions>{
   friend bool ParseDiagnosticArgs(DiagnosticOptions &, llvm::opt::ArgList &,
                                   clang::DiagnosticsEngine *, bool);
 
@@ -107,9 +108,6 @@ public:
   /// The file to serialize diagnostics to (non-appending).
   std::string DiagnosticSerializationFile;
 
-  /// Path for the file that defines diagnostic suppression mappings.
-  std::string DiagnosticSuppressionMappingsFile;
-
   /// The list of -W... options used to alter the diagnostic mappings, with the
   /// prefixes removed.
   std::vector<std::string> Warnings;
@@ -126,7 +124,7 @@ public:
   /// default).
   std::vector<std::string> VerifyPrefixes;
 
-  /// The list of -Wsystem-headers-in-module=... options used to override
+  /// The list of -Wsystem-header-in-module=... options used to override
   /// whether -Wsystem-headers is enabled on a per-module basis.
   std::vector<std::string> SystemHeaderWarningsModules;
 

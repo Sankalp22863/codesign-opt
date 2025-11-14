@@ -1,4 +1,5 @@
 ; RUN: opt -passes='require<profile-summary>,function(codegenprepare)' -S < %s | FileCheck %s
+; RUN: opt -passes='require<profile-summary>,function(codegenprepare)' -S < %s --try-experimental-debuginfo-iterators | FileCheck %s
 
 ; The following target lines are needed for the test to exercise what it should.
 ; Without these lines, CodeGenPrepare does not try to sink the bitcasts.
@@ -86,11 +87,11 @@ catch:
 ; CHECK: catch.dispatch:
 ; CHECK-NEXT: phi ptr
 ; CHECK-NEXT: catchswitch
-; CHECK-NOT: #dbg_value
+; CHECK-NOT: llvm.dbg.value
 
 ; CHECK: catch:
 ; CHECK-NEXT: catchpad
-; CHECK-NEXT: #dbg_value
+; CHECK-NEXT: call void @llvm.dbg.value
 }
 
 !llvm.dbg.cu = !{!0}

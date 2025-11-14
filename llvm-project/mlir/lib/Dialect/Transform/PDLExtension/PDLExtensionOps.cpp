@@ -9,6 +9,7 @@
 #include "mlir/Dialect/Transform/PDLExtension/PDLExtensionOps.h"
 #include "mlir/Dialect/PDL/IR/PDLOps.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/OpImplementation.h"
 #include "mlir/Rewrite/FrozenRewritePatternSet.h"
 #include "mlir/Rewrite/PatternApplicator.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -100,7 +101,12 @@ LogicalResult PatternApplicatorExtension::findAllMatches(
   PatternApplicator applicator(it->second);
   // We want to discourage direct use of PatternRewriter in APIs but In this
   // very specific case, an IRRewriter is not enough.
-  PatternRewriter rewriter(root->getContext());
+  struct TrivialPatternRewriter : public PatternRewriter {
+  public:
+    explicit TrivialPatternRewriter(MLIRContext *context)
+        : PatternRewriter(context) {}
+  };
+  TrivialPatternRewriter rewriter(root->getContext());
   applicator.applyDefaultCostModel();
   root->walk([&](Operation *op) {
     if (succeeded(applicator.matchAndRewrite(op, rewriter)))
@@ -152,8 +158,8 @@ transform::PDLMatchOp::apply(transform::TransformRewriter &rewriter,
 
 void transform::PDLMatchOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  onlyReadsHandle(getRootMutable(), effects);
-  producesHandle(getOperation()->getOpResults(), effects);
+  onlyReadsHandle(getRoot(), effects);
+  producesHandle(getMatched(), effects);
   onlyReadsPayload(effects);
 }
 

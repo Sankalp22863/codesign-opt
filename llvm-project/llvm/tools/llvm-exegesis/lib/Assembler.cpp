@@ -29,7 +29,6 @@
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/Object/SymbolSize.h"
 #include "llvm/Support/Alignment.h"
-#include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -44,8 +43,8 @@
 namespace llvm {
 namespace exegesis {
 
-static constexpr char ModuleID[] = "ExegesisInfoTest";
-static constexpr char FunctionID[] = "foo";
+static constexpr const char ModuleID[] = "ExegesisInfoTest";
+static constexpr const char FunctionID[] = "foo";
 static const Align kFunctionAlignment(4096);
 
 // Fills the given basic block with register setup code, and returns true if
@@ -66,12 +65,11 @@ static bool generateSnippetSetupCode(const ExegesisTarget &ET,
       assert(MM.Address % getpagesize() == 0 &&
              "Memory mappings need to be aligned to page boundaries.");
 #endif
-      const MemoryValue &MemVal = Key.MemoryValues.at(MM.MemoryValueName);
       BBF.addInstructions(ET.generateMmap(
-          MM.Address, MemVal.SizeBytes,
+          MM.Address, Key.MemoryValues.at(MM.MemoryValueName).SizeBytes,
           ET.getAuxiliaryMemoryStartAddress() +
-              sizeof(int) *
-                  (MemVal.Index + SubprocessMemory::AuxiliaryMemoryOffset)));
+              sizeof(int) * (Key.MemoryValues.at(MM.MemoryValueName).Index +
+                             SubprocessMemory::AuxiliaryMemoryOffset)));
     }
     BBF.addInstructions(ET.setStackRegisterToAuxMem());
   }
@@ -83,7 +81,7 @@ static bool generateSnippetSetupCode(const ExegesisTarget &ET,
       // If we're generating memory instructions, don't load in the value for
       // the register with the stack pointer as it will be used later to finish
       // the setup.
-      if (Register(RV.Register) == StackPointerRegister)
+      if (RV.Register == StackPointerRegister)
         continue;
     }
     // Load a constant in the register.
@@ -100,7 +98,7 @@ static bool generateSnippetSetupCode(const ExegesisTarget &ET,
       // Load in the stack register now as we're done using it elsewhere
       // and need to set the value in preparation for executing the
       // snippet.
-      if (Register(RV.Register) != StackPointerRegister)
+      if (RV.Register != StackPointerRegister)
         continue;
       const auto SetRegisterCode = ET.setRegTo(*MSI, RV.Register, RV.Value);
       if (SetRegisterCode.empty())
@@ -138,8 +136,8 @@ MachineFunction &createVoidVoidPtrMachineFunction(StringRef FunctionName,
                                                   Module *Module,
                                                   MachineModuleInfo *MMI) {
   Type *const ReturnType = Type::getInt32Ty(Module->getContext());
-  Type *const MemParamType =
-      PointerType::get(Module->getContext(), 0 /*default address space*/);
+  Type *const MemParamType = PointerType::get(
+      Type::getInt8Ty(Module->getContext()), 0 /*default address space*/);
   FunctionType *FunctionType =
       FunctionType::get(ReturnType, {MemParamType}, false);
   Function *const F = Function::Create(
@@ -210,7 +208,7 @@ void BasicBlockFiller::addReturn(const ExegesisTarget &ET,
 }
 
 FunctionFiller::FunctionFiller(MachineFunction &MF,
-                               std::vector<MCRegister> RegistersSetUp)
+                               std::vector<unsigned> RegistersSetUp)
     : MF(MF), MCII(MF.getTarget().getMCInstrInfo()), Entry(addBasicBlock()),
       RegistersSetUp(std::move(RegistersSetUp)) {}
 
@@ -220,7 +218,7 @@ BasicBlockFiller FunctionFiller::addBasicBlock() {
   return BasicBlockFiller(MF, MBB, MCII);
 }
 
-ArrayRef<MCRegister> FunctionFiller::getRegistersSetUp() const {
+ArrayRef<unsigned> FunctionFiller::getRegistersSetUp() const {
   return RegistersSetUp;
 }
 
@@ -234,7 +232,9 @@ createModule(const std::unique_ptr<LLVMContext> &Context, const DataLayout &DL) 
 BitVector getFunctionReservedRegs(const TargetMachine &TM) {
   std::unique_ptr<LLVMContext> Context = std::make_unique<LLVMContext>();
   std::unique_ptr<Module> Module = createModule(Context, TM.createDataLayout());
-  auto MMIWP = std::make_unique<MachineModuleInfoWrapperPass>(&TM);
+  // TODO: This only works for targets implementing LLVMTargetMachine.
+  const LLVMTargetMachine &LLVMTM = static_cast<const LLVMTargetMachine &>(TM);
+  auto MMIWP = std::make_unique<MachineModuleInfoWrapperPass>(&LLVMTM);
   MachineFunction &MF = createVoidVoidPtrMachineFunction(
       FunctionID, Module.get(), &MMIWP->getMMI());
   // Saving reserved registers for client.
@@ -242,8 +242,8 @@ BitVector getFunctionReservedRegs(const TargetMachine &TM) {
 }
 
 Error assembleToStream(const ExegesisTarget &ET,
-                       std::unique_ptr<TargetMachine> TM,
-                       ArrayRef<MCRegister> LiveIns, const FillFunction &Fill,
+                       std::unique_ptr<LLVMTargetMachine> TM,
+                       ArrayRef<unsigned> LiveIns, const FillFunction &Fill,
                        raw_pwrite_stream &AsmStream, const BenchmarkKey &Key,
                        bool GenerateMemoryInstructions) {
   auto Context = std::make_unique<LLVMContext>();
@@ -257,37 +257,38 @@ Error assembleToStream(const ExegesisTarget &ET,
   // We need to instruct the passes that we're done with SSA and virtual
   // registers.
   auto &Properties = MF.getProperties();
-  Properties.setNoVRegs().resetIsSSA().setNoPHIs();
+  Properties.set(MachineFunctionProperties::Property::NoVRegs);
+  Properties.reset(MachineFunctionProperties::Property::IsSSA);
+  Properties.set(MachineFunctionProperties::Property::NoPHIs);
 
-  for (const MCRegister Reg : LiveIns)
+  for (const unsigned Reg : LiveIns)
     MF.getRegInfo().addLiveIn(Reg);
 
   if (GenerateMemoryInstructions) {
-    for (const MCRegister Reg : ET.getArgumentRegisters())
+    for (const unsigned Reg : ET.getArgumentRegisters())
       MF.getRegInfo().addLiveIn(Reg);
     // Add a live in for registers that need saving so that the machine verifier
     // doesn't fail if the register is never defined.
-    for (const MCRegister Reg : ET.getRegistersNeedSaving())
+    for (const unsigned Reg : ET.getRegistersNeedSaving())
       MF.getRegInfo().addLiveIn(Reg);
   }
 
-  std::vector<MCRegister> RegistersSetUp;
-  RegistersSetUp.reserve(Key.RegisterInitialValues.size());
+  std::vector<unsigned> RegistersSetUp;
   for (const auto &InitValue : Key.RegisterInitialValues) {
     RegistersSetUp.push_back(InitValue.Register);
   }
   FunctionFiller Sink(MF, std::move(RegistersSetUp));
   auto Entry = Sink.getEntry();
 
-  for (const MCRegister Reg : LiveIns)
+  for (const unsigned Reg : LiveIns)
     Entry.MBB->addLiveIn(Reg);
 
   if (GenerateMemoryInstructions) {
-    for (const MCRegister Reg : ET.getArgumentRegisters())
+    for (const unsigned Reg : ET.getArgumentRegisters())
       Entry.MBB->addLiveIn(Reg);
     // Add a live in for registers that need saving so that the machine verifier
     // doesn't fail if the register is never defined.
-    for (const MCRegister Reg : ET.getRegistersNeedSaving())
+    for (const unsigned Reg : ET.getRegistersNeedSaving())
       Entry.MBB->addLiveIn(Reg);
   }
 
@@ -298,19 +299,19 @@ Error assembleToStream(const ExegesisTarget &ET,
   // means that we won't know what values are in the registers.
   // FIXME: this should probably be an assertion.
   if (!IsSnippetSetupComplete)
-    Properties.resetTracksLiveness();
+    Properties.reset(MachineFunctionProperties::Property::TracksLiveness);
 
   Fill(Sink);
 
   // prologue/epilogue pass needs the reserved registers to be frozen, this
   // is usually done by the SelectionDAGISel pass.
-  MF.getRegInfo().freezeReservedRegs();
+  MF.getRegInfo().freezeReservedRegs(MF);
 
   // We create the pass manager, run the passes to populate AsmBuffer.
   MCContext &MCContext = MMIWP->getMMI().getContext();
   legacy::PassManager PM;
 
-  TargetLibraryInfoImpl TLII(Module->getTargetTriple());
+  TargetLibraryInfoImpl TLII(Triple(Module->getTargetTriple()));
   PM.add(new TargetLibraryInfoWrapperPass(TLII));
 
   TargetPassConfig *TPC = TM->createPassConfig(PM);
@@ -322,8 +323,10 @@ Error assembleToStream(const ExegesisTarget &ET,
   TPC->printAndVerify("After ExegesisTarget::addTargetSpecificPasses");
   // Adding the following passes:
   // - postrapseudos: expands pseudo return instructions used on some targets.
+  // - machineverifier: checks that the MachineFunction is well formed.
   // - prologepilog: saves and restore callee saved registers.
-  for (const char *PassName : {"postrapseudos", "prologepilog"})
+  for (const char *PassName :
+       {"postrapseudos", "machineverifier", "prologepilog"})
     if (addPass(PM, PassName, *TPC))
       return make_error<Failure>("Unable to add a mandatory pass");
   TPC->setInitialized();
@@ -334,10 +337,6 @@ Error assembleToStream(const ExegesisTarget &ET,
     return make_error<Failure>("Cannot add AsmPrinter passes");
 
   PM.run(*Module); // Run all the passes
-  bool MFWellFormed =
-      MF.verify(nullptr, "llvm-exegesis Assembly", &outs(), false);
-  if (!MFWellFormed)
-    return make_error<Failure>("The machine function failed verification.");
   return Error::success();
 }
 
@@ -359,27 +358,18 @@ object::OwningBinary<object::ObjectFile> getObjectFromFile(StringRef Filename) {
 }
 
 Expected<ExecutableFunction> ExecutableFunction::create(
-    std::unique_ptr<TargetMachine> TM,
+    std::unique_ptr<LLVMTargetMachine> TM,
     object::OwningBinary<object::ObjectFile> &&ObjectFileHolder) {
   assert(ObjectFileHolder.getBinary() && "cannot create object file");
   std::unique_ptr<LLVMContext> Ctx = std::make_unique<LLVMContext>();
 
   auto SymbolSizes = object::computeSymbolSizes(*ObjectFileHolder.getBinary());
   // Get the size of the function that we want to call into (with the name of
-  // FunctionID).
-  auto SymbolIt = find_if(SymbolSizes, [&](const auto &Pair) {
-    auto SymbolName = Pair.first.getName();
-    if (SymbolName)
-      return *SymbolName == FunctionID;
-    // We should always succeed in finding the FunctionID, hence we suppress
-    // the error here and assert later on the search result, rather than
-    // propagating the Expected<> error back to the caller.
-    consumeError(SymbolName.takeError());
-    return false;
-  });
-  assert(SymbolIt != SymbolSizes.end() &&
-         "Cannot find the symbol for FunctionID");
-  uintptr_t CodeSize = SymbolIt->second;
+  // FunctionID). This should always be the third symbol returned by
+  // calculateSymbolSizes.
+  assert(SymbolSizes.size() == 3);
+  assert(cantFail(std::get<0>(SymbolSizes[2]).getName()) == FunctionID);
+  uintptr_t CodeSize = std::get<1>(SymbolSizes[2]);
 
   auto EJITOrErr = orc::LLJITBuilder().create();
   if (!EJITOrErr)

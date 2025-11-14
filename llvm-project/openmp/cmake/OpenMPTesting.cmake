@@ -10,8 +10,6 @@ function(find_standalone_test_dependencies)
     message(WARNING "The check targets will not be available!")
     set(ENABLE_CHECK_TARGETS FALSE PARENT_SCOPE)
     return()
-  else()
-    set(Python3_EXECUTABLE ${Python3_EXECUTABLE} PARENT_SCOPE)
   endif()
 
   # Find executables.
@@ -57,8 +55,8 @@ if (${OPENMP_STANDALONE_BUILD})
   if (MSVC OR XCODE)
     set(DEFAULT_LIT_ARGS "${DEFAULT_LIT_ARGS} --no-progress-bar")
   endif()
-  if ("${CMAKE_SYSTEM_NAME}" MATCHES "AIX")
-    set(DEFAULT_LIT_ARGS "${DEFAULT_LIT_ARGS} --time-tests --timeout=3000")
+  if (${CMAKE_SYSTEM_NAME} MATCHES "AIX")
+    set(DEFAULT_LIT_ARGS "${DEFAULT_LIT_ARGS} --time-tests --timeout=1800")
   endif()
   set(OPENMP_LIT_ARGS "${DEFAULT_LIT_ARGS}" CACHE STRING "Options for lit.")
   separate_arguments(OPENMP_LIT_ARGS)
@@ -163,9 +161,6 @@ else()
   set(OPENMP_TEST_COMPILER_HAS_OMIT_FRAME_POINTER_FLAGS 1)
 endif()
 
-set(OPENMP_TEST_ENABLE_TSAN "${OPENMP_TEST_COMPILER_HAS_TSAN_FLAGS}" CACHE BOOL
-    "Whether to enable tests using tsan")
-
 # Function to set compiler features for use in lit.
 function(update_test_compiler_features)
   set(FEATURES "[")
@@ -238,10 +233,6 @@ function(add_openmp_testsuite target comment)
       )
     endif()
   endif()
-
-  if (TARGET flang-rt)
-    add_dependencies(${target} flang-rt)
-  endif ()
 endfunction()
 
 function(construct_check_openmp_target)

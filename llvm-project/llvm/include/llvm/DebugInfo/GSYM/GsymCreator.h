@@ -9,7 +9,6 @@
 #ifndef LLVM_DEBUGINFO_GSYM_GSYMCREATOR_H
 #define LLVM_DEBUGINFO_GSYM_GSYMCREATOR_H
 
-#include "llvm/Support/Compiler.h"
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -29,7 +28,6 @@ namespace llvm {
 
 namespace gsym {
 class FileWriter;
-class OutputAggregator;
 
 /// GsymCreator is used to emit GSYM data to a stand alone file or section
 /// within a file.
@@ -293,7 +291,7 @@ class GsymCreator {
   }
 
 public:
-  LLVM_ABI GsymCreator(bool Quiet = false);
+  GsymCreator(bool Quiet = false);
 
   /// Save a GSYM file to a stand alone file.
   ///
@@ -309,15 +307,14 @@ public:
   ///                    a single GSYM file that contains all function
   ///                    information will be created.
   /// \returns An error object that indicates success or failure of the save.
-  LLVM_ABI llvm::Error
-  save(StringRef Path, llvm::endianness ByteOrder,
-       std::optional<uint64_t> SegmentSize = std::nullopt) const;
+  llvm::Error save(StringRef Path, llvm::endianness ByteOrder,
+                   std::optional<uint64_t> SegmentSize = std::nullopt) const;
 
   /// Encode a GSYM into the file writer stream at the current position.
   ///
   /// \param O The stream to save the binary data to
   /// \returns An error object that indicates success or failure of the save.
-  LLVM_ABI llvm::Error encode(FileWriter &O) const;
+  llvm::Error encode(FileWriter &O) const;
 
   /// Insert a string into the GSYM string table.
   ///
@@ -329,17 +326,7 @@ public:
   ///             the string is owned by another object that will stay around
   ///             long enough for the GsymCreator to save the GSYM file.
   /// \returns The unique 32 bit offset into the string table.
-  LLVM_ABI uint32_t insertString(StringRef S, bool Copy = true);
-
-  /// Retrieve a string from the GSYM string table given its offset.
-  ///
-  /// The offset is assumed to be a valid offset into the string table.
-  /// otherwise an assert will be triggered.
-  ///
-  /// \param Offset The offset of the string to retrieve, previously returned by
-  /// insertString.
-  /// \returns The string at the given offset in the string table.
-  LLVM_ABI StringRef getString(uint32_t Offset);
+  uint32_t insertString(StringRef S, bool Copy = true);
 
   /// Insert a file into this GSYM creator.
   ///
@@ -352,8 +339,8 @@ public:
   /// \param   Path The path to the file to insert.
   /// \param   Style The path style for the "Path" parameter.
   /// \returns The unique file index for the inserted file.
-  LLVM_ABI uint32_t
-  insertFile(StringRef Path, sys::path::Style Style = sys::path::Style::native);
+  uint32_t insertFile(StringRef Path,
+                      sys::path::Style Style = sys::path::Style::native);
 
   /// Add a function info to this GSYM creator.
   ///
@@ -362,25 +349,7 @@ public:
   /// offsets for names and other strings.
   ///
   /// \param   FI The function info object to emplace into our functions list.
-  LLVM_ABI void addFunctionInfo(FunctionInfo &&FI);
-
-  /// Load call site information from a YAML file.
-  ///
-  /// This function reads call site information from a specified YAML file and
-  /// adds it to the GSYM data.
-  ///
-  /// \param YAMLFile The path to the YAML file containing call site
-  /// information.
-  LLVM_ABI llvm::Error loadCallSitesFromYAML(StringRef YAMLFile);
-
-  /// Organize merged FunctionInfo's
-  ///
-  /// This method processes the list of function infos (Funcs) to identify and
-  /// group functions with overlapping address ranges.
-  ///
-  /// \param  Out Output stream to report information about how merged
-  /// FunctionInfo's were handled.
-  LLVM_ABI void prepareMergedFunctions(OutputAggregator &Out);
+  void addFunctionInfo(FunctionInfo &&FI);
 
   /// Finalize the data in the GSYM creator prior to saving the data out.
   ///
@@ -391,7 +360,7 @@ public:
   ///         function infos, and function infos that were merged or removed.
   /// \returns An error object that indicates success or failure of the
   ///          finalize.
-  LLVM_ABI llvm::Error finalize(OutputAggregator &OS);
+  llvm::Error finalize(llvm::raw_ostream &OS);
 
   /// Set the UUID value.
   ///
@@ -404,19 +373,19 @@ public:
   ///
   /// \param  Callback A callback function that will get called with each
   ///         FunctionInfo. If the callback returns false, stop iterating.
-  LLVM_ABI void
-  forEachFunctionInfo(std::function<bool(FunctionInfo &)> const &Callback);
+  void forEachFunctionInfo(
+      std::function<bool(FunctionInfo &)> const &Callback);
 
   /// Thread safe const iteration over all function infos.
   ///
   /// \param  Callback A callback function that will get called with each
   ///         FunctionInfo. If the callback returns false, stop iterating.
-  LLVM_ABI void forEachFunctionInfo(
+  void forEachFunctionInfo(
       std::function<bool(const FunctionInfo &)> const &Callback) const;
 
   /// Get the current number of FunctionInfo objects contained in this
   /// object.
-  LLVM_ABI size_t getNumFunctionInfos() const;
+  size_t getNumFunctionInfos() const;
 
   /// Set valid .text address ranges that all functions must be contained in.
   void SetValidTextRanges(AddressRanges &TextRanges) {
@@ -447,7 +416,7 @@ public:
   ///
   /// \returns True if the address is in the valid text ranges or if no valid
   ///          text ranges have been set, false otherwise.
-  LLVM_ABI bool IsValidTextAddress(uint64_t Addr) const;
+  bool IsValidTextAddress(uint64_t Addr) const;
 
   /// Set the base address to use for the GSYM file.
   ///
@@ -486,7 +455,7 @@ public:
   /// \returns An expected unique pointer to a GsymCreator or an error. The
   /// returned unique pointer can be NULL if there are no more functions to
   /// encode.
-  LLVM_ABI llvm::Expected<std::unique_ptr<GsymCreator>>
+  llvm::Expected<std::unique_ptr<GsymCreator>>
   createSegment(uint64_t SegmentSize, size_t &FuncIdx) const;
 };
 

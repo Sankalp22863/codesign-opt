@@ -14,14 +14,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "AnalysisInternal.h"
-#include "clang-include-cleaner/IncludeSpeller.h"
 #include "clang-include-cleaner/Types.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/Lexer.h"
-#include "clang/Lex/Preprocessor.h"
 #include "clang/Tooling/Inclusions/StandardLibrary.h"
 #include "llvm/Support/ScopedPrinter.h"
 #include "llvm/Support/raw_ostream.h"
@@ -136,7 +134,7 @@ class Reporter {
   llvm::raw_ostream &OS;
   const ASTContext &Ctx;
   const SourceManager &SM;
-  const Preprocessor &PP;
+  const HeaderSearch &HS;
   const include_cleaner::Includes &Includes;
   const PragmaIncludes *PI;
   FileID MainFile;
@@ -169,11 +167,27 @@ class Reporter {
     return "semiused";
   }
 
+  std::string spellHeader(const Header &H) {
+    switch (H.kind()) {
+    case Header::Physical: {
+      bool IsAngled = false;
+      std::string Path = HS.suggestPathToFileForDiagnostics(
+          H.physical(), MainFE->tryGetRealPathName(), &IsAngled);
+      return IsAngled ? "<" + Path + ">" : "\"" + Path + "\"";
+    }
+    case Header::Standard:
+      return H.standard().name().str();
+    case Header::Verbatim:
+      return H.verbatim().str();
+    }
+    llvm_unreachable("Unknown Header kind");
+  }
+
   void fillTarget(Ref &R) {
     // Duplicates logic from walkUsed(), which doesn't expose SymbolLocations.
-    for (auto &Loc : locateSymbol(R.Sym, Ctx.getLangOpts()))
+    for (auto &Loc : locateSymbol(R.Sym))
       R.Locations.push_back(Loc);
-    R.Headers = headersForSymbol(R.Sym, PP, PI);
+    R.Headers = headersForSymbol(R.Sym, SM, PI);
 
     for (const auto &H : R.Headers) {
       R.Includes.append(Includes.match(H));
@@ -186,18 +200,18 @@ class Reporter {
       R.Satisfied = true;
     // Include pointers are meaningfully ordered as they are backed by a vector.
     llvm::sort(R.Includes);
-    R.Includes.erase(llvm::unique(R.Includes), R.Includes.end());
+    R.Includes.erase(std::unique(R.Includes.begin(), R.Includes.end()),
+                     R.Includes.end());
 
     if (!R.Headers.empty())
-      R.Insert =
-          spellHeader({R.Headers.front(), PP.getHeaderSearchInfo(), MainFE});
+      R.Insert = spellHeader(R.Headers.front());
   }
 
 public:
-  Reporter(llvm::raw_ostream &OS, ASTContext &Ctx, const Preprocessor &PP,
+  Reporter(llvm::raw_ostream &OS, ASTContext &Ctx, const HeaderSearch &HS,
            const include_cleaner::Includes &Includes, const PragmaIncludes *PI,
            FileID MainFile)
-      : OS(OS), Ctx(Ctx), SM(Ctx.getSourceManager()), PP(PP),
+      : OS(OS), Ctx(Ctx), SM(Ctx.getSourceManager()), HS(HS),
         Includes(Includes), PI(PI), MainFile(MainFile),
         MainFE(SM.getFileEntryForID(MainFile)) {}
 
@@ -499,9 +513,9 @@ private:
 void writeHTMLReport(FileID File, const include_cleaner::Includes &Includes,
                      llvm::ArrayRef<Decl *> Roots,
                      llvm::ArrayRef<SymbolReference> MacroRefs, ASTContext &Ctx,
-                     const Preprocessor &PP, PragmaIncludes *PI,
+                     const HeaderSearch &HS, PragmaIncludes *PI,
                      llvm::raw_ostream &OS) {
-  Reporter R(OS, Ctx, PP, Includes, PI, File);
+  Reporter R(OS, Ctx, HS, Includes, PI, File);
   const auto& SM = Ctx.getSourceManager();
   for (Decl *Root : Roots)
     walkAST(*Root, [&](SourceLocation Loc, const NamedDecl &D, RefType T) {

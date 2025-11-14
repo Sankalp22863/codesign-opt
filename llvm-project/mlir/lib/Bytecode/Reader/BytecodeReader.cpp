@@ -17,6 +17,7 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
@@ -26,7 +27,6 @@
 #include "llvm/Support/SourceMgr.h"
 
 #include <cstddef>
-#include <cstdint>
 #include <list>
 #include <memory>
 #include <numeric>
@@ -112,9 +112,6 @@ public:
     };
 
     // Shift the reader position to the next alignment boundary.
-    // Note: this assumes the pointer alignment matches the alignment of the
-    // data from the start of the buffer. In other words, this code is only
-    // valid if `dataIt` is offsetting into an already aligned buffer.
     while (isUnaligned(dataIt)) {
       uint8_t padding;
       if (failed(parseByte(padding)))
@@ -262,13 +259,9 @@ public:
     return success();
   }
 
-  /// Validate that the alignment requested in the section is valid.
-  using ValidateAlignmentFn = function_ref<LogicalResult(unsigned alignment)>;
-
   /// Parse a section header, placing the kind of section in `sectionID` and the
   /// contents of the section in `sectionData`.
   LogicalResult parseSection(bytecode::Section::ID &sectionID,
-                             ValidateAlignmentFn alignmentValidator,
                              ArrayRef<uint8_t> &sectionData) {
     uint8_t sectionIDAndHasAlignment;
     uint64_t length;
@@ -289,48 +282,8 @@ public:
 
     // Process the section alignment if present.
     if (hasAlignment) {
-      // Read the requested alignment from the bytecode parser.
       uint64_t alignment;
-      if (failed(parseVarInt(alignment)))
-        return failure();
-
-      // Check that the requested alignment must not exceed the alignment of
-      // the root buffer itself. Otherwise we cannot guarantee that pointers
-      // derived from this buffer will actually satisfy the requested alignment
-      // globally.
-      //
-      // Consider a bytecode buffer that is guaranteed to be 8k aligned, but not
-      // 16k aligned (e.g. absolute address 40960. If a section inside this
-      // buffer declares a 16k alignment requirement, two problems can arise:
-      //
-      //   (a) If we "align forward" the current pointer to the next
-      //       16k boundary, the amount of padding we skip depends on the
-      //       buffer's starting address. For example:
-      //
-      //         buffer_start = 40960
-      //         next 16k boundary = 49152
-      //         bytes skipped = 49152 - 40960 = 8192
-      //
-      //       This leaves behind variable padding that could be misinterpreted
-      //       as part of the next section.
-      //
-      //   (b) If we align relative to the buffer start, we may
-      //       obtain addresses that are multiples of "buffer_start +
-      //       section_alignment" rather than truly globally aligned
-      //       addresses. For example:
-      //
-      //         buffer_start = 40960 (5×8k, 8k aligned but not 16k)
-      //         offset       = 16384  (first multiple of 16k)
-      //         section_ptr  = 40960 + 16384 = 57344
-      //
-      //       57344 is 8k aligned but not 16k aligned.
-      //       Any consumer expecting true 16k alignment would see this as a
-      //       violation.
-      if (failed(alignmentValidator(alignment)))
-        return emitError("failed to align section ID: ", unsigned(sectionID));
-
-      // Align the buffer.
-      if (failed(alignTo(alignment)))
+      if (failed(parseVarInt(alignment)) || failed(alignTo(alignment)))
         return failure();
     }
 
@@ -423,7 +376,7 @@ public:
 
   /// Parse a shared string from the string section. The shared string is
   /// encoded using an index to a corresponding string in the string section.
-  LogicalResult parseString(EncodingReader &reader, StringRef &result) const {
+  LogicalResult parseString(EncodingReader &reader, StringRef &result) {
     return parseEntry(reader, strings, result, "string");
   }
 
@@ -431,7 +384,7 @@ public:
   /// encoded using an index to a corresponding string in the string section.
   /// This variant parses a flag compressed with the index.
   LogicalResult parseStringWithFlag(EncodingReader &reader, StringRef &result,
-                                    bool &flag) const {
+                                    bool &flag) {
     uint64_t entryIdx;
     if (failed(reader.parseVarIntWithFlag(entryIdx, flag)))
       return failure();
@@ -441,7 +394,7 @@ public:
   /// Parse a shared string from the string section. The shared string is
   /// encoded using an index to a corresponding string in the string section.
   LogicalResult parseStringAtIndex(EncodingReader &reader, uint64_t index,
-                                   StringRef &result) const {
+                                   StringRef &result) {
     return resolveEntry(reader, strings, index, result, "string");
   }
 
@@ -592,7 +545,7 @@ public:
 
   /// Parse a dialect resource handle from the resource section.
   LogicalResult parseResourceHandle(EncodingReader &reader,
-                                    AsmDialectResourceHandle &result) const {
+                                    AsmDialectResourceHandle &result) {
     return parseEntry(reader, dialectResources, result, "resource handle");
   }
 
@@ -754,7 +707,7 @@ LogicalResult ResourceSectionReader::initialize(
     auto resolveKey = [&](StringRef key) -> StringRef {
       auto it = dialectResourceHandleRenamingMap.find(key);
       if (it == dialectResourceHandleRenamingMap.end())
-        return key;
+        return "";
       return it->second;
     };
 
@@ -848,8 +801,8 @@ class AttrTypeReader {
   using TypeEntry = Entry<Type>;
 
 public:
-  AttrTypeReader(const StringSectionReader &stringReader,
-                 const ResourceSectionReader &resourceReader,
+  AttrTypeReader(StringSectionReader &stringReader,
+                 ResourceSectionReader &resourceReader,
                  const llvm::StringMap<BytecodeDialect *> &dialectsMap,
                  uint64_t &bytecodeVersion, Location fileLoc,
                  const ParserConfig &config)
@@ -929,11 +882,11 @@ private:
 
   /// The string section reader used to resolve string references when parsing
   /// custom encoded attribute/type entries.
-  const StringSectionReader &stringReader;
+  StringSectionReader &stringReader;
 
   /// The resource section reader used to resolve resource references when
   /// parsing custom encoded attribute/type entries.
-  const ResourceSectionReader &resourceReader;
+  ResourceSectionReader &resourceReader;
 
   /// The map of the loaded dialects used to retrieve dialect information, such
   /// as the dialect version.
@@ -956,8 +909,8 @@ private:
 class DialectReader : public DialectBytecodeReader {
 public:
   DialectReader(AttrTypeReader &attrTypeReader,
-                const StringSectionReader &stringReader,
-                const ResourceSectionReader &resourceReader,
+                StringSectionReader &stringReader,
+                ResourceSectionReader &resourceReader,
                 const llvm::StringMap<BytecodeDialect *> &dialectsMap,
                 EncodingReader &reader, uint64_t &bytecodeVersion)
       : attrTypeReader(attrTypeReader), stringReader(stringReader),
@@ -1090,8 +1043,8 @@ public:
 
 private:
   AttrTypeReader &attrTypeReader;
-  const StringSectionReader &stringReader;
-  const ResourceSectionReader &resourceReader;
+  StringSectionReader &stringReader;
+  ResourceSectionReader &resourceReader;
   const llvm::StringMap<BytecodeDialect *> &dialectsMap;
   EncodingReader &reader;
   uint64_t &bytecodeVersion;
@@ -1130,7 +1083,7 @@ public:
   }
 
   LogicalResult read(Location fileLoc, DialectReader &dialectReader,
-                     OperationName *opName, OperationState &opState) const {
+                     OperationName *opName, OperationState &opState) {
     uint64_t propertiesIdx;
     if (failed(dialectReader.readVarInt(propertiesIdx)))
       return failure();
@@ -1444,29 +1397,6 @@ private:
     return success();
   }
 
-  LogicalResult checkSectionAlignment(
-      unsigned alignment,
-      function_ref<InFlightDiagnostic(const Twine &error)> emitError) {
-    // Check that the bytecode buffer meets the requested section alignment.
-    //
-    // If it does not, the virtual address of the item in the section will
-    // not be aligned to the requested alignment.
-    //
-    // The typical case where this is necessary is the resource blob
-    // optimization in `parseAsBlob` where we reference the weights from the
-    // provided buffer instead of copying them to a new allocation.
-    const bool isGloballyAligned =
-        ((uintptr_t)buffer.getBufferStart() & (alignment - 1)) == 0;
-
-    if (!isGloballyAligned)
-      return emitError("expected section alignment ")
-             << alignment << " but bytecode buffer 0x"
-             << Twine::utohexstr((uint64_t)buffer.getBufferStart())
-             << " is not aligned";
-
-    return success();
-  };
-
   /// Return the context for this config.
   MLIRContext *getContext() const { return config.getContext(); }
 
@@ -1577,7 +1507,7 @@ private:
     UseListOrderStorage(bool isIndexPairEncoding,
                         SmallVector<unsigned, 4> &&indices)
         : indices(std::move(indices)),
-          isIndexPairEncoding(isIndexPairEncoding) {};
+          isIndexPairEncoding(isIndexPairEncoding){};
     /// The vector containing the information required to reorder the
     /// use-list of a value.
     SmallVector<unsigned, 4> indices;
@@ -1722,11 +1652,6 @@ LogicalResult BytecodeReader::Impl::read(
     return failure();
   });
 
-  const auto checkSectionAlignment = [&](unsigned alignment) {
-    return this->checkSectionAlignment(
-        alignment, [&](const auto &msg) { return reader.emitError(msg); });
-  };
-
   // Parse the raw data for each of the top-level sections of the bytecode.
   std::optional<ArrayRef<uint8_t>>
       sectionDatas[bytecode::Section::kNumSections];
@@ -1734,8 +1659,7 @@ LogicalResult BytecodeReader::Impl::read(
     // Read the next section from the bytecode.
     bytecode::Section::ID sectionID;
     ArrayRef<uint8_t> sectionData;
-    if (failed(
-            reader.parseSection(sectionID, checkSectionAlignment, sectionData)))
+    if (failed(reader.parseSection(sectionID, sectionData)))
       return failure();
 
     // Check for duplicate sections, we only expect one instance of each.
@@ -1810,7 +1734,6 @@ LogicalResult BytecodeReader::Impl::parseVersion(EncodingReader &reader) {
 
 //===----------------------------------------------------------------------===//
 // Dialect Section
-//===----------------------------------------------------------------------===//
 
 LogicalResult BytecodeDialect::load(const DialectReader &reader,
                                     MLIRContext *ctx) {
@@ -1855,12 +1778,6 @@ BytecodeReader::Impl::parseDialectSection(ArrayRef<uint8_t> sectionData) {
     return failure();
   dialects.resize(numDialects);
 
-  const auto checkSectionAlignment = [&](unsigned alignment) {
-    return this->checkSectionAlignment(alignment, [&](const auto &msg) {
-      return sectionReader.emitError(msg);
-    });
-  };
-
   // Parse each of the dialects.
   for (uint64_t i = 0; i < numDialects; ++i) {
     dialects[i] = std::make_unique<BytecodeDialect>();
@@ -1883,7 +1800,7 @@ BytecodeReader::Impl::parseDialectSection(ArrayRef<uint8_t> sectionData) {
       return failure();
     if (versionAvailable) {
       bytecode::Section::ID sectionID;
-      if (failed(sectionReader.parseSection(sectionID, checkSectionAlignment,
+      if (failed(sectionReader.parseSection(sectionID,
                                             dialects[i]->versionBuffer)))
         return failure();
       if (sectionID != bytecode::Section::kDialectVersions) {
@@ -1937,18 +1854,22 @@ BytecodeReader::Impl::parseOpName(EncodingReader &reader,
   // Check to see if this operation name has already been resolved. If we
   // haven't, load the dialect and build the operation name.
   if (!opName->opName) {
+    // Load the dialect and its version.
+    DialectReader dialectReader(attrTypeReader, stringReader, resourceReader,
+                                dialectsMap, reader, version);
+    if (failed(opName->dialect->load(dialectReader, getContext())))
+      return failure();
     // If the opName is empty, this is because we use to accept names such as
     // `foo` without any `.` separator. We shouldn't tolerate this in textual
     // format anymore but for now we'll be backward compatible. This can only
     // happen with unregistered dialects.
     if (opName->name.empty()) {
+      if (opName->dialect->getLoadedDialect())
+        return emitError(fileLoc) << "has an empty opname for dialect '"
+                                  << opName->dialect->name << "'\n";
+
       opName->opName.emplace(opName->dialect->name, getContext());
     } else {
-      // Load the dialect and its version.
-      DialectReader dialectReader(attrTypeReader, stringReader, resourceReader,
-                                  dialectsMap, reader, version);
-      if (failed(opName->dialect->load(dialectReader, getContext())))
-        return failure();
       opName->opName.emplace((opName->dialect->name + "." + opName->name).str(),
                              getContext());
     }
@@ -1958,7 +1879,6 @@ BytecodeReader::Impl::parseOpName(EncodingReader &reader,
 
 //===----------------------------------------------------------------------===//
 // Resource Section
-//===----------------------------------------------------------------------===//
 
 LogicalResult BytecodeReader::Impl::parseResourceSection(
     EncodingReader &reader, std::optional<ArrayRef<uint8_t>> resourceData,
@@ -1987,7 +1907,6 @@ LogicalResult BytecodeReader::Impl::parseResourceSection(
 
 //===----------------------------------------------------------------------===//
 // UseListOrder Helpers
-//===----------------------------------------------------------------------===//
 
 FailureOr<BytecodeReader::Impl::UseListMapT>
 BytecodeReader::Impl::parseUseListOrderForRange(EncodingReader &reader,
@@ -2067,7 +1986,8 @@ LogicalResult BytecodeReader::Impl::sortUseListOrder(Value value) {
     // If the bytecode file did not contain any custom use-list order, it means
     // that the order was descending useID. Hence, shuffle by the first index
     // of the `currentOrder` pair.
-    SmallVector<unsigned> shuffle(llvm::make_first_range(currentOrder));
+    SmallVector<unsigned> shuffle = SmallVector<unsigned>(
+        llvm::map_range(currentOrder, [&](auto item) { return item.first; }));
     value.shuffleUseList(shuffle);
     return success();
   }
@@ -2076,7 +1996,8 @@ LogicalResult BytecodeReader::Impl::sortUseListOrder(Value value) {
   UseListOrderStorage customOrder =
       valueToUseListMap.at(value.getAsOpaquePointer());
   SmallVector<unsigned, 4> shuffle = std::move(customOrder.indices);
-  uint64_t numUses = value.getNumUses();
+  uint64_t numUses =
+      std::distance(value.getUses().begin(), value.getUses().end());
 
   // If the encoding was a pair of indices `(src, dst)` for every permutation,
   // reconstruct the shuffle vector for every use. Initialize the shuffle vector
@@ -2101,9 +2022,10 @@ LogicalResult BytecodeReader::Impl::sortUseListOrder(Value value) {
   DenseSet<unsigned> set;
   uint64_t accumulator = 0;
   for (const auto &elem : shuffle) {
-    if (!set.insert(elem).second)
+    if (set.contains(elem))
       return failure();
     accumulator += elem;
+    set.insert(elem);
   }
   if (numUses != shuffle.size() ||
       accumulator != (((numUses - 1) * numUses) >> 1))
@@ -2144,7 +2066,6 @@ LogicalResult BytecodeReader::Impl::processUseLists(Operation *topLevelOp) {
 
 //===----------------------------------------------------------------------===//
 // IR Section
-//===----------------------------------------------------------------------===//
 
 LogicalResult
 BytecodeReader::Impl::parseIRSection(ArrayRef<uint8_t> sectionData,
@@ -2204,11 +2125,6 @@ BytecodeReader::Impl::parseIRSection(ArrayRef<uint8_t> sectionData,
 LogicalResult
 BytecodeReader::Impl::parseRegions(std::vector<RegionReadState> &regionStack,
                                    RegionReadState &readState) {
-  const auto checkSectionAlignment = [&](unsigned alignment) {
-    return this->checkSectionAlignment(
-        alignment, [&](const auto &msg) { return emitError(fileLoc, msg); });
-  };
-
   // Process regions, blocks, and operations until the end or if a nested
   // region is encountered. In this case we push a new state in regionStack and
   // return, the processing of the current region will resume afterward.
@@ -2249,8 +2165,7 @@ BytecodeReader::Impl::parseRegions(std::vector<RegionReadState> &regionStack,
           if (version >= bytecode::kLazyLoading && isIsolatedFromAbove) {
             bytecode::Section::ID sectionID;
             ArrayRef<uint8_t> sectionData;
-            if (failed(reader.parseSection(sectionID, checkSectionAlignment,
-                                           sectionData)))
+            if (failed(reader.parseSection(sectionID, sectionData)))
               return failure();
             if (sectionID != bytecode::Section::kIR)
               return emitError(fileLoc, "expected IR section for region");
@@ -2419,11 +2334,8 @@ BytecodeReader::Impl::parseOpWithoutRegions(EncodingReader &reader,
   Operation *op = Operation::create(opState);
   readState.curBlock->push_back(op);
 
-  // If the operation had results, update the value references. We don't need to
-  // do this if the current value scope is empty. That is, the op was not
-  // encoded within a parent region.
-  if (readState.numValues && op->getNumResults() &&
-      failed(defineValues(reader, op->getResults())))
+  // If the operation had results, update the value references.
+  if (op->getNumResults() && failed(defineValues(reader, op->getResults())))
     return failure();
 
   /// Store a map for every value that received a custom use-list order from the
@@ -2551,7 +2463,6 @@ LogicalResult BytecodeReader::Impl::parseBlockArguments(EncodingReader &reader,
 
 //===----------------------------------------------------------------------===//
 // Value Processing
-//===----------------------------------------------------------------------===//
 
 Value BytecodeReader::Impl::parseOperand(EncodingReader &reader) {
   std::vector<Value> &values = valueScopes.back().values;
@@ -2602,7 +2513,7 @@ LogicalResult BytecodeReader::Impl::defineValues(EncodingReader &reader,
 }
 
 Value BytecodeReader::Impl::createForwardRef() {
-  // Check for an available existing operation to use. Otherwise, create a new
+  // Check for an avaliable existing operation to use. Otherwise, create a new
   // fake operation to use for the reference.
   if (!openForwardRefOps.empty()) {
     Operation *op = &openForwardRefOps.back();

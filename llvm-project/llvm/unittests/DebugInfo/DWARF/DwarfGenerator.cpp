@@ -243,7 +243,7 @@ void dwarfgen::LineTable::addByte(uint8_t Value) {
 void dwarfgen::LineTable::addStandardOpcode(uint8_t Opcode,
                                             ArrayRef<ValueAndLength> Operands) {
   Contents.push_back({Opcode, Byte});
-  llvm::append_range(Contents, Operands);
+  Contents.insert(Contents.end(), Operands.begin(), Operands.end());
 }
 
 void dwarfgen::LineTable::addExtendedOpcode(uint64_t Length, uint8_t Opcode,
@@ -251,7 +251,7 @@ void dwarfgen::LineTable::addExtendedOpcode(uint64_t Length, uint8_t Opcode,
   Contents.push_back({0, Byte});
   Contents.push_back({Length, ULEB});
   Contents.push_back({Opcode, Byte});
-  llvm::append_range(Contents, Operands);
+  Contents.insert(Contents.end(), Operands.begin(), Operands.end());
 }
 
 void dwarfgen::LineTable::generate(MCContext &MC, AsmPrinter &Asm) const {
@@ -454,19 +454,19 @@ llvm::Error dwarfgen::Generator::init(Triple TheTriple, uint16_t V) {
   TripleName = TheTriple.getTriple();
 
   // Create all the MC Objects.
-  MRI.reset(TheTarget->createMCRegInfo(TheTriple));
+  MRI.reset(TheTarget->createMCRegInfo(TripleName));
   if (!MRI)
     return make_error<StringError>(Twine("no register info for target ") +
                                        TripleName,
                                    inconvertibleErrorCode());
 
   MCTargetOptions MCOptions = mc::InitMCTargetOptionsFromFlags();
-  MAI.reset(TheTarget->createMCAsmInfo(*MRI, TheTriple, MCOptions));
+  MAI.reset(TheTarget->createMCAsmInfo(*MRI, TripleName, MCOptions));
   if (!MAI)
     return make_error<StringError>("no asm info for target " + TripleName,
                                    inconvertibleErrorCode());
 
-  MSTI.reset(TheTarget->createMCSubtargetInfo(TheTriple, "", ""));
+  MSTI.reset(TheTarget->createMCSubtargetInfo(TripleName, "", ""));
   if (!MSTI)
     return make_error<StringError>("no subtarget info for target " + TripleName,
                                    inconvertibleErrorCode());
@@ -482,7 +482,7 @@ llvm::Error dwarfgen::Generator::init(Triple TheTriple, uint16_t V) {
                                        TripleName,
                                    inconvertibleErrorCode());
 
-  TM.reset(TheTarget->createTargetMachine(TheTriple, "", "", TargetOptions(),
+  TM.reset(TheTarget->createTargetMachine(TripleName, "", "", TargetOptions(),
                                           std::nullopt));
   if (!TM)
     return make_error<StringError>("no target machine for target " + TripleName,
@@ -503,7 +503,8 @@ llvm::Error dwarfgen::Generator::init(Triple TheTriple, uint16_t V) {
   MS = TheTarget->createMCObjectStreamer(
       TheTriple, *MC, std::unique_ptr<MCAsmBackend>(MAB),
       MAB->createObjectWriter(*Stream), std::unique_ptr<MCCodeEmitter>(MCE),
-      *MSTI);
+      *MSTI, MCOptions.MCRelaxAll, MCOptions.MCIncrementalLinkerCompatible,
+      /*DWARFMustBeAtTheEnd*/ false);
   if (!MS)
     return make_error<StringError>("no object streamer for target " +
                                        TripleName,
@@ -567,20 +568,12 @@ StringRef dwarfgen::Generator::generate() {
   for (auto &CU : CompileUnits) {
     // Set the absolute .debug_info offset for this compile unit.
     CU->setOffset(SecOffset);
-    // The DIEs contain compile unit relative offsets and the offset depends
-    // on the Dwarf version.
-    unsigned CUOffset = 4 + // Length
-                        2 + // Version
-                        4 + // Abbreviation offset
-                        1;  // Address size
-    if (Asm->getDwarfVersion() >= 5)
-      CUOffset += 1; // DW_UT_compile tag.
-
+    // The DIEs contain compile unit relative offsets.
+    unsigned CUOffset = 11;
     CUOffset = CU->getUnitDIE().computeSizeAndOffsets(CUOffset);
     // Update our absolute .debug_info offset.
     SecOffset += CUOffset;
-    unsigned CUOffsetUnitLength = 4;
-    CU->setLength(CUOffset - CUOffsetUnitLength);
+    CU->setLength(CUOffset - 4);
   }
   Abbreviations.Emit(Asm.get(), TLOF->getDwarfAbbrevSection());
 

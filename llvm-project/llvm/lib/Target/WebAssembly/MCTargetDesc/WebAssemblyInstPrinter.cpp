@@ -12,13 +12,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/WebAssemblyInstPrinter.h"
-#include "MCTargetDesc/WebAssemblyMCAsmInfo.h"
 #include "MCTargetDesc/WebAssemblyMCTargetDesc.h"
 #include "MCTargetDesc/WebAssemblyMCTypeUtilities.h"
+#include "WebAssembly.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstrInfo.h"
@@ -27,6 +26,7 @@
 #include "llvm/MC/MCSymbolWasm.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormattedStream.h"
 using namespace llvm;
 
 #define DEBUG_TYPE "asm-printer"
@@ -38,7 +38,8 @@ WebAssemblyInstPrinter::WebAssemblyInstPrinter(const MCAsmInfo &MAI,
                                                const MCRegisterInfo &MRI)
     : MCInstPrinter(MAI, MII, MRI) {}
 
-void WebAssemblyInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) {
+void WebAssemblyInstPrinter::printRegName(raw_ostream &OS,
+                                          MCRegister Reg) const {
   assert(Reg.id() != WebAssembly::UnusedReg);
   // Note that there's an implicit local.get/local.set here!
   OS << "$" << Reg.id();
@@ -57,7 +58,7 @@ void WebAssemblyInstPrinter::printInst(const MCInst *MI, uint64_t Address,
     // operand isn't a symbol, then we have an MVP compilation unit, and the
     // table shouldn't appear in the output.
     OS << "\t";
-    OS << getMnemonic(*MI).first;
+    OS << getMnemonic(MI).first;
     OS << " ";
 
     assert(MI->getNumOperands() == 2);
@@ -109,20 +110,6 @@ void WebAssemblyInstPrinter::printInst(const MCInst *MI, uint64_t Address,
   // Print any added annotation.
   printAnnotation(OS, Annot);
 
-  auto PrintBranchAnnotation = [&](const MCOperand &Op,
-                                   SmallSet<uint64_t, 8> &Printed) {
-    uint64_t Depth = Op.getImm();
-    if (!Printed.insert(Depth).second)
-      return;
-    if (Depth >= ControlFlowStack.size()) {
-      printAnnotation(OS, "Invalid depth argument!");
-    } else {
-      const auto &Pair = ControlFlowStack.rbegin()[Depth];
-      printAnnotation(OS, utostr(Depth) + ": " + (Pair.second ? "up" : "down") +
-                              " to label" + utostr(Pair.first));
-    }
-  };
-
   if (CommentStream) {
     // Observe any effects on the control flow stack, for use in annotating
     // control flow label references.
@@ -149,23 +136,6 @@ void WebAssemblyInstPrinter::printInst(const MCInst *MI, uint64_t Address,
       EHInstStack.push_back(TRY);
       return;
 
-    case WebAssembly::TRY_TABLE:
-    case WebAssembly::TRY_TABLE_S: {
-      SmallSet<uint64_t, 8> Printed;
-      unsigned OpIdx = 1;
-      const MCOperand &Op = MI->getOperand(OpIdx++);
-      unsigned NumCatches = Op.getImm();
-      for (unsigned I = 0; I < NumCatches; I++) {
-        int64_t CatchOpcode = MI->getOperand(OpIdx++).getImm();
-        if (CatchOpcode == wasm::WASM_OPCODE_CATCH ||
-            CatchOpcode == wasm::WASM_OPCODE_CATCH_REF)
-          OpIdx++; // Skip tag
-        PrintBranchAnnotation(MI->getOperand(OpIdx++), Printed);
-      }
-      ControlFlowStack.push_back(std::make_pair(ControlFlowCounter++, false));
-      return;
-    }
-
     case WebAssembly::END_LOOP:
     case WebAssembly::END_LOOP_S:
       if (ControlFlowStack.empty()) {
@@ -177,8 +147,6 @@ void WebAssemblyInstPrinter::printInst(const MCInst *MI, uint64_t Address,
 
     case WebAssembly::END_BLOCK:
     case WebAssembly::END_BLOCK_S:
-    case WebAssembly::END_TRY_TABLE:
-    case WebAssembly::END_TRY_TABLE_S:
       if (ControlFlowStack.empty()) {
         printAnnotation(OS, "End marker mismatch!");
       } else {
@@ -198,15 +166,15 @@ void WebAssemblyInstPrinter::printInst(const MCInst *MI, uint64_t Address,
       }
       return;
 
-    case WebAssembly::CATCH_LEGACY:
-    case WebAssembly::CATCH_LEGACY_S:
-    case WebAssembly::CATCH_ALL_LEGACY:
-    case WebAssembly::CATCH_ALL_LEGACY_S:
+    case WebAssembly::CATCH:
+    case WebAssembly::CATCH_S:
+    case WebAssembly::CATCH_ALL:
+    case WebAssembly::CATCH_ALL_S:
       // There can be multiple catch instructions for one try instruction, so
       // we print a label only for the first 'catch' label.
       if (EHInstStack.empty()) {
         printAnnotation(OS, "try-catch mismatch!");
-      } else if (EHInstStack.back() == CATCH_ALL_LEGACY) {
+      } else if (EHInstStack.back() == CATCH_ALL) {
         printAnnotation(OS, "catch/catch_all cannot occur after catch_all");
       } else if (EHInstStack.back() == TRY) {
         if (TryStack.empty()) {
@@ -215,11 +183,10 @@ void WebAssemblyInstPrinter::printInst(const MCInst *MI, uint64_t Address,
           printAnnotation(OS, "catch" + utostr(TryStack.pop_back_val()) + ':');
         }
         EHInstStack.pop_back();
-        if (Opc == WebAssembly::CATCH_LEGACY ||
-            Opc == WebAssembly::CATCH_LEGACY_S) {
-          EHInstStack.push_back(CATCH_LEGACY);
+        if (Opc == WebAssembly::CATCH || Opc == WebAssembly::CATCH_S) {
+          EHInstStack.push_back(CATCH);
         } else {
-          EHInstStack.push_back(CATCH_ALL_LEGACY);
+          EHInstStack.push_back(CATCH_ALL);
         }
       }
       return;
@@ -283,7 +250,17 @@ void WebAssemblyInstPrinter::printInst(const MCInst *MI, uint64_t Address,
         if (!MI->getOperand(I).isImm())
           continue;
       }
-      PrintBranchAnnotation(MI->getOperand(I), Printed);
+      uint64_t Depth = MI->getOperand(I).getImm();
+      if (!Printed.insert(Depth).second)
+        continue;
+      if (Depth >= ControlFlowStack.size()) {
+        printAnnotation(OS, "Invalid depth argument!");
+      } else {
+        const auto &Pair = ControlFlowStack.rbegin()[Depth];
+        printAnnotation(OS, utostr(Depth) + ": " +
+                                (Pair.second ? "up" : "down") + " to label" +
+                                utostr(Pair.first));
+      }
     }
   }
 }
@@ -317,8 +294,8 @@ void WebAssemblyInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
   const MCOperand &Op = MI->getOperand(OpNo);
   if (Op.isReg()) {
     const MCInstrDesc &Desc = MII.get(MI->getOpcode());
-    MCRegister WAReg = Op.getReg();
-    if (int(WAReg.id()) >= 0)
+    unsigned WAReg = Op.getReg();
+    if (int(WAReg) >= 0)
       printRegName(O, WAReg);
     else if (OpNo >= Desc.getNumDefs() && !IsVariadicDef)
       O << "$pop" << WebAssembly::getWARegStackId(WAReg);
@@ -341,11 +318,11 @@ void WebAssemblyInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
     // as a signature here, such that the assembler can recover this
     // information.
     auto SRE = static_cast<const MCSymbolRefExpr *>(Op.getExpr());
-    if (SRE->getSpecifier() == WebAssembly::S_TYPEINDEX) {
+    if (SRE->getKind() == MCSymbolRefExpr::VK_WASM_TYPEINDEX) {
       auto &Sym = static_cast<const MCSymbolWasm &>(SRE->getSymbol());
       O << WebAssembly::signatureToString(Sym.getSignature());
     } else {
-      MAI.printExpr(O, *Op.getExpr());
+      Op.getExpr()->print(O, &MAI);
     }
   }
 }
@@ -380,58 +357,12 @@ void WebAssemblyInstPrinter::printWebAssemblySignatureOperand(const MCInst *MI,
       O << WebAssembly::anyTypeToString(Imm);
   } else {
     auto Expr = cast<MCSymbolRefExpr>(Op.getExpr());
-    auto *Sym = static_cast<const MCSymbolWasm *>(&Expr->getSymbol());
+    auto *Sym = cast<MCSymbolWasm>(&Expr->getSymbol());
     if (Sym->getSignature()) {
       O << WebAssembly::signatureToString(Sym->getSignature());
     } else {
       // Disassembler does not currently produce a signature
       O << "unknown_type";
     }
-  }
-}
-
-void WebAssemblyInstPrinter::printCatchList(const MCInst *MI, unsigned OpNo,
-                                            raw_ostream &O) {
-  unsigned OpIdx = OpNo;
-  const MCOperand &Op = MI->getOperand(OpIdx++);
-  unsigned NumCatches = Op.getImm();
-
-  auto PrintTagOp = [&](const MCOperand &Op) {
-    const MCSymbolRefExpr *TagExpr = nullptr;
-    const MCSymbol *TagSym = nullptr;
-    if (Op.isExpr()) {
-      TagExpr = cast<MCSymbolRefExpr>(Op.getExpr());
-      TagSym = &TagExpr->getSymbol();
-      O << TagSym->getName() << " ";
-    } else {
-      // When instructions are parsed from the disassembler, we have an
-      // immediate tag index and not a tag expr
-      O << Op.getImm() << " ";
-    }
-  };
-
-  for (unsigned I = 0; I < NumCatches; I++) {
-    const MCOperand &Op = MI->getOperand(OpIdx++);
-    O << "(";
-    switch (Op.getImm()) {
-    case wasm::WASM_OPCODE_CATCH:
-      O << "catch ";
-      PrintTagOp(MI->getOperand(OpIdx++));
-      break;
-    case wasm::WASM_OPCODE_CATCH_REF:
-      O << "catch_ref ";
-      PrintTagOp(MI->getOperand(OpIdx++));
-      break;
-    case wasm::WASM_OPCODE_CATCH_ALL:
-      O << "catch_all ";
-      break;
-    case wasm::WASM_OPCODE_CATCH_ALL_REF:
-      O << "catch_all_ref ";
-      break;
-    }
-    O << MI->getOperand(OpIdx++).getImm(); // destination
-    O << ")";
-    if (I < NumCatches - 1)
-      O << " ";
   }
 }

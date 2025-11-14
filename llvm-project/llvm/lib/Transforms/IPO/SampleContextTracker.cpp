@@ -71,8 +71,8 @@ SampleContextTracker::moveContextSamples(ContextTrieNode &ToNodeParent,
   std::map<uint64_t, ContextTrieNode> &AllChildContext =
       ToNodeParent.getAllChildContext();
   assert(!AllChildContext.count(Hash) && "Node to remove must exist");
+  AllChildContext[Hash] = NodeToMove;
   ContextTrieNode &NewNode = AllChildContext[Hash];
-  NewNode = NodeToMove;
   NewNode.setCallSiteLoc(CallSite);
 
   // Walk through nodes in the moved the subtree, and update
@@ -189,9 +189,8 @@ ContextTrieNode *ContextTrieNode::getOrCreateChildContext(
   if (!AllowCreate)
     return nullptr;
 
-  ContextTrieNode &ACC = AllChildContext[Hash];
-  ACC = ContextTrieNode(this, CalleeName, nullptr, CallSite);
-  return &ACC;
+  AllChildContext[Hash] = ContextTrieNode(this, CalleeName, nullptr, CallSite);
+  return &AllChildContext[Hash];
 }
 
 // Profiler tracker than manages profiles and its associated context
@@ -625,7 +624,7 @@ void SampleContextTracker::createContextLessProfileMap(
     FunctionSamples *FProfile = Node->getFunctionSamples();
     // Profile's context can be empty, use ContextNode's func name.
     if (FProfile)
-      ContextLessProfiles.create(Node->getFuncName()).merge(*FProfile);
+      ContextLessProfiles.Create(Node->getFuncName()).merge(*FProfile);
   }
 }
 } // namespace llvm

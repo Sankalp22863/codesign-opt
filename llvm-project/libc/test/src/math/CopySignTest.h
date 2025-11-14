@@ -6,17 +6,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "test/UnitTest/FEnvSafeTest.h"
 #include "test/UnitTest/FPMatcher.h"
 #include "test/UnitTest/Test.h"
 #include "utils/MPFRWrapper/MPFRUtils.h"
 
-#include "hdr/math_macros.h"
+#include <math.h>
 
 namespace mpfr = LIBC_NAMESPACE::testing::mpfr;
 
 template <typename T>
-class CopySignTest : public LIBC_NAMESPACE::testing::FEnvSafeTest {
+class CopySignTest : public LIBC_NAMESPACE::testing::Test {
 
   DECLARE_SPECIAL_CONSTANTS(T)
 
@@ -39,13 +38,13 @@ public:
     constexpr StorageType STEP = STORAGE_MAX / COUNT;
     for (StorageType i = 0, v = 0; i <= COUNT; ++i, v += STEP) {
       T x = FPBits(v).get_val();
-      if (FPBits(v).is_nan() || FPBits(v).is_inf())
+      if (isnan(x) || isinf(x))
         continue;
 
-      T res1 = func(x, -x);
+      double res1 = func(x, -x);
       ASSERT_FP_EQ(res1, -x);
 
-      T res2 = func(x, x);
+      double res2 = func(x, x);
       ASSERT_FP_EQ(res2, x);
     }
   }

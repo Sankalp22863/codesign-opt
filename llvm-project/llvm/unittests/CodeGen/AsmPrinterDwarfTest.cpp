@@ -9,8 +9,6 @@
 #include "TestAsmPrinter.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/CodeGen/AsmPrinter.h"
-#include "llvm/CodeGen/AsmPrinterHandler.h"
-#include "llvm/CodeGen/DebugHandlerBase.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
@@ -383,14 +381,14 @@ class AsmPrinterHandlerTest : public AsmPrinterFixtureBase {
 
   public:
     TestHandler(AsmPrinterHandlerTest &Test) : Test(Test) {}
-    ~TestHandler() override = default;
-    void setSymbolSize(const MCSymbol *Sym, uint64_t Size) override {}
-    void beginModule(Module *M) override { Test.BeginCount++; }
-    void endModule() override { Test.EndCount++; }
-    void beginFunction(const MachineFunction *MF) override {}
-    void endFunction(const MachineFunction *MF) override {}
-    void beginInstruction(const MachineInstr *MI) override {}
-    void endInstruction() override {}
+    virtual ~TestHandler() {}
+    virtual void setSymbolSize(const MCSymbol *Sym, uint64_t Size) override {}
+    virtual void beginModule(Module *M) override { Test.BeginCount++; }
+    virtual void endModule() override { Test.EndCount++; }
+    virtual void beginFunction(const MachineFunction *MF) override {}
+    virtual void endFunction(const MachineFunction *MF) override {}
+    virtual void beginInstruction(const MachineInstr *MI) override {}
+    virtual void endInstruction() override {}
   };
 
 protected:
@@ -400,17 +398,21 @@ protected:
       return false;
 
     auto *AP = TestPrinter->getAP();
-    AP->addAsmPrinterHandler(std::make_unique<TestHandler>(*this));
-    TargetMachine *TM = &AP->TM;
+    AP->addAsmPrinterHandler(AsmPrinter::HandlerInfo(
+        std::unique_ptr<AsmPrinterHandler>(new TestHandler(*this)),
+        "TestTimerName", "TestTimerDesc", "TestGroupName", "TestGroupDesc"));
+    LLVMTargetMachine *LLVMTM = static_cast<LLVMTargetMachine *>(&AP->TM);
     legacy::PassManager PM;
-    PM.add(new MachineModuleInfoWrapperPass(TM));
+    PM.add(new MachineModuleInfoWrapperPass(LLVMTM));
     PM.add(TestPrinter->releaseAP()); // Takes ownership of destroying AP
     LLVMContext Context;
     std::unique_ptr<Module> M(new Module("TestModule", Context));
-    M->setDataLayout(TM->createDataLayout());
+    M->setDataLayout(LLVMTM->createDataLayout());
     PM.run(*M);
     // Now check that we can run it twice.
-    AP->addAsmPrinterHandler(std::make_unique<TestHandler>(*this));
+    AP->addAsmPrinterHandler(AsmPrinter::HandlerInfo(
+        std::unique_ptr<AsmPrinterHandler>(new TestHandler(*this)),
+        "TestTimerName", "TestTimerDesc", "TestGroupName", "TestGroupDesc"));
     PM.run(*M);
     return true;
   }

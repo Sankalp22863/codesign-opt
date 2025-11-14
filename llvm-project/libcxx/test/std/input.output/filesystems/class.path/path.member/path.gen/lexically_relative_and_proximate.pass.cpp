@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 // UNSUPPORTED: c++03, c++11, c++14
+// UNSUPPORTED: availability-filesystem-missing
 
 // <filesystem>
 
@@ -40,11 +41,9 @@ int main(int, char**) {
 #ifdef _WIN32
       {"//net/", "//net", ""},
       {"//net", "//net/", ""},
-      {"C:\\a\\b", "C:/a", "b"},
 #else
       {"//net/", "//net", "."},
       {"//net", "//net/", "."},
-      {"C:\\a\\b", "C:/a", "../../C:\\a\\b"},
 #endif
       {"//base", "a", ""},
       {"a", "a", "."},

@@ -1,6 +1,5 @@
 add_lldb_library(lldbPluginInstrumentationRuntimeUtility
   ReportRetriever.cpp
-  Utility.cpp
 
   LINK_LIBS
     lldbBreakpoint
@@ -8,5 +7,4 @@ add_lldb_library(lldbPluginInstrumentationRuntimeUtility
     lldbExpression
     lldbSymbol
     lldbTarget
-    lldbValueObject
   )

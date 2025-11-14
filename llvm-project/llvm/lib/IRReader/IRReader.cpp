@@ -8,7 +8,6 @@
 
 #include "llvm/IRReader/IRReader.h"
 #include "llvm-c/IRReader.h"
-#include "llvm/AsmParser/AsmParserContext.h"
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/LLVMContext.h"
@@ -69,8 +68,7 @@ std::unique_ptr<Module> llvm::getLazyIRFileModule(StringRef Filename,
 
 std::unique_ptr<Module> llvm::parseIR(MemoryBufferRef Buffer, SMDiagnostic &Err,
                                       LLVMContext &Context,
-                                      ParserCallbacks Callbacks,
-                                      llvm::AsmParserContext *ParserContext) {
+                                      ParserCallbacks Callbacks) {
   NamedRegionTimer T(TimeIRParsingName, TimeIRParsingDescription,
                      TimeIRParsingGroupName, TimeIRParsingGroupDescription,
                      TimePassesIsEnabled);
@@ -90,14 +88,12 @@ std::unique_ptr<Module> llvm::parseIR(MemoryBufferRef Buffer, SMDiagnostic &Err,
 
   return parseAssembly(Buffer, Err, Context, nullptr,
                        Callbacks.DataLayout.value_or(
-                           [](StringRef, StringRef) { return std::nullopt; }),
-                       ParserContext);
+                           [](StringRef, StringRef) { return std::nullopt; }));
 }
 
 std::unique_ptr<Module> llvm::parseIRFile(StringRef Filename, SMDiagnostic &Err,
                                           LLVMContext &Context,
-                                          ParserCallbacks Callbacks,
-                                          AsmParserContext *ParserContext) {
+                                          ParserCallbacks Callbacks) {
   ErrorOr<std::unique_ptr<MemoryBuffer>> FileOrErr =
       MemoryBuffer::getFileOrSTDIN(Filename, /*IsText=*/true);
   if (std::error_code EC = FileOrErr.getError()) {
@@ -106,8 +102,7 @@ std::unique_ptr<Module> llvm::parseIRFile(StringRef Filename, SMDiagnostic &Err,
     return nullptr;
   }
 
-  return parseIR(FileOrErr.get()->getMemBufferRef(), Err, Context, Callbacks,
-                 ParserContext);
+  return parseIR(FileOrErr.get()->getMemBufferRef(), Err, Context, Callbacks);
 }
 
 //===----------------------------------------------------------------------===//
@@ -129,6 +124,7 @@ LLVMBool LLVMParseIRInContext(LLVMContextRef ContextRef,
       raw_string_ostream os(buf);
 
       Diag.print(nullptr, os, false);
+      os.flush();
 
       *OutMessage = strdup(buf.c_str());
     }

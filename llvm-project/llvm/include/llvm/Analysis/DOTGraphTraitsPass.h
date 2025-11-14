@@ -80,20 +80,24 @@ protected:
   /// virtual destructor needed. Making this dtor protected stops accidental
   /// invocation when the derived class destructor should have been called.
   /// Those derived classes sould be marked final to avoid the warning.
-  ~DOTGraphTraitsViewer() = default;
+  ~DOTGraphTraitsViewer() {}
 
 private:
   StringRef Name;
 };
 
 static inline void shortenFileName(std::string &FN, unsigned char len = 250) {
-  if (FN.length() > len)
-    FN.resize(len);
+
+  FN = FN.substr(0, len);
+
   auto strLen = FN.length();
   while (strLen > 0) {
-    if (nameObj.insert(FN).second)
+    if (auto it = nameObj.find(FN); it != nameObj.end()) {
+      FN = FN.substr(0, --len);
+    } else {
+      nameObj.insert(FN);
       break;
-    FN.resize(--len);
+    }
     strLen--;
   }
 }
@@ -161,7 +165,7 @@ protected:
   /// virtual destructor needed. Making this dtor protected stops accidental
   /// invocation when the derived class destructor should have been called.
   /// Those derived classes sould be marked final to avoid the warning.
-  ~DOTGraphTraitsPrinter() = default;
+  ~DOTGraphTraitsPrinter() {}
 
 private:
   StringRef Name;

@@ -11,10 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Target/SPIRV/SPIRVBinaryUtils.h"
-#include "llvm/Config/llvm-config.h" // for LLVM_VERSION_MAJOR
-#include "llvm/Support/Debug.h"
-
-#define DEBUG_TYPE "spirv-binary-utils"
+#include "mlir/Dialect/SPIRV/IR/SPIRVTypes.h"
 
 using namespace mlir;
 
@@ -55,7 +52,7 @@ void spirv::appendModuleHeader(SmallVectorImpl<uint32_t> &header,
   // +-------------------------------------------------------------------------+
   header.push_back(spirv::kMagicNumber);
   header.push_back((majorVersion << 16) | (minorVersion << 8));
-  header.push_back((kGeneratorNumber << 16) | LLVM_VERSION_MAJOR);
+  header.push_back(kGeneratorNumber);
   header.push_back(idBound); // <id> bound
   header.push_back(0);       // Schema (reserved word)
 }
@@ -69,19 +66,8 @@ uint32_t spirv::getPrefixedOpcode(uint32_t wordCount, spirv::Opcode opcode) {
 void spirv::encodeStringLiteralInto(SmallVectorImpl<uint32_t> &binary,
                                     StringRef literal) {
   // We need to encode the literal and the null termination.
-  size_t encodingSize = literal.size() / 4 + 1;
-  size_t sizeOfDataToCopy = literal.size();
-  if (encodingSize >= kMaxLiteralWordCount) {
-    // Reserve one word for the null termination.
-    encodingSize = kMaxLiteralWordCount - 1;
-    // Do not override the last word (null termination) when copying.
-    sizeOfDataToCopy = (encodingSize - 1) * 4;
-    LLVM_DEBUG(llvm::dbgs()
-               << "Truncating string literal to max size ("
-               << (kMaxLiteralWordCount - 1) << "): " << literal << "\n");
-  }
-  size_t bufferStartSize = binary.size();
+  auto encodingSize = literal.size() / 4 + 1;
+  auto bufferStartSize = binary.size();
   binary.resize(bufferStartSize + encodingSize, 0);
-  std::memcpy(binary.data() + bufferStartSize, literal.data(),
-              sizeOfDataToCopy);
+  std::memcpy(binary.data() + bufferStartSize, literal.data(), literal.size());
 }

@@ -9,18 +9,15 @@
 #ifndef LLVM_LIBC_SRC_STDIO_PRINTF_CORE_PTR_CONVERTER_H
 #define LLVM_LIBC_SRC_STDIO_PRINTF_CORE_PTR_CONVERTER_H
 
-#include "src/__support/macros/config.h"
 #include "src/stdio/printf_core/core_structs.h"
 #include "src/stdio/printf_core/int_converter.h"
 #include "src/stdio/printf_core/string_converter.h"
 #include "src/stdio/printf_core/writer.h"
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 namespace printf_core {
 
-template <WriteMode write_mode>
-LIBC_INLINE int convert_pointer(Writer<write_mode> *writer,
-                                const FormatSection &to_conv) {
+LIBC_INLINE int convert_pointer(Writer *writer, const FormatSection &to_conv) {
   FormatSection new_conv = to_conv;
 
   if (to_conv.conv_val_ptr == nullptr) {
@@ -38,6 +35,6 @@ LIBC_INLINE int convert_pointer(Writer<write_mode> *writer,
 }
 
 } // namespace printf_core
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE
 
 #endif // LLVM_LIBC_SRC_STDIO_PRINTF_CORE_PTR_CONVERTER_H

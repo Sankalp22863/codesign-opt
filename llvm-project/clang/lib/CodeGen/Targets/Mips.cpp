@@ -34,8 +34,8 @@ public:
   ABIArgInfo classifyReturnType(QualType RetTy) const;
   ABIArgInfo classifyArgumentType(QualType RetTy, uint64_t &Offset) const;
   void computeInfo(CGFunctionInfo &FI) const override;
-  RValue EmitVAArg(CodeGenFunction &CGF, Address VAListAddr, QualType Ty,
-                   AggValueSlot Slot) const override;
+  Address EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
+                    QualType Ty) const override;
   ABIArgInfo extendType(QualType Ty) const;
 };
 
@@ -105,23 +105,6 @@ public:
     return SizeOfUnwindException;
   }
 };
-
-class WindowsMIPSTargetCodeGenInfo : public MIPSTargetCodeGenInfo {
-public:
-  WindowsMIPSTargetCodeGenInfo(CodeGenTypes &CGT, bool IsO32)
-      : MIPSTargetCodeGenInfo(CGT, IsO32) {}
-
-  void getDependentLibraryOption(llvm::StringRef Lib,
-                                 llvm::SmallString<24> &Opt) const override {
-    Opt = "/DEFAULTLIB:";
-    Opt += qualifyWindowsLibrary(Lib);
-  }
-
-  void getDetectMismatchOption(llvm::StringRef Name, llvm::StringRef Value,
-                               llvm::SmallString<32> &Opt) const override {
-    Opt = "/FAILIFMISMATCH:\"" + Name.str() + "=" + Value.str() + "\"";
-  }
-};
 }
 
 void MipsABIInfo::CoerceToIntArgs(
@@ -153,7 +136,7 @@ llvm::Type* MipsABIInfo::HandleAggregates(QualType Ty, uint64_t TySize) const {
   if (Ty->isComplexType())
     return CGT.ConvertType(Ty);
 
-  const RecordType *RT = Ty->getAsCanonical<RecordType>();
+  const RecordType *RT = Ty->getAs<RecordType>();
 
   // Unions/vectors are passed in integer registers.
   if (!RT || !RT->isStructureOrClassType()) {
@@ -161,7 +144,7 @@ llvm::Type* MipsABIInfo::HandleAggregates(QualType Ty, uint64_t TySize) const {
     return llvm::StructType::get(getVMContext(), ArgList);
   }
 
-  const RecordDecl *RD = RT->getDecl()->getDefinitionOrSelf();
+  const RecordDecl *RD = RT->getDecl();
   const ASTRecordLayout &Layout = getContext().getASTRecordLayout(RD);
   assert(!(TySize % 8) && "Size of structure must be multiple of 8.");
 
@@ -226,8 +209,7 @@ MipsABIInfo::classifyArgumentType(QualType Ty, uint64_t &Offset) const {
 
     if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI())) {
       Offset = OrigOffset + MinABIStackAlignInBytes;
-      return getNaturalAlignIndirect(Ty, getDataLayout().getAllocaAddrSpace(),
-                                     RAA == CGCXXABI::RAA_DirectInMemory);
+      return getNaturalAlignIndirect(Ty, RAA == CGCXXABI::RAA_DirectInMemory);
     }
 
     // If we have reached here, aggregates are passed directly by coercing to
@@ -241,15 +223,15 @@ MipsABIInfo::classifyArgumentType(QualType Ty, uint64_t &Offset) const {
   }
 
   // Treat an enum type as its underlying type.
-  if (const auto *ED = Ty->getAsEnumDecl())
-    Ty = ED->getIntegerType();
+  if (const EnumType *EnumTy = Ty->getAs<EnumType>())
+    Ty = EnumTy->getDecl()->getIntegerType();
 
   // Make sure we pass indirectly things that are too large.
   if (const auto *EIT = Ty->getAs<BitIntType>())
     if (EIT->getNumBits() > 128 ||
         (EIT->getNumBits() > 64 &&
          !getContext().getTargetInfo().hasInt128Type()))
-      return getNaturalAlignIndirect(Ty, getDataLayout().getAllocaAddrSpace());
+      return getNaturalAlignIndirect(Ty);
 
   // All integral types are promoted to the GPR width.
   if (Ty->isIntegralOrEnumerationType())
@@ -261,11 +243,11 @@ MipsABIInfo::classifyArgumentType(QualType Ty, uint64_t &Offset) const {
 
 llvm::Type*
 MipsABIInfo::returnAggregateInRegs(QualType RetTy, uint64_t Size) const {
-  const RecordType *RT = RetTy->getAsCanonical<RecordType>();
+  const RecordType *RT = RetTy->getAs<RecordType>();
   SmallVector<llvm::Type*, 8> RTList;
 
   if (RT && RT->isStructureOrClassType()) {
-    const RecordDecl *RD = RT->getDecl()->getDefinitionOrSelf();
+    const RecordDecl *RD = RT->getDecl();
     const ASTRecordLayout &Layout = getContext().getASTRecordLayout(RD);
     unsigned FieldCnt = Layout.getFieldCount();
 
@@ -328,20 +310,19 @@ ABIArgInfo MipsABIInfo::classifyReturnType(QualType RetTy) const {
       }
     }
 
-    return getNaturalAlignIndirect(RetTy, getDataLayout().getAllocaAddrSpace());
+    return getNaturalAlignIndirect(RetTy);
   }
 
   // Treat an enum type as its underlying type.
-  if (const auto *ED = RetTy->getAsEnumDecl())
-    RetTy = ED->getIntegerType();
+  if (const EnumType *EnumTy = RetTy->getAs<EnumType>())
+    RetTy = EnumTy->getDecl()->getIntegerType();
 
   // Make sure we pass indirectly things that are too large.
   if (const auto *EIT = RetTy->getAs<BitIntType>())
     if (EIT->getNumBits() > 128 ||
         (EIT->getNumBits() > 64 &&
          !getContext().getTargetInfo().hasInt128Type()))
-      return getNaturalAlignIndirect(RetTy,
-                                     getDataLayout().getAllocaAddrSpace());
+      return getNaturalAlignIndirect(RetTy);
 
   if (isPromotableIntegerTypeForABI(RetTy))
     return ABIArgInfo::getExtend(RetTy);
@@ -365,8 +346,8 @@ void MipsABIInfo::computeInfo(CGFunctionInfo &FI) const {
     I.info = classifyArgumentType(I.type, Offset);
 }
 
-RValue MipsABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
-                              QualType OrigTy, AggValueSlot Slot) const {
+Address MipsABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
+                               QualType OrigTy) const {
   QualType Ty = OrigTy;
 
   // Integer arguments are promoted to 32-bit on O32 and 64-bit on N32/N64.
@@ -392,25 +373,28 @@ RValue MipsABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
   // MinABIStackAlignInBytes is the size of argument slots on the stack.
   CharUnits ArgSlotSize = CharUnits::fromQuantity(MinABIStackAlignInBytes);
 
-  RValue Res = emitVoidPtrVAArg(CGF, VAListAddr, Ty, /*indirect*/ false, TyInfo,
-                                ArgSlotSize, /*AllowHigherAlign*/ true, Slot);
+  Address Addr = emitVoidPtrVAArg(CGF, VAListAddr, Ty, /*indirect*/ false,
+                          TyInfo, ArgSlotSize, /*AllowHigherAlign*/ true);
 
-  // If there was a promotion, "unpromote".
+
+  // If there was a promotion, "unpromote" into a temporary.
   // TODO: can we just use a pointer into a subset of the original slot?
   if (DidPromote) {
-    llvm::Type *ValTy = CGF.ConvertType(OrigTy);
-    llvm::Value *Promoted = Res.getScalarVal();
+    Address Temp = CGF.CreateMemTemp(OrigTy, "vaarg.promotion-temp");
+    llvm::Value *Promoted = CGF.Builder.CreateLoad(Addr);
 
     // Truncate down to the right width.
-    llvm::Type *IntTy = (OrigTy->isIntegerType() ? ValTy : CGF.IntPtrTy);
+    llvm::Type *IntTy = (OrigTy->isIntegerType() ? Temp.getElementType()
+                                                 : CGF.IntPtrTy);
     llvm::Value *V = CGF.Builder.CreateTrunc(Promoted, IntTy);
     if (OrigTy->isPointerType())
-      V = CGF.Builder.CreateIntToPtr(V, ValTy);
+      V = CGF.Builder.CreateIntToPtr(V, Temp.getElementType());
 
-    return RValue::get(V);
+    CGF.Builder.CreateStore(V, Temp);
+    Addr = Temp;
   }
 
-  return Res;
+  return Addr;
 }
 
 ABIArgInfo MipsABIInfo::extendType(QualType Ty) const {
@@ -454,9 +438,4 @@ MIPSTargetCodeGenInfo::initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
 std::unique_ptr<TargetCodeGenInfo>
 CodeGen::createMIPSTargetCodeGenInfo(CodeGenModule &CGM, bool IsOS32) {
   return std::make_unique<MIPSTargetCodeGenInfo>(CGM.getTypes(), IsOS32);
-}
-
-std::unique_ptr<TargetCodeGenInfo>
-CodeGen::createWindowsMIPSTargetCodeGenInfo(CodeGenModule &CGM, bool IsOS32) {
-  return std::make_unique<WindowsMIPSTargetCodeGenInfo>(CGM.getTypes(), IsOS32);
 }

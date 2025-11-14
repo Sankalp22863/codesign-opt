@@ -3,24 +3,15 @@ The LLVM C Library
 ==================
 
 .. warning::
-  LLVM-libc is not yet ABI stable; currently only static linking is supported.
-  LLVM-libc developers retain the right to modify the ABI of types used
-  throughout the library. Another libc should be preferred if ABI stability is
-  a requirement.
-
-.. note::
-  LLVM-libc is not fully complete right now. Some programs may fail to build due
-  to missing functions. If you would like to help us finish LLVM-libc, check
-  out "`Contributing to the libc project <contributing.html>`__" in the sidebar
-  or ask on `discord <https://discord.com/channels/636084430946959380/636732994891284500>`__
-  (`invite link <https://discord.gg/xS7Z362>`__).
+  The libc is not complete.  If you need a fully functioning C library right
+  now, you should continue to use your standard system libraries.
 
 Introduction
 ============
 
-LLVM-libc aspires to a unique place in the software ecosystem.  The goals are:
+The libc aspires to a unique place in the software ecosystem.  The goals are:
 
-- Fully compliant with current C23 and POSIX.1-2024 standards.
+- Fully compliant with current C standards (C17 and upcoming C2x) and POSIX.
 - Easily decomposed and embedded: Supplement or replace system C library
   functionality easily.  This is useful to get consistent math precision across
   systems, or updated memory operations for newer microarchitectures.  These
@@ -34,44 +25,52 @@ LLVM-libc aspires to a unique place in the software ecosystem.  The goals are:
   libc functions.
 - A complete testsuite that tests both the public interface and internal
   algorithms.
-- `Fuzzing <https://github.com/llvm/llvm-project/tree/main/libc/fuzzing>`__
+- `Fuzzing`__
 
+.. __: https://github.com/llvm/llvm-project/tree/main/libc/fuzzing
+
+Platform Support
+================
+
+Most development is currently targeting x86_64 and aarch64 on Linux.  Several
+functions in the libc have been tested on Windows.  The Fuchsia platform is
+slowly replacing functions from its bundled libc with functions from this
+project.
+
+ABI Compatibility
+=================
+
+The libc is written to be ABI independent.  Interfaces are generated using
+LLVM's tablegen, so supporting arbitrary ABIs is possible.  In it's initial
+stages there is no ABI stability in any form.
 
 .. toctree::
    :hidden:
-   :maxdepth: 1
-   :caption: Status & Support
+   :maxdepth: 2
+   :caption: Using
 
-   headers/index.rst
-   arch_support
-   platform_support
-   compiler_support
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-   :caption: Simple Usage
-
-   getting_started
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-   :caption: Advanced Usage
-
-   full_host_build
-   full_cross_build
+   usage_modes
    overlay_mode
-   gpu/index.rst
-   uefi/index.rst
+   fullbuild_mode
    configure
+   gpu/index.rst
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Status
+
+   compiler_support
+   date_and_time
+   math/index.rst
+   strings
+   stdio
 
 .. toctree::
    :hidden:
    :maxdepth: 1
    :caption: Development
 
-   Maintainers
    build_and_test
    dev/index.rst
    porting
@@ -80,9 +79,8 @@ LLVM-libc aspires to a unique place in the software ecosystem.  The goals are:
 .. toctree::
    :hidden:
    :maxdepth: 1
-   :caption: Useful Links
+   :caption: External Links
 
-   talks
    Source Code <https://github.com/llvm/llvm-project/tree/main/libc>
    Bug Reports <https://github.com/llvm/llvm-project/labels/libc>
    Discourse <https://discourse.llvm.org/c/runtimes/libc>

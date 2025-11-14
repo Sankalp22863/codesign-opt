@@ -18,9 +18,7 @@ int main() {
   char buffer[sizeof(std::unordered_map<int, std::string>)] = {0};
   std::unordered_map<int, std::string> &corrupt_map = *(std::unordered_map<int, std::string> *)buffer;
 
-  // Make a typedef to ensure functionality when typedefs are used.
-  typedef std::unordered_map<int, std::string> UnorderedMap;
-  UnorderedMap map; // Set break point at this line.
+  std::unordered_map<int, std::string> map; // Set break point at this line.
   map.emplace(1, "hello");
   map.emplace(2, "world");
   map.emplace(3, "this");
@@ -28,9 +26,7 @@ int main() {
   map.emplace(5, "me");
   thefoo_rw(); // Set break point at this line.
 
-  // Make a typedef to ensure functionality when typedefs are used.
-  typedef std::unordered_multimap<int, std::string> UnorderedMultiMap;
-  UnorderedMultiMap mmap;
+  std::unordered_multimap<int, std::string> mmap;
   mmap.emplace(1, "hello");
   mmap.emplace(2, "hello");
   mmap.emplace(2, "world");
@@ -39,9 +35,7 @@ int main() {
   mmap.emplace(3, "this");
   thefoo_rw(); // Set break point at this line.
 
-  // Make a typedef to ensure functionality when typedefs are used.
-  typedef std::unordered_set<int> IntsUnorderedSet;
-  IntsUnorderedSet iset;
+  std::unordered_set<int> iset;
   iset.emplace(1);
   iset.emplace(2);
   iset.emplace(3);
@@ -49,9 +43,7 @@ int main() {
   iset.emplace(5);
   thefoo_rw(); // Set break point at this line.
 
-  // Make a typedef to ensure functionality when typedefs are used.
-  typedef std::unordered_set<std::string> StringsUnorderedSet;
-  StringsUnorderedSet sset;
+  std::unordered_set<std::string> sset;
   sset.emplace("hello");
   sset.emplace("world");
   sset.emplace("this");
@@ -59,9 +51,7 @@ int main() {
   sset.emplace("me");
   thefoo_rw(); // Set break point at this line.
 
-  // Make a typedef to ensure functionality when typedefs are used.
-  typedef std::unordered_multiset<int> IntsUnorderedMultiSet;
-  IntsUnorderedMultiSet imset;
+  std::unordered_multiset<int> imset;
   imset.emplace(1);
   imset.emplace(2);
   imset.emplace(2);
@@ -70,9 +60,7 @@ int main() {
   imset.emplace(3);
   thefoo_rw(); // Set break point at this line.
 
-  // Make a typedef to ensure functionality when typedefs are used.
-  typedef std::unordered_multiset<std::string> StringsUnorderedMultiSet;
-  StringsUnorderedMultiSet smset;
+  std::unordered_multiset<std::string> smset;
   smset.emplace("hello");
   smset.emplace("world");
   smset.emplace("world");

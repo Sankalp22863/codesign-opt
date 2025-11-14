@@ -17,13 +17,11 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineValueType.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/ValueTypes.h"
-#include "llvm/CodeGenTypes/MachineValueType.h"
 #include <cstdint>
 #include <vector>
-
-#include "HexagonRegisterInfo.h"
 
 #define GET_INSTRINFO_HEADER
 #include "HexagonGenInstrInfo.inc"
@@ -38,7 +36,6 @@ class MachineOperand;
 class TargetRegisterInfo;
 
 class HexagonInstrInfo : public HexagonGenInstrInfo {
-  const HexagonRegisterInfo RegInfo;
   const HexagonSubtarget &Subtarget;
 
   enum BundleAttribute {
@@ -48,9 +45,7 @@ class HexagonInstrInfo : public HexagonGenInstrInfo {
   virtual void anchor();
 
 public:
-  explicit HexagonInstrInfo(const HexagonSubtarget &ST);
-
-  const HexagonRegisterInfo &getRegisterInfo() const { return RegInfo; }
+  explicit HexagonInstrInfo(HexagonSubtarget &ST);
 
   /// TargetInstrInfo overrides.
 
@@ -59,7 +54,7 @@ public:
   /// the destination along with the FrameIndex of the loaded stack slot.  If
   /// not, return 0.  This predicate must return 0 if the instruction has
   /// any side effects other than loading from the stack slot.
-  Register isLoadFromStackSlot(const MachineInstr &MI,
+  unsigned isLoadFromStackSlot(const MachineInstr &MI,
                                int &FrameIndex) const override;
 
   /// If the specified machine instruction is a direct
@@ -67,7 +62,7 @@ public:
   /// the source reg along with the FrameIndex of the loaded stack slot.  If
   /// not, return 0.  This predicate must return 0 if the instruction has
   /// any side effects other than storing to the stack slot.
-  Register isStoreToStackSlot(const MachineInstr &MI,
+  unsigned isStoreToStackSlot(const MachineInstr &MI,
                               int &FrameIndex) const override;
 
   /// Check if the instruction or the bundle of instructions has
@@ -150,7 +145,7 @@ public:
 
   /// Second variant of isProfitableToIfCvt. This one
   /// checks for the case where two basic blocks from true and false path
-  /// of a if-then-else (diamond) are predicated on mutually exclusive
+  /// of a if-then-else (diamond) are predicated on mutally exclusive
   /// predicates, where the probability of the true path being taken is given
   /// by Probability, and Confidence is a measure of our confidence that it
   /// will be properly predicted.
@@ -178,27 +173,28 @@ public:
   /// careful implementation when multiple copy instructions are required for
   /// large registers. See for example the ARM target.
   void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
-                   const DebugLoc &DL, Register DestReg, Register SrcReg,
-                   bool KillSrc, bool RenamableDest = false,
-                   bool RenamableSrc = false) const override;
+                   const DebugLoc &DL, MCRegister DestReg, MCRegister SrcReg,
+                   bool KillSrc) const override;
 
   /// Store the specified register of the given register class to the specified
   /// stack frame index. The store instruction is to be added to the given
   /// machine basic block before the specified machine instruction. If isKill
   /// is true, the register operand is the last use and must be marked kill.
-  void storeRegToStackSlot(
-      MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI, Register SrcReg,
-      bool isKill, int FrameIndex, const TargetRegisterClass *RC, Register VReg,
-      MachineInstr::MIFlag Flags = MachineInstr::NoFlags) const override;
+  void storeRegToStackSlot(MachineBasicBlock &MBB,
+                           MachineBasicBlock::iterator MBBI, Register SrcReg,
+                           bool isKill, int FrameIndex,
+                           const TargetRegisterClass *RC,
+                           const TargetRegisterInfo *TRI,
+                           Register VReg) const override;
 
   /// Load the specified register of the given register class from the specified
   /// stack frame index. The load instruction is to be added to the given
   /// machine basic block before the specified machine instruction.
-  void loadRegFromStackSlot(
-      MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
-      Register DestReg, int FrameIndex, const TargetRegisterClass *RC,
-      Register VReg,
-      MachineInstr::MIFlag Flags = MachineInstr::NoFlags) const override;
+  void loadRegFromStackSlot(MachineBasicBlock &MBB,
+                            MachineBasicBlock::iterator MBBI, Register DestReg,
+                            int FrameIndex, const TargetRegisterClass *RC,
+                            const TargetRegisterInfo *TRI,
+                            Register VReg) const override;
 
   /// This function is called for all pseudo instructions
   /// that remain after register allocation. Many pseudo instructions are
@@ -212,7 +208,7 @@ public:
   bool getMemOperandsWithOffsetWidth(
       const MachineInstr &LdSt,
       SmallVectorImpl<const MachineOperand *> &BaseOps, int64_t &Offset,
-      bool &OffsetIsScalable, LocationSize &Width,
+      bool &OffsetIsScalable, unsigned &Width,
       const TargetRegisterInfo *TRI) const override;
 
   /// Reverses the branch condition of the specified condition list,
@@ -311,9 +307,8 @@ public:
   /// operand latency. But it may not be possible for instructions with variable
   /// number of defs / uses.
   ///
-  /// This is a raw interface to the itinerary that may be directly overridden
-  /// by a target. Use computeOperandLatency to get the best estimate of
-  /// latency.
+  /// This is a raw interface to the itinerary that may be directly overriden by
+  /// a target. Use computeOperandLatency to get the best estimate of latency.
   std::optional<unsigned> getOperandLatency(const InstrItineraryData *ItinData,
                                             const MachineInstr &DefMI,
                                             unsigned DefIdx,
@@ -442,7 +437,7 @@ public:
 
   unsigned getAddrMode(const MachineInstr &MI) const;
   MachineOperand *getBaseAndOffset(const MachineInstr &MI, int64_t &Offset,
-                                   LocationSize &AccessSize) const;
+                                   unsigned &AccessSize) const;
   SmallVector<MachineInstr*,2> getBranchingInstrs(MachineBasicBlock& MBB) const;
   unsigned getCExtOpNum(const MachineInstr &MI) const;
   HexagonII::CompoundGroup
@@ -536,15 +531,7 @@ public:
   }
 
   MCInst getNop() const override;
-  bool isQFPMul(const MachineInstr *MF) const;
 };
-
-/// \brief Create RegSubRegPair from a register MachineOperand
-inline TargetInstrInfo::RegSubRegPair
-getRegSubRegPair(const MachineOperand &O) {
-  assert(O.isReg());
-  return TargetInstrInfo::RegSubRegPair(O.getReg(), O.getSubReg());
-}
 
 } // end namespace llvm
 

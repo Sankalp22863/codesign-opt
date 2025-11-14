@@ -12,7 +12,6 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
-#include "llvm/Support/InterleavedRange.h"
 
 using namespace mlir;
 using namespace mlir::spirv;
@@ -163,7 +162,7 @@ spirv::InterfaceVarABIAttr::getStorageClass() {
   return std::nullopt;
 }
 
-LogicalResult spirv::InterfaceVarABIAttr::verifyInvariants(
+LogicalResult spirv::InterfaceVarABIAttr::verify(
     function_ref<InFlightDiagnostic()> emitError, IntegerAttr descriptorSet,
     IntegerAttr binding, IntegerAttr storageClass) {
   if (!descriptorSet.getType().isSignlessInteger(32))
@@ -258,9 +257,10 @@ ArrayAttr spirv::VerCapExtAttr::getCapabilitiesAttr() {
   return llvm::cast<ArrayAttr>(getImpl()->capabilities);
 }
 
-LogicalResult spirv::VerCapExtAttr::verifyInvariants(
-    function_ref<InFlightDiagnostic()> emitError, IntegerAttr version,
-    ArrayAttr capabilities, ArrayAttr extensions) {
+LogicalResult
+spirv::VerCapExtAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                             IntegerAttr version, ArrayAttr capabilities,
+                             ArrayAttr extensions) {
   if (!version.getType().isSignlessInteger(32))
     return emitError() << "expected 32-bit integer for version";
 
@@ -622,14 +622,17 @@ Attribute SPIRVDialect::parseAttribute(DialectAsmParser &parser,
 //===----------------------------------------------------------------------===//
 
 static void print(spirv::VerCapExtAttr triple, DialectAsmPrinter &printer) {
+  auto &os = printer.getStream();
   printer << spirv::VerCapExtAttr::getKindName() << "<"
-          << spirv::stringifyVersion(triple.getVersion()) << ", "
-          << llvm::interleaved_array(llvm::map_range(
-                 triple.getCapabilities(), spirv::stringifyCapability))
-          << ", "
-          << llvm::interleaved_array(
-                 triple.getExtensionsAttr().getAsValueRange<StringAttr>())
-          << ">";
+          << spirv::stringifyVersion(triple.getVersion()) << ", [";
+  llvm::interleaveComma(
+      triple.getCapabilities(), os,
+      [&](spirv::Capability cap) { os << spirv::stringifyCapability(cap); });
+  printer << "], [";
+  llvm::interleaveComma(triple.getExtensionsAttr(), os, [&](Attribute attr) {
+    os << llvm::cast<StringAttr>(attr).getValue();
+  });
+  printer << "]>";
 }
 
 static void print(spirv::TargetEnvAttr targetEnv, DialectAsmPrinter &printer) {

@@ -11,13 +11,16 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/DebugInfo/CodeView/DebugStringTableSubsection.h"
 #include "llvm/DebugInfo/CodeView/StringsAndChecksums.h"
 #include "llvm/ObjectYAML/ObjectYAML.h"
 #include "llvm/ObjectYAML/yaml2obj.h"
 #include "llvm/Support/BinaryStreamWriter.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
@@ -65,7 +68,7 @@ struct COFFParser {
       StringRef Name = Sec.Name;
 
       if (Name.size() <= COFF::NameSize) {
-        llvm::copy(Name, Sec.Header.Name);
+        std::copy(Name.begin(), Name.end(), Sec.Header.Name);
       } else {
         // Add string to the string table and format the index for output.
         unsigned Index = getStringIndex(Name);
@@ -75,7 +78,7 @@ struct COFFParser {
           return false;
         }
         Sec.Header.Name[0] = '/';
-        llvm::copy(str, Sec.Header.Name + 1);
+        std::copy(str.begin(), str.end(), Sec.Header.Name + 1);
       }
 
       if (Sec.Alignment) {
@@ -122,12 +125,15 @@ struct COFFParser {
   }
 
   unsigned getStringIndex(StringRef Str) {
-    auto [It, Inserted] = StringTableMap.try_emplace(Str, StringTable.size());
-    if (Inserted) {
+    StringMap<unsigned>::iterator i = StringTableMap.find(Str);
+    if (i == StringTableMap.end()) {
+      unsigned Index = StringTable.size();
       StringTable.append(Str.begin(), Str.end());
       StringTable.push_back(0);
+      StringTableMap[Str] = Index;
+      return Index;
     }
-    return It->second;
+    return i->second;
   }
 
   COFFYAML::Object &Obj;
@@ -353,9 +359,9 @@ static uint32_t initializeOptionalHeader(COFFParser &CP, uint16_t Magic,
       SizeOfInitializedData += S.Header.SizeOfRawData;
     if (S.Header.Characteristics & COFF::IMAGE_SCN_CNT_UNINITIALIZED_DATA)
       SizeOfUninitializedData += S.Header.SizeOfRawData;
-    if (S.Name == ".text")
+    if (S.Name.equals(".text"))
       Header->BaseOfCode = S.Header.VirtualAddress; // RVA
-    else if (S.Name == ".data")
+    else if (S.Name.equals(".data"))
       BaseOfData = S.Header.VirtualAddress; // RVA
     if (S.Header.VirtualAddress)
       SizeOfImage += alignTo(S.Header.VirtualSize, Header->SectionAlignment);

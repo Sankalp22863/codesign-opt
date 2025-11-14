@@ -49,7 +49,7 @@ fir::ExtendedValue Fortran::lower::convertProcedureDesignator(
         fir::getUnrestrictedIntrinsicSymbolRefAttr(builder, loc, genericName,
                                                    signature);
     mlir::Value funcPtr =
-        fir::AddrOfOp::create(builder, loc, signature, symbolRefAttr);
+        builder.create<fir::AddrOfOp>(loc, signature, symbolRefAttr);
     return funcPtr;
   }
   const Fortran::semantics::Symbol *symbol = proc.GetSymbol();
@@ -69,7 +69,7 @@ fir::ExtendedValue Fortran::lower::convertProcedureDesignator(
         Fortran::lower::getOrDeclareFunction(proc, converter);
     mlir::SymbolRefAttr nameAttr = builder.getSymbolRefAttr(func.getSymName());
     funcPtr =
-        fir::AddrOfOp::create(builder, loc, func.getFunctionType(), nameAttr);
+        builder.create<fir::AddrOfOp>(loc, func.getFunctionType(), nameAttr);
   }
   if (Fortran::lower::mustPassLengthWithDummyProcedure(proc, converter)) {
     // The result length, if available here, must be propagated along the
@@ -89,15 +89,9 @@ fir::ExtendedValue Fortran::lower::convertProcedureDesignator(
             fir::factory::genMaxWithZero(builder, loc, rawLen);
       }
     }
-    // The caller of the function pointer will have to allocate
-    // the function result with the character length specified
-    // by the boxed value. If the result length cannot be
-    // computed statically, set it to zero (we used to use -1,
-    // but this could cause assertions in LLVM after inlining
-    // exposed alloca of size -1).
     if (!funcPtrResultLength)
       funcPtrResultLength = builder.createIntegerConstant(
-          loc, builder.getCharacterLengthType(), 0);
+          loc, builder.getCharacterLengthType(), -1);
     return fir::CharBoxValue{funcPtr, funcPtrResultLength};
   }
   return funcPtr;
@@ -113,19 +107,19 @@ static hlfir::EntityWithAttributes designateProcedurePointerComponent(
                                                 procComponentSym);
   /// Passed argument may be a descriptor. This is a scalar reference, so the
   /// base address can be directly addressed.
-  if (mlir::isa<fir::BaseBoxType>(base.getType()))
-    base = fir::BoxAddrOp::create(builder, loc, base);
+  if (base.getType().isa<fir::BaseBoxType>())
+    base = builder.create<fir::BoxAddrOp>(loc, base);
   std::string fieldName = converter.getRecordTypeFieldName(procComponentSym);
   auto recordType =
-      mlir::cast<fir::RecordType>(hlfir::getFortranElementType(base.getType()));
+      hlfir::getFortranElementType(base.getType()).cast<fir::RecordType>();
   mlir::Type fieldType = recordType.getType(fieldName);
   // Note: semantics turns x%p() into x%t%p() when the procedure pointer
   // component is part of parent component t.
   if (!fieldType)
     TODO(loc, "passing type bound procedure (extension)");
   mlir::Type designatorType = fir::ReferenceType::get(fieldType);
-  mlir::Value compRef = hlfir::DesignateOp::create(
-      builder, loc, designatorType, base, fieldName,
+  mlir::Value compRef = builder.create<hlfir::DesignateOp>(
+      loc, designatorType, base, fieldName,
       /*compShape=*/mlir::Value{}, hlfir::DesignateOp::Subscripts{},
       /*substring=*/mlir::ValueRange{},
       /*complexPart=*/std::nullopt,
@@ -170,14 +164,14 @@ hlfir::EntityWithAttributes Fortran::lower::convertProcedureDesignatorToHLFIR(
   fir::FirOpBuilder &builder = converter.getFirOpBuilder();
 
   mlir::Value funcAddr = fir::getBase(procExv);
-  if (!mlir::isa<fir::BoxProcType>(funcAddr.getType())) {
+  if (!funcAddr.getType().isa<fir::BoxProcType>()) {
     mlir::Type boxTy =
         Fortran::lower::getUntypedBoxProcType(&converter.getMLIRContext());
     if (auto host = Fortran::lower::argumentHostAssocs(converter, funcAddr))
-      funcAddr = fir::EmboxProcOp::create(
-          builder, loc, boxTy, llvm::ArrayRef<mlir::Value>{funcAddr, host});
+      funcAddr = builder.create<fir::EmboxProcOp>(
+          loc, boxTy, llvm::ArrayRef<mlir::Value>{funcAddr, host});
     else
-      funcAddr = fir::EmboxProcOp::create(builder, loc, boxTy, funcAddr);
+      funcAddr = builder.create<fir::EmboxProcOp>(loc, boxTy, funcAddr);
   }
 
   mlir::Value res = procExv.match(
@@ -212,5 +206,5 @@ mlir::Value Fortran::lower::derefPassProcPointerComponent(
          "failed to retrieve pointer procedure component symbol");
   hlfir::EntityWithAttributes pointerComp = designateProcedurePointerComponent(
       loc, converter, *procComponentSym, passedArg, symMap, stmtCtx);
-  return fir::LoadOp::create(converter.getFirOpBuilder(), loc, pointerComp);
+  return converter.getFirOpBuilder().create<fir::LoadOp>(loc, pointerComp);
 }

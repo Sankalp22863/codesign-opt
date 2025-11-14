@@ -60,6 +60,7 @@ public:
     PrecompileJobClass,
     ExtractAPIJobClass,
     AnalyzeJobClass,
+    MigrateJobClass,
     CompileJobClass,
     BackendJobClass,
     AssembleJobClass,
@@ -75,11 +76,9 @@ public:
     LinkerWrapperJobClass,
     StaticLibJobClass,
     BinaryAnalyzeJobClass,
-    BinaryTranslatorJobClass,
-    ObjcopyJobClass,
 
     JobClassFirst = PreprocessJobClass,
-    JobClassLast = ObjcopyJobClass
+    JobClassLast = BinaryAnalyzeJobClass
   };
 
   // The offloading kind determines if this action is binded to a particular
@@ -95,7 +94,6 @@ public:
     OFK_Cuda = 0x02,
     OFK_OpenMP = 0x04,
     OFK_HIP = 0x08,
-    OFK_SYCL = 0x10,
   };
 
   static const char *getClassName(ActionClass AC);
@@ -268,7 +266,7 @@ public:
 /// programming model implementation needs and propagates the offloading kind to
 /// its dependences.
 class OffloadAction final : public Action {
-  LLVM_DECLARE_VIRTUAL_ANCHOR_FUNCTION();
+  virtual void anchor();
 
 public:
   /// Type used to communicate device actions. It associates bound architecture,
@@ -458,6 +456,17 @@ public:
 
   static bool classof(const Action *A) {
     return A->getKind() == AnalyzeJobClass;
+  }
+};
+
+class MigrateJobAction : public JobAction {
+  void anchor() override;
+
+public:
+  MigrateJobAction(Action *Input, types::ID OutputType);
+
+  static bool classof(const Action *A) {
+    return A->getKind() == MigrateJobClass;
   }
 };
 
@@ -674,28 +683,6 @@ public:
 
   static bool classof(const Action *A) {
     return A->getKind() == BinaryAnalyzeJobClass;
-  }
-};
-
-class BinaryTranslatorJobAction : public JobAction {
-  void anchor() override;
-
-public:
-  BinaryTranslatorJobAction(Action *Input, types::ID Type);
-
-  static bool classof(const Action *A) {
-    return A->getKind() == BinaryTranslatorJobClass;
-  }
-};
-
-class ObjcopyJobAction : public JobAction {
-  void anchor() override;
-
-public:
-  ObjcopyJobAction(Action *Input, types::ID Type);
-
-  static bool classof(const Action *A) {
-    return A->getKind() == ObjcopyJobClass;
   }
 };
 

@@ -26,11 +26,11 @@ public:
   explicit PLTCall(const cl::opt<bool> &PrintPass)
       : BinaryFunctionPass(PrintPass) {}
 
-  const char *getName() const override { return "plt-call-optimization"; }
+  const char *getName() const override { return "PLT call optimization"; }
   bool shouldPrint(const BinaryFunction &BF) const override {
     return BinaryFunctionPass::shouldPrint(BF);
   }
-  Error runOnFunctions(BinaryContext &BC) override;
+  void runOnFunctions(BinaryContext &BC) override;
 };
 
 } // namespace bolt

@@ -20,7 +20,6 @@
 #include "llvm/DebugInfo/DWARF/DWARFUnit.h"
 #include "llvm/Object/Binary.h"
 #include "llvm/Object/ObjectFile.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/Error.h"
 #include "llvm/TargetParser/Host.h"
@@ -46,7 +45,7 @@ class DWARFUnitIndex;
 /// DWARFContext
 /// This data structure is the top level entity that deals with dwarf debug
 /// information parsing. The actual data is supplied through DWARFObj.
-class LLVM_ABI DWARFContext : public DIContext {
+class DWARFContext : public DIContext {
 public:
   /// DWARFContextState
   /// This structure contains all member variables for DWARFContext that need
@@ -101,8 +100,9 @@ public:
     virtual bool isThreadSafe() const = 0;
 
     /// Parse a macro[.dwo] or macinfo[.dwo] section.
-    LLVM_ABI std::unique_ptr<DWARFDebugMacro>
+    std::unique_ptr<DWARFDebugMacro>
     parseMacroOrMacinfo(MacroSecType SectionType);
+
   };
   friend class DWARFContextState;
 
@@ -209,9 +209,6 @@ public:
     return State->getDWOUnits();
   }
 
-  /// Return true of this DWARF context is a DWP file.
-  bool isDWP() const;
-
   /// Get units from .debug_types.dwo in the DWO context.
   unit_iterator_range dwo_types_section_units() {
     DWARFUnitVector &DWOUnits = State->getDWOUnits();
@@ -265,10 +262,7 @@ public:
   }
 
   DWARFCompileUnit *getDWOCompileUnitForHash(uint64_t Hash);
-  DWARFTypeUnit *getTypeUnitForHash(uint64_t Hash, bool IsDWO);
-
-  /// Return the DWARF unit that includes an offset (relative to .debug_info).
-  DWARFUnit *getUnitForOffset(uint64_t Offset);
+  DWARFTypeUnit *getTypeUnitForHash(uint16_t Version, uint64_t Hash, bool IsDWO);
 
   /// Return the compile unit that includes an offset (relative to .debug_info).
   DWARFCompileUnit *getCompileUnitForOffset(uint64_t Offset);
@@ -386,10 +380,10 @@ public:
   ///            executable's debug info.
   DIEsForAddress getDIEsForAddress(uint64_t Address, bool CheckDWO = false);
 
-  std::optional<DILineInfo> getLineInfoForAddress(
+  DILineInfo getLineInfoForAddress(
       object::SectionedAddress Address,
       DILineInfoSpecifier Specifier = DILineInfoSpecifier()) override;
-  std::optional<DILineInfo>
+  DILineInfo
   getLineInfoForDataAddress(object::SectionedAddress Address) override;
   DILineInfoTable getLineInfoForAddressRange(
       object::SectionedAddress Address, uint64_t Size,
@@ -428,7 +422,7 @@ public:
     for (unsigned Size : DWARFContext::getSupportedAddressSizes())
       Stream << LS << Size;
     Stream << ')';
-    return make_error<StringError>(Buffer, EC);
+    return make_error<StringError>(Stream.str(), EC);
   }
 
   std::shared_ptr<DWARFContext> getDWOContext(StringRef AbsolutePath);

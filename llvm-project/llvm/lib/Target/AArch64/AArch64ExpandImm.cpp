@@ -518,14 +518,6 @@ static inline void expandMOVImmSimple(uint64_t Imm, unsigned BitSize,
     Insn.push_back({ Opc, Imm16,
                      AArch64_AM::getShifterImm(AArch64_AM::LSL, Shift) });
   }
-
-  // Now, we get 16-bit divided Imm. If high and low bits are same in
-  // 32-bit, there is an opportunity to reduce instruction.
-  if (Insn.size() > 2 && (Imm >> 32) == (Imm & 0xffffffffULL)) {
-    for (int Size = Insn.size(); Size > 2; Size--)
-      Insn.pop_back();
-    Insn.push_back({AArch64::ORRXrs, 0, 32});
-  }
 }
 
 /// Expand a MOVi32imm or MOVi64imm pseudo instruction to one or more
@@ -585,7 +577,7 @@ void AArch64_IMM::expandMOVImm(uint64_t Imm, unsigned BitSize,
     uint64_t ShiftedMask = (0xFFFFULL << Shift);
     uint64_t ZeroChunk = UImm & ~ShiftedMask;
     uint64_t OneChunk = UImm | ShiftedMask;
-    uint64_t RotatedImm = llvm::rotl(UImm, 32);
+    uint64_t RotatedImm = (UImm << 32) | (UImm >> 32);
     uint64_t ReplicateChunk = ZeroChunk | (RotatedImm & ShiftedMask);
     if (AArch64_AM::processLogicalImmediate(ZeroChunk, BitSize, Encoding) ||
         AArch64_AM::processLogicalImmediate(OneChunk, BitSize, Encoding) ||

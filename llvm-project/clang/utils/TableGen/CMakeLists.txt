@@ -4,12 +4,9 @@ add_tablegen(clang-tblgen CLANG
   DESTINATION "${CLANG_TOOLS_INSTALL_DIR}"
   EXPORT Clang
   ASTTableGen.cpp
-  CIRLoweringEmitter.cpp
   ClangASTNodesEmitter.cpp
   ClangASTPropertiesEmitter.cpp
   ClangAttrEmitter.cpp
-  ClangBuiltinsEmitter.cpp
-  ClangBuiltinTemplatesEmitter.cpp
   ClangCommentCommandInfoEmitter.cpp
   ClangCommentHTMLNamedCharacterReferenceEmitter.cpp
   ClangCommentHTMLTagsEmitter.cpp
@@ -29,3 +26,5 @@ add_tablegen(clang-tblgen CLANG
   )
 
 target_link_libraries(clang-tblgen PRIVATE clangSupport_tablegen)
+
+set_target_properties(clang-tblgen PROPERTIES FOLDER "Clang tablegenning")

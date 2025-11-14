@@ -42,7 +42,7 @@ public:
 
 char WebAssemblyFixBrTableDefaults::ID = 0;
 
-// Target independent selection dag assumes that it is ok to use PointerTy
+// Target indepedent selection dag assumes that it is ok to use PointerTy
 // as the index for a "switch", whereas Wasm so far only has a 32-bit br_table.
 // See e.g. SelectionDAGBuilder::visitJumpTableHeader
 // We have a 64-bit br_table in the tablegen defs as a result, which does get
@@ -159,21 +159,19 @@ bool WebAssemblyFixBrTableDefaults::runOnMachineFunction(MachineFunction &MF) {
                     << MF.getName() << '\n');
 
   bool Changed = false;
-  SetVector<MachineBasicBlock *, SmallVector<MachineBasicBlock *, 16>,
-            DenseSet<MachineBasicBlock *>, 16>
-      MBBSet;
+  SmallPtrSet<MachineBasicBlock *, 16> MBBSet;
   for (auto &MBB : MF)
     MBBSet.insert(&MBB);
 
   while (!MBBSet.empty()) {
     MachineBasicBlock *MBB = *MBBSet.begin();
-    MBBSet.remove(MBB);
+    MBBSet.erase(MBB);
     for (auto &MI : *MBB) {
       if (WebAssembly::isBrTable(MI.getOpcode())) {
         fixBrTableIndex(MI, MBB, MF);
         auto *Fixed = fixBrTableDefault(MI, MBB, MF);
         if (Fixed != nullptr) {
-          MBBSet.remove(Fixed);
+          MBBSet.erase(Fixed);
           Changed = true;
         }
         break;

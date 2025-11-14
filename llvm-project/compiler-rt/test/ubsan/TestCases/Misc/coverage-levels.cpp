@@ -1,6 +1,7 @@
 // Test various levels of coverage
 //
-// UNSUPPORTED: system-windows
+// FIXME: Port the environment variable logic below for the lit shell.
+// REQUIRES: shell
 //
 // RUN: rm -rf %t-dir && mkdir %t-dir
 // RUN: %clangxx -fsanitize=shift                        -DGOOD_SHIFT=1 -O1 -fsanitize-coverage=func,trace-pc-guard  %s -o %t

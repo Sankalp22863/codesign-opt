@@ -206,8 +206,6 @@ struct fsd {
 
 struct fsd pr52011(void) {
   // CHECK: define{{.*}} { float, double } @
-  struct fsd x;
-  return x;
 }
 
 struct hsd {
@@ -218,8 +216,6 @@ struct hsd {
 
 struct hsd pr52011_2(void) {
   // CHECK: define{{.*}} { half, double } @
-  struct hsd x;
-  return x;
 }
 
 struct hsf {
@@ -230,8 +226,6 @@ struct hsf {
 
 struct hsf pr52011_3(void) {
   // CHECK: define{{.*}} <4 x half> @
-  struct hsf x;
-  return x;
 }
 
 struct fds {
@@ -243,6 +237,4 @@ struct fds {
 struct fds pr52011_4(void) {
   // CHECK-C: define{{.*}} { float, double } @pr52011_4
   // CHECK-CPP: define{{.*}} void @_Z9pr52011_4v({{.*}} sret
-  struct fds x;
-  return x;
 }

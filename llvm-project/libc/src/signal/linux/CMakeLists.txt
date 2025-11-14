@@ -3,8 +3,6 @@ add_header_library(
   HDRS
     signal_utils.h
   DEPENDS
-    libc.hdr.types.sigset_t
-    libc.include.signal
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
 )
@@ -30,7 +28,7 @@ add_entrypoint_object(
     ../raise.h
   DEPENDS
     .signal_utils
-    libc.hdr.types.sigset_t
+    libc.include.signal
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
 )
@@ -41,7 +39,7 @@ add_object_library(
     __restore.cpp
   COMPILE_OPTIONS
     -fomit-frame-pointer
-    ${libc_opt_high_flag}
+    -O3
     -Wframe-larger-than=0
     -Wno-attributes
     # asan creates asan.module_ctor which uses stack space, causing warnings.
@@ -59,8 +57,7 @@ add_entrypoint_object(
     ../sigaction.h
   DEPENDS
     .__restore
-    libc.hdr.types.sigset_t
-    libc.hdr.types.struct_sigaction
+    libc.include.signal
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
     libc.src.errno.errno
@@ -77,7 +74,6 @@ add_entrypoint_object(
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
     libc.src.errno.errno
-    libc.hdr.types.stack_t
 )
 
 add_entrypoint_object(
@@ -88,7 +84,7 @@ add_entrypoint_object(
     ../sigprocmask.h
   DEPENDS
     .signal_utils
-    libc.hdr.types.sigset_t
+    libc.include.signal
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
     libc.src.errno.errno
@@ -102,7 +98,7 @@ add_entrypoint_object(
     ../sigemptyset.h
   DEPENDS
     .signal_utils
-    libc.hdr.types.sigset_t
+    libc.include.signal
     libc.src.errno.errno
 )
 
@@ -114,7 +110,7 @@ add_entrypoint_object(
     ../sigaddset.h
   DEPENDS
     .signal_utils
-    libc.hdr.types.sigset_t
+    libc.include.signal
     libc.src.errno.errno
 )
 
@@ -126,7 +122,7 @@ add_entrypoint_object(
     ../signal.h
   DEPENDS
     .sigaction
-    libc.hdr.signal_macros
+    libc.include.signal
 )
 
 add_entrypoint_object(
@@ -137,7 +133,7 @@ add_entrypoint_object(
     ../sigfillset.h
   DEPENDS
     .signal_utils
-    libc.hdr.types.sigset_t
+    libc.include.signal
     libc.src.errno.errno
 )
 
@@ -149,6 +145,6 @@ add_entrypoint_object(
     ../sigdelset.h
   DEPENDS
     .signal_utils
-    libc.hdr.types.sigset_t
+    libc.include.signal
     libc.src.errno.errno
 )

@@ -14,10 +14,6 @@ export namespace std {
   using std::invoke_r;
 #endif
 
-#if _LIBCPP_STD_VER >= 20
-  using std::basic_common_reference;
-#endif
-
   // [refwrap], reference_wrapper
   using std::reference_wrapper;
 
@@ -60,10 +56,8 @@ export namespace std {
   using std::not_fn;
 
   // [func.bind.partial], function templates bind_front and bind_back
+  // using std::bind_back;
   using std::bind_front;
-#if _LIBCPP_STD_VER >= 23
-  using std::bind_back;
-#endif
 
   // [func.bind], bind
   using std::is_bind_expression;

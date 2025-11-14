@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/MachineBasicBlock.h"
-#include "llvm/CodeGen/CodeGenTargetMachineImpl.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -19,8 +18,8 @@
 #include "llvm/IR/DIBuilder.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Target/TargetMachine.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -40,9 +39,10 @@ TEST(FindDebugLocTest, DifferentIterators) {
   // scope.
   DIBuilder DIB(Mod);
   DIFile *OurFile = DIB.createFile("foo.c", "/bar");
-  DICompileUnit *OurCU = DIB.createCompileUnit(
-      DISourceLanguageName(dwarf::DW_LANG_C99), OurFile, "", false, "", 0);
-  auto OurSubT = DIB.createSubroutineType(DIB.getOrCreateTypeArray({}));
+  DICompileUnit *OurCU =
+      DIB.createCompileUnit(dwarf::DW_LANG_C99, OurFile, "", false, "", 0);
+  auto OurSubT =
+      DIB.createSubroutineType(DIB.getOrCreateTypeArray(std::nullopt));
   DISubprogram *OurFunc =
       DIB.createFunction(OurCU, "bees", "", OurFile, 1, OurSubT, 1,
                          DINode::FlagZero, DISubprogram::SPFlagDefinition);

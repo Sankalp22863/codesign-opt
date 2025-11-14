@@ -11,9 +11,7 @@
 
 #include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
-#include "src/__support/ctype_utils.h"
 #include "src/__support/integer_to_string.h"
-#include "src/__support/macros/config.h"
 #include "src/stdio/printf_core/converter_utils.h"
 #include "src/stdio/printf_core/core_structs.h"
 #include "src/stdio/printf_core/writer.h"
@@ -21,8 +19,13 @@
 #include <inttypes.h>
 #include <stddef.h>
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 namespace printf_core {
+
+// These functions only work on characters that are already known to be in the
+// alphabet. Their behavior is undefined otherwise.
+LIBC_INLINE constexpr char to_lower(char a) { return a | 32; }
+LIBC_INLINE constexpr bool is_lower(char a) { return (a & 32) > 0; }
 
 namespace details {
 
@@ -30,30 +33,25 @@ using HexFmt = IntegerToString<uintmax_t, radix::Hex>;
 using HexFmtUppercase = IntegerToString<uintmax_t, radix::Hex::Uppercase>;
 using OctFmt = IntegerToString<uintmax_t, radix::Oct>;
 using DecFmt = IntegerToString<uintmax_t>;
-using BinFmt = IntegerToString<uintmax_t, radix::Bin>;
 
 LIBC_INLINE constexpr size_t num_buf_size() {
-  cpp::array<size_t, 5> sizes{
-      HexFmt::buffer_size(), HexFmtUppercase::buffer_size(),
-      OctFmt::buffer_size(), DecFmt::buffer_size(), BinFmt::buffer_size()};
-
-  auto result = sizes[0];
-  for (size_t i = 1; i < sizes.size(); i++)
-    result = cpp::max(result, sizes[i]);
-  return result;
+  constexpr auto max = [](size_t a, size_t b) -> size_t {
+    return (a < b) ? b : a;
+  };
+  return max(HexFmt::buffer_size(),
+             max(HexFmtUppercase::buffer_size(),
+                 max(OctFmt::buffer_size(), DecFmt::buffer_size())));
 }
 
 LIBC_INLINE cpp::optional<cpp::string_view>
 num_to_strview(uintmax_t num, cpp::span<char> bufref, char conv_name) {
-  if (internal::tolower(conv_name) == 'x') {
-    if (internal::islower(conv_name))
+  if (to_lower(conv_name) == 'x') {
+    if (is_lower(conv_name))
       return HexFmt::format_to(bufref, num);
     else
       return HexFmtUppercase::format_to(bufref, num);
   } else if (conv_name == 'o') {
     return OctFmt::format_to(bufref, num);
-  } else if (internal::tolower(conv_name) == 'b') {
-    return BinFmt::format_to(bufref, num);
   } else {
     return DecFmt::format_to(bufref, num);
   }
@@ -61,15 +59,15 @@ num_to_strview(uintmax_t num, cpp::span<char> bufref, char conv_name) {
 
 } // namespace details
 
-template <WriteMode write_mode>
-LIBC_INLINE int convert_int(Writer<write_mode> *writer,
-                            const FormatSection &to_conv) {
+LIBC_INLINE int convert_int(Writer *writer, const FormatSection &to_conv) {
   static constexpr size_t BITS_IN_BYTE = 8;
   static constexpr size_t BITS_IN_NUM = sizeof(uintmax_t) * BITS_IN_BYTE;
 
   uintmax_t num = static_cast<uintmax_t>(to_conv.conv_val_raw);
   bool is_negative = false;
   FormatFlags flags = to_conv.flags;
+
+  const char a = is_lower(to_conv.conv_name) ? 'a' : 'A';
 
   // If the conversion is signed, then handle negative values.
   if (to_conv.conv_name == 'd' || to_conv.conv_name == 'i') {
@@ -86,8 +84,8 @@ LIBC_INLINE int convert_int(Writer<write_mode> *writer,
                         ~(FormatFlags::FORCE_SIGN | FormatFlags::SPACE_PREFIX));
   }
 
-  num =
-      apply_length_modifier(num, {to_conv.length_modifier, to_conv.bit_width});
+  num = apply_length_modifier(num, to_conv.length_modifier);
+
   cpp::array<char, details::num_buf_size()> buf;
   auto str = details::num_to_strview(num, buf, to_conv.conv_name);
   if (!str)
@@ -113,16 +111,11 @@ LIBC_INLINE int convert_int(Writer<write_mode> *writer,
   // conversions. Since hexadecimal is unsigned these will never conflict.
   size_t prefix_len;
   char prefix[2];
-  if ((internal::tolower(to_conv.conv_name) == 'x') &&
+  if ((to_lower(to_conv.conv_name) == 'x') &&
       ((flags & FormatFlags::ALTERNATE_FORM) != 0) && num != 0) {
     prefix_len = 2;
     prefix[0] = '0';
-    prefix[1] = internal::islower(to_conv.conv_name) ? 'x' : 'X';
-  } else if ((internal::tolower(to_conv.conv_name) == 'b') &&
-             ((flags & FormatFlags::ALTERNATE_FORM) != 0) && num != 0) {
-    prefix_len = 2;
-    prefix[0] = '0';
-    prefix[1] = internal::islower(to_conv.conv_name) ? 'b' : 'B';
+    prefix[1] = a + ('x' - 'a');
   } else {
     prefix_len = (sign_char == 0 ? 0 : 1);
     prefix[0] = sign_char;
@@ -207,6 +200,6 @@ LIBC_INLINE int convert_int(Writer<write_mode> *writer,
 }
 
 } // namespace printf_core
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE
 
 #endif // LLVM_LIBC_SRC_STDIO_PRINTF_CORE_INT_CONVERTER_H

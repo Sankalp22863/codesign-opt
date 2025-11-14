@@ -27,6 +27,10 @@
 #include <Availability.h>
 #endif
 
+#if defined(__ANDROID__)
+int posix_openpt(int flags);
+#endif
+
 using namespace lldb_private;
 
 // PseudoTerminal constructor

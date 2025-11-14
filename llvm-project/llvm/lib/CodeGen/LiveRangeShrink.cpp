@@ -95,25 +95,14 @@ static MachineInstr *FindDominatedInstruction(MachineInstr &New,
   return Old;
 }
 
-/// Returns whether this instruction is considered a code motion barrier by this
-/// pass. We can be less conservative than hasUnmodeledSideEffects() when
-/// deciding whether an instruction is a barrier because it is known that pseudo
-/// probes are safe to move in this pass specifically (see commit 1cb47a063e2b).
-static bool isCodeMotionBarrier(MachineInstr &MI) {
-  return MI.hasUnmodeledSideEffects() && !MI.isPseudoProbe();
-}
-
 /// Builds Instruction to its dominating order number map \p M by traversing
 /// from instruction \p Start.
 static void BuildInstOrderMap(MachineBasicBlock::iterator Start,
                               InstOrderMap &M) {
   M.clear();
   unsigned i = 0;
-  for (MachineInstr &I : make_range(Start, Start->getParent()->end())) {
-    if (isCodeMotionBarrier(I))
-      break;
+  for (MachineInstr &I : make_range(Start, Start->getParent()->end()))
     M[&I] = i++;
-  }
 }
 
 bool LiveRangeShrink::runOnMachineFunction(MachineFunction &MF) {
@@ -130,29 +119,22 @@ bool LiveRangeShrink::runOnMachineFunction(MachineFunction &MF) {
   // register is used last. When moving instructions up, we need to
   // make sure all its defs (including dead def) will not cross its
   // last use when moving up.
-  DenseMap<Register, std::pair<unsigned, MachineInstr *>> UseMap;
+  DenseMap<unsigned, std::pair<unsigned, MachineInstr *>> UseMap;
 
   for (MachineBasicBlock &MBB : MF) {
     if (MBB.empty())
       continue;
-
-    MachineBasicBlock::iterator Next = MBB.begin();
-    if (MBB.isEHPad()) {
-      // Do not track PHIs in IOM when handling EHPads.
-      // Otherwise their uses may be hoisted outside a landingpad range.
-      Next = MBB.SkipPHIsLabelsAndDebug(Next);
-      if (Next == MBB.end())
-        continue;
-    }
-
-    BuildInstOrderMap(Next, IOM);
-    Next = MBB.SkipPHIsLabelsAndDebug(Next);
-    UseMap.clear();
     bool SawStore = false;
+    BuildInstOrderMap(MBB.begin(), IOM);
+    UseMap.clear();
 
-    while (Next != MBB.end()) {
+    for (MachineBasicBlock::iterator Next = MBB.begin(); Next != MBB.end();) {
       MachineInstr &MI = *Next;
-      Next = MBB.SkipPHIsLabelsAndDebug(++Next);
+      ++Next;
+      if (MI.isPHI() || MI.isDebugOrPseudoInstr())
+        continue;
+      if (MI.mayStore())
+        SawStore = true;
 
       unsigned CurrentOrder = IOM[&MI];
       unsigned Barrier = 0;
@@ -162,20 +144,21 @@ bool LiveRangeShrink::runOnMachineFunction(MachineFunction &MF) {
           continue;
         if (MO.isUse())
           UseMap[MO.getReg()] = std::make_pair(CurrentOrder, &MI);
-        else if (MO.isDead()) {
+        else if (MO.isDead() && UseMap.count(MO.getReg()))
           // Barrier is the last instruction where MO get used. MI should not
           // be moved above Barrier.
-          auto It = UseMap.find(MO.getReg());
-          if (It != UseMap.end() && Barrier < It->second.first)
-            std::tie(Barrier, BarrierMI) = It->second;
-        }
+          if (Barrier < UseMap[MO.getReg()].first) {
+            Barrier = UseMap[MO.getReg()].first;
+            BarrierMI = UseMap[MO.getReg()].second;
+          }
       }
 
-      if (!MI.isSafeToMove(SawStore)) {
+      if (!MI.isSafeToMove(nullptr, SawStore)) {
         // If MI has side effects, it should become a barrier for code motion.
         // IOM is rebuild from the next instruction to prevent later
         // instructions from being moved before this MI.
-        if (isCodeMotionBarrier(MI) && Next != MBB.end()) {
+        if (MI.hasUnmodeledSideEffects() && !MI.isPseudoProbe() &&
+            Next != MBB.end()) {
           BuildInstOrderMap(Next, IOM);
           SawStore = false;
         }
@@ -254,7 +237,7 @@ bool LiveRangeShrink::runOnMachineFunction(MachineFunction &MF) {
         if (MI.getOperand(0).isReg())
           for (; EndIter != MBB.end() && EndIter->isDebugValue() &&
                  EndIter->hasDebugOperandForReg(MI.getOperand(0).getReg());
-               ++EndIter)
+               ++EndIter, ++Next)
             IOM[&*EndIter] = NewOrder;
         MBB.splice(I, &MBB, MI.getIterator(), EndIter);
       }

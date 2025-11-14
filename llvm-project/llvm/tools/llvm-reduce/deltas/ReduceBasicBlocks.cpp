@@ -13,7 +13,9 @@
 
 #include "ReduceBasicBlocks.h"
 #include "Utils.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
@@ -21,19 +23,17 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/Local.h"
+
 #include <vector>
 
 #define DEBUG_TYPE "llvm-reduce"
 
 using namespace llvm;
 
-using BlockSet = SetVector<BasicBlock *>;
-
 /// Replaces BB Terminator with one that only contains Chunk BBs
 static void replaceBranchTerminator(BasicBlock &BB,
-                                    const BlockSet &BBsToDelete) {
+                                    const DenseSet<BasicBlock *> &BBsToDelete) {
   auto *Term = BB.getTerminator();
   std::vector<BasicBlock *> ChunkSuccessors;
   for (auto *Succ : successors(&BB)) {
@@ -45,21 +45,12 @@ static void replaceBranchTerminator(BasicBlock &BB,
   if (ChunkSuccessors.size() == Term->getNumSuccessors())
     return;
 
-  // TODO: Handle these without failing verifier.
-  if (isa<CatchSwitchInst>(Term))
-    return;
-
-  bool IsBranch = isa<BranchInst>(Term) || isa<CallBrInst>(Term);
+  bool IsBranch = isa<BranchInst>(Term);
   if (InvokeInst *Invoke = dyn_cast<InvokeInst>(Term)) {
-    BasicBlock *UnwindDest = Invoke->getUnwindDest();
-    BasicBlock::iterator LP = UnwindDest->getFirstNonPHIIt();
-
+    LandingPadInst *LP = Invoke->getLandingPadInst();
     // Remove landingpad instruction if the containing block isn't used by other
     // invokes.
-
-    // TODO: Handle catchswitch, catchpad, catchret, and cleanupret
-    if (isa<LandingPadInst>(LP) &&
-        none_of(UnwindDest->users(), [Invoke](User *U) {
+    if (none_of(LP->getParent()->users(), [Invoke](User *U) {
           return U != Invoke && isa<InvokeInst>(U);
         })) {
       LP->replaceAllUsesWith(getDefaultValue(LP->getType()));
@@ -104,8 +95,9 @@ static void replaceBranchTerminator(BasicBlock &BB,
 /// Removes uninteresting BBs from switch, if the default case ends up being
 /// uninteresting, the switch is replaced with a void return (since it has to be
 /// replace with something)
-static void removeUninterestingBBsFromSwitch(SwitchInst &SwInst,
-                                             const BlockSet &BBsToDelete) {
+static void
+removeUninterestingBBsFromSwitch(SwitchInst &SwInst,
+                                 const DenseSet<BasicBlock *> &BBsToDelete) {
   for (int I = 0, E = SwInst.getNumCases(); I != E; ++I) {
     auto Case = SwInst.case_begin() + I;
     if (BBsToDelete.count(Case->getCaseSuccessor())) {
@@ -140,9 +132,8 @@ static void removeUninterestingBBsFromSwitch(SwitchInst &SwInst,
 
 /// Removes out-of-chunk arguments from functions, and modifies their calls
 /// accordingly. It also removes allocations of out-of-chunk arguments.
-void llvm::reduceBasicBlocksDeltaPass(Oracle &O, ReducerWorkItem &WorkItem) {
-  BlockSet BBsToDelete;
-
+static void extractBasicBlocksFromModule(Oracle &O, ReducerWorkItem &WorkItem) {
+  DenseSet<BasicBlock *> BBsToDelete;
   df_iterator_default_set<BasicBlock *> Reachable;
 
   for (auto &F : WorkItem.getModule()) {
@@ -183,14 +174,17 @@ void llvm::reduceBasicBlocksDeltaPass(Oracle &O, ReducerWorkItem &WorkItem) {
     // Cleanup any blocks that are now dead after eliminating this set. This
     // will likely be larger than the number of blocks the oracle told us to
     // delete.
-    simpleSimplifyCFG(F, BBsToDelete.getArrayRef());
-
+    EliminateUnreachableBlocks(F);
     BBsToDelete.clear();
   }
 }
 
-void llvm::reduceUnreachableBasicBlocksDeltaPass(Oracle &O,
-                                                 ReducerWorkItem &WorkItem) {
+void llvm::reduceBasicBlocksDeltaPass(TestRunner &Test) {
+  runDeltaPass(Test, extractBasicBlocksFromModule, "Reducing Basic Blocks");
+}
+
+static void removeUnreachableBasicBlocksFromModule(Oracle &O,
+                                                   ReducerWorkItem &WorkItem) {
   std::vector<BasicBlock *> DeadBlocks;
   df_iterator_default_set<BasicBlock *> Reachable;
 
@@ -215,4 +209,9 @@ void llvm::reduceUnreachableBasicBlocksDeltaPass(Oracle &O,
 
     Reachable.clear();
   }
+}
+
+void llvm::reduceUnreachableBasicBlocksDeltaPass(TestRunner &Test) {
+  runDeltaPass(Test, removeUnreachableBasicBlocksFromModule,
+               "Removing Unreachable Basic Blocks");
 }

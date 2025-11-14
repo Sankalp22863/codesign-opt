@@ -25,8 +25,8 @@ export namespace std {
 
     using std::chrono::duration_values;
 
-    using std::chrono::is_clock;
-    using std::chrono::is_clock_v;
+    // using std::chrono::is_clock;
+    // using std::chrono::is_clock_v;
 
     // [time.duration.nonmember], duration arithmetic
     using std::chrono::operator+;
@@ -37,6 +37,7 @@ export namespace std {
 
     // [time.duration.comparisons], duration comparisons
     using std::chrono::operator==;
+    using std::chrono::operator!=;
     using std::chrono::operator<;
     using std::chrono::operator>;
     using std::chrono::operator<=;
@@ -50,7 +51,7 @@ export namespace std {
     using std::chrono::round;
 
     // [time.duration.io], duration I/O
-#if _LIBCPP_HAS_LOCALIZATION
+#ifndef _LIBCPP_HAS_NO_LOCALIZATION
     using std::chrono::operator<<;
 #endif
     // using std::chrono::from_stream;
@@ -84,9 +85,7 @@ export namespace std {
     using std::chrono::sys_seconds;
     using std::chrono::sys_time;
 
-#if _LIBCPP_HAS_TIME_ZONE_DATABASE && _LIBCPP_HAS_FILESYSTEM && _LIBCPP_HAS_LOCALIZATION
-#  ifdef _LIBCPP_ENABLE_EXPERIMENTAL
-
+#if 0
     // [time.clock.utc], class utc_clock
     using std::chrono::utc_clock;
 
@@ -96,7 +95,6 @@ export namespace std {
     using std::chrono::leap_second_info;
 
     using std::chrono::get_leap_second_info;
-
     // [time.clock.tai], class tai_clock
     using std::chrono::tai_clock;
 
@@ -108,15 +106,13 @@ export namespace std {
 
     using std::chrono::gps_seconds;
     using std::chrono::gps_time;
-#  endif // _LIBCPP_ENABLE_EXPERIMENTAL
-#endif   //  _LIBCPP_HAS_TIME_ZONE_DATABASE && _LIBCPP_HAS_FILESYSTEM && _LIBCPP_HAS_LOCALIZATION
-
+#endif
     // [time.clock.file], type file_clock
     using std::chrono::file_clock;
 
     using std::chrono::file_time;
 
-#if _LIBCPP_HAS_MONOTONIC_CLOCK
+#ifndef _LIBCPP_HAS_NO_MONOTONIC_CLOCK
     // [time.clock.steady], class steady_clock
     using std::chrono::steady_clock;
 #endif
@@ -194,35 +190,34 @@ export namespace std {
     using std::chrono::make12;
     using std::chrono::make24;
 
-#ifdef _LIBCPP_ENABLE_EXPERIMENTAL
+#if !defined(_LIBCPP_HAS_NO_TIME_ZONE_DATABASE) && !defined(_LIBCPP_HAS_NO_FILESYSTEM) &&                              \
+    !defined(_LIBCPP_HAS_NO_LOCALIZATION)
 
-#  if _LIBCPP_HAS_TIME_ZONE_DATABASE && _LIBCPP_HAS_FILESYSTEM && _LIBCPP_HAS_LOCALIZATION
-
+#  ifdef _LIBCPP_ENABLE_EXPERIMENTAL
     // [time.zone.db], time zone database
     using std::chrono::tzdb;
     using std::chrono::tzdb_list;
 
     // [time.zone.db.access], time zone database access
-    using std::chrono::current_zone;
+    // using std::chrono::current_zone;
     using std::chrono::get_tzdb;
     using std::chrono::get_tzdb_list;
-    using std::chrono::locate_zone;
+    // using std::chrono::locate_zone;
 
     // [time.zone.db.remote], remote time zone database support
     using std::chrono::reload_tzdb;
     using std::chrono::remote_version;
 
-#  endif //  _LIBCPP_HAS_TIME_ZONE_DATABASE && _LIBCPP_HAS_FILESYSTEM && _LIBCPP_HAS_LOCALIZATION
+#  endif //  !defined(_LIBCPP_HAS_NO_TIME_ZONE_DATABASE) && !defined(_LIBCPP_HAS_NO_FILESYSTEM) &&
+         //    !defined(_LIBCPP_HAS_NO_LOCALIZATION)
 
+#  if 0
     // [time.zone.exception], exception classes
     using std::chrono::ambiguous_local_time;
     using std::chrono::nonexistent_local_time;
 
     // [time.zone.info], information classes
-    using std::chrono::local_info;
     using std::chrono::sys_info;
-
-#  if _LIBCPP_HAS_TIME_ZONE_DATABASE && _LIBCPP_HAS_FILESYSTEM && _LIBCPP_HAS_LOCALIZATION
 
     // [time.zone.timezone], class time_zone
     using std::chrono::choose;
@@ -242,18 +237,15 @@ export namespace std {
     // [time.zone.link], class time_zone_link
     using std::chrono::time_zone_link;
 
-#    if 0
     // [time.format], formatting
     using std::chrono::local_time_format;
-#    endif
-#  endif //  _LIBCPP_HAS_TIME_ZONE_DATABASE && _LIBCPP_HAS_FILESYSTEM && _LIBCPP_HAS_LOCALIZATION
-#endif   // _LIBCPP_ENABLE_EXPERIMENTAL
+#  endif
+#endif // _LIBCPP_ENABLE_EXPERIMENTAL
+  }    // namespace chrono
 
-  } // namespace chrono
-
-#if _LIBCPP_HAS_LOCALIZATION
+#ifndef _LIBCPP_HAS_NO_LOCALIZATION
   using std::formatter;
-#endif
+#endif // _LIBCPP_HAS_NO_LOCALIZATION
 
   namespace chrono {
     // using std::chrono::parse;

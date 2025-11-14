@@ -6,10 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MCTargetDesc/VEMCAsmInfo.h"
+#include "MCTargetDesc/VEMCExpr.h"
 #include "MCTargetDesc/VEMCTargetDesc.h"
 #include "TargetInfo/VETargetInfo.h"
 #include "VE.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -17,16 +18,17 @@
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstrInfo.h"
-#include "llvm/MC/MCParser/AsmLexer.h"
+#include "llvm/MC/MCParser/MCAsmLexer.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
 #include "llvm/MC/MCParser/MCParsedAsmOperand.h"
 #include "llvm/MC/MCParser/MCTargetAsmParser.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/TargetRegistry.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <memory>
 
 using namespace llvm;
@@ -49,15 +51,15 @@ class VEAsmParser : public MCTargetAsmParser {
   /// }
 
   // public interface of the MCTargetAsmParser.
-  bool matchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
+  bool MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                OperandVector &Operands, MCStreamer &Out,
                                uint64_t &ErrorInfo,
                                bool MatchingInlineAsm) override;
   bool parseRegister(MCRegister &Reg, SMLoc &StartLoc, SMLoc &EndLoc) override;
-  MCRegister parseRegisterName(MCRegister (*matchFn)(StringRef));
+  int parseRegisterName(unsigned (*matchFn)(StringRef));
   ParseStatus tryParseRegister(MCRegister &Reg, SMLoc &StartLoc,
                                SMLoc &EndLoc) override;
-  bool parseInstruction(ParseInstructionInfo &Info, StringRef Name,
+  bool ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
                         SMLoc NameLoc, OperandVector &Operands) override;
   ParseStatus parseDirective(AsmToken DirectiveID) override;
 
@@ -74,7 +76,9 @@ class VEAsmParser : public MCTargetAsmParser {
   ParseStatus parseVEAsmOperand(std::unique_ptr<VEOperand> &Operand);
 
   // Helper function to parse expression with a symbol.
-  const MCExpr *extractSpecifier(const MCExpr *E, VE::Specifier &Variant);
+  const MCExpr *extractModifierFromExpr(const MCExpr *E,
+                                        VEMCExpr::VariantKind &Variant);
+  const MCExpr *fixupVariantKind(const MCExpr *E);
   bool parseExpression(const MCExpr *&EVal);
 
   // Split the mnemonic stripping conditional code and quantifiers
@@ -169,7 +173,7 @@ private:
   };
 
   struct RegOp {
-    MCRegister Reg;
+    unsigned RegNum;
   };
 
   struct ImmOp {
@@ -177,8 +181,8 @@ private:
   };
 
   struct MemOp {
-    MCRegister Base;
-    MCRegister IndexReg;
+    unsigned Base;
+    unsigned IndexReg;
     const MCExpr *Index;
     const MCExpr *Offset;
   };
@@ -340,9 +344,9 @@ public:
     return StringRef(Tok.Data, Tok.Length);
   }
 
-  MCRegister getReg() const override {
+  unsigned getReg() const override {
     assert((Kind == k_Register) && "Invalid access!");
-    return Reg.Reg;
+    return Reg.RegNum;
   }
 
   const MCExpr *getImm() const {
@@ -350,14 +354,14 @@ public:
     return Imm.Val;
   }
 
-  MCRegister getMemBase() const {
+  unsigned getMemBase() const {
     assert((Kind == k_MemoryRegRegImm || Kind == k_MemoryRegImmImm ||
             Kind == k_MemoryRegImm) &&
            "Invalid access!");
     return Mem.Base;
   }
 
-  MCRegister getMemIndexReg() const {
+  unsigned getMemIndexReg() const {
     assert((Kind == k_MemoryRegRegImm || Kind == k_MemoryZeroRegImm) &&
            "Invalid access!");
     return Mem.IndexReg;
@@ -409,57 +413,42 @@ public:
   /// getEndLoc - Get the location of the last token of this operand.
   SMLoc getEndLoc() const override { return EndLoc; }
 
-  void print(raw_ostream &OS, const MCAsmInfo &MAI) const override {
+  void print(raw_ostream &OS) const override {
     switch (Kind) {
     case k_Token:
       OS << "Token: " << getToken() << "\n";
       break;
     case k_Register:
-      OS << "Reg: #" << getReg().id() << "\n";
+      OS << "Reg: #" << getReg() << "\n";
       break;
     case k_Immediate:
       OS << "Imm: " << getImm() << "\n";
       break;
     case k_MemoryRegRegImm:
       assert(getMemOffset() != nullptr);
-      OS << "Mem: #" << getMemBase().id() << "+#" << getMemIndexReg().id()
-         << "+";
-      MAI.printExpr(OS, *getMemOffset());
-      OS << "\n";
+      OS << "Mem: #" << getMemBase() << "+#" << getMemIndexReg() << "+"
+         << *getMemOffset() << "\n";
       break;
     case k_MemoryRegImmImm:
       assert(getMemIndex() != nullptr && getMemOffset() != nullptr);
-      OS << "Mem: #" << getMemBase().id() << "+";
-      MAI.printExpr(OS, *getMemIndex());
-      OS << "+";
-      MAI.printExpr(OS, *getMemOffset());
-      OS << "\n";
+      OS << "Mem: #" << getMemBase() << "+" << *getMemIndex() << "+"
+         << *getMemOffset() << "\n";
       break;
     case k_MemoryZeroRegImm:
       assert(getMemOffset() != nullptr);
-      OS << "Mem: 0+#" << getMemIndexReg().id() << "+";
-      MAI.printExpr(OS, *getMemOffset());
-      OS << "\n";
+      OS << "Mem: 0+#" << getMemIndexReg() << "+" << *getMemOffset() << "\n";
       break;
     case k_MemoryZeroImmImm:
       assert(getMemIndex() != nullptr && getMemOffset() != nullptr);
-      OS << "Mem: 0+";
-      MAI.printExpr(OS, *getMemIndex());
-      OS << "+";
-      MAI.printExpr(OS, *getMemOffset());
-      OS << "\n";
+      OS << "Mem: 0+" << *getMemIndex() << "+" << *getMemOffset() << "\n";
       break;
     case k_MemoryRegImm:
       assert(getMemOffset() != nullptr);
-      OS << "Mem: #" << getMemBase().id() << "+";
-      MAI.printExpr(OS, *getMemOffset());
-      OS << "\n";
+      OS << "Mem: #" << getMemBase() << "+" << *getMemOffset() << "\n";
       break;
     case k_MemoryZeroImm:
       assert(getMemOffset() != nullptr);
-      OS << "Mem: 0+";
-      MAI.printExpr(OS, *getMemOffset());
-      OS << "\n";
+      OS << "Mem: 0+" << *getMemOffset() << "\n";
       break;
     case k_CCOp:
       OS << "CCOp: " << getCCVal() << "\n";
@@ -607,10 +596,10 @@ public:
     return Op;
   }
 
-  static std::unique_ptr<VEOperand> CreateReg(MCRegister Reg, SMLoc S,
+  static std::unique_ptr<VEOperand> CreateReg(unsigned RegNum, SMLoc S,
                                               SMLoc E) {
     auto Op = std::make_unique<VEOperand>(k_Register);
-    Op->Reg.Reg = Reg;
+    Op->Reg.RegNum = RegNum;
     Op->StartLoc = S;
     Op->EndLoc = E;
     return Op;
@@ -654,38 +643,38 @@ public:
   }
 
   static bool MorphToI32Reg(VEOperand &Op) {
-    MCRegister Reg = Op.getReg();
+    unsigned Reg = Op.getReg();
     unsigned regIdx = Reg - VE::SX0;
     if (regIdx > 63)
       return false;
-    Op.Reg.Reg = I32Regs[regIdx];
+    Op.Reg.RegNum = I32Regs[regIdx];
     return true;
   }
 
   static bool MorphToF32Reg(VEOperand &Op) {
-    MCRegister Reg = Op.getReg();
+    unsigned Reg = Op.getReg();
     unsigned regIdx = Reg - VE::SX0;
     if (regIdx > 63)
       return false;
-    Op.Reg.Reg = F32Regs[regIdx];
+    Op.Reg.RegNum = F32Regs[regIdx];
     return true;
   }
 
   static bool MorphToF128Reg(VEOperand &Op) {
-    MCRegister Reg = Op.getReg();
+    unsigned Reg = Op.getReg();
     unsigned regIdx = Reg - VE::SX0;
     if (regIdx % 2 || regIdx > 63)
       return false;
-    Op.Reg.Reg = F128Regs[regIdx / 2];
+    Op.Reg.RegNum = F128Regs[regIdx / 2];
     return true;
   }
 
   static bool MorphToVM512Reg(VEOperand &Op) {
-    MCRegister Reg = Op.getReg();
+    unsigned Reg = Op.getReg();
     unsigned regIdx = Reg - VE::VM0;
     if (regIdx % 2 || regIdx > 15)
       return false;
-    Op.Reg.Reg = VM512Regs[regIdx / 2];
+    Op.Reg.RegNum = VM512Regs[regIdx / 2];
     return true;
   }
 
@@ -697,16 +686,16 @@ public:
     if (regIdx > 31 || MISCRegs[regIdx] == VE::NoRegister)
       return false;
     Op.Kind = k_Register;
-    Op.Reg.Reg = MISCRegs[regIdx];
+    Op.Reg.RegNum = MISCRegs[regIdx];
     return true;
   }
 
   static std::unique_ptr<VEOperand>
-  MorphToMEMri(MCRegister Base, std::unique_ptr<VEOperand> Op) {
+  MorphToMEMri(unsigned Base, std::unique_ptr<VEOperand> Op) {
     const MCExpr *Imm = Op->getImm();
     Op->Kind = k_MemoryRegImm;
     Op->Mem.Base = Base;
-    Op->Mem.IndexReg = MCRegister();
+    Op->Mem.IndexReg = 0;
     Op->Mem.Index = nullptr;
     Op->Mem.Offset = Imm;
     return Op;
@@ -716,16 +705,15 @@ public:
   MorphToMEMzi(std::unique_ptr<VEOperand> Op) {
     const MCExpr *Imm = Op->getImm();
     Op->Kind = k_MemoryZeroImm;
-    Op->Mem.Base = MCRegister();
-    Op->Mem.IndexReg = MCRegister();
+    Op->Mem.Base = 0;
+    Op->Mem.IndexReg = 0;
     Op->Mem.Index = nullptr;
     Op->Mem.Offset = Imm;
     return Op;
   }
 
   static std::unique_ptr<VEOperand>
-  MorphToMEMrri(MCRegister Base, MCRegister Index,
-                std::unique_ptr<VEOperand> Op) {
+  MorphToMEMrri(unsigned Base, unsigned Index, std::unique_ptr<VEOperand> Op) {
     const MCExpr *Imm = Op->getImm();
     Op->Kind = k_MemoryRegRegImm;
     Op->Mem.Base = Base;
@@ -736,22 +724,22 @@ public:
   }
 
   static std::unique_ptr<VEOperand>
-  MorphToMEMrii(MCRegister Base, const MCExpr *Index,
+  MorphToMEMrii(unsigned Base, const MCExpr *Index,
                 std::unique_ptr<VEOperand> Op) {
     const MCExpr *Imm = Op->getImm();
     Op->Kind = k_MemoryRegImmImm;
     Op->Mem.Base = Base;
-    Op->Mem.IndexReg = MCRegister();
+    Op->Mem.IndexReg = 0;
     Op->Mem.Index = Index;
     Op->Mem.Offset = Imm;
     return Op;
   }
 
   static std::unique_ptr<VEOperand>
-  MorphToMEMzri(MCRegister Index, std::unique_ptr<VEOperand> Op) {
+  MorphToMEMzri(unsigned Index, std::unique_ptr<VEOperand> Op) {
     const MCExpr *Imm = Op->getImm();
     Op->Kind = k_MemoryZeroRegImm;
-    Op->Mem.Base = MCRegister();
+    Op->Mem.Base = 0;
     Op->Mem.IndexReg = Index;
     Op->Mem.Index = nullptr;
     Op->Mem.Offset = Imm;
@@ -762,8 +750,8 @@ public:
   MorphToMEMzii(const MCExpr *Index, std::unique_ptr<VEOperand> Op) {
     const MCExpr *Imm = Op->getImm();
     Op->Kind = k_MemoryZeroImmImm;
-    Op->Mem.Base = MCRegister();
-    Op->Mem.IndexReg = MCRegister();
+    Op->Mem.Base = 0;
+    Op->Mem.IndexReg = 0;
     Op->Mem.Index = Index;
     Op->Mem.Offset = Imm;
     return Op;
@@ -772,7 +760,7 @@ public:
 
 } // end anonymous namespace
 
-bool VEAsmParser::matchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
+bool VEAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                           OperandVector &Operands,
                                           MCStreamer &Out, uint64_t &ErrorInfo,
                                           bool MatchingInlineAsm) {
@@ -817,14 +805,14 @@ bool VEAsmParser::parseRegister(MCRegister &Reg, SMLoc &StartLoc,
 
 /// Parses a register name using a given matching function.
 /// Checks for lowercase or uppercase if necessary.
-MCRegister VEAsmParser::parseRegisterName(MCRegister (*matchFn)(StringRef)) {
+int VEAsmParser::parseRegisterName(unsigned (*matchFn)(StringRef)) {
   StringRef Name = Parser.getTok().getString();
 
-  MCRegister RegNum = matchFn(Name);
+  int RegNum = matchFn(Name);
 
   // GCC supports case insensitive register names. All of the VE registers
   // are all lower case.
-  if (!RegNum) {
+  if (RegNum == VE::NoRegister) {
     RegNum = matchFn(Name.lower());
   }
 
@@ -833,11 +821,11 @@ MCRegister VEAsmParser::parseRegisterName(MCRegister (*matchFn)(StringRef)) {
 
 /// Maps from the set of all register names to a register number.
 /// \note Generated by TableGen.
-static MCRegister MatchRegisterName(StringRef Name);
+static unsigned MatchRegisterName(StringRef Name);
 
 /// Maps from the set of all alternative registernames to a register number.
 /// \note Generated by TableGen.
-static MCRegister MatchRegisterAltName(StringRef Name);
+static unsigned MatchRegisterAltName(StringRef Name);
 
 ParseStatus VEAsmParser::tryParseRegister(MCRegister &Reg, SMLoc &StartLoc,
                                           SMLoc &EndLoc) {
@@ -977,7 +965,7 @@ static void applyMnemonicAliases(StringRef &Mnemonic,
                                  const FeatureBitset &Features,
                                  unsigned VariantID);
 
-bool VEAsmParser::parseInstruction(ParseInstructionInfo &Info, StringRef Name,
+bool VEAsmParser::ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
                                    SMLoc NameLoc, OperandVector &Operands) {
   // If the target architecture uses MnemonicAlias, call it here to parse
   // operands correctly.
@@ -1050,73 +1038,72 @@ bool VEAsmParser::parseLiteralValues(unsigned Size, SMLoc L) {
   return (parseMany(parseOne));
 }
 
-/// Extract \code @lo32/@hi32/etc \endcode specifier from expression.
-/// Recursively scan the expression and check for VK_HI32/LO32/etc
+/// Extract \code @lo32/@hi32/etc \endcode modifier from expression.
+/// Recursively scan the expression and check for VK_VE_HI32/LO32/etc
 /// symbol variants.  If all symbols with modifier use the same
-/// variant, return the corresponding VE::Specifier,
+/// variant, return the corresponding VEMCExpr::VariantKind,
 /// and a modified expression using the default symbol variant.
 /// Otherwise, return NULL.
-const MCExpr *VEAsmParser::extractSpecifier(const MCExpr *E,
-                                            VE::Specifier &Variant) {
+const MCExpr *
+VEAsmParser::extractModifierFromExpr(const MCExpr *E,
+                                     VEMCExpr::VariantKind &Variant) {
   MCContext &Context = getParser().getContext();
-  Variant = VE::S_None;
+  Variant = VEMCExpr::VK_VE_None;
 
   switch (E->getKind()) {
   case MCExpr::Target:
   case MCExpr::Constant:
     return nullptr;
-  case MCExpr::Specifier:
-    llvm_unreachable("unused by this backend");
 
   case MCExpr::SymbolRef: {
     const MCSymbolRefExpr *SRE = cast<MCSymbolRefExpr>(E);
 
-    switch (SRE->getSpecifier()) {
-    case VE::S_None:
-      // Use VK_REFLONG to a symbol without modifiers.
-      Variant = VE::S_REFLONG;
+    switch (SRE->getKind()) {
+    case MCSymbolRefExpr::VK_None:
+      // Use VK_VE_REFLONG to a symbol without modifiers.
+      Variant = VEMCExpr::VK_VE_REFLONG;
       break;
-    case VE::S_HI32:
-      Variant = VE::S_HI32;
+    case MCSymbolRefExpr::VK_VE_HI32:
+      Variant = VEMCExpr::VK_VE_HI32;
       break;
-    case VE::S_LO32:
-      Variant = VE::S_LO32;
+    case MCSymbolRefExpr::VK_VE_LO32:
+      Variant = VEMCExpr::VK_VE_LO32;
       break;
-    case VE::S_PC_HI32:
-      Variant = VE::S_PC_HI32;
+    case MCSymbolRefExpr::VK_VE_PC_HI32:
+      Variant = VEMCExpr::VK_VE_PC_HI32;
       break;
-    case VE::S_PC_LO32:
-      Variant = VE::S_PC_LO32;
+    case MCSymbolRefExpr::VK_VE_PC_LO32:
+      Variant = VEMCExpr::VK_VE_PC_LO32;
       break;
-    case VE::S_GOT_HI32:
-      Variant = VE::S_GOT_HI32;
+    case MCSymbolRefExpr::VK_VE_GOT_HI32:
+      Variant = VEMCExpr::VK_VE_GOT_HI32;
       break;
-    case VE::S_GOT_LO32:
-      Variant = VE::S_GOT_LO32;
+    case MCSymbolRefExpr::VK_VE_GOT_LO32:
+      Variant = VEMCExpr::VK_VE_GOT_LO32;
       break;
-    case VE::S_GOTOFF_HI32:
-      Variant = VE::S_GOTOFF_HI32;
+    case MCSymbolRefExpr::VK_VE_GOTOFF_HI32:
+      Variant = VEMCExpr::VK_VE_GOTOFF_HI32;
       break;
-    case VE::S_GOTOFF_LO32:
-      Variant = VE::S_GOTOFF_LO32;
+    case MCSymbolRefExpr::VK_VE_GOTOFF_LO32:
+      Variant = VEMCExpr::VK_VE_GOTOFF_LO32;
       break;
-    case VE::S_PLT_HI32:
-      Variant = VE::S_PLT_HI32;
+    case MCSymbolRefExpr::VK_VE_PLT_HI32:
+      Variant = VEMCExpr::VK_VE_PLT_HI32;
       break;
-    case VE::S_PLT_LO32:
-      Variant = VE::S_PLT_LO32;
+    case MCSymbolRefExpr::VK_VE_PLT_LO32:
+      Variant = VEMCExpr::VK_VE_PLT_LO32;
       break;
-    case VE::S_TLS_GD_HI32:
-      Variant = VE::S_TLS_GD_HI32;
+    case MCSymbolRefExpr::VK_VE_TLS_GD_HI32:
+      Variant = VEMCExpr::VK_VE_TLS_GD_HI32;
       break;
-    case VE::S_TLS_GD_LO32:
-      Variant = VE::S_TLS_GD_LO32;
+    case MCSymbolRefExpr::VK_VE_TLS_GD_LO32:
+      Variant = VEMCExpr::VK_VE_TLS_GD_LO32;
       break;
-    case VE::S_TPOFF_HI32:
-      Variant = VE::S_TPOFF_HI32;
+    case MCSymbolRefExpr::VK_VE_TPOFF_HI32:
+      Variant = VEMCExpr::VK_VE_TPOFF_HI32;
       break;
-    case VE::S_TPOFF_LO32:
-      Variant = VE::S_TPOFF_LO32;
+    case MCSymbolRefExpr::VK_VE_TPOFF_LO32:
+      Variant = VEMCExpr::VK_VE_TPOFF_LO32;
       break;
     default:
       return nullptr;
@@ -1127,7 +1114,7 @@ const MCExpr *VEAsmParser::extractSpecifier(const MCExpr *E,
 
   case MCExpr::Unary: {
     const MCUnaryExpr *UE = cast<MCUnaryExpr>(E);
-    const MCExpr *Sub = extractSpecifier(UE->getSubExpr(), Variant);
+    const MCExpr *Sub = extractModifierFromExpr(UE->getSubExpr(), Variant);
     if (!Sub)
       return nullptr;
     return MCUnaryExpr::create(UE->getOpcode(), Sub, Context);
@@ -1135,9 +1122,9 @@ const MCExpr *VEAsmParser::extractSpecifier(const MCExpr *E,
 
   case MCExpr::Binary: {
     const MCBinaryExpr *BE = cast<MCBinaryExpr>(E);
-    VE::Specifier LHSVariant, RHSVariant;
-    const MCExpr *LHS = extractSpecifier(BE->getLHS(), LHSVariant);
-    const MCExpr *RHS = extractSpecifier(BE->getRHS(), RHSVariant);
+    VEMCExpr::VariantKind LHSVariant, RHSVariant;
+    const MCExpr *LHS = extractModifierFromExpr(BE->getLHS(), LHSVariant);
+    const MCExpr *RHS = extractModifierFromExpr(BE->getRHS(), RHSVariant);
 
     if (!LHS && !RHS)
       return nullptr;
@@ -1147,9 +1134,9 @@ const MCExpr *VEAsmParser::extractSpecifier(const MCExpr *E,
     if (!RHS)
       RHS = BE->getRHS();
 
-    if (LHSVariant == VE::S_None)
+    if (LHSVariant == VEMCExpr::VK_VE_None)
       Variant = RHSVariant;
-    else if (RHSVariant == VE::S_None)
+    else if (RHSVariant == VEMCExpr::VK_VE_None)
       Variant = LHSVariant;
     else if (LHSVariant == RHSVariant)
       Variant = LHSVariant;
@@ -1163,18 +1150,49 @@ const MCExpr *VEAsmParser::extractSpecifier(const MCExpr *E,
   llvm_unreachable("Invalid expression kind!");
 }
 
-/// This differs from the default "parseExpression" in that it handles
-/// relocation specifiers.
+const MCExpr *VEAsmParser::fixupVariantKind(const MCExpr *E) {
+  MCContext &Context = getParser().getContext();
+
+  switch (E->getKind()) {
+  case MCExpr::Target:
+  case MCExpr::Constant:
+  case MCExpr::SymbolRef:
+    return E;
+
+  case MCExpr::Unary: {
+    const MCUnaryExpr *UE = cast<MCUnaryExpr>(E);
+    const MCExpr *Sub = fixupVariantKind(UE->getSubExpr());
+    if (Sub == UE->getSubExpr())
+      return E;
+    return MCUnaryExpr::create(UE->getOpcode(), Sub, Context);
+  }
+
+  case MCExpr::Binary: {
+    const MCBinaryExpr *BE = cast<MCBinaryExpr>(E);
+    const MCExpr *LHS = fixupVariantKind(BE->getLHS());
+    const MCExpr *RHS = fixupVariantKind(BE->getRHS());
+    if (LHS == BE->getLHS() && RHS == BE->getRHS())
+      return E;
+    return MCBinaryExpr::create(BE->getOpcode(), LHS, RHS, Context);
+  }
+  }
+
+  llvm_unreachable("Invalid expression kind!");
+}
+
+/// ParseExpression.  This differs from the default "parseExpression" in that
+/// it handles modifiers.
 bool VEAsmParser::parseExpression(const MCExpr *&EVal) {
   // Handle \code symbol @lo32/@hi32/etc \endcode.
   if (getParser().parseExpression(EVal))
     return true;
 
-  // Convert MCSymbolRefExpr with specifier to MCSpecifierExpr.
-  VE::Specifier Specifier;
-  const MCExpr *E = extractSpecifier(EVal, Specifier);
+  // Convert MCSymbolRefExpr with VK_* to MCExpr with VK_*.
+  EVal = fixupVariantKind(EVal);
+  VEMCExpr::VariantKind Variant;
+  const MCExpr *E = extractModifierFromExpr(EVal, Variant);
   if (E)
-    EVal = MCSpecifierExpr::create(E, Specifier, getParser().getContext());
+    EVal = VEMCExpr::create(Variant, E, getParser().getContext());
 
   return false;
 }
@@ -1527,7 +1545,7 @@ ParseStatus VEAsmParser::parseVEAsmOperand(std::unique_ptr<VEOperand> &Op) {
 }
 
 // Force static initialization.
-extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeVEAsmParser() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeVEAsmParser() {
   RegisterMCAsmParser<VEAsmParser> A(getTheVETarget());
 }
 

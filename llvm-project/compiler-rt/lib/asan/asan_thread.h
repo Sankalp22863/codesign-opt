@@ -36,16 +36,21 @@ class AsanThread;
 class AsanThreadContext final : public ThreadContextBase {
  public:
   explicit AsanThreadContext(int tid)
-      : ThreadContextBase(tid),
-        announced(false),
-        destructor_iterations(GetPthreadDestructorIterations()),
+      : ThreadContextBase(tid), announced(false),
+        destructor_iterations(GetPthreadDestructorIterations()), stack_id(0),
         thread(nullptr) {}
   bool announced;
   u8 destructor_iterations;
+  u32 stack_id;
   AsanThread *thread;
 
   void OnCreated(void *arg) override;
   void OnFinished() override;
+
+  struct CreateThreadContextArgs {
+    AsanThread *thread;
+    StackTrace *stack;
+  };
 };
 
 // AsanThreadContext objects are never freed, so we need many of them.
@@ -75,7 +80,7 @@ class AsanThread {
   struct InitOptions;
   void Init(const InitOptions *options = nullptr);
 
-  void ThreadStart(ThreadID os_id);
+  void ThreadStart(tid_t os_id);
   thread_return_t RunThread();
 
   uptr stack_top();
@@ -104,7 +109,7 @@ class AsanThread {
     if (!fake_stack_) return;
     FakeStack *t = fake_stack_;
     fake_stack_ = nullptr;
-    ResetTLSFakeStack();
+    SetTLSFakeStack(nullptr);
     t->Destroy(tid);
   }
 

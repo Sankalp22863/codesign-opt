@@ -23,6 +23,7 @@
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
@@ -91,7 +92,7 @@ struct ToyInlinerInterface : public DialectInlinerInterface {
   Operation *materializeCallConversion(OpBuilder &builder, Value input,
                                        Type resultType,
                                        Location conversionLoc) const final {
-    return CastOp::create(builder, conversionLoc, resultType, input);
+    return builder.create<CastOp>(conversionLoc, resultType, input);
   }
 };
 
@@ -203,11 +204,10 @@ void ConstantOp::print(mlir::OpAsmPrinter &printer) {
 
 /// Verifier for the constant operation. This corresponds to the
 /// `let hasVerifier = 1` in the op definition.
-llvm::LogicalResult ConstantOp::verify() {
+mlir::LogicalResult ConstantOp::verify() {
   // If the return type of the constant is not an unranked tensor, the shape
   // must match the shape of the attribute holding the data.
-  auto resultType =
-      llvm::dyn_cast<mlir::RankedTensorType>(getResult().getType());
+  auto resultType = llvm::dyn_cast<mlir::RankedTensorType>(getResult().getType());
   if (!resultType)
     return success();
 
@@ -334,7 +334,7 @@ CallInterfaceCallable GenericCallOp::getCallableForCallee() {
 /// Set the callee for the generic call operation, this is required by the call
 /// interface.
 void GenericCallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
-  (*this)->setAttr("callee", cast<SymbolRefAttr>(callee));
+  (*this)->setAttr("callee", callee.get<SymbolRefAttr>());
 }
 
 /// Get the argument operands to the called function, this is required by the
@@ -372,7 +372,7 @@ void MulOp::inferShapes() { getResult().setType(getLhs().getType()); }
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-llvm::LogicalResult ReturnOp::verify() {
+mlir::LogicalResult ReturnOp::verify() {
   // We know that the parent operation is a function, because of the 'HasParent'
   // trait attached to the operation definition.
   auto function = cast<FuncOp>((*this)->getParentOp());
@@ -396,8 +396,7 @@ llvm::LogicalResult ReturnOp::verify() {
   auto resultType = results.front();
 
   // Check that the result type of the function matches the operand type.
-  if (inputType == resultType ||
-      llvm::isa<mlir::UnrankedTensorType>(inputType) ||
+  if (inputType == resultType || llvm::isa<mlir::UnrankedTensorType>(inputType) ||
       llvm::isa<mlir::UnrankedTensorType>(resultType))
     return mlir::success();
 
@@ -422,7 +421,7 @@ void TransposeOp::inferShapes() {
   getResult().setType(RankedTensorType::get(dims, arrayTy.getElementType()));
 }
 
-llvm::LogicalResult TransposeOp::verify() {
+mlir::LogicalResult TransposeOp::verify() {
   auto inputType = llvm::dyn_cast<RankedTensorType>(getOperand().getType());
   auto resultType = llvm::dyn_cast<RankedTensorType>(getType());
   if (!inputType || !resultType)

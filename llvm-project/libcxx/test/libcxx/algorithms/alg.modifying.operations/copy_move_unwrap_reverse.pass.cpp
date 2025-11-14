@@ -15,11 +15,10 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <ranges>
 #include <type_traits>
-#include <utility>
 
 #include "test_iterators.h"
 

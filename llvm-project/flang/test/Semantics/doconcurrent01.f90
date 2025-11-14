@@ -48,28 +48,24 @@ subroutine do_concurrent_test2(i,j,n,flag)
     change team (j)
 !ERROR: An image control statement is not allowed in DO CONCURRENT
       critical
+        call ieee_get_status(status) ! ok
+!ERROR: IEEE_SET_HALTING_MODE is not allowed in DO CONCURRENT
+        call ieee_set_halting_mode(flag, halting)
       end critical
     end team
 !ERROR: ADVANCE specifier is not allowed in DO CONCURRENT
     write(*,'(a35)',advance='no')
-!ERROR: 'ieee_get_status' may not be called in DO CONCURRENT
-    call ieee_get_status(status)
-!ERROR: 'ieee_set_status' may not be called in DO CONCURRENT
-    call ieee_set_status(status)
-!ERROR: 'ieee_get_halting_mode' may not be called in DO CONCURRENT
-    call ieee_get_halting_mode(flag, halting)
-!ERROR: 'ieee_set_halting_mode' may not be called in DO CONCURRENT
-    call ieee_set_halting_mode(flag, halting)
-!ERROR: 'ieee_get_flag' may not be called in DO CONCURRENT
-    call ieee_get_flag(flag, flagValue)
-!ERROR: 'ieee_set_flag' may not be called in DO CONCURRENT
-    call ieee_set_flag(flag, flagValue)
+  end do
+
+! The following is OK
+  do concurrent (i = 1:n)
+        call ieee_set_flag(flag, flagValue)
   end do
 end subroutine do_concurrent_test2
 
 subroutine s1()
   use iso_fortran_env
-  type(event_type), save :: x[*]
+  type(event_type) :: x[*]
   do concurrent (i = 1:n)
 !ERROR: An image control statement is not allowed in DO CONCURRENT
     event post (x)
@@ -78,7 +74,7 @@ end subroutine s1
 
 subroutine s2()
   use iso_fortran_env
-  type(event_type), save :: x[*]
+  type(event_type) :: x[*]
   do concurrent (i = 1:n)
 !ERROR: An image control statement is not allowed in DO CONCURRENT
     event wait (x)
@@ -97,7 +93,7 @@ end subroutine s3
 
 subroutine s4()
   use iso_fortran_env
-  type(lock_type), save :: l[*]
+  type(lock_type) :: l
 
   do concurrent (i = 1:n)
 !ERROR: An image control statement is not allowed in DO CONCURRENT
@@ -124,7 +120,8 @@ subroutine s6()
     type(type0) :: type1_field
   end type
 
-  type(type1), save :: pvar, qvar
+  type(type1) :: pvar;
+  type(type1) :: qvar;
   integer, allocatable, dimension(:) :: array1
   integer, allocatable, dimension(:) :: array2
   integer, allocatable, codimension[:] :: ca, cb

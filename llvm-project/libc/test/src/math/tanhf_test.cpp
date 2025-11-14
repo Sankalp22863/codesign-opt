@@ -6,20 +6,24 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "hdr/math_macros.h"
 #include "src/__support/FPUtil/FPBits.h"
+#include "src/errno/libc_errno.h"
 #include "src/math/tanhf.h"
 #include "test/UnitTest/FPMatcher.h"
 #include "test/UnitTest/Test.h"
 #include "utils/MPFRWrapper/MPFRUtils.h"
+#include <math.h>
 
-#include "hdr/stdint_proxy.h"
+#include <errno.h>
+#include <stdint.h>
 
 using LlvmLibcTanhfTest = LIBC_NAMESPACE::testing::FPTest<float>;
 
 namespace mpfr = LIBC_NAMESPACE::testing::mpfr;
 
 TEST_F(LlvmLibcTanhfTest, SpecialNumbers) {
+  libc_errno = 0;
+
   EXPECT_FP_EQ(aNaN, LIBC_NAMESPACE::tanhf(aNaN));
   EXPECT_MATH_ERRNO(0);
 
@@ -41,7 +45,7 @@ TEST_F(LlvmLibcTanhfTest, InFloatRange) {
   constexpr uint32_t STEP = UINT32_MAX / COUNT;
   for (uint32_t i = 0, v = 0; i <= COUNT; ++i, v += STEP) {
     float x = FPBits(v).get_val();
-    if (FPBits(v).is_nan() || FPBits(v).is_inf())
+    if (isnan(x) || isinf(x))
       continue;
     ASSERT_MPFR_MATCH_ALL_ROUNDING(mpfr::Operation::Tanh, x,
                                    LIBC_NAMESPACE::tanhf(x), 0.5);

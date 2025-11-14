@@ -52,15 +52,15 @@ public:
 class SnippetSegmentationFault : public SnippetExecutionFailure {
 public:
   static char ID;
-  SnippetSegmentationFault(uintptr_t SegFaultAddress)
-      : Address(SegFaultAddress) {};
+  SnippetSegmentationFault(intptr_t SegFaultAddress)
+      : Address(SegFaultAddress){};
 
-  uintptr_t getAddress() { return Address; }
+  intptr_t getAddress() { return Address; }
 
   void log(raw_ostream &OS) const override;
 
 private:
-  uintptr_t Address;
+  intptr_t Address;
 };
 
 // A class representing all other non-specific failures that happen during
@@ -74,18 +74,6 @@ public:
 
 private:
   int SignalNumber;
-};
-
-// A class representing a case where a perf counter was only partially
-// scheduled, most likely due to perf counter contention.
-struct PerfCounterNotFullyEnabled
-    : public ErrorInfo<PerfCounterNotFullyEnabled> {
-  static char ID;
-  PerfCounterNotFullyEnabled() = default;
-
-  void log(raw_ostream &OS) const override;
-
-  std::error_code convertToErrorCode() const override;
 };
 
 } // namespace exegesis

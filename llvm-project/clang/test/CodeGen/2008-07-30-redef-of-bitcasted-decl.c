@@ -22,6 +22,6 @@ static void bar(void *db) {
 
 char s[5] = "hi";
 
-void foo(void) {
+int foo(void) {
   bar(0);
 }

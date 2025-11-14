@@ -1,11 +1,10 @@
 # Exclude tests from libMLIR.so
 add_mlir_library(MLIRLLVMTestPasses
   TestLowerToLLVM.cpp
-  TestPatterns.cpp
 
   EXCLUDE_FROM_LIBMLIR
-  )
-mlir_target_link_libraries(MLIRLLVMTestPasses PUBLIC
+
+  LINK_LIBS PUBLIC
   MLIRAffineToStandard
   MLIRFuncDialect
   MLIRFuncToLLVM
@@ -20,7 +19,6 @@ mlir_target_link_libraries(MLIRLLVMTestPasses PUBLIC
   MLIRReconcileUnrealizedCasts
   MLIRSCFToControlFlow
   MLIRTransforms
-  MLIRUBToLLVM
   MLIRVectorToLLVMPass
   MLIRVectorToSCF
   )

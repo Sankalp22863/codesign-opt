@@ -26,9 +26,8 @@
 //   Returns: Di.
 //
 
-#include <cassert>
-#include <cstddef>
 #include <mdspan>
+#include <cassert>
 #include <utility>
 
 #include "test_macros.h"

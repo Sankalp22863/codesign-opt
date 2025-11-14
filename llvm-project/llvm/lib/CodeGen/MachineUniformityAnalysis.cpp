@@ -8,7 +8,6 @@
 
 #include "llvm/CodeGen/MachineUniformityAnalysis.h"
 #include "llvm/ADT/GenericUniformityImpl.h"
-#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/MachineCycleAnalysis.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
@@ -118,12 +117,12 @@ void llvm::GenericUniformityAnalysisImpl<MachineSSAContext>::
     if (!Op.getReg().isVirtual())
       continue;
     auto Reg = Op.getReg();
+    if (isDivergent(Reg))
+      continue;
     for (MachineInstr &UserInstr : RegInfo.use_instructions(Reg)) {
       if (DefCycle.contains(UserInstr.getParent()))
         continue;
       markDivergent(UserInstr);
-
-      recordTemporalDivergence(Reg, &UserInstr, &DefCycle);
     }
   }
 }
@@ -156,7 +155,7 @@ template struct llvm::GenericUniformityAnalysisImplDeleter<
 
 MachineUniformityInfo llvm::computeMachineUniformityInfo(
     MachineFunction &F, const MachineCycleInfo &cycleInfo,
-    const MachineDominatorTree &domTree, bool HasBranchDivergence) {
+    const MachineDomTree &domTree, bool HasBranchDivergence) {
   assert(F.getRegInfo().isSSA() && "Expected to be run on SSA form!");
   MachineUniformityInfo UI(domTree, cycleInfo);
   if (HasBranchDivergence)
@@ -165,6 +164,25 @@ MachineUniformityInfo llvm::computeMachineUniformityInfo(
 }
 
 namespace {
+
+/// Legacy analysis pass which computes a \ref MachineUniformityInfo.
+class MachineUniformityAnalysisPass : public MachineFunctionPass {
+  MachineUniformityInfo UI;
+
+public:
+  static char ID;
+
+  MachineUniformityAnalysisPass();
+
+  MachineUniformityInfo &getUniformityInfo() { return UI; }
+  const MachineUniformityInfo &getUniformityInfo() const { return UI; }
+
+  bool runOnMachineFunction(MachineFunction &F) override;
+  void getAnalysisUsage(AnalysisUsage &AU) const override;
+  void print(raw_ostream &OS, const Module *M = nullptr) const override;
+
+  // TODO: verify analysis
+};
 
 class MachineUniformityInfoPrinterPass : public MachineFunctionPass {
 public:
@@ -178,32 +196,6 @@ public:
 
 } // namespace
 
-AnalysisKey MachineUniformityAnalysis::Key;
-
-MachineUniformityAnalysis::Result
-MachineUniformityAnalysis::run(MachineFunction &MF,
-                               MachineFunctionAnalysisManager &MFAM) {
-  auto &DomTree = MFAM.getResult<MachineDominatorTreeAnalysis>(MF);
-  auto &CI = MFAM.getResult<MachineCycleAnalysis>(MF);
-  auto &FAM = MFAM.getResult<FunctionAnalysisManagerMachineFunctionProxy>(MF)
-                  .getManager();
-  auto &F = MF.getFunction();
-  auto &TTI = FAM.getResult<TargetIRAnalysis>(F);
-  return computeMachineUniformityInfo(MF, CI, DomTree,
-                                      TTI.hasBranchDivergence(&F));
-}
-
-PreservedAnalyses
-MachineUniformityPrinterPass::run(MachineFunction &MF,
-                                  MachineFunctionAnalysisManager &MFAM) {
-  auto &MUI = MFAM.getResult<MachineUniformityAnalysis>(MF);
-  OS << "MachineUniformityInfo for function: ";
-  MF.getFunction().printAsOperand(OS, /*PrintType=*/false);
-  OS << '\n';
-  MUI.print(OS);
-  return PreservedAnalyses::all();
-}
-
 char MachineUniformityAnalysisPass::ID = 0;
 
 MachineUniformityAnalysisPass::MachineUniformityAnalysisPass()
@@ -212,21 +204,21 @@ MachineUniformityAnalysisPass::MachineUniformityAnalysisPass()
 }
 
 INITIALIZE_PASS_BEGIN(MachineUniformityAnalysisPass, "machine-uniformity",
-                      "Machine Uniformity Info Analysis", false, true)
+                      "Machine Uniformity Info Analysis", true, true)
 INITIALIZE_PASS_DEPENDENCY(MachineCycleInfoWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(MachineDominatorTreeWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
 INITIALIZE_PASS_END(MachineUniformityAnalysisPass, "machine-uniformity",
-                    "Machine Uniformity Info Analysis", false, true)
+                    "Machine Uniformity Info Analysis", true, true)
 
 void MachineUniformityAnalysisPass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
-  AU.addRequiredTransitive<MachineCycleInfoWrapperPass>();
-  AU.addRequired<MachineDominatorTreeWrapperPass>();
+  AU.addRequired<MachineCycleInfoWrapperPass>();
+  AU.addRequired<MachineDominatorTree>();
   MachineFunctionPass::getAnalysisUsage(AU);
 }
 
 bool MachineUniformityAnalysisPass::runOnMachineFunction(MachineFunction &MF) {
-  auto &DomTree = getAnalysis<MachineDominatorTreeWrapperPass>().getDomTree();
+  auto &DomTree = getAnalysis<MachineDominatorTree>().getBase();
   auto &CI = getAnalysis<MachineCycleInfoWrapperPass>().getCycleInfo();
   // FIXME: Query TTI::hasBranchDivergence. -run-pass seems to end up with a
   // default NoTTI
@@ -236,9 +228,8 @@ bool MachineUniformityAnalysisPass::runOnMachineFunction(MachineFunction &MF) {
 
 void MachineUniformityAnalysisPass::print(raw_ostream &OS,
                                           const Module *) const {
-  OS << "MachineUniformityInfo for function: ";
-  UI.getFunction().getFunction().printAsOperand(OS, /*PrintType=*/false);
-  OS << '\n';
+  OS << "MachineUniformityInfo for function: " << UI.getFunction().getName()
+     << "\n";
   UI.print(OS);
 }
 

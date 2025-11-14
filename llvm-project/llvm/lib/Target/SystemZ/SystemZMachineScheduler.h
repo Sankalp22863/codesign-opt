@@ -22,6 +22,8 @@
 #include "llvm/CodeGen/ScheduleDAG.h"
 #include <set>
 
+using namespace llvm;
+
 namespace llvm {
 
 /// A MachineSchedStrategy implementation for SystemZ post RA scheduling.
@@ -111,7 +113,7 @@ class SystemZPostRASchedStrategy : public MachineSchedStrategy {
 
 public:
   SystemZPostRASchedStrategy(const MachineSchedContext *C);
-  ~SystemZPostRASchedStrategy() override;
+  virtual ~SystemZPostRASchedStrategy();
 
   /// Called for a region before scheduling.
   void initPolicy(MachineBasicBlock::iterator Begin,

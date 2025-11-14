@@ -26,7 +26,6 @@
 #include "llvm/Support/LineIterator.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/UniqueBBID.h"
 #include <llvm/ADT/STLExtras.h>
 
 using namespace llvm;
@@ -58,39 +57,22 @@ BasicBlockSectionsProfileReader::parseUniqueBBID(StringRef S) const {
 }
 
 bool BasicBlockSectionsProfileReader::isFunctionHot(StringRef FuncName) const {
-  return !getClusterInfoForFunction(FuncName).empty();
+  return getClusterInfoForFunction(FuncName).first;
 }
 
-SmallVector<BBClusterInfo>
+std::pair<bool, SmallVector<BBClusterInfo>>
 BasicBlockSectionsProfileReader::getClusterInfoForFunction(
     StringRef FuncName) const {
   auto R = ProgramPathAndClusterInfo.find(getAliasName(FuncName));
-  return R != ProgramPathAndClusterInfo.end() ? R->second.ClusterInfo
-                                              : SmallVector<BBClusterInfo>();
+  return R != ProgramPathAndClusterInfo.end()
+             ? std::pair(true, R->second.ClusterInfo)
+             : std::pair(false, SmallVector<BBClusterInfo>());
 }
 
 SmallVector<SmallVector<unsigned>>
 BasicBlockSectionsProfileReader::getClonePathsForFunction(
     StringRef FuncName) const {
-  auto R = ProgramPathAndClusterInfo.find(getAliasName(FuncName));
-  return R != ProgramPathAndClusterInfo.end()
-             ? R->second.ClonePaths
-             : SmallVector<SmallVector<unsigned>>();
-}
-
-uint64_t BasicBlockSectionsProfileReader::getEdgeCount(
-    StringRef FuncName, const UniqueBBID &SrcBBID,
-    const UniqueBBID &SinkBBID) const {
-  auto It = ProgramPathAndClusterInfo.find(getAliasName(FuncName));
-  if (It == ProgramPathAndClusterInfo.end())
-    return 0;
-  auto NodeIt = It->second.EdgeCounts.find(SrcBBID);
-  if (NodeIt == It->second.EdgeCounts.end())
-    return 0;
-  auto EdgeIt = NodeIt->second.find(SinkBBID);
-  if (EdgeIt == NodeIt->second.end())
-    return 0;
-  return EdgeIt->second;
+  return ProgramPathAndClusterInfo.lookup(getAliasName(FuncName)).ClonePaths;
 }
 
 // Reads the version 1 basic block sections profile. Profile for each function
@@ -188,7 +170,7 @@ Error BasicBlockSectionsProfileReader::ReadV1Profile() {
           return false;
         // Return a match if debug-info-filename is not specified. Otherwise,
         // check for equality.
-        return DIFilename.empty() || It->second == DIFilename;
+        return DIFilename.empty() || It->second.equals(DIFilename);
       });
       if (!FunctionFound) {
         // Skip the following profile by setting the profile iterator (FI) to
@@ -254,57 +236,6 @@ Error BasicBlockSectionsProfileReader::ReadV1Profile() {
           return createProfileParseError(
               Twine("duplicate cloned block in path: '") + BaseBBIDStr + "'");
         FI->second.ClonePaths.back().push_back(BaseBBID);
-      }
-      continue;
-    }
-    case 'g': { // CFG profile specifier.
-      // Skip the profile when we the profile iterator (FI) refers to the
-      // past-the-end element.
-      if (FI == ProgramPathAndClusterInfo.end())
-        continue;
-      // For each node, its CFG profile is encoded as
-      // <src>:<count>,<sink_1>:<count_1>,<sink_2>:<count_2>,...
-      for (auto BasicBlockEdgeProfile : Values) {
-        if (BasicBlockEdgeProfile.empty())
-          continue;
-        SmallVector<StringRef, 4> NodeEdgeCounts;
-        BasicBlockEdgeProfile.split(NodeEdgeCounts, ',');
-        UniqueBBID SrcBBID;
-        for (size_t i = 0; i < NodeEdgeCounts.size(); ++i) {
-          auto [BBIDStr, CountStr] = NodeEdgeCounts[i].split(':');
-          auto BBID = parseUniqueBBID(BBIDStr);
-          if (!BBID)
-            return BBID.takeError();
-          unsigned long long Count = 0;
-          if (getAsUnsignedInteger(CountStr, 10, Count))
-            return createProfileParseError(
-                Twine("unsigned integer expected: '") + CountStr + "'");
-          if (i == 0) {
-            // The first element represents the source and its total count.
-            FI->second.NodeCounts[SrcBBID = *BBID] = Count;
-            continue;
-          }
-          FI->second.EdgeCounts[SrcBBID][*BBID] = Count;
-        }
-      }
-      continue;
-    }
-    case 'h': { // Basic block hash secifier.
-      // Skip the profile when the profile iterator (FI) refers to the
-      // past-the-end element.
-      if (FI == ProgramPathAndClusterInfo.end())
-        continue;
-      for (auto BBIDHashStr : Values) {
-        auto [BBIDStr, HashStr] = BBIDHashStr.split(':');
-        unsigned long long BBID = 0, Hash = 0;
-        if (getAsUnsignedInteger(BBIDStr, 10, BBID))
-          return createProfileParseError(Twine("unsigned integer expected: '") +
-                                         BBIDStr + "'");
-        if (getAsUnsignedInteger(HashStr, 16, Hash))
-          return createProfileParseError(
-              Twine("unsigned integer expected in hex format: '") + HashStr +
-              "'");
-        FI->second.BBHashes[BBID] = Hash;
       }
       continue;
     }
@@ -386,7 +317,7 @@ Error BasicBlockSectionsProfileReader::ReadV0Profile() {
           return false;
         // Return a match if debug-info-filename is not specified. Otherwise,
         // check for equality.
-        return DIFilename.empty() || It->second == DIFilename;
+        return DIFilename.empty() || It->second.equals(DIFilename);
       });
       if (!FunctionFound) {
         // Skip the following profile by setting the profile iterator (FI) to
@@ -496,7 +427,7 @@ bool BasicBlockSectionsProfileReaderWrapperPass::isFunctionHot(
   return BBSPR.isFunctionHot(FuncName);
 }
 
-SmallVector<BBClusterInfo>
+std::pair<bool, SmallVector<BBClusterInfo>>
 BasicBlockSectionsProfileReaderWrapperPass::getClusterInfoForFunction(
     StringRef FuncName) const {
   return BBSPR.getClusterInfoForFunction(FuncName);
@@ -506,12 +437,6 @@ SmallVector<SmallVector<unsigned>>
 BasicBlockSectionsProfileReaderWrapperPass::getClonePathsForFunction(
     StringRef FuncName) const {
   return BBSPR.getClonePathsForFunction(FuncName);
-}
-
-uint64_t BasicBlockSectionsProfileReaderWrapperPass::getEdgeCount(
-    StringRef FuncName, const UniqueBBID &SrcBBID,
-    const UniqueBBID &SinkBBID) const {
-  return BBSPR.getEdgeCount(FuncName, SrcBBID, SinkBBID);
 }
 
 BasicBlockSectionsProfileReader &

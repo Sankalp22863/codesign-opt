@@ -5,7 +5,6 @@ add_entrypoint_object(
   HDRS
     ../access.h
   DEPENDS
-    libc.hdr.fcntl_macros
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -20,20 +19,6 @@ add_entrypoint_object(
     ../chdir.h
   DEPENDS
     libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
-)
-
-add_entrypoint_object(
-  chown
-  SRCS
-    chown.cpp
-  HDRS
-    ../chown.h
-  DEPENDS
-    libc.hdr.types.uid_t
-    libc.hdr.types.gid_t
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
     libc.src.errno.errno
@@ -59,7 +44,6 @@ add_entrypoint_object(
   HDRS
     ../dup.h
   DEPENDS
-    libc.hdr.fcntl_macros
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -73,7 +57,7 @@ add_entrypoint_object(
   HDRS
     ../dup2.h
   DEPENDS
-    libc.hdr.fcntl_macros
+    libc.include.fcntl
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -87,21 +71,7 @@ add_entrypoint_object(
   HDRS
     ../dup3.h
   DEPENDS
-    libc.hdr.fcntl_macros
     libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
-)
-
-add_entrypoint_object(
-  faccessat
-  SRCS
-    faccessat.cpp
-  HDRS
-    ../faccessat.h
-  DEPENDS
-    libc.hdr.fcntl_macros
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
     libc.src.errno.errno
@@ -121,49 +91,18 @@ add_entrypoint_object(
 )
 
 add_entrypoint_object(
-  fchown
-  SRCS
-    fchown.cpp
-  HDRS
-    ../fchown.h
-  DEPENDS
-    libc.hdr.types.uid_t
-    libc.hdr.types.gid_t
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
-)
-
-add_entrypoint_object(
   fork
   SRCS
     fork.cpp
   HDRS
     ../fork.h
   DEPENDS
-    libc.hdr.types.pid_t
-    libc.hdr.fcntl_macros
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.threads.fork_callbacks
     libc.src.__support.OSUtil.osutil
     libc.src.__support.threads.thread
     libc.src.errno.errno
-    libc.src.__support.threads.identifier
-)
-
-add_entrypoint_object(
-  fpathconf
-  SRCS
-    fpathconf.cpp
-  HDRS
-    ../fpathconf.h
-  DEPENDS
-    libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
-    libc.src.unistd.linux.pathconf_utils
 )
 
 add_entrypoint_object(
@@ -211,9 +150,6 @@ add_entrypoint_object(
   HDRS
     ../ftruncate.h
   DEPENDS
-    libc.hdr.types.off_t
-    libc.hdr.fcntl_macros
-    libc.hdr.stdint_proxy
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -227,24 +163,9 @@ add_entrypoint_object(
   HDRS
     ../getcwd.h
   DEPENDS
-    libc.hdr.types.size_t
-    libc.hdr.fcntl_macros
+    libc.include.stdlib
     libc.include.unistd
     libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
-)
-
-add_entrypoint_object(
-  gethostname
-  SRCS
-    gethostname.cpp
-  HDRS
-    ../gethostname.h
-  DEPENDS
-    libc.hdr.types.size_t
-    libc.include.sys_syscall
-    libc.include.sys_utsname
     libc.src.__support.OSUtil.osutil
     libc.src.errno.errno
 )
@@ -256,8 +177,6 @@ add_entrypoint_object(
   HDRS
     ../geteuid.h
   DEPENDS
-    libc.hdr.types.uid_t
-    libc.hdr.fcntl_macros
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -270,8 +189,6 @@ add_entrypoint_object(
   HDRS
     ../getpid.h
   DEPENDS
-    libc.hdr.types.pid_t
-    libc.hdr.fcntl_macros
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -284,35 +201,6 @@ add_entrypoint_object(
   HDRS
     ../getppid.h
   DEPENDS
-    libc.hdr.types.pid_t
-    libc.hdr.fcntl_macros
-    libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-)
-
-add_entrypoint_object(
-  getsid
-  SRCS
-    getsid.cpp
-  HDRS
-    ../getsid.h
-  DEPENDS
-    libc.hdr.types.pid_t
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
-)
-
-add_entrypoint_object(
-  getgid
-  SRCS
-    getgid.cpp
-  HDRS
-    ../getgid.h
-  DEPENDS
-    libc.hdr.types.gid_t
-    libc.hdr.fcntl_macros
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -325,8 +213,6 @@ add_entrypoint_object(
   HDRS
     ../getuid.h
   DEPENDS
-    libc.hdr.types.uid_t
-    libc.hdr.fcntl_macros
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -339,7 +225,6 @@ add_entrypoint_object(
   HDRS
     ../isatty.h
   DEPENDS
-    libc.hdr.fcntl_macros
     libc.include.unistd
     libc.include.sys_ioctl
     libc.include.sys_syscall
@@ -354,7 +239,7 @@ add_entrypoint_object(
   HDRS
     ../link.h
   DEPENDS
-    libc.hdr.fcntl_macros
+    libc.include.fcntl
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -368,7 +253,7 @@ add_entrypoint_object(
   HDRS
     ../linkat.h
   DEPENDS
-    libc.hdr.fcntl_macros
+    libc.include.fcntl
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -381,62 +266,6 @@ add_entrypoint_object(
     lseek.cpp
   HDRS
     ../lseek.h
-  DEPENDS
-    libc.hdr.types.off_t
-    libc.hdr.fcntl_macros
-    libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
-)
-
-add_entrypoint_object(
-  pathconf
-  SRCS
-    pathconf.cpp
-  HDRS
-    ../pathconf.h
-  DEPENDS
-    libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
-    libc.src.unistd.linux.pathconf_utils
-)
-
-add_object_library(
-  pathconf_utils
-  SRCS
-    pathconf_utils.cpp
-  HDRS
-    pathconf_utils.h
-  DEPENDS
-    libc.hdr.limits_macros
-    libc.hdr.unistd_macros
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
-    libc.src.sys.statvfs.linux.statfs_utils
-)
-
-add_entrypoint_object(
-  pipe
-  SRCS
-    pipe.cpp
-  HDRS
-    ../pipe.h
-  DEPENDS
-    libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
-)
-
-add_entrypoint_object(
-  pipe2
-  SRCS
-    pipe2.cpp
-  HDRS
-    ../pipe2.h
   DEPENDS
     libc.include.unistd
     libc.include.sys_syscall
@@ -451,15 +280,9 @@ add_entrypoint_object(
   HDRS
     ../pread.h
   DEPENDS
-    libc.hdr.types.off_t
-    libc.hdr.types.size_t
-    libc.hdr.types.ssize_t
-    libc.hdr.fcntl_macros
-    libc.hdr.stdint_proxy
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
-    libc.src.__support.macros.sanitizer
     libc.src.errno.errno
 )
 
@@ -470,11 +293,6 @@ add_entrypoint_object(
   HDRS
     ../pwrite.h
   DEPENDS
-    libc.hdr.types.off_t
-    libc.hdr.types.size_t
-    libc.hdr.types.ssize_t
-    libc.hdr.fcntl_macros
-    libc.hdr.stdint_proxy
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -488,13 +306,9 @@ add_entrypoint_object(
   HDRS
     ../read.h
   DEPENDS
-    libc.hdr.types.size_t
-    libc.hdr.types.ssize_t
-    libc.hdr.fcntl_macros
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
-    libc.src.__support.macros.sanitizer
     libc.src.errno.errno
 )
 
@@ -505,7 +319,7 @@ add_entrypoint_object(
   HDRS
     ../rmdir.h
   DEPENDS
-    libc.hdr.fcntl_macros
+    libc.include.fcntl
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -519,9 +333,7 @@ add_entrypoint_object(
   HDRS
     ../readlink.h
   DEPENDS
-    libc.hdr.types.size_t
-    libc.hdr.types.ssize_t
-    libc.hdr.fcntl_macros
+    libc.include.fcntl
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -535,25 +347,11 @@ add_entrypoint_object(
   HDRS
     ../readlinkat.h
   DEPENDS
-    libc.hdr.types.size_t
-    libc.hdr.types.ssize_t
-    libc.hdr.fcntl_macros
+    libc.include.fcntl
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
     libc.src.errno.errno
-)
-
-add_entrypoint_object(
-  setsid
-  SRCS
-    setsid.cpp
-  HDRS
-    ../setsid.h
-  DEPENDS
-    libc.hdr.types.pid_t
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
 )
 
 add_entrypoint_object(
@@ -563,7 +361,7 @@ add_entrypoint_object(
   HDRS
     ../symlink.h
   DEPENDS
-    libc.hdr.fcntl_macros
+    libc.include.fcntl
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -577,7 +375,7 @@ add_entrypoint_object(
   HDRS
     ../symlinkat.h
   DEPENDS
-    libc.hdr.fcntl_macros
+    libc.include.fcntl
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -605,8 +403,8 @@ add_entrypoint_object(
   DEPENDS
     libc.include.unistd
     libc.include.sys_auxv
-    libc.src.__support.libc_errno
-    libc.src.__support.OSUtil.linux.auxv
+    libc.src.errno.errno
+    libc.src.sys.auxv.getauxval
 )
 
 add_entrypoint_object(
@@ -616,9 +414,6 @@ add_entrypoint_object(
   HDRS
     ../truncate.h
   DEPENDS
-    libc.hdr.types.off_t
-    libc.hdr.fcntl_macros
-    libc.hdr.stdint_proxy
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -632,7 +427,7 @@ add_entrypoint_object(
   HDRS
     ../unlink.h
   DEPENDS
-    libc.hdr.fcntl_macros
+    libc.include.fcntl
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -646,7 +441,7 @@ add_entrypoint_object(
   HDRS
     ../unlinkat.h
   DEPENDS
-    libc.hdr.fcntl_macros
+    libc.include.fcntl
     libc.include.unistd
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
@@ -660,25 +455,7 @@ add_entrypoint_object(
   HDRS
     ../write.h
   DEPENDS
-    libc.hdr.types.size_t
-    libc.hdr.types.ssize_t
-    libc.hdr.fcntl_macros
     libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
-)
-
-add_entrypoint_object(
-  getentropy
-  SRCS
-    getentropy.cpp
-  HDRS
-    ../getentropy.h
-  DEPENDS
-    libc.hdr.types.size_t
-    libc.hdr.types.ssize_t
-    libc.hdr.errno_macros
     libc.include.sys_syscall
     libc.src.__support.OSUtil.osutil
     libc.src.errno.errno

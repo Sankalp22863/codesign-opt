@@ -3,8 +3,7 @@ set(LLVM_LINK_COMPONENTS
   support
 )
 
-add_clang_library(clangReorderFields STATIC
-  Designator.cpp
+add_clang_library(clangReorderFields
   ReorderFieldsAction.cpp
 
   DEPENDS

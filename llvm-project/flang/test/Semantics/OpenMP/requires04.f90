@@ -1,4 +1,4 @@
-! RUN: %python %S/../test_errors.py %s %flang -fopenmp -fopenmp-version=52
+! RUN: %python %S/../test_errors.py %s %flang -fopenmp
 ! OpenMP Version 5.0
 ! 2.4 Requires directive
 ! Target-related clauses in 'requires' directives must come strictly before any
@@ -6,7 +6,7 @@
 
 subroutine f
   integer, save :: x
-  !WARNING: The usage of TO clause on DECLARE TARGET directive has been deprecated. Use ENTER clause instead. [-Wopen-mp-usage]
+  !WARNING: The usage of TO clause on DECLARE TARGET directive has been deprecated. Use ENTER clause instead.
   !$omp declare target to(x) device_type(nohost)
   !$omp declare target enter(x) device_type(nohost)
 end subroutine f

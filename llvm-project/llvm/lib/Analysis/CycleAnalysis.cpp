@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/CycleAnalysis.h"
+#include "llvm/ADT/GenericCycleImpl.h"
 #include "llvm/IR/CFG.h" // for successors found by ADL in GenericCycleImpl.h
 #include "llvm/InitializePasses.h"
 
@@ -14,7 +15,7 @@ using namespace llvm;
 
 namespace llvm {
 class Module;
-} // namespace llvm
+}
 
 CycleInfo CycleAnalysis::run(Function &F, FunctionAnalysisManager &) {
   CycleInfo CI;
@@ -34,13 +35,6 @@ PreservedAnalyses CycleInfoPrinterPass::run(Function &F,
   return PreservedAnalyses::all();
 }
 
-PreservedAnalyses CycleInfoVerifierPass::run(Function &F,
-                                             FunctionAnalysisManager &AM) {
-  CycleInfo &CI = AM.getResult<CycleAnalysis>(F);
-  CI.verify();
-  return PreservedAnalyses::all();
-}
-
 //===----------------------------------------------------------------------===//
 //  CycleInfoWrapperPass Implementation
 //===----------------------------------------------------------------------===//
@@ -52,7 +46,9 @@ PreservedAnalyses CycleInfoVerifierPass::run(Function &F,
 
 char CycleInfoWrapperPass::ID = 0;
 
-CycleInfoWrapperPass::CycleInfoWrapperPass() : FunctionPass(ID) {}
+CycleInfoWrapperPass::CycleInfoWrapperPass() : FunctionPass(ID) {
+  initializeCycleInfoWrapperPassPass(*PassRegistry::getPassRegistry());
+}
 
 INITIALIZE_PASS_BEGIN(CycleInfoWrapperPass, "cycles", "Cycle Info Analysis",
                       true, true)

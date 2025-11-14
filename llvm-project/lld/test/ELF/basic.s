@@ -220,7 +220,7 @@ _start:
 
 ## Test erroring on a recursive response file, but only once.
 # RUN: echo @%t.responsefile > %t.responsefile
-# RUN: env LLD_IN_TEST=1 not ld.lld %t @%t.responsefile 2>&1 | FileCheck %s --check-prefix=RECRSP
+# RUN: not ld.lld %t @%t.responsefile 2>&1 | FileCheck %s --check-prefix=RECRSP
 # RECRSP: recursive expansion of: '{{.*}}.responsefile'
 # RECRSP-NOT: recursive expansion of
 

@@ -14,6 +14,7 @@
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginInterface.h"
 #include "lldb/Core/PluginManager.h"
+#include "lldb/Core/ValueObject.h"
 #include "lldb/Expression/UserExpression.h"
 #include "lldb/Host/StreamFile.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
@@ -28,7 +29,6 @@
 #include "lldb/Target/Thread.h"
 #include "lldb/Utility/RegularExpression.h"
 #include "lldb/Utility/Stream.h"
-#include "lldb/ValueObject/ValueObject.h"
 #include <cctype>
 
 #include <memory>
@@ -116,6 +116,8 @@ StructuredData::ObjectSP InstrumentationRuntimeUBSan::RetrieveReportData(
   if (!frame_sp)
     return StructuredData::ObjectSP();
 
+  StreamFileSP Stream = target.GetDebugger().GetOutputStreamSP();
+
   EvaluateExpressionOptions options;
   options.SetUnwindOnError(true);
   options.SetTryAllThreads(true);
@@ -128,15 +130,15 @@ StructuredData::ObjectSP InstrumentationRuntimeUBSan::RetrieveReportData(
 
   ValueObjectSP main_value;
   ExecutionContext exe_ctx;
+  Status eval_error;
   frame_sp->CalculateExecutionContext(exe_ctx);
   ExpressionResults result = UserExpression::Evaluate(
       exe_ctx, options, ub_sanitizer_retrieve_report_data_command, "",
-      main_value);
+      main_value, eval_error);
   if (result != eExpressionCompleted) {
     StreamString ss;
     ss << "cannot evaluate UndefinedBehaviorSanitizer expression:\n";
-    if (main_value)
-      ss << main_value->GetError().AsCString();
+    ss << eval_error.AsCString();
     Debugger::ReportWarning(ss.GetString().str(),
                             process_sp->GetTarget().GetDebugger().GetID());
     return StructuredData::ObjectSP();
@@ -319,14 +321,13 @@ InstrumentationRuntimeUBSan::GetBacktracesFromExtendedStopInfo(
 
   StructuredData::ObjectSP thread_id_obj =
       info->GetObjectForDotSeparatedPath("tid");
-  lldb::tid_t tid =
-      thread_id_obj ? thread_id_obj->GetUnsignedIntegerValue() : 0;
+  tid_t tid = thread_id_obj ? thread_id_obj->GetUnsignedIntegerValue() : 0;
 
   // We gather symbolication addresses above, so no need for HistoryThread to
   // try to infer the call addresses.
-  auto pc_type = HistoryPCType::Calls;
-  ThreadSP new_thread_sp =
-      std::make_shared<HistoryThread>(*process_sp, tid, PCs, pc_type);
+  bool pcs_are_call_addresses = true;
+  ThreadSP new_thread_sp = std::make_shared<HistoryThread>(
+      *process_sp, tid, PCs, pcs_are_call_addresses);
   std::string stop_reason_description = GetStopReasonDescription(info);
   new_thread_sp->SetName(stop_reason_description.c_str());
 

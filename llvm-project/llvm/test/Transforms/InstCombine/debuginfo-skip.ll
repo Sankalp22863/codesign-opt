@@ -1,6 +1,8 @@
 ; RUN: opt -instcombine-lower-dbg-declare=0 < %s -passes=instcombine -S | FileCheck %s
 ; RUN: opt -instcombine-lower-dbg-declare=1 < %s -passes=instcombine -S | FileCheck %s
 
+; RUN: opt -instcombine-lower-dbg-declare=0 < %s -passes=instcombine -S --try-experimental-debuginfo-iterators | FileCheck %s
+; RUN: opt -instcombine-lower-dbg-declare=1 < %s -passes=instcombine -S --try-experimental-debuginfo-iterators | FileCheck %s
 
 define i32 @foo(i32 %j) #0 !dbg !7 {
 entry:
@@ -16,8 +18,8 @@ entry:
 ; should convert the declare to dbg value.
 ; CHECK-LABEL: define i32 @foo(i32 %j)
 ; CHECK-NOT: alloca
-; CHECK: #dbg_value(i32 %j, {{.*}})
-; CHECK: #dbg_value(i32 10, {{.*}})
+; CHECK: call void @llvm.dbg.value(metadata i32 %j, {{.*}})
+; CHECK: call void @llvm.dbg.value(metadata i32 10, {{.*}})
 ; CHECK: ret i32 %j
 
 declare void @llvm.dbg.declare(metadata, metadata, metadata) #1

@@ -1,4 +1,5 @@
-; RUN: opt -passes='cgscc(inline)' -S %s -o - -S | FileCheck %s --implicit-check-not=dbg_value
+; RUN: opt -passes='cgscc(inline)' -S %s -o - -S | FileCheck %s --implicit-check-not=dbg.value
+; RUN: opt -passes='cgscc(inline)' -S %s -o - -S --try-experimental-debuginfo-iterators | FileCheck %s --implicit-check-not=dbg.value
 
 ;; Test that dbg.value intrinsics are inlined, remapped, and have their
 ;; dilocation updated just like normal instructions. This becomes
@@ -6,14 +7,16 @@
 ;;
 ;; test should be inlined into test2
 
+; CHECK: declare void @llvm.dbg.value(metadata,
+
 ; CHECK: define i32 @test2
 ; CHECK-NEXT: entry:
 ; CHECK:      %k.addr.i = alloca i32, align 4
 ; CHECK:      %k2.i = alloca i32, align 4
 ; CHECK:      %0 = load i32, ptr @global_var, align 4, !dbg !9
 ; CHECK:      store i32 %0, ptr %k.addr.i, align 4
-; CHECK-NEXT: #dbg_value(ptr %k.addr.i, ![[KVAR:[0-9]+]], !DIExpression(), ![[KLINE:[0-9]+]]
-; CHECK-NEXT: #dbg_value(ptr %k2.i, ![[K2VAR:[0-9]+]], !DIExpression(), ![[GLINE:[0-9]+]]
+; CHECK-NEXT: call void @llvm.dbg.value(metadata ptr %k.addr.i, metadata ![[KVAR:[0-9]+]], metadata !DIExpression()), !dbg ![[KLINE:[0-9]+]]
+; CHECK-NEXT: call void @llvm.dbg.value(metadata ptr %k2.i, metadata ![[K2VAR:[0-9]+]], metadata !DIExpression()), !dbg ![[GLINE:[0-9]+]]
 ; CHECK-NEXT: %1 = load i32, ptr %k.addr.i, align 4,
 ;;
 ;; dbg.values in this block should be remapped to the local load, but also
@@ -21,8 +24,8 @@
 ;;
 ; CHECK: if.then.i:
 ; CHECK-NEXT: %3 = load i32, ptr %k2.i,
-; CHECK-NEXT: #dbg_value(i32 %3, ![[KVAR]], !DIExpression(), ![[KLINE]]
-; CHECK-NEXT: #dbg_value(i32 %foo, ![[K2VAR]], !DIExpression(), ![[GLINE]]
+; CHECK-NEXT: call void @llvm.dbg.value(metadata i32 %3, metadata ![[KVAR]], metadata !DIExpression()), !dbg ![[KLINE]]
+; CHECK-NEXT: call void @llvm.dbg.value(metadata i32 %foo, metadata ![[K2VAR]], metadata !DIExpression()), !dbg ![[GLINE]]
 ;
 ;; Similarly, the end block should retain remapped dbg.values, with the second
 ;; referring to the @global_var load in the entry block. Check that we clone
@@ -30,20 +33,19 @@
 ;
 ; CHECK: if.end.i:
 ; CHECK-NEXT:  store i32 0, ptr %retval.i, align 4,
-; CHECK-NEXT:  #dbg_value(i32 0, ![[KVAR]], !DIExpression(), ![[KLINE]]
-; CHECK-NEXT:  #dbg_value(i32 %0, ![[K2VAR]], !DIExpression(), ![[GLINE]]
+; CHECK-NEXT:  call void @llvm.dbg.value(metadata i32 0, metadata ![[KVAR]], metadata !DIExpression()), !dbg ![[KLINE]]
+; CHECK-NEXT:  call void @llvm.dbg.value(metadata i32 %0, metadata ![[K2VAR]], metadata !DIExpression()), !dbg ![[GLINE]]
 ; CHECK-NEXT:  br label %test.exit,
 ;
 ;; More or less the same checks again in the exit block, this time at the head
 ;; of the block, and on a terminator that gets elided.
 ;
 ; CHECK: test.exit:
-; CHECK-NEXT: #dbg_value(i32 %0, ![[KVAR]], !DIExpression(), ![[KLINE]]
-; CHECK-NEXT: #dbg_value(i32 %bar, ![[K2VAR]], !DIExpression(), ![[GLINE]]
+; CHECK-NEXT: call void @llvm.dbg.value(metadata i32 %0, metadata ![[KVAR]], metadata !DIExpression()), !dbg ![[KLINE]]
+; CHECK-NEXT: call void @llvm.dbg.value(metadata i32 %bar, metadata ![[K2VAR]], metadata !DIExpression()), !dbg ![[GLINE]]
 ; CHECK-NEXT: %4 = load i32, ptr %retval.i, align 4,
-; CHECK-NEXT: #dbg_value(i32 1, ![[KVAR]], !DIExpression(), ![[KLINE]]
-; CHECK-NEXT: #dbg_value(i32 1, ![[K2VAR]], !DIExpression(), ![[GLINE]]
-;
+; CHECK-NEXT: call void @llvm.dbg.value(metadata i32 1, metadata ![[KVAR]], metadata !DIExpression()), !dbg ![[KLINE]]
+; CHECK-NEXT: call void @llvm.dbg.value(metadata i32 1, metadata ![[K2VAR]], metadata !DIExpression()), !dbg ![[GLINE]]
 ;
 ;; Test that the metadata maps onto the correct things, and that the DILocations
 ;; attached to the intrinsics have been inlined.
@@ -98,6 +100,8 @@ return:                                           ; preds = %if.end, %if.then
   ret i32 %3, !dbg !20
 }
 
+declare void @llvm.dbg.value(metadata, metadata, metadata) #1
+
 declare i32 @_Z8test_exti(i32)
 
 define i32 @test2(i32 %foo, i32 %bar) !dbg !10 {
@@ -113,8 +117,6 @@ try.cont:                                         ; preds = %catch, %invoke.cont
   store i32 1, ptr @global_var, align 4, !dbg !29
   ret i32 0, !dbg !30
 }
-
-declare void @llvm.dbg.value(metadata, metadata, metadata) #1
 
 !llvm.dbg.cu = !{!0}
 !llvm.module.flags = !{!31}

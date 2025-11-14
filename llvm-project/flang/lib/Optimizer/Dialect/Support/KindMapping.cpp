@@ -12,7 +12,6 @@
 
 #include "flang/Optimizer/Dialect/Support/KindMapping.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "llvm/IR/LLVMContext.h"
 #include "llvm/Support/CommandLine.h"
 
 /// Allow the user to set the FIR intrinsic type kind value to LLVM type
@@ -178,7 +177,7 @@ static MatchResult parseInt(unsigned &result, const char *&ptr,
   return mlir::success();
 }
 
-static llvm::LogicalResult matchString(const char *&ptr, const char *endPtr,
+static mlir::LogicalResult matchString(const char *&ptr, const char *endPtr,
                                        llvm::StringRef literal) {
   llvm::StringRef s(ptr, endPtr - ptr);
   if (s.starts_with(literal)) {
@@ -352,7 +351,7 @@ std::string fir::KindMapping::mapToString() const {
   return result;
 }
 
-llvm::LogicalResult
+mlir::LogicalResult
 fir::KindMapping::setDefaultKinds(llvm::ArrayRef<KindTy> defs) {
   if (defs.empty()) {
     // generic front-end defaults

@@ -6,7 +6,7 @@ import re
 
 def get_required_attr(config, attr_name):
     attr_value = getattr(config, attr_name, None)
-    if attr_value is None:
+    if attr_value == None:
         lit_config.fatal(
             "No attribute %r in test configuration! You may need to run "
             "tests from your build directory or add this attribute "
@@ -30,7 +30,7 @@ if (
 
 target_is_msvc = bool(re.match(r".*-windows-msvc$", config.target_triple))
 
-if config.target_os in ["Linux"]:
+if config.host_os in ["Linux"]:
     extra_link_flags = ["-ldl"]
 elif target_is_msvc:
     # InstrProf is incompatible with incremental linking. Disable it as a
@@ -77,8 +77,12 @@ def exclude_unsupported_files_for_aix(dirname):
         f = open(source_path, "r")
         try:
             data = f.read()
-            # rpath is not supported on AIX, exclude all tests with them.
-            if ( "-rpath" in data ):
+            # -fprofile-instr-generate and rpath are not supported on AIX, exclude all tests with them.
+            if (
+                "%clang_profgen" in data
+                or "%clangxx_profgen" in data
+                or "-rpath" in data
+            ):
                 config.excludes += [filename]
         finally:
             f.close()
@@ -154,7 +158,7 @@ config.substitutions.append(
     )
 )
 
-if config.target_os not in [
+if config.host_os not in [
     "Windows",
     "Darwin",
     "FreeBSD",
@@ -162,15 +166,10 @@ if config.target_os not in [
     "NetBSD",
     "SunOS",
     "AIX",
-    "Haiku",
 ]:
     config.unsupported = True
 
-config.substitutions.append(
-    ("%shared_lib_flag", "-dynamiclib" if (config.target_os == "Darwin") else "-shared")
-)
-
-if config.target_os in ["AIX"]:
+if config.host_os in ["AIX"]:
     config.available_features.add("system-aix")
     exclude_unsupported_files_for_aix(config.test_source_root)
     exclude_unsupported_files_for_aix(config.test_source_root + "/Posix")
@@ -180,9 +179,3 @@ if config.target_arch in ["armv7l"]:
 
 if config.android:
     config.unsupported = True
-
-if config.have_curl:
-    config.available_features.add("curl")
-
-if config.target_os in ("AIX", "Darwin", "Linux"):
-    config.available_features.add("continuous-mode")

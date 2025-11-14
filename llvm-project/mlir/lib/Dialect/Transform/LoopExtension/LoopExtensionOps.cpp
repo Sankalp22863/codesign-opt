@@ -8,6 +8,8 @@
 
 #include "mlir/Dialect/Transform/LoopExtension/LoopExtensionOps.h"
 
+#include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/Transforms/LoopInvariantCodeMotionUtils.h"
 
 using namespace mlir;
@@ -29,6 +31,6 @@ DiagnosedSilenceableFailure transform::HoistLoopInvariantSubsetsOp::applyToOne(
 
 void transform::HoistLoopInvariantSubsetsOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getTargetMutable(), effects);
+  transform::onlyReadsHandle(getTarget(), effects);
   transform::modifiesPayload(effects);
 }

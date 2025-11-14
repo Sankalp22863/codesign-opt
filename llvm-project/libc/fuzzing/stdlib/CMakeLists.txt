@@ -1,17 +1,9 @@
 add_libc_fuzzer(
-  quick_sort_fuzz
+  qsort_fuzz
   SRCS
-    quick_sort_fuzz.cpp
+    qsort_fuzz.cpp
   DEPENDS
-    libc.src.stdlib.qsort_util
-)
-
-add_libc_fuzzer(
-  heap_sort_fuzz
-  SRCS
-    heap_sort_fuzz.cpp
-  DEPENDS
-    libc.src.stdlib.qsort_util
+    libc.src.stdlib.qsort
 )
 
 add_libc_fuzzer(
@@ -30,7 +22,6 @@ add_libc_fuzzer(
   SRCS
     strtofloat_fuzz.cpp
   DEPENDS
-    libc.hdr.math_macros
     libc.src.stdlib.atof
     libc.src.stdlib.strtof
     libc.src.stdlib.strtod

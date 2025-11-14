@@ -6,6 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+// XFAIL: stdlib=apple-libc++ && target={{.+}}-apple-macosx10.{{9|10|11|12|13|14}}
+
 // <istream>
 
 // basic_istream<charT,traits>& get(basic_streambuf<char_type,traits>& sb,
@@ -13,8 +15,6 @@
 
 #include <istream>
 #include <cassert>
-#include <streambuf>
-
 #include "test_macros.h"
 
 template <class CharT>

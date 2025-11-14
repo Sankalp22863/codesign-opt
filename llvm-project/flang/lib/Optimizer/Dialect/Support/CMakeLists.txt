@@ -5,11 +5,9 @@ add_flang_library(FIRDialectSupport
   FIRContext.cpp
 
   DEPENDS
+  MLIRIR
   intrinsics_gen
 
-  MLIR_DEPS
-  MLIRIR
-
-  MLIR_LIBS
+  LINK_LIBS
   ${dialect_libs}
 )

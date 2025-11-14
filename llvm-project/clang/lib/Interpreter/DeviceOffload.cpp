@@ -15,32 +15,57 @@
 #include "clang/Basic/TargetOptions.h"
 #include "clang/CodeGen/ModuleBuilder.h"
 #include "clang/Frontend/CompilerInstance.h"
-#include "clang/Interpreter/PartialTranslationUnit.h"
 
 #include "llvm/IR/LegacyPassManager.h"
-#include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Target/TargetMachine.h"
 
 namespace clang {
 
 IncrementalCUDADeviceParser::IncrementalCUDADeviceParser(
-    CompilerInstance &DeviceInstance, CompilerInstance &HostInstance,
-    IncrementalAction *DeviceAct,
+    Interpreter &Interp, std::unique_ptr<CompilerInstance> Instance,
+    IncrementalParser &HostParser, llvm::LLVMContext &LLVMCtx,
     llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> FS,
-    llvm::Error &Err, std::list<PartialTranslationUnit> &PTUs)
-    : IncrementalParser(DeviceInstance, DeviceAct, Err, PTUs), VFS(FS),
-      CodeGenOpts(HostInstance.getCodeGenOpts()),
-      TargetOpts(DeviceInstance.getTargetOpts()) {
+    llvm::Error &Err)
+    : IncrementalParser(Interp, std::move(Instance), LLVMCtx, Err),
+      HostParser(HostParser), VFS(FS) {
   if (Err)
     return;
-  StringRef Arch = TargetOpts.CPU;
+  StringRef Arch = CI->getTargetOpts().CPU;
   if (!Arch.starts_with("sm_") || Arch.substr(3).getAsInteger(10, SMVersion)) {
     Err = llvm::joinErrors(std::move(Err), llvm::make_error<llvm::StringError>(
                                                "Invalid CUDA architecture",
                                                llvm::inconvertibleErrorCode()));
     return;
   }
+}
+
+llvm::Expected<PartialTranslationUnit &>
+IncrementalCUDADeviceParser::Parse(llvm::StringRef Input) {
+  auto PTU = IncrementalParser::Parse(Input);
+  if (!PTU)
+    return PTU.takeError();
+
+  auto PTX = GeneratePTX();
+  if (!PTX)
+    return PTX.takeError();
+
+  auto Err = GenerateFatbinary();
+  if (Err)
+    return std::move(Err);
+
+  std::string FatbinFileName =
+      "/incr_module_" + std::to_string(PTUs.size()) + ".fatbin";
+  VFS->addFile(FatbinFileName, 0,
+               llvm::MemoryBuffer::getMemBuffer(
+                   llvm::StringRef(FatbinContent.data(), FatbinContent.size()),
+                   "", false));
+
+  HostParser.getCI()->getCodeGenOpts().CudaGpuBinaryFileName = FatbinFileName;
+
+  FatbinContent.clear();
+
+  return PTU;
 }
 
 llvm::Expected<llvm::StringRef> IncrementalCUDADeviceParser::GeneratePTX() {
@@ -54,7 +79,7 @@ llvm::Expected<llvm::StringRef> IncrementalCUDADeviceParser::GeneratePTX() {
                                                std::error_code());
   llvm::TargetOptions TO = llvm::TargetOptions();
   llvm::TargetMachine *TargetMachine = Target->createTargetMachine(
-      PTU.TheModule->getTargetTriple(), TargetOpts.CPU, "", TO,
+      PTU.TheModule->getTargetTriple(), getCI()->getTargetOpts().CPU, "", TO,
       llvm::Reloc::Model::PIC_);
   PTU.TheModule->setDataLayout(TargetMachine->createDataLayout());
 
@@ -142,19 +167,6 @@ llvm::Error IncrementalCUDADeviceParser::GenerateFatbinary() {
                        ((char *)&InnerHeader) + InnerHeader.HeaderSize);
 
   FatbinContent.append(PTXCode.begin(), PTXCode.end());
-
-  const PartialTranslationUnit &PTU = PTUs.back();
-
-  std::string FatbinFileName = "/" + PTU.TheModule->getName().str() + ".fatbin";
-
-  VFS->addFile(FatbinFileName, 0,
-               llvm::MemoryBuffer::getMemBuffer(
-                   llvm::StringRef(FatbinContent.data(), FatbinContent.size()),
-                   "", false));
-
-  CodeGenOpts.CudaGpuBinaryFileName = std::move(FatbinFileName);
-
-  FatbinContent.clear();
 
   return llvm::Error::success();
 }

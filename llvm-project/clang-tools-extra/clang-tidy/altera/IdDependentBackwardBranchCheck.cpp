@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- IdDependentBackwardBranchCheck.cpp - clang-tidy ------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -76,47 +76,36 @@ void IdDependentBackwardBranchCheck::registerMatchers(MatchFinder *Finder) {
                      this);
 }
 
-const IdDependentBackwardBranchCheck::IdDependencyRecord *
+IdDependentBackwardBranchCheck::IdDependencyRecord *
 IdDependentBackwardBranchCheck::hasIdDepVar(const Expr *Expression) {
-  if (!Expression)
-    return nullptr;
-
   if (const auto *Declaration = dyn_cast<DeclRefExpr>(Expression)) {
     // It is a DeclRefExpr, so check if it's an ID-dependent variable.
-    const auto *CheckVariable =
-        dyn_cast_if_present<VarDecl>(Declaration->getDecl());
-    if (!CheckVariable)
-      return nullptr;
+    const auto *CheckVariable = dyn_cast<VarDecl>(Declaration->getDecl());
     auto FoundVariable = IdDepVarsMap.find(CheckVariable);
     if (FoundVariable == IdDepVarsMap.end())
       return nullptr;
     return &(FoundVariable->second);
   }
   for (const auto *Child : Expression->children())
-    if (const auto *ChildExpression = dyn_cast_if_present<Expr>(Child))
-      if (const IdDependencyRecord *Result = hasIdDepVar(ChildExpression))
+    if (const auto *ChildExpression = dyn_cast<Expr>(Child))
+      if (IdDependencyRecord *Result = hasIdDepVar(ChildExpression))
         return Result;
   return nullptr;
 }
 
-const IdDependentBackwardBranchCheck::IdDependencyRecord *
+IdDependentBackwardBranchCheck::IdDependencyRecord *
 IdDependentBackwardBranchCheck::hasIdDepField(const Expr *Expression) {
-  if (!Expression)
-    return nullptr;
-
   if (const auto *MemberExpression = dyn_cast<MemberExpr>(Expression)) {
     const auto *CheckField =
-        dyn_cast_if_present<FieldDecl>(MemberExpression->getMemberDecl());
-    if (!CheckField)
-      return nullptr;
+        dyn_cast<FieldDecl>(MemberExpression->getMemberDecl());
     auto FoundField = IdDepFieldsMap.find(CheckField);
     if (FoundField == IdDepFieldsMap.end())
       return nullptr;
     return &(FoundField->second);
   }
   for (const auto *Child : Expression->children())
-    if (const auto *ChildExpression = dyn_cast_if_present<Expr>(Child))
-      if (const IdDependencyRecord *Result = hasIdDepField(ChildExpression))
+    if (const auto *ChildExpression = dyn_cast<Expr>(Child))
+      if (IdDependencyRecord *Result = hasIdDepField(ChildExpression))
         return Result;
   return nullptr;
 }
@@ -239,7 +228,7 @@ void IdDependentBackwardBranchCheck::check(
   const auto *Loop = Result.Nodes.getNodeAs<Stmt>("backward_branch");
   if (!Loop)
     return;
-  const LoopType Type = getLoopType(Loop);
+  LoopType Type = getLoopType(Loop);
   if (CondExpr) {
     if (IDCall) { // Conditional expression calls an ID function directly.
       diag(CondExpr->getBeginLoc(),
@@ -249,8 +238,8 @@ void IdDependentBackwardBranchCheck::check(
       return;
     }
     // Conditional expression has DeclRefExpr(s), check ID-dependency.
-    const IdDependencyRecord *IdDepVar = hasIdDepVar(CondExpr);
-    const IdDependencyRecord *IdDepField = hasIdDepField(CondExpr);
+    IdDependencyRecord *IdDepVar = hasIdDepVar(CondExpr);
+    IdDependencyRecord *IdDepField = hasIdDepField(CondExpr);
     if (IdDepVar) {
       diag(CondExpr->getBeginLoc(),
            "backward branch (%select{do|while|for}0 loop) is ID-dependent due "

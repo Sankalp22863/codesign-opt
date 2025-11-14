@@ -10,10 +10,11 @@
 #define LLVM_CLANG_LIB_DRIVER_TOOLCHAINS_AMDGPU_H
 
 #include "Gnu.h"
+#include "ROCm.h"
 #include "clang/Basic/TargetID.h"
+#include "clang/Driver/Options.h"
 #include "clang/Driver/Tool.h"
 #include "clang/Driver/ToolChain.h"
-#include "clang/Options/Options.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/TargetParser/TargetParser.h"
 
@@ -40,8 +41,6 @@ void getAMDGPUTargetFeatures(const Driver &D, const llvm::Triple &Triple,
                              const llvm::opt::ArgList &Args,
                              std::vector<StringRef> &Features);
 
-void addFullLTOPartitionOption(const Driver &D, const llvm::opt::ArgList &Args,
-                               llvm::opt::ArgStringList &CmdArgs);
 } // end namespace amdgpu
 } // end namespace tools
 
@@ -79,9 +78,6 @@ public:
   void addClangTargetOptions(const llvm::opt::ArgList &DriverArgs,
                              llvm::opt::ArgStringList &CC1Args,
                              Action::OffloadKind DeviceOffloadKind) const override;
-  void
-  AddClangSystemIncludeArgs(const llvm::opt::ArgList &DriverArgs,
-                            llvm::opt::ArgStringList &CC1Args) const override;
 
   /// Return whether denormals should be flushed, and treated as 0 by default
   /// for the subtarget.
@@ -100,12 +96,6 @@ public:
 
   /// Needed for translating LTO options.
   const char *getDefaultLinker() const override { return "ld.lld"; }
-
-  /// Should skip sanitize options.
-  bool shouldSkipSanitizeOption(const ToolChain &TC,
-                                const llvm::opt::ArgList &DriverArgs,
-                                StringRef TargetID,
-                                const llvm::opt::Arg *A) const;
 
   /// Uses amdgpu-arch tool to get arch of the system GPU. Will return error
   /// if unable to find one.
@@ -131,9 +121,6 @@ protected:
   /// Get GPU arch from -mcpu without checking.
   StringRef getGPUArch(const llvm::opt::ArgList &DriverArgs) const;
 
-  /// Common warning options shared by AMDGPU HIP, OpenCL and OpenMP toolchains.
-  /// Language specific warning options should go to derived classes.
-  void addClangWarningOptions(llvm::opt::ArgStringList &CC1Args) const override;
 };
 
 class LLVM_LIBRARY_VISIBILITY ROCMToolChain : public AMDGPUToolChain {
@@ -146,28 +133,10 @@ public:
                         Action::OffloadKind DeviceOffloadKind) const override;
 
   // Returns a list of device library names shared by different languages
-  llvm::SmallVector<BitCodeLibraryInfo, 12>
+  llvm::SmallVector<std::string, 12>
   getCommonDeviceLibNames(const llvm::opt::ArgList &DriverArgs,
                           const std::string &GPUArch,
-                          Action::OffloadKind DeviceOffloadingKind) const;
-
-  SanitizerMask getSupportedSanitizers() const override {
-    return SanitizerKind::Address;
-  }
-
-  void diagnoseUnsupportedSanitizers(const llvm::opt::ArgList &Args) const {
-    if (!Args.hasFlag(options::OPT_fgpu_sanitize, options::OPT_fno_gpu_sanitize,
-                      true))
-      return;
-    auto &Diags = getDriver().getDiags();
-    for (auto *A : Args.filtered(options::OPT_fsanitize_EQ)) {
-      SanitizerMask K =
-          parseSanitizerValue(A->getValue(), /*Allow Groups*/ false);
-      if (K != SanitizerKind::Address)
-        Diags.Report(clang::diag::warn_drv_unsupported_option_for_target)
-            << A->getAsString(Args) << getTriple().str();
-    }
-  }
+                          bool isOpenMP = false) const;
 };
 
 } // end namespace toolchains

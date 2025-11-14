@@ -14,8 +14,7 @@
 
 #if !defined(__linux__) && !defined(__FreeBSD__) && !defined(__NetBSD__) && \
     !defined(__APPLE__) && !defined(_WIN32) && !defined(__Fuchsia__) &&     \
-    !(defined(__sun__) && defined(__svr4__)) && !defined(__HAIKU__) &&      \
-    !defined(__wasi__)
+    !(defined(__sun__) && defined(__svr4__))
 #  error "This operating system is not supported"
 #endif
 
@@ -54,18 +53,6 @@
 #  define SANITIZER_SOLARIS 1
 #else
 #  define SANITIZER_SOLARIS 0
-#endif
-
-#if defined(__HAIKU__)
-#  define SANITIZER_HAIKU 1
-#else
-#  define SANITIZER_HAIKU 0
-#endif
-
-#if defined(__wasi__)
-#  define SANITIZER_WASI 1
-#else
-#  define SANITIZER_WASI 0
 #endif
 
 // - SANITIZER_APPLE: all Apple code
@@ -149,9 +136,9 @@
 #  define SANITIZER_MUSL 0
 #endif
 
-#define SANITIZER_POSIX                                       \
+#define SANITIZER_POSIX                                     \
   (SANITIZER_FREEBSD || SANITIZER_LINUX || SANITIZER_APPLE || \
-   SANITIZER_NETBSD || SANITIZER_SOLARIS || SANITIZER_HAIKU)
+   SANITIZER_NETBSD || SANITIZER_SOLARIS)
 
 #if __LP64__ || defined(_WIN64)
 #  define SANITIZER_WORDSIZE 64
@@ -308,8 +295,8 @@
 // For such platforms build this code with -DSANITIZER_CAN_USE_ALLOCATOR64=0 or
 // change the definition of SANITIZER_CAN_USE_ALLOCATOR64 here.
 #ifndef SANITIZER_CAN_USE_ALLOCATOR64
-#  if (SANITIZER_RISCV64 && !SANITIZER_FUCHSIA && !SANITIZER_LINUX) || \
-      SANITIZER_IOS || SANITIZER_DRIVERKIT
+#  if (SANITIZER_RISCV64 && !SANITIZER_FUCHSIA) || SANITIZER_IOS || \
+      SANITIZER_DRIVERKIT
 #    define SANITIZER_CAN_USE_ALLOCATOR64 0
 #  elif defined(__mips64) || defined(__hexagon__)
 #    define SANITIZER_CAN_USE_ALLOCATOR64 0
@@ -317,9 +304,6 @@
 #    define SANITIZER_CAN_USE_ALLOCATOR64 (SANITIZER_WORDSIZE == 64)
 #  endif
 #endif
-
-// The first address that can be returned by mmap.
-#define SANITIZER_MMAP_BEGIN 0
 
 // The range of addresses which can be returned my mmap.
 // FIXME: this value should be different on different platforms.  Larger values
@@ -338,7 +322,7 @@
 #  if SANITIZER_FUCHSIA
 #    define SANITIZER_MMAP_RANGE_SIZE (1ULL << 38)
 #  else
-#    define SANITIZER_MMAP_RANGE_SIZE FIRST_32_SECOND_64(1ULL << 32, 1ULL << 56)
+#    define SANITIZER_MMAP_RANGE_SIZE FIRST_32_SECOND_64(1ULL << 32, 1ULL << 47)
 #  endif
 #elif defined(__aarch64__)
 #  if SANITIZER_APPLE
@@ -426,8 +410,7 @@
 #  define SANITIZER_SUPPRESS_LEAK_ON_PTHREAD_EXIT 0
 #endif
 
-#if SANITIZER_FREEBSD || SANITIZER_APPLE || SANITIZER_NETBSD || \
-    SANITIZER_SOLARIS || SANITIZER_HAIKU
+#if SANITIZER_FREEBSD || SANITIZER_APPLE || SANITIZER_NETBSD || SANITIZER_SOLARIS
 #  define SANITIZER_MADVISE_DONTNEED MADV_FREE
 #else
 #  define SANITIZER_MADVISE_DONTNEED MADV_DONTNEED
@@ -480,21 +463,6 @@
 #  define SANITIZER_START_BACKGROUND_THREAD_IN_ASAN_INTERNAL 1
 #else
 #  define SANITIZER_START_BACKGROUND_THREAD_IN_ASAN_INTERNAL 0
-#endif
-
-#if SANITIZER_LINUX
-#  if SANITIZER_GLIBC
-// Workaround for
-// glibc/commit/3d3572f59059e2b19b8541ea648a6172136ec42e
-// Linux: Keep termios ioctl constants strictly internal
-#    if __GLIBC_PREREQ(2, 41)
-#      define SANITIZER_TERMIOS_IOCTL_CONSTANTS 0
-#    else
-#      define SANITIZER_TERMIOS_IOCTL_CONSTANTS 1
-#    endif
-#  else
-#    define SANITIZER_TERMIOS_IOCTL_CONSTANTS 1
-#  endif
 #endif
 
 #endif  // SANITIZER_PLATFORM_H

@@ -12,17 +12,10 @@ tablegen("WebAssemblyGenFastISel") {
   td_file = "WebAssembly.td"
 }
 
-tablegen("WebAssemblyGenSDNodeInfo") {
-  visibility = [ ":LLVMWebAssemblyCodeGen" ]
-  args = [ "-gen-sd-node-info" ]
-  td_file = "WebAssembly.td"
-}
-
 static_library("LLVMWebAssemblyCodeGen") {
   deps = [
     ":WebAssemblyGenDAGISel",
     ":WebAssemblyGenFastISel",
-    ":WebAssemblyGenSDNodeInfo",
     "MCTargetDesc",
     "TargetInfo",
     "//llvm/include/llvm/Config:llvm-config",
@@ -44,7 +37,6 @@ static_library("LLVMWebAssemblyCodeGen") {
     "WebAssemblyAsmPrinter.cpp",
     "WebAssemblyCFGSort.cpp",
     "WebAssemblyCFGStackify.cpp",
-    "WebAssemblyCleanCodeAfterTrap.cpp",
     "WebAssemblyDebugFixup.cpp",
     "WebAssemblyDebugValueManager.cpp",
     "WebAssemblyExceptionInfo.cpp",
@@ -69,7 +61,6 @@ static_library("LLVMWebAssemblyCodeGen") {
     "WebAssemblyOptimizeLiveIntervals.cpp",
     "WebAssemblyOptimizeReturned.cpp",
     "WebAssemblyPeephole.cpp",
-    "WebAssemblyRefTypeMem2Local.cpp",
     "WebAssemblyRegColoring.cpp",
     "WebAssemblyRegNumbering.cpp",
     "WebAssemblyRegStackify.cpp",

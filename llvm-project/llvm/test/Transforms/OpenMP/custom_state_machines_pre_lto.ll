@@ -10,7 +10,7 @@
 ;; void p1(void);
 ;; int unknown(void);
 ;; void unknown_pure(void) __attribute__((pure));
-;; [[omp::assume("omp_no_openmp")]] void unknown_no_openmp(void);
+;; void unknown_no_openmp(void) __attribute__((assume("omp_no_openmp")));
 ;;
 ;; int G;
 ;; void no_parallel_region_in_here(void) {
@@ -139,22 +139,19 @@
 @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @1, ptr null }
 @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @1, ptr null }
 
-; Function Attrs: convergent noinline norecurse nounwind
-define weak ptx_kernel void @__omp_offloading_14_a36502b_no_state_machine_needed_l14(ptr %dyn) #0 {
+define weak void @__omp_offloading_14_a36502b_no_state_machine_needed_l14(ptr %dyn) #0 {
 entry:
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %.threadid_temp. = alloca ptr, align 8, addrspace(5)
-  %.threadid_temp..cast = addrspacecast ptr addrspace(5) %.threadid_temp. to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
+  %.zero.addr = alloca i32, align 4
+  %.threadid_temp. = alloca i32, align 4
+  store i32 0, ptr %.zero.addr, align 4
   %0 = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment, ptr %dyn)
   %exec_user_code = icmp eq i32 %0, -1
   br i1 %exec_user_code, label %user_code.entry, label %worker.exit
 
 user_code.entry:                                  ; preds = %entry
   %1 = call i32 @__kmpc_global_thread_num(ptr @1)
-  store i32 %1, ptr %.threadid_temp..cast, align 4
-  call void @__omp_outlined__(ptr %.threadid_temp..cast, ptr %.zero.addr.cast) #3
+  store i32 %1, ptr %.threadid_temp., align 4
+  call void @__omp_outlined__(ptr %.threadid_temp., ptr %.zero.addr) #3
   call void @__kmpc_target_deinit()
   ret void
 
@@ -162,23 +159,20 @@ worker.exit:                                      ; preds = %entry
   ret void
 }
 
-declare i32 @__kmpc_target_init(ptr)
+; Make it a declaration so we will *not* apply custom state machine rewriting and wait for LTO.
+declare i32 @__kmpc_target_init(ptr);
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @no_parallel_region_in_here() #7
   call void @unknown_no_openmp() #8
   ret void
 }
 
-; Function Attrs: convergent noinline nounwind
 define hidden void @no_parallel_region_in_here() #1 {
 entry:
   %0 = call i32 @__kmpc_global_thread_num(ptr @2)
@@ -196,30 +190,25 @@ omp_if.end:                                       ; preds = %omp_if.then, %entry
   ret void
 }
 
-; Function Attrs: convergent
 declare void @unknown_no_openmp() #2
 
-; Function Attrs: nounwind
 declare i32 @__kmpc_global_thread_num(ptr) #3
 
 declare void @__kmpc_target_deinit()
 
-; Function Attrs: convergent noinline norecurse nounwind
-define weak ptx_kernel void @__omp_offloading_14_a36502b_simple_state_machine_l22(ptr %dyn) #0 {
+define weak void @__omp_offloading_14_a36502b_simple_state_machine_l22(ptr %dyn) #0 {
 entry:
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %.threadid_temp. = alloca ptr, align 8, addrspace(5)
-  %.threadid_temp..cast = addrspacecast ptr addrspace(5) %.threadid_temp. to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
+  %.zero.addr = alloca i32, align 4
+  %.threadid_temp. = alloca i32, align 4
+  store i32 0, ptr %.zero.addr, align 4
   %0 = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment, ptr %dyn)
   %exec_user_code = icmp eq i32 %0, -1
   br i1 %exec_user_code, label %user_code.entry, label %worker.exit
 
 user_code.entry:                                  ; preds = %entry
   %1 = call i32 @__kmpc_global_thread_num(ptr @1)
-  store i32 %1, ptr %.threadid_temp..cast, align 4
-  call void @__omp_outlined__1(ptr %.threadid_temp..cast, ptr %.zero.addr.cast) #3
+  store i32 %1, ptr %.threadid_temp., align 4
+  call void @__omp_outlined__1(ptr %.threadid_temp., ptr %.zero.addr) #3
   call void @__kmpc_target_deinit()
   ret void
 
@@ -227,60 +216,46 @@ worker.exit:                                      ; preds = %entry
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__1(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  %captured_vars_addrs = alloca ptr, align 8, addrspace(5)
-  %captured_vars_addrs.cast = addrspacecast ptr addrspace(5) %captured_vars_addrs to ptr
-  %captured_vars_addrs1 = alloca ptr, align 8, addrspace(5)
-  %captured_vars_addrs1.cast = addrspacecast ptr addrspace(5) %captured_vars_addrs1 to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  %captured_vars_addrs = alloca [0 x ptr], align 8
+  %captured_vars_addrs1 = alloca [0 x ptr], align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @unknown_no_openmp() #8
-  %0 = load ptr, ptr %.global_tid..addr.cast, align 8
+  %0 = load ptr, ptr %.global_tid..addr, align 8
   %1 = load i32, ptr %0, align 4
-  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr %captured_vars_addrs.cast, i64 0)
+  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr %captured_vars_addrs, i64 0)
   call void @no_parallel_region_in_here() #7
-  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr %captured_vars_addrs1.cast, i64 0)
+  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr %captured_vars_addrs1, i64 0)
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__2(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @p0() #7
   ret void
 }
 
-; Function Attrs: convergent
 declare void @p0() #4
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__2_wrapper(i16 zeroext %0, i32 %1) #0 {
 entry:
-  %.addr = alloca ptr, align 8, addrspace(5)
-  %.addr.cast = addrspacecast ptr addrspace(5) %.addr to ptr
-  %.addr1 = alloca ptr, align 8, addrspace(5)
-  %.addr1.cast = addrspacecast ptr addrspace(5) %.addr1 to ptr
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %global_args = alloca ptr, align 8, addrspace(5)
-  %global_args.cast = addrspacecast ptr addrspace(5) %global_args to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
-  store i16 %0, ptr %.addr.cast, align 2
-  store i32 %1, ptr %.addr1.cast, align 4
-  call void @__kmpc_get_shared_variables(ptr %global_args.cast)
-  call void @__omp_outlined__2(ptr %.addr1.cast, ptr %.zero.addr.cast) #3
+  %.addr = alloca i16, align 2
+  %.addr1 = alloca i32, align 4
+  %.zero.addr = alloca i32, align 4
+  %global_args = alloca ptr, align 8
+  store i32 0, ptr %.zero.addr, align 4
+  store i16 %0, ptr %.addr, align 2
+  store i32 %1, ptr %.addr1, align 4
+  call void @__kmpc_get_shared_variables(ptr %global_args)
+  call void @__omp_outlined__2(ptr %.addr1, ptr %.zero.addr) #3
   ret void
 }
 
@@ -288,57 +263,45 @@ declare void @__kmpc_get_shared_variables(ptr)
 
 declare void @__kmpc_parallel_51(ptr, i32, i32, i32, i32, ptr, ptr, ptr, i64)
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__3(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @p1() #7
   ret void
 }
 
-; Function Attrs: convergent
 declare void @p1() #4
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__3_wrapper(i16 zeroext %0, i32 %1) #0 {
 entry:
-  %.addr = alloca ptr, align 8, addrspace(5)
-  %.addr.cast = addrspacecast ptr addrspace(5) %.addr to ptr
-  %.addr1 = alloca ptr, align 8, addrspace(5)
-  %.addr1.cast = addrspacecast ptr addrspace(5) %.addr1 to ptr
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %global_args = alloca ptr, align 8, addrspace(5)
-  %global_args.cast = addrspacecast ptr addrspace(5) %global_args to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
-  store i16 %0, ptr %.addr.cast, align 2
-  store i32 %1, ptr %.addr1.cast, align 4
-  call void @__kmpc_get_shared_variables(ptr %global_args.cast)
-  call void @__omp_outlined__3(ptr %.addr1.cast, ptr %.zero.addr.cast) #3
+  %.addr = alloca i16, align 2
+  %.addr1 = alloca i32, align 4
+  %.zero.addr = alloca i32, align 4
+  %global_args = alloca ptr, align 8
+  store i32 0, ptr %.zero.addr, align 4
+  store i16 %0, ptr %.addr, align 2
+  store i32 %1, ptr %.addr1, align 4
+  call void @__kmpc_get_shared_variables(ptr %global_args)
+  call void @__omp_outlined__3(ptr %.addr1, ptr %.zero.addr) #3
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
-define weak ptx_kernel void @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39(ptr %dyn) #0 {
+define weak void @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39(ptr %dyn) #0 {
 entry:
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %.threadid_temp. = alloca ptr, align 8, addrspace(5)
-  %.threadid_temp..cast = addrspacecast ptr addrspace(5) %.threadid_temp. to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
+  %.zero.addr = alloca i32, align 4
+  %.threadid_temp. = alloca i32, align 4
+  store i32 0, ptr %.zero.addr, align 4
   %0 = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment, ptr %dyn)
   %exec_user_code = icmp eq i32 %0, -1
   br i1 %exec_user_code, label %user_code.entry, label %worker.exit
 
 user_code.entry:                                  ; preds = %entry
   %1 = call i32 @__kmpc_global_thread_num(ptr @1)
-  store i32 %1, ptr %.threadid_temp..cast, align 4
-  call void @__omp_outlined__4(ptr %.threadid_temp..cast, ptr %.zero.addr.cast) #3
+  store i32 %1, ptr %.threadid_temp., align 4
+  call void @__omp_outlined__4(ptr %.threadid_temp., ptr %.zero.addr) #3
   call void @__kmpc_target_deinit()
   ret void
 
@@ -346,95 +309,76 @@ worker.exit:                                      ; preds = %entry
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__4(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  %captured_vars_addrs = alloca ptr, align 8, addrspace(5)
-  %captured_vars_addrs.cast = addrspacecast ptr addrspace(5) %captured_vars_addrs to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  %captured_vars_addrs = alloca [0 x ptr], align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @unknown_no_openmp() #8
   call void @simple_state_machine_interprocedural_before() #7
   call void @no_parallel_region_in_here() #7
-  %0 = load ptr, ptr %.global_tid..addr.cast, align 8
+  %0 = load ptr, ptr %.global_tid..addr, align 8
   %1 = load i32, ptr %0, align 4
-  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr %captured_vars_addrs.cast, i64 0)
+  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr %captured_vars_addrs, i64 0)
   call void @simple_state_machine_interprocedural_after() #7
   ret void
 }
 
-; Function Attrs: convergent noinline nounwind
 define hidden void @simple_state_machine_interprocedural_before() #1 {
 entry:
-  %captured_vars_addrs = alloca ptr, align 8, addrspace(5)
-  %captured_vars_addrs.cast = addrspacecast ptr addrspace(5) %captured_vars_addrs to ptr
+  %captured_vars_addrs = alloca [0 x ptr], align 8
   %0 = call i32 @__kmpc_global_thread_num(ptr @2)
-  call void @__kmpc_parallel_51(ptr @2, i32 %0, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr %captured_vars_addrs.cast, i64 0)
+  call void @__kmpc_parallel_51(ptr @2, i32 %0, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr %captured_vars_addrs, i64 0)
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__5(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @p1() #7
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__5_wrapper(i16 zeroext %0, i32 %1) #0 {
 entry:
-  %.addr = alloca ptr, align 8, addrspace(5)
-  %.addr.cast = addrspacecast ptr addrspace(5) %.addr to ptr
-  %.addr1 = alloca ptr, align 8, addrspace(5)
-  %.addr1.cast = addrspacecast ptr addrspace(5) %.addr1 to ptr
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %global_args = alloca ptr, align 8, addrspace(5)
-  %global_args.cast = addrspacecast ptr addrspace(5) %global_args to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
-  store i16 %0, ptr %.addr.cast, align 2
-  store i32 %1, ptr %.addr1.cast, align 4
-  call void @__kmpc_get_shared_variables(ptr %global_args.cast)
-  call void @__omp_outlined__5(ptr %.addr1.cast, ptr %.zero.addr.cast) #3
+  %.addr = alloca i16, align 2
+  %.addr1 = alloca i32, align 4
+  %.zero.addr = alloca i32, align 4
+  %global_args = alloca ptr, align 8
+  store i32 0, ptr %.zero.addr, align 4
+  store i16 %0, ptr %.addr, align 2
+  store i32 %1, ptr %.addr1, align 4
+  call void @__kmpc_get_shared_variables(ptr %global_args)
+  call void @__omp_outlined__5(ptr %.addr1, ptr %.zero.addr) #3
   ret void
 }
 
-; Function Attrs: convergent noinline nounwind
 define hidden void @simple_state_machine_interprocedural_after() #1 {
 entry:
-  %captured_vars_addrs = alloca ptr, align 8, addrspace(5)
-  %captured_vars_addrs.cast = addrspacecast ptr addrspace(5) %captured_vars_addrs to ptr
+  %captured_vars_addrs = alloca [0 x ptr], align 8
   %0 = call i32 @__kmpc_global_thread_num(ptr @2)
-  call void @__kmpc_parallel_51(ptr @2, i32 %0, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr %captured_vars_addrs.cast, i64 0)
+  call void @__kmpc_parallel_51(ptr @2, i32 %0, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr %captured_vars_addrs, i64 0)
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
-define weak ptx_kernel void @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55(ptr %dyn) #0 {
+define weak void @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55(ptr %dyn) #0 {
 entry:
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %.threadid_temp. = alloca ptr, align 8, addrspace(5)
-  %.threadid_temp..cast = addrspacecast ptr addrspace(5) %.threadid_temp. to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
+  %.zero.addr = alloca i32, align 4
+  %.threadid_temp. = alloca i32, align 4
+  store i32 0, ptr %.zero.addr, align 4
   %0 = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment, ptr %dyn)
   %exec_user_code = icmp eq i32 %0, -1
   br i1 %exec_user_code, label %user_code.entry, label %worker.exit
 
 user_code.entry:                                  ; preds = %entry
   %1 = call i32 @__kmpc_global_thread_num(ptr @1)
-  store i32 %1, ptr %.threadid_temp..cast, align 4
-  call void @__omp_outlined__6(ptr %.threadid_temp..cast, ptr %.zero.addr.cast) #3
+  store i32 %1, ptr %.threadid_temp., align 4
+  call void @__omp_outlined__6(ptr %.threadid_temp., ptr %.zero.addr) #3
   call void @__kmpc_target_deinit()
   ret void
 
@@ -442,110 +386,85 @@ worker.exit:                                      ; preds = %entry
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__6(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  %captured_vars_addrs = alloca ptr, align 8, addrspace(5)
-  %captured_vars_addrs.cast = addrspacecast ptr addrspace(5) %captured_vars_addrs to ptr
-  %captured_vars_addrs1 = alloca ptr, align 8, addrspace(5)
-  %captured_vars_addrs1.cast = addrspacecast ptr addrspace(5) %captured_vars_addrs1 to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
-  %0 = load ptr, ptr %.global_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  %captured_vars_addrs = alloca [0 x ptr], align 8
+  %captured_vars_addrs1 = alloca [0 x ptr], align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
+  %0 = load ptr, ptr %.global_tid..addr, align 8
   %1 = load i32, ptr %0, align 4
-  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr %captured_vars_addrs.cast, i64 0)
+  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr %captured_vars_addrs, i64 0)
   %call = call i32 @unknown() #7
-  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr %captured_vars_addrs1.cast, i64 0)
+  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr %captured_vars_addrs1, i64 0)
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__7(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @p0() #7
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__7_wrapper(i16 zeroext %0, i32 %1) #0 {
 entry:
-  %.addr = alloca ptr, align 8, addrspace(5)
-  %.addr.cast = addrspacecast ptr addrspace(5) %.addr to ptr
-  %.addr1 = alloca ptr, align 8, addrspace(5)
-  %.addr1.cast = addrspacecast ptr addrspace(5) %.addr1 to ptr
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %global_args = alloca ptr, align 8, addrspace(5)
-  %global_args.cast = addrspacecast ptr addrspace(5) %global_args to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
-  store i16 %0, ptr %.addr.cast, align 2
-  store i32 %1, ptr %.addr1.cast, align 4
-  call void @__kmpc_get_shared_variables(ptr %global_args.cast)
-  call void @__omp_outlined__7(ptr %.addr1.cast, ptr %.zero.addr.cast) #3
+  %.addr = alloca i16, align 2
+  %.addr1 = alloca i32, align 4
+  %.zero.addr = alloca i32, align 4
+  %global_args = alloca ptr, align 8
+  store i32 0, ptr %.zero.addr, align 4
+  store i16 %0, ptr %.addr, align 2
+  store i32 %1, ptr %.addr1, align 4
+  call void @__kmpc_get_shared_variables(ptr %global_args)
+  call void @__omp_outlined__7(ptr %.addr1, ptr %.zero.addr) #3
   ret void
 }
 
-; Function Attrs: convergent
 declare i32 @unknown() #4
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__8(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @p1() #7
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__8_wrapper(i16 zeroext %0, i32 %1) #0 {
 entry:
-  %.addr = alloca ptr, align 8, addrspace(5)
-  %.addr.cast = addrspacecast ptr addrspace(5) %.addr to ptr
-  %.addr1 = alloca ptr, align 8, addrspace(5)
-  %.addr1.cast = addrspacecast ptr addrspace(5) %.addr1 to ptr
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %global_args = alloca ptr, align 8, addrspace(5)
-  %global_args.cast = addrspacecast ptr addrspace(5) %global_args to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
-  store i16 %0, ptr %.addr.cast, align 2
-  store i32 %1, ptr %.addr1.cast, align 4
-  call void @__kmpc_get_shared_variables(ptr %global_args.cast)
-  call void @__omp_outlined__8(ptr %.addr1.cast, ptr %.zero.addr.cast) #3
+  %.addr = alloca i16, align 2
+  %.addr1 = alloca i32, align 4
+  %.zero.addr = alloca i32, align 4
+  %global_args = alloca ptr, align 8
+  store i32 0, ptr %.zero.addr, align 4
+  store i16 %0, ptr %.addr, align 2
+  store i32 %1, ptr %.addr1, align 4
+  call void @__kmpc_get_shared_variables(ptr %global_args)
+  call void @__omp_outlined__8(ptr %.addr1, ptr %.zero.addr) #3
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
-define weak ptx_kernel void @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66(ptr %dyn) #0 {
+define weak void @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66(ptr %dyn) #0 {
 entry:
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %.threadid_temp. = alloca ptr, align 8, addrspace(5)
-  %.threadid_temp..cast = addrspacecast ptr addrspace(5) %.threadid_temp. to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
+  %.zero.addr = alloca i32, align 4
+  %.threadid_temp. = alloca i32, align 4
+  store i32 0, ptr %.zero.addr, align 4
   %0 = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment, ptr %dyn)
   %exec_user_code = icmp eq i32 %0, -1
   br i1 %exec_user_code, label %user_code.entry, label %worker.exit
 
 user_code.entry:                                  ; preds = %entry
   %1 = call i32 @__kmpc_global_thread_num(ptr @1)
-  store i32 %1, ptr %.threadid_temp..cast, align 4
-  call void @__omp_outlined__9(ptr %.threadid_temp..cast, ptr %.zero.addr.cast) #3
+  store i32 %1, ptr %.threadid_temp., align 4
+  call void @__omp_outlined__9(ptr %.threadid_temp., ptr %.zero.addr) #3
   call void @__kmpc_target_deinit()
   ret void
 
@@ -553,107 +472,83 @@ worker.exit:                                      ; preds = %entry
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__9(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  %captured_vars_addrs = alloca ptr, align 8, addrspace(5)
-  %captured_vars_addrs.cast = addrspacecast ptr addrspace(5) %captured_vars_addrs to ptr
-  %captured_vars_addrs1 = alloca ptr, align 8, addrspace(5)
-  %captured_vars_addrs1.cast = addrspacecast ptr addrspace(5) %captured_vars_addrs1 to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
-  %0 = load ptr, ptr %.global_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  %captured_vars_addrs = alloca [0 x ptr], align 8
+  %captured_vars_addrs1 = alloca [0 x ptr], align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
+  %0 = load ptr, ptr %.global_tid..addr, align 8
   %1 = load i32, ptr %0, align 4
-  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr %captured_vars_addrs.cast, i64 0)
+  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr %captured_vars_addrs, i64 0)
   call void @unknown_no_openmp() #8
-  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr %captured_vars_addrs1.cast, i64 0)
+  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr %captured_vars_addrs1, i64 0)
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__10(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @p0() #7
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__10_wrapper(i16 zeroext %0, i32 %1) #0 {
 entry:
-  %.addr = alloca ptr, align 8, addrspace(5)
-  %.addr.cast = addrspacecast ptr addrspace(5) %.addr to ptr
-  %.addr1 = alloca ptr, align 8, addrspace(5)
-  %.addr1.cast = addrspacecast ptr addrspace(5) %.addr1 to ptr
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %global_args = alloca ptr, align 8, addrspace(5)
-  %global_args.cast = addrspacecast ptr addrspace(5) %global_args to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
-  store i16 %0, ptr %.addr.cast, align 2
-  store i32 %1, ptr %.addr1.cast, align 4
-  call void @__kmpc_get_shared_variables(ptr %global_args.cast)
-  call void @__omp_outlined__10(ptr %.addr1.cast, ptr %.zero.addr.cast) #3
+  %.addr = alloca i16, align 2
+  %.addr1 = alloca i32, align 4
+  %.zero.addr = alloca i32, align 4
+  %global_args = alloca ptr, align 8
+  store i32 0, ptr %.zero.addr, align 4
+  store i16 %0, ptr %.addr, align 2
+  store i32 %1, ptr %.addr1, align 4
+  call void @__kmpc_get_shared_variables(ptr %global_args)
+  call void @__omp_outlined__10(ptr %.addr1, ptr %.zero.addr) #3
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__11(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @p1() #7
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__11_wrapper(i16 zeroext %0, i32 %1) #0 {
 entry:
-  %.addr = alloca ptr, align 8, addrspace(5)
-  %.addr.cast = addrspacecast ptr addrspace(5) %.addr to ptr
-  %.addr1 = alloca ptr, align 8, addrspace(5)
-  %.addr1.cast = addrspacecast ptr addrspace(5) %.addr1 to ptr
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %global_args = alloca ptr, align 8, addrspace(5)
-  %global_args.cast = addrspacecast ptr addrspace(5) %global_args to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
-  store i16 %0, ptr %.addr.cast, align 2
-  store i32 %1, ptr %.addr1.cast, align 4
-  call void @__kmpc_get_shared_variables(ptr %global_args.cast)
-  call void @__omp_outlined__11(ptr %.addr1.cast, ptr %.zero.addr.cast) #3
+  %.addr = alloca i16, align 2
+  %.addr1 = alloca i32, align 4
+  %.zero.addr = alloca i32, align 4
+  %global_args = alloca ptr, align 8
+  store i32 0, ptr %.zero.addr, align 4
+  store i16 %0, ptr %.addr, align 2
+  store i32 %1, ptr %.addr1, align 4
+  call void @__kmpc_get_shared_variables(ptr %global_args)
+  call void @__omp_outlined__11(ptr %.addr1, ptr %.zero.addr) #3
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
-define weak ptx_kernel void @__omp_offloading_14_a36502b_simple_state_machine_pure_l77(ptr %dyn) #0 {
+define weak void @__omp_offloading_14_a36502b_simple_state_machine_pure_l77(ptr %dyn) #0 {
 entry:
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %.threadid_temp. = alloca ptr, align 8, addrspace(5)
-  %.threadid_temp..cast = addrspacecast ptr addrspace(5) %.threadid_temp. to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
+  %.zero.addr = alloca i32, align 4
+  %.threadid_temp. = alloca i32, align 4
+  store i32 0, ptr %.zero.addr, align 4
   %0 = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment, ptr %dyn)
   %exec_user_code = icmp eq i32 %0, -1
   br i1 %exec_user_code, label %user_code.entry, label %worker.exit
 
 user_code.entry:                                  ; preds = %entry
   %1 = call i32 @__kmpc_global_thread_num(ptr @1)
-  store i32 %1, ptr %.threadid_temp..cast, align 4
-  call void @__omp_outlined__12(ptr %.threadid_temp..cast, ptr %.zero.addr.cast) #3
+  store i32 %1, ptr %.threadid_temp., align 4
+  call void @__omp_outlined__12(ptr %.threadid_temp., ptr %.zero.addr) #3
   call void @__kmpc_target_deinit()
   ret void
 
@@ -661,111 +556,86 @@ worker.exit:                                      ; preds = %entry
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__12(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  %captured_vars_addrs = alloca ptr, align 8, addrspace(5)
-  %captured_vars_addrs.cast = addrspacecast ptr addrspace(5) %captured_vars_addrs to ptr
-  %captured_vars_addrs1 = alloca ptr, align 8, addrspace(5)
-  %captured_vars_addrs1.cast = addrspacecast ptr addrspace(5) %captured_vars_addrs1 to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  %captured_vars_addrs = alloca [0 x ptr], align 8
+  %captured_vars_addrs1 = alloca [0 x ptr], align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @unknown_no_openmp() #8
-  %0 = load ptr, ptr %.global_tid..addr.cast, align 8
+  %0 = load ptr, ptr %.global_tid..addr, align 8
   %1 = load i32, ptr %0, align 4
-  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr %captured_vars_addrs.cast, i64 0)
+  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr %captured_vars_addrs, i64 0)
   call void @unknown_pure() #9
-  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr %captured_vars_addrs1.cast, i64 0)
+  call void @__kmpc_parallel_51(ptr @1, i32 %1, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr %captured_vars_addrs1, i64 0)
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__13(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @p0() #7
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__13_wrapper(i16 zeroext %0, i32 %1) #0 {
 entry:
-  %.addr = alloca ptr, align 8, addrspace(5)
-  %.addr.cast = addrspacecast ptr addrspace(5) %.addr to ptr
-  %.addr1 = alloca ptr, align 8, addrspace(5)
-  %.addr1.cast = addrspacecast ptr addrspace(5) %.addr1 to ptr
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %global_args = alloca ptr, align 8, addrspace(5)
-  %global_args.cast = addrspacecast ptr addrspace(5) %global_args to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
-  store i16 %0, ptr %.addr.cast, align 2
-  store i32 %1, ptr %.addr1.cast, align 4
-  call void @__kmpc_get_shared_variables(ptr %global_args.cast)
-  call void @__omp_outlined__13(ptr %.addr1.cast, ptr %.zero.addr.cast) #3
+  %.addr = alloca i16, align 2
+  %.addr1 = alloca i32, align 4
+  %.zero.addr = alloca i32, align 4
+  %global_args = alloca ptr, align 8
+  store i32 0, ptr %.zero.addr, align 4
+  store i16 %0, ptr %.addr, align 2
+  store i32 %1, ptr %.addr1, align 4
+  call void @__kmpc_get_shared_variables(ptr %global_args)
+  call void @__omp_outlined__13(ptr %.addr1, ptr %.zero.addr) #3
   ret void
 }
 
-; Function Attrs: convergent nounwind willreturn memory(read)
 declare void @unknown_pure() #5
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__14(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @p1() #7
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__14_wrapper(i16 zeroext %0, i32 %1) #0 {
 entry:
-  %.addr = alloca ptr, align 8, addrspace(5)
-  %.addr.cast = addrspacecast ptr addrspace(5) %.addr to ptr
-  %.addr1 = alloca ptr, align 8, addrspace(5)
-  %.addr1.cast = addrspacecast ptr addrspace(5) %.addr1 to ptr
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %global_args = alloca ptr, align 8, addrspace(5)
-  %global_args.cast = addrspacecast ptr addrspace(5) %global_args to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
-  store i16 %0, ptr %.addr.cast, align 2
-  store i32 %1, ptr %.addr1.cast, align 4
-  call void @__kmpc_get_shared_variables(ptr %global_args.cast)
-  call void @__omp_outlined__14(ptr %.addr1.cast, ptr %.zero.addr.cast) #3
+  %.addr = alloca i16, align 2
+  %.addr1 = alloca i32, align 4
+  %.zero.addr = alloca i32, align 4
+  %global_args = alloca ptr, align 8
+  store i32 0, ptr %.zero.addr, align 4
+  store i16 %0, ptr %.addr, align 2
+  store i32 %1, ptr %.addr1, align 4
+  call void @__kmpc_get_shared_variables(ptr %global_args)
+  call void @__omp_outlined__14(ptr %.addr1, ptr %.zero.addr) #3
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
-define weak ptx_kernel void @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92(ptr %dyn) #0 {
+define weak void @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92(ptr %dyn) #0 {
 entry:
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %.threadid_temp. = alloca ptr, align 8, addrspace(5)
-  %.threadid_temp..cast = addrspacecast ptr addrspace(5) %.threadid_temp. to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
+  %.zero.addr = alloca i32, align 4
+  %.threadid_temp. = alloca i32, align 4
+  store i32 0, ptr %.zero.addr, align 4
   %0 = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment, ptr %dyn)
   %exec_user_code = icmp eq i32 %0, -1
   br i1 %exec_user_code, label %user_code.entry, label %worker.exit
 
 user_code.entry:                                  ; preds = %entry
   %1 = call i32 @__kmpc_global_thread_num(ptr @1)
-  store i32 %1, ptr %.threadid_temp..cast, align 4
-  call void @__omp_outlined__15(ptr %.threadid_temp..cast, ptr %.zero.addr.cast) #3
+  store i32 %1, ptr %.threadid_temp., align 4
+  call void @__omp_outlined__15(ptr %.threadid_temp., ptr %.zero.addr) #3
   call void @__kmpc_target_deinit()
   ret void
 
@@ -773,27 +643,22 @@ worker.exit:                                      ; preds = %entry
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__15(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   %call = call i32 @omp_get_thread_num() #7
   call void @simple_state_machine_interprocedural_nested_recursive_after(i32 %call) #7
   ret void
 }
 
-; Function Attrs: convergent noinline nounwind
 define hidden void @simple_state_machine_interprocedural_nested_recursive_after(i32 %a) #1 {
 entry:
-  %a.addr = alloca ptr, align 8, addrspace(5)
-  %a.addr.cast = addrspacecast ptr addrspace(5) %a.addr to ptr
-  store i32 %a, ptr %a.addr.cast, align 4
-  %0 = load i32, ptr %a.addr.cast, align 4
+  %a.addr = alloca i32, align 4
+  store i32 %a, ptr %a.addr, align 4
+  %0 = load i32, ptr %a.addr, align 4
   %cmp = icmp eq i32 %0, 0
   br i1 %cmp, label %if.then, label %if.end
 
@@ -801,7 +666,7 @@ if.then:                                          ; preds = %entry
   br label %return
 
 if.end:                                           ; preds = %entry
-  %1 = load i32, ptr %a.addr.cast, align 4
+  %1 = load i32, ptr %a.addr, align 4
   %sub = sub nsw i32 %1, 1
   call void @simple_state_machine_interprocedural_nested_recursive_after(i32 %sub) #7
   call void @simple_state_machine_interprocedural_nested_recursive_after_after() #7
@@ -811,25 +676,21 @@ return:                                           ; preds = %if.end, %if.then
   ret void
 }
 
-; Function Attrs: convergent
 declare i32 @omp_get_thread_num(...) #4
 
-; Function Attrs: convergent noinline norecurse nounwind
-define weak ptx_kernel void @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112(ptr %dyn) #0 {
+define weak void @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112(ptr %dyn) #0 {
 entry:
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %.threadid_temp. = alloca ptr, align 8, addrspace(5)
-  %.threadid_temp..cast = addrspacecast ptr addrspace(5) %.threadid_temp. to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
+  %.zero.addr = alloca i32, align 4
+  %.threadid_temp. = alloca i32, align 4
+  store i32 0, ptr %.zero.addr, align 4
   %0 = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment, ptr %dyn)
   %exec_user_code = icmp eq i32 %0, -1
   br i1 %exec_user_code, label %user_code.entry, label %worker.exit
 
 user_code.entry:                                  ; preds = %entry
   %1 = call i32 @__kmpc_global_thread_num(ptr @1)
-  store i32 %1, ptr %.threadid_temp..cast, align 4
-  call void @__omp_outlined__16(ptr %.threadid_temp..cast, ptr %.zero.addr.cast) #3
+  store i32 %1, ptr %.threadid_temp., align 4
+  call void @__omp_outlined__16(ptr %.threadid_temp., ptr %.zero.addr) #3
   call void @__kmpc_target_deinit()
   ret void
 
@@ -837,153 +698,121 @@ worker.exit:                                      ; preds = %entry
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__16(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @weak_callee_empty() #7
   ret void
 }
 
-; Function Attrs: convergent noinline nounwind
 define weak hidden void @weak_callee_empty() #1 {
 entry:
   ret void
 }
 
-; Function Attrs: convergent nounwind
 declare i32 @__kmpc_single(ptr, i32) #6
 
-; Function Attrs: convergent nounwind
 declare void @__kmpc_end_single(ptr, i32) #6
 
-; Function Attrs: convergent nounwind
 declare void @__kmpc_barrier(ptr, i32) #6
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__17(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @p0() #7
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__17_wrapper(i16 zeroext %0, i32 %1) #0 {
 entry:
-  %.addr = alloca ptr, align 8, addrspace(5)
-  %.addr.cast = addrspacecast ptr addrspace(5) %.addr to ptr
-  %.addr1 = alloca ptr, align 8, addrspace(5)
-  %.addr1.cast = addrspacecast ptr addrspace(5) %.addr1 to ptr
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %global_args = alloca ptr, align 8, addrspace(5)
-  %global_args.cast = addrspacecast ptr addrspace(5) %global_args to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
-  store i16 %0, ptr %.addr.cast, align 2
-  store i32 %1, ptr %.addr1.cast, align 4
-  call void @__kmpc_get_shared_variables(ptr %global_args.cast)
-  call void @__omp_outlined__17(ptr %.addr1.cast, ptr %.zero.addr.cast) #3
+  %.addr = alloca i16, align 2
+  %.addr1 = alloca i32, align 4
+  %.zero.addr = alloca i32, align 4
+  %global_args = alloca ptr, align 8
+  store i32 0, ptr %.zero.addr, align 4
+  store i16 %0, ptr %.addr, align 2
+  store i32 %1, ptr %.addr1, align 4
+  call void @__kmpc_get_shared_variables(ptr %global_args)
+  call void @__omp_outlined__17(ptr %.addr1, ptr %.zero.addr) #3
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__18(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @p0() #7
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__18_wrapper(i16 zeroext %0, i32 %1) #0 {
 entry:
-  %.addr = alloca ptr, align 8, addrspace(5)
-  %.addr.cast = addrspacecast ptr addrspace(5) %.addr to ptr
-  %.addr1 = alloca ptr, align 8, addrspace(5)
-  %.addr1.cast = addrspacecast ptr addrspace(5) %.addr1 to ptr
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %global_args = alloca ptr, align 8, addrspace(5)
-  %global_args.cast = addrspacecast ptr addrspace(5) %global_args to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
-  store i16 %0, ptr %.addr.cast, align 2
-  store i32 %1, ptr %.addr1.cast, align 4
-  call void @__kmpc_get_shared_variables(ptr %global_args.cast)
-  call void @__omp_outlined__18(ptr %.addr1.cast, ptr %.zero.addr.cast) #3
+  %.addr = alloca i16, align 2
+  %.addr1 = alloca i32, align 4
+  %.zero.addr = alloca i32, align 4
+  %global_args = alloca ptr, align 8
+  store i32 0, ptr %.zero.addr, align 4
+  store i16 %0, ptr %.addr, align 2
+  store i32 %1, ptr %.addr1, align 4
+  call void @__kmpc_get_shared_variables(ptr %global_args)
+  call void @__omp_outlined__18(ptr %.addr1, ptr %.zero.addr) #3
   ret void
 }
 
-; Function Attrs: convergent noinline nounwind
 define hidden void @simple_state_machine_interprocedural_nested_recursive_after_after() #1 {
 entry:
-  %captured_vars_addrs = alloca ptr, align 8, addrspace(5)
-  %captured_vars_addrs.cast = addrspacecast ptr addrspace(5) %captured_vars_addrs to ptr
+  %captured_vars_addrs = alloca [0 x ptr], align 8
   %0 = call i32 @__kmpc_global_thread_num(ptr @2)
-  call void @__kmpc_parallel_51(ptr @2, i32 %0, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr %captured_vars_addrs.cast, i64 0)
+  call void @__kmpc_parallel_51(ptr @2, i32 %0, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr %captured_vars_addrs, i64 0)
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__19(ptr noalias %.global_tid., ptr noalias %.bound_tid.) #0 {
 entry:
-  %.global_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.global_tid..addr.cast = addrspacecast ptr addrspace(5) %.global_tid..addr to ptr
-  %.bound_tid..addr = alloca ptr, align 8, addrspace(5)
-  %.bound_tid..addr.cast = addrspacecast ptr addrspace(5) %.bound_tid..addr to ptr
-  store ptr %.global_tid., ptr %.global_tid..addr.cast, align 8
-  store ptr %.bound_tid., ptr %.bound_tid..addr.cast, align 8
+  %.global_tid..addr = alloca ptr, align 8
+  %.bound_tid..addr = alloca ptr, align 8
+  store ptr %.global_tid., ptr %.global_tid..addr, align 8
+  store ptr %.bound_tid., ptr %.bound_tid..addr, align 8
   call void @p0() #7
   ret void
 }
 
-; Function Attrs: convergent noinline norecurse nounwind
 define internal void @__omp_outlined__19_wrapper(i16 zeroext %0, i32 %1) #0 {
 entry:
-  %.addr = alloca ptr, align 8, addrspace(5)
-  %.addr.cast = addrspacecast ptr addrspace(5) %.addr to ptr
-  %.addr1 = alloca ptr, align 8, addrspace(5)
-  %.addr1.cast = addrspacecast ptr addrspace(5) %.addr1 to ptr
-  %.zero.addr = alloca ptr, align 8, addrspace(5)
-  %.zero.addr.cast = addrspacecast ptr addrspace(5) %.zero.addr to ptr
-  %global_args = alloca ptr, align 8, addrspace(5)
-  %global_args.cast = addrspacecast ptr addrspace(5) %global_args to ptr
-  store i32 0, ptr %.zero.addr.cast, align 4
-  store i16 %0, ptr %.addr.cast, align 2
-  store i32 %1, ptr %.addr1.cast, align 4
-  call void @__kmpc_get_shared_variables(ptr %global_args.cast)
-  call void @__omp_outlined__19(ptr %.addr1.cast, ptr %.zero.addr.cast) #3
+  %.addr = alloca i16, align 2
+  %.addr1 = alloca i32, align 4
+  %.zero.addr = alloca i32, align 4
+  %global_args = alloca ptr, align 8
+  store i32 0, ptr %.zero.addr, align 4
+  store i16 %0, ptr %.addr, align 2
+  store i32 %1, ptr %.addr1, align 4
+  call void @__kmpc_get_shared_variables(ptr %global_args)
+  call void @__omp_outlined__19(ptr %.addr1, ptr %.zero.addr) #3
   ret void
 }
 
-attributes #0 = { convergent noinline norecurse nounwind "frame-pointer"="none" "kernel" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-features"="+ptx32,+sm_20" }
+attributes #0 = { convergent noinline norecurse nounwind "kernel" "frame-pointer"="none" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-features"="+ptx32,+sm_20" }
 attributes #1 = { convergent noinline nounwind "frame-pointer"="none" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-features"="+ptx32,+sm_20" }
 attributes #2 = { convergent "frame-pointer"="none" "llvm.assume"="omp_no_openmp" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-features"="+ptx32,+sm_20" }
 attributes #3 = { nounwind }
 attributes #4 = { convergent "frame-pointer"="none" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-features"="+ptx32,+sm_20" }
-attributes #5 = { convergent nounwind willreturn memory(read) "frame-pointer"="none" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-features"="+ptx32,+sm_20" }
+attributes #5 = { convergent nounwind readonly willreturn "frame-pointer"="none" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-features"="+ptx32,+sm_20" }
 attributes #6 = { convergent nounwind }
 attributes #7 = { convergent }
 attributes #8 = { convergent "llvm.assume"="omp_no_openmp" }
-attributes #9 = { convergent nounwind willreturn memory(read) }
+attributes #9 = { convergent nounwind readonly willreturn }
 
 !omp_offload.info = !{!0, !1, !2, !3, !4, !5, !6, !7}
-!llvm.module.flags = !{!8, !9, !10}
+!nvvm.annotations = !{!8, !9, !10, !11, !12, !13, !14, !15}
+!llvm.module.flags = !{!16, !17, !18}
 
 !0 = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural", i32 39, i32 2}
 !1 = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_no_openmp_attr", i32 66, i32 4}
@@ -993,108 +822,114 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 !5 = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural_nested_recursive", i32 92, i32 6}
 !6 = !{i32 0, i32 20, i32 171331627, !"no_state_machine_weak_callee", i32 112, i32 7}
 !7 = !{i32 0, i32 20, i32 171331627, !"simple_state_machine", i32 22, i32 1}
-!8 = !{i32 1, !"wchar_size", i32 4}
-!9 = !{i32 7, !"openmp", i32 50}
-!10 = !{i32 7, !"openmp-device", i32 50}
+!8 = !{ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14, !"kernel", i32 1}
+!9 = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_l22, !"kernel", i32 1}
+!10 = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39, !"kernel", i32 1}
+!11 = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55, !"kernel", i32 1}
+!12 = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66, !"kernel", i32 1}
+!13 = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77, !"kernel", i32 1}
+!14 = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92, !"kernel", i32 1}
+!15 = !{ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112, !"kernel", i32 1}
+!16 = !{i32 1, !"wchar_size", i32 4}
+!17 = !{i32 7, !"openmp", i32 50}
+!18 = !{i32 7, !"openmp-device", i32 50}
 ;.
 ; AMDGPU1: @[[GLOB0:[0-9]+]] = private unnamed_addr constant [23 x i8] c"
-; AMDGPU1: @[[GLOB1:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 0, i32 0, ptr @[[GLOB0]] }, align 8
-; AMDGPU1: @[[GLOB2:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
-; AMDGPU1: @G = external global i32, align 4
-; AMDGPU1: @[[GLOB3:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 322, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
-; AMDGPU1: @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU1: @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU1: @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU1: @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU1: @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU1: @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU1: @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU1: @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU1: @[[GLOB1:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 2, i32 0, i32 0, ptr @[[GLOB0]] }, align 8
+; AMDGPU1: @[[GLOB2:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 2, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
+; AMDGPU1: @[[G:[a-zA-Z0-9_$"\\.-]+]] = external global i32, align 4
+; AMDGPU1: @[[GLOB3:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 322, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
+; AMDGPU1: @[[__OMP_OFFLOADING_14_A36502B_NO_STATE_MACHINE_NEEDED_L14_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU1: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_L22_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU1: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_INTERPROCEDURAL_L39_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU1: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_WITH_FALLBACK_L55_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU1: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_NO_OPENMP_ATTR_L66_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU1: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_PURE_L77_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU1: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_INTERPROCEDURAL_NESTED_RECURSIVE_L92_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU1: @[[__OMP_OFFLOADING_14_A36502B_NO_STATE_MACHINE_WEAK_CALLEE_L112_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
 ;.
 ; NVPTX1: @[[GLOB0:[0-9]+]] = private unnamed_addr constant [23 x i8] c"
-; NVPTX1: @[[GLOB1:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 0, i32 0, ptr @[[GLOB0]] }, align 8
-; NVPTX1: @[[GLOB2:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
-; NVPTX1: @G = external global i32, align 4
-; NVPTX1: @[[GLOB3:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 322, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
-; NVPTX1: @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX1: @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX1: @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX1: @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX1: @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX1: @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX1: @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX1: @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX1: @[[GLOB1:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 2, i32 0, i32 0, ptr @[[GLOB0]] }, align 8
+; NVPTX1: @[[GLOB2:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 2, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
+; NVPTX1: @[[G:[a-zA-Z0-9_$"\\.-]+]] = external global i32, align 4
+; NVPTX1: @[[GLOB3:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 322, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
+; NVPTX1: @[[__OMP_OFFLOADING_14_A36502B_NO_STATE_MACHINE_NEEDED_L14_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX1: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_L22_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX1: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_INTERPROCEDURAL_L39_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX1: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_WITH_FALLBACK_L55_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX1: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_NO_OPENMP_ATTR_L66_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX1: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_PURE_L77_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX1: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_INTERPROCEDURAL_NESTED_RECURSIVE_L92_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX1: @[[__OMP_OFFLOADING_14_A36502B_NO_STATE_MACHINE_WEAK_CALLEE_L112_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
 ;.
 ; AMDGPU2: @[[GLOB0:[0-9]+]] = private unnamed_addr constant [23 x i8] c"
-; AMDGPU2: @[[GLOB1:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 0, i32 0, ptr @[[GLOB0]] }, align 8
-; AMDGPU2: @[[GLOB2:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
-; AMDGPU2: @G = external global i32, align 4
-; AMDGPU2: @[[GLOB3:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 322, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
-; AMDGPU2: @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU2: @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU2: @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU2: @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU2: @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU2: @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU2: @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU2: @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU2: @[[GLOB1:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 2, i32 0, i32 0, ptr @[[GLOB0]] }, align 8
+; AMDGPU2: @[[GLOB2:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 2, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
+; AMDGPU2: @[[G:[a-zA-Z0-9_$"\\.-]+]] = external global i32, align 4
+; AMDGPU2: @[[GLOB3:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 322, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
+; AMDGPU2: @[[__OMP_OFFLOADING_14_A36502B_NO_STATE_MACHINE_NEEDED_L14_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU2: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_L22_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU2: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_INTERPROCEDURAL_L39_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU2: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_WITH_FALLBACK_L55_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU2: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_NO_OPENMP_ATTR_L66_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU2: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_PURE_L77_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU2: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_INTERPROCEDURAL_NESTED_RECURSIVE_L92_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU2: @[[__OMP_OFFLOADING_14_A36502B_NO_STATE_MACHINE_WEAK_CALLEE_L112_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
 ;.
 ; AMDGPU3: @[[GLOB0:[0-9]+]] = private unnamed_addr constant [23 x i8] c"
-; AMDGPU3: @[[GLOB1:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 0, i32 0, ptr @[[GLOB0]] }, align 8
-; AMDGPU3: @[[GLOB2:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
-; AMDGPU3: @G = external global i32, align 4
-; AMDGPU3: @[[GLOB3:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 322, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
-; AMDGPU3: @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU3: @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU3: @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU3: @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU3: @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU3: @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU3: @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; AMDGPU3: @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU3: @[[GLOB1:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 2, i32 0, i32 0, ptr @[[GLOB0]] }, align 8
+; AMDGPU3: @[[GLOB2:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 2, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
+; AMDGPU3: @[[G:[a-zA-Z0-9_$"\\.-]+]] = external global i32, align 4
+; AMDGPU3: @[[GLOB3:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 322, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
+; AMDGPU3: @[[__OMP_OFFLOADING_14_A36502B_NO_STATE_MACHINE_NEEDED_L14_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU3: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_L22_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU3: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_INTERPROCEDURAL_L39_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU3: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_WITH_FALLBACK_L55_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU3: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_NO_OPENMP_ATTR_L66_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU3: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_PURE_L77_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU3: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_INTERPROCEDURAL_NESTED_RECURSIVE_L92_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; AMDGPU3: @[[__OMP_OFFLOADING_14_A36502B_NO_STATE_MACHINE_WEAK_CALLEE_L112_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
 ;.
 ; NVPTX2: @[[GLOB0:[0-9]+]] = private unnamed_addr constant [23 x i8] c"
-; NVPTX2: @[[GLOB1:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 0, i32 0, ptr @[[GLOB0]] }, align 8
-; NVPTX2: @[[GLOB2:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
-; NVPTX2: @G = external global i32, align 4
-; NVPTX2: @[[GLOB3:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 322, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
-; NVPTX2: @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX2: @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX2: @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX2: @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX2: @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX2: @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX2: @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX2: @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX2: @[[GLOB1:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 2, i32 0, i32 0, ptr @[[GLOB0]] }, align 8
+; NVPTX2: @[[GLOB2:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 2, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
+; NVPTX2: @[[G:[a-zA-Z0-9_$"\\.-]+]] = external global i32, align 4
+; NVPTX2: @[[GLOB3:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 322, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
+; NVPTX2: @[[__OMP_OFFLOADING_14_A36502B_NO_STATE_MACHINE_NEEDED_L14_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX2: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_L22_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX2: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_INTERPROCEDURAL_L39_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX2: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_WITH_FALLBACK_L55_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX2: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_NO_OPENMP_ATTR_L66_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX2: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_PURE_L77_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX2: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_INTERPROCEDURAL_NESTED_RECURSIVE_L92_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX2: @[[__OMP_OFFLOADING_14_A36502B_NO_STATE_MACHINE_WEAK_CALLEE_L112_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
 ;.
 ; NVPTX3: @[[GLOB0:[0-9]+]] = private unnamed_addr constant [23 x i8] c"
-; NVPTX3: @[[GLOB1:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 0, i32 0, ptr @[[GLOB0]] }, align 8
-; NVPTX3: @[[GLOB2:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
-; NVPTX3: @G = external global i32, align 4
-; NVPTX3: @[[GLOB3:[0-9]+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 322, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
-; NVPTX3: @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX3: @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX3: @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX3: @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX3: @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX3: @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX3: @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
-; NVPTX3: @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment = local_unnamed_addr constant %struct.KernelEnvironmentTy { %struct.ConfigurationEnvironmentTy { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX3: @[[GLOB1:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 2, i32 0, i32 0, ptr @[[GLOB0]] }, align 8
+; NVPTX3: @[[GLOB2:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 2, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
+; NVPTX3: @[[G:[a-zA-Z0-9_$"\\.-]+]] = external global i32, align 4
+; NVPTX3: @[[GLOB3:[0-9]+]] = private unnamed_addr constant [[STRUCT_IDENT_T:%.*]] { i32 0, i32 322, i32 2, i32 0, ptr @[[GLOB0]] }, align 8
+; NVPTX3: @[[__OMP_OFFLOADING_14_A36502B_NO_STATE_MACHINE_NEEDED_L14_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX3: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_L22_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX3: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_INTERPROCEDURAL_L39_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX3: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_WITH_FALLBACK_L55_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX3: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_NO_OPENMP_ATTR_L66_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX3: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_PURE_L77_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX3: @[[__OMP_OFFLOADING_14_A36502B_SIMPLE_STATE_MACHINE_INTERPROCEDURAL_NESTED_RECURSIVE_L92_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
+; NVPTX3: @[[__OMP_OFFLOADING_14_A36502B_NO_STATE_MACHINE_WEAK_CALLEE_L112_KERNEL_ENVIRONMENT:[a-zA-Z0-9_$"\\.-]+]] = local_unnamed_addr constant [[STRUCT_KERNELENVIRONMENTTY:%.*]] { [[STRUCT_CONFIGURATIONENVIRONMENTTY:%.*]] { i8 1, i8 0, i8 1, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0 }, ptr @[[GLOB1]], ptr null }
 ;.
 ; AMDGPU1: Function Attrs: convergent noinline norecurse nounwind
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_no_state_machine_needed_l14
 ; AMDGPU1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0:[0-9]+]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment, ptr [[DYN]])
 ; AMDGPU1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU1:       user_code.entry:
 ; AMDGPU1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3:[0-9]+]]
-; AMDGPU1-NEXT:    call void @__omp_outlined__(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    call void @__omp_outlined__(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU1-NEXT:    ret void
 ; AMDGPU1:       worker.exit:
@@ -1105,6 +940,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9:[0-9]+]]
 ; AMDGPU1-NEXT:    call void @unknown_no_openmp() #[[ATTR10:[0-9]+]]
 ; AMDGPU1-NEXT:    ret void
@@ -1148,16 +985,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_l22
 ; AMDGPU1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment, ptr [[DYN]])
 ; AMDGPU1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU1:       user_code.entry:
 ; AMDGPU1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU1-NEXT:    call void @__omp_outlined__1(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    call void @__omp_outlined__1(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU1-NEXT:    ret void
 ; AMDGPU1:       worker.exit:
@@ -1168,14 +1003,13 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__1
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU1-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU1-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9]]
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1183,6 +1017,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__2
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @p0() #[[ATTR11:[0-9]+]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1191,14 +1027,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__2_wrapper
 ; AMDGPU1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU1-NEXT:    call void @__omp_outlined__2(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU1-NEXT:    call void @__omp_outlined__2(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1206,6 +1040,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__3
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1214,14 +1050,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__3_wrapper
 ; AMDGPU1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU1-NEXT:    call void @__omp_outlined__3(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU1-NEXT:    call void @__omp_outlined__3(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1229,16 +1063,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39
 ; AMDGPU1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment, ptr [[DYN]])
 ; AMDGPU1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU1:       user_code.entry:
 ; AMDGPU1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU1-NEXT:    call void @__omp_outlined__4(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    call void @__omp_outlined__4(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU1-NEXT:    ret void
 ; AMDGPU1:       worker.exit:
@@ -1249,12 +1081,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__4
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU1-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
 ; AMDGPU1-NEXT:    call void @simple_state_machine_interprocedural_before.internalized() #[[ATTR9]]
 ; AMDGPU1-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9]]
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU1-NEXT:    call void @simple_state_machine_interprocedural_after.internalized() #[[ATTR9]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1263,10 +1095,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_before.internalized
 ; AMDGPU1-SAME: () #[[ATTR6:[0-9]+]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1274,10 +1105,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_before
 ; AMDGPU1-SAME: () #[[ATTR1]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1285,6 +1115,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__5
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1293,14 +1125,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__5_wrapper
 ; AMDGPU1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU1-NEXT:    call void @__omp_outlined__5(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU1-NEXT:    call void @__omp_outlined__5(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1308,10 +1138,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_after.internalized
 ; AMDGPU1-SAME: () #[[ATTR6]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1319,10 +1148,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_after
 ; AMDGPU1-SAME: () #[[ATTR1]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1330,16 +1158,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55
 ; AMDGPU1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment, ptr [[DYN]])
 ; AMDGPU1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU1:       user_code.entry:
 ; AMDGPU1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU1-NEXT:    call void @__omp_outlined__6(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    call void @__omp_outlined__6(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU1-NEXT:    ret void
 ; AMDGPU1:       worker.exit:
@@ -1350,13 +1176,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__6
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU1-NEXT:    [[CALL:%.*]] = call i32 @unknown() #[[ATTR11]]
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1364,6 +1189,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__7
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1372,14 +1199,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__7_wrapper
 ; AMDGPU1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU1-NEXT:    call void @__omp_outlined__7(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU1-NEXT:    call void @__omp_outlined__7(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1387,6 +1212,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__8
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1395,14 +1222,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__8_wrapper
 ; AMDGPU1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU1-NEXT:    call void @__omp_outlined__8(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU1-NEXT:    call void @__omp_outlined__8(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1410,16 +1235,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66
 ; AMDGPU1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment, ptr [[DYN]])
 ; AMDGPU1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU1:       user_code.entry:
 ; AMDGPU1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU1-NEXT:    call void @__omp_outlined__9(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    call void @__omp_outlined__9(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU1-NEXT:    ret void
 ; AMDGPU1:       worker.exit:
@@ -1430,13 +1253,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__9
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU1-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1444,6 +1266,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__10
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1452,14 +1276,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__10_wrapper
 ; AMDGPU1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU1-NEXT:    call void @__omp_outlined__10(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU1-NEXT:    call void @__omp_outlined__10(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1467,6 +1289,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__11
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1475,14 +1299,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__11_wrapper
 ; AMDGPU1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU1-NEXT:    call void @__omp_outlined__11(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU1-NEXT:    call void @__omp_outlined__11(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1490,16 +1312,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_pure_l77
 ; AMDGPU1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment, ptr [[DYN]])
 ; AMDGPU1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU1:       user_code.entry:
 ; AMDGPU1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU1-NEXT:    call void @__omp_outlined__12(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    call void @__omp_outlined__12(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU1-NEXT:    ret void
 ; AMDGPU1:       worker.exit:
@@ -1510,13 +1330,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__12
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU1-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1524,6 +1343,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__13
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1532,14 +1353,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__13_wrapper
 ; AMDGPU1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU1-NEXT:    call void @__omp_outlined__13(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU1-NEXT:    call void @__omp_outlined__13(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1547,6 +1366,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__14
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1555,14 +1376,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__14_wrapper
 ; AMDGPU1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU1-NEXT:    call void @__omp_outlined__14(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU1-NEXT:    call void @__omp_outlined__14(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1570,16 +1389,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92
 ; AMDGPU1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment, ptr [[DYN]])
 ; AMDGPU1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU1:       user_code.entry:
 ; AMDGPU1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU1-NEXT:    call void @__omp_outlined__15(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    call void @__omp_outlined__15(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU1-NEXT:    ret void
 ; AMDGPU1:       worker.exit:
@@ -1590,6 +1407,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__15
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    [[CALL:%.*]] = call i32 @omp_get_thread_num() #[[ATTR9]]
 ; AMDGPU1-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after.internalized(i32 [[CALL]]) #[[ATTR9]]
 ; AMDGPU1-NEXT:    ret void
@@ -1599,15 +1418,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after.internalized
 ; AMDGPU1-SAME: (i32 [[A:%.*]]) #[[ATTR6]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[A_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    store i32 [[A]], ptr addrspace(5) [[A_ADDR]], align 4
-; AMDGPU1-NEXT:    [[TMP0:%.*]] = load i32, ptr addrspace(5) [[A_ADDR]], align 4
+; AMDGPU1-NEXT:    [[A_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    store i32 [[A]], ptr [[A_ADDR]], align 4
+; AMDGPU1-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; AMDGPU1-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP0]], 0
 ; AMDGPU1-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_END:%.*]]
 ; AMDGPU1:       if.then:
 ; AMDGPU1-NEXT:    br label [[RETURN:%.*]]
 ; AMDGPU1:       if.end:
-; AMDGPU1-NEXT:    [[TMP1:%.*]] = load i32, ptr addrspace(5) [[A_ADDR]], align 4
+; AMDGPU1-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; AMDGPU1-NEXT:    [[SUB:%.*]] = sub nsw i32 [[TMP1]], 1
 ; AMDGPU1-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after.internalized(i32 [[SUB]]) #[[ATTR9]]
 ; AMDGPU1-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after_after.internalized() #[[ATTR9]]
@@ -1620,16 +1439,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after
 ; AMDGPU1-SAME: (i32 [[A:%.*]]) #[[ATTR1]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[A_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[A_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[A_ADDR]] to ptr
-; AMDGPU1-NEXT:    store i32 [[A]], ptr [[A_ADDR_CAST]], align 4
-; AMDGPU1-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR_CAST]], align 4
+; AMDGPU1-NEXT:    [[A_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    store i32 [[A]], ptr [[A_ADDR]], align 4
+; AMDGPU1-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; AMDGPU1-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP0]], 0
 ; AMDGPU1-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_END:%.*]]
 ; AMDGPU1:       if.then:
 ; AMDGPU1-NEXT:    br label [[RETURN:%.*]]
 ; AMDGPU1:       if.end:
-; AMDGPU1-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR_CAST]], align 4
+; AMDGPU1-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; AMDGPU1-NEXT:    [[SUB:%.*]] = sub nsw i32 [[TMP1]], 1
 ; AMDGPU1-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after(i32 [[SUB]]) #[[ATTR11]]
 ; AMDGPU1-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after_after() #[[ATTR11]]
@@ -1642,16 +1460,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112
 ; AMDGPU1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment, ptr [[DYN]])
 ; AMDGPU1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU1:       user_code.entry:
 ; AMDGPU1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU1-NEXT:    call void @__omp_outlined__16(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    call void @__omp_outlined__16(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU1-NEXT:    ret void
 ; AMDGPU1:       worker.exit:
@@ -1662,6 +1478,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__16
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @weak_callee_empty() #[[ATTR9]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1677,6 +1495,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__17
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1685,14 +1505,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__17_wrapper
 ; AMDGPU1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU1-NEXT:    call void @__omp_outlined__17(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU1-NEXT:    call void @__omp_outlined__17(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1700,6 +1518,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__18
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1708,14 +1528,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__18_wrapper
 ; AMDGPU1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU1-NEXT:    call void @__omp_outlined__18(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU1-NEXT:    call void @__omp_outlined__18(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1723,10 +1541,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after_after.internalized
 ; AMDGPU1-SAME: () #[[ATTR6]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1734,10 +1551,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after_after
 ; AMDGPU1-SAME: () #[[ATTR1]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1745,6 +1561,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__19
 ; AMDGPU1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
+; AMDGPU1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU1-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU1-NEXT:    ret void
 ;
@@ -1753,14 +1571,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1-LABEL: define {{[^@]+}}@__omp_outlined__19_wrapper
 ; AMDGPU1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU1-NEXT:  entry:
-; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU1-NEXT:    call void @__omp_outlined__19(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU1-NEXT:    call void @__omp_outlined__19(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU1-NEXT:    ret void
 ;
 ;
@@ -1768,16 +1584,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_no_state_machine_needed_l14
 ; NVPTX1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0:[0-9]+]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment, ptr [[DYN]])
 ; NVPTX1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX1:       user_code.entry:
 ; NVPTX1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3:[0-9]+]]
-; NVPTX1-NEXT:    call void @__omp_outlined__(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    call void @__omp_outlined__(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX1-NEXT:    ret void
 ; NVPTX1:       worker.exit:
@@ -1788,6 +1602,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9:[0-9]+]]
 ; NVPTX1-NEXT:    call void @unknown_no_openmp() #[[ATTR10:[0-9]+]]
 ; NVPTX1-NEXT:    ret void
@@ -1831,16 +1647,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_l22
 ; NVPTX1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment, ptr [[DYN]])
 ; NVPTX1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX1:       user_code.entry:
 ; NVPTX1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX1-NEXT:    call void @__omp_outlined__1(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    call void @__omp_outlined__1(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX1-NEXT:    ret void
 ; NVPTX1:       worker.exit:
@@ -1851,14 +1665,13 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__1
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX1-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX1-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9]]
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -1866,6 +1679,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__2
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @p0() #[[ATTR11:[0-9]+]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -1874,14 +1689,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__2_wrapper
 ; NVPTX1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX1-NEXT:    call void @__omp_outlined__2(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX1-NEXT:    call void @__omp_outlined__2(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -1889,6 +1702,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__3
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -1897,14 +1712,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__3_wrapper
 ; NVPTX1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX1-NEXT:    call void @__omp_outlined__3(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX1-NEXT:    call void @__omp_outlined__3(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -1912,16 +1725,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39
 ; NVPTX1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment, ptr [[DYN]])
 ; NVPTX1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX1:       user_code.entry:
 ; NVPTX1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX1-NEXT:    call void @__omp_outlined__4(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    call void @__omp_outlined__4(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX1-NEXT:    ret void
 ; NVPTX1:       worker.exit:
@@ -1932,12 +1743,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__4
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX1-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
 ; NVPTX1-NEXT:    call void @simple_state_machine_interprocedural_before.internalized() #[[ATTR9]]
 ; NVPTX1-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9]]
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX1-NEXT:    call void @simple_state_machine_interprocedural_after.internalized() #[[ATTR9]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -1946,10 +1757,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_before.internalized
 ; NVPTX1-SAME: () #[[ATTR6:[0-9]+]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -1957,10 +1767,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_before
 ; NVPTX1-SAME: () #[[ATTR1]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -1968,6 +1777,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__5
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -1976,14 +1787,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__5_wrapper
 ; NVPTX1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX1-NEXT:    call void @__omp_outlined__5(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX1-NEXT:    call void @__omp_outlined__5(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -1991,10 +1800,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_after.internalized
 ; NVPTX1-SAME: () #[[ATTR6]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2002,10 +1810,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_after
 ; NVPTX1-SAME: () #[[ATTR1]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2013,16 +1820,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55
 ; NVPTX1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment, ptr [[DYN]])
 ; NVPTX1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX1:       user_code.entry:
 ; NVPTX1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX1-NEXT:    call void @__omp_outlined__6(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    call void @__omp_outlined__6(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX1-NEXT:    ret void
 ; NVPTX1:       worker.exit:
@@ -2033,13 +1838,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__6
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX1-NEXT:    [[CALL:%.*]] = call i32 @unknown() #[[ATTR11]]
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2047,6 +1851,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__7
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -2055,14 +1861,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__7_wrapper
 ; NVPTX1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX1-NEXT:    call void @__omp_outlined__7(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX1-NEXT:    call void @__omp_outlined__7(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2070,6 +1874,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__8
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -2078,14 +1884,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__8_wrapper
 ; NVPTX1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX1-NEXT:    call void @__omp_outlined__8(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX1-NEXT:    call void @__omp_outlined__8(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2093,16 +1897,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66
 ; NVPTX1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment, ptr [[DYN]])
 ; NVPTX1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX1:       user_code.entry:
 ; NVPTX1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX1-NEXT:    call void @__omp_outlined__9(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    call void @__omp_outlined__9(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX1-NEXT:    ret void
 ; NVPTX1:       worker.exit:
@@ -2113,13 +1915,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__9
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX1-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2127,6 +1928,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__10
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -2135,14 +1938,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__10_wrapper
 ; NVPTX1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX1-NEXT:    call void @__omp_outlined__10(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX1-NEXT:    call void @__omp_outlined__10(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2150,6 +1951,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__11
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -2158,14 +1961,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__11_wrapper
 ; NVPTX1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX1-NEXT:    call void @__omp_outlined__11(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX1-NEXT:    call void @__omp_outlined__11(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2173,16 +1974,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_pure_l77
 ; NVPTX1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment, ptr [[DYN]])
 ; NVPTX1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX1:       user_code.entry:
 ; NVPTX1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX1-NEXT:    call void @__omp_outlined__12(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    call void @__omp_outlined__12(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX1-NEXT:    ret void
 ; NVPTX1:       worker.exit:
@@ -2193,13 +1992,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__12
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX1-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2207,6 +2005,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__13
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -2215,14 +2015,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__13_wrapper
 ; NVPTX1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX1-NEXT:    call void @__omp_outlined__13(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX1-NEXT:    call void @__omp_outlined__13(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2230,6 +2028,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__14
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -2238,14 +2038,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__14_wrapper
 ; NVPTX1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX1-NEXT:    call void @__omp_outlined__14(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX1-NEXT:    call void @__omp_outlined__14(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2253,16 +2051,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92
 ; NVPTX1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment, ptr [[DYN]])
 ; NVPTX1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX1:       user_code.entry:
 ; NVPTX1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX1-NEXT:    call void @__omp_outlined__15(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    call void @__omp_outlined__15(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX1-NEXT:    ret void
 ; NVPTX1:       worker.exit:
@@ -2273,6 +2069,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__15
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    [[CALL:%.*]] = call i32 @omp_get_thread_num() #[[ATTR9]]
 ; NVPTX1-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after.internalized(i32 [[CALL]]) #[[ATTR9]]
 ; NVPTX1-NEXT:    ret void
@@ -2282,15 +2080,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after.internalized
 ; NVPTX1-SAME: (i32 [[A:%.*]]) #[[ATTR6]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[A_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    store i32 [[A]], ptr addrspace(5) [[A_ADDR]], align 4
-; NVPTX1-NEXT:    [[TMP0:%.*]] = load i32, ptr addrspace(5) [[A_ADDR]], align 4
+; NVPTX1-NEXT:    [[A_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    store i32 [[A]], ptr [[A_ADDR]], align 4
+; NVPTX1-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; NVPTX1-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP0]], 0
 ; NVPTX1-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_END:%.*]]
 ; NVPTX1:       if.then:
 ; NVPTX1-NEXT:    br label [[RETURN:%.*]]
 ; NVPTX1:       if.end:
-; NVPTX1-NEXT:    [[TMP1:%.*]] = load i32, ptr addrspace(5) [[A_ADDR]], align 4
+; NVPTX1-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; NVPTX1-NEXT:    [[SUB:%.*]] = sub nsw i32 [[TMP1]], 1
 ; NVPTX1-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after.internalized(i32 [[SUB]]) #[[ATTR9]]
 ; NVPTX1-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after_after.internalized() #[[ATTR9]]
@@ -2303,16 +2101,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after
 ; NVPTX1-SAME: (i32 [[A:%.*]]) #[[ATTR1]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[A_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[A_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[A_ADDR]] to ptr
-; NVPTX1-NEXT:    store i32 [[A]], ptr [[A_ADDR_CAST]], align 4
-; NVPTX1-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR_CAST]], align 4
+; NVPTX1-NEXT:    [[A_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    store i32 [[A]], ptr [[A_ADDR]], align 4
+; NVPTX1-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; NVPTX1-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP0]], 0
 ; NVPTX1-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_END:%.*]]
 ; NVPTX1:       if.then:
 ; NVPTX1-NEXT:    br label [[RETURN:%.*]]
 ; NVPTX1:       if.end:
-; NVPTX1-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR_CAST]], align 4
+; NVPTX1-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; NVPTX1-NEXT:    [[SUB:%.*]] = sub nsw i32 [[TMP1]], 1
 ; NVPTX1-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after(i32 [[SUB]]) #[[ATTR11]]
 ; NVPTX1-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after_after() #[[ATTR11]]
@@ -2325,16 +2122,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112
 ; NVPTX1-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment, ptr [[DYN]])
 ; NVPTX1-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX1-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX1:       user_code.entry:
 ; NVPTX1-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX1-NEXT:    call void @__omp_outlined__16(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    call void @__omp_outlined__16(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX1-NEXT:    ret void
 ; NVPTX1:       worker.exit:
@@ -2345,6 +2140,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__16
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @weak_callee_empty() #[[ATTR9]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -2360,6 +2157,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__17
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -2368,14 +2167,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__17_wrapper
 ; NVPTX1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX1-NEXT:    call void @__omp_outlined__17(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX1-NEXT:    call void @__omp_outlined__17(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2383,6 +2180,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__18
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -2391,14 +2190,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__18_wrapper
 ; NVPTX1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX1-NEXT:    call void @__omp_outlined__18(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX1-NEXT:    call void @__omp_outlined__18(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2406,10 +2203,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after_after.internalized
 ; NVPTX1-SAME: () #[[ATTR6]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2417,10 +2213,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after_after
 ; NVPTX1-SAME: () #[[ATTR1]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX1-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX1-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX1-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2428,6 +2223,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__19
 ; NVPTX1-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
+; NVPTX1-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX1-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX1-NEXT:    ret void
 ;
@@ -2436,14 +2233,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1-LABEL: define {{[^@]+}}@__omp_outlined__19_wrapper
 ; NVPTX1-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX1-NEXT:  entry:
-; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX1-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX1-NEXT:    call void @__omp_outlined__19(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX1-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX1-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX1-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX1-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX1-NEXT:    call void @__omp_outlined__19(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX1-NEXT:    ret void
 ;
 ;
@@ -2451,16 +2246,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_no_state_machine_needed_l14
 ; AMDGPU2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0:[0-9]+]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment, ptr [[DYN]])
 ; AMDGPU2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU2:       user_code.entry:
 ; AMDGPU2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3:[0-9]+]]
-; AMDGPU2-NEXT:    call void @__omp_outlined__(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    call void @__omp_outlined__(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU2-NEXT:    ret void
 ; AMDGPU2:       worker.exit:
@@ -2471,6 +2264,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9:[0-9]+]]
 ; AMDGPU2-NEXT:    call void @unknown_no_openmp() #[[ATTR10:[0-9]+]]
 ; AMDGPU2-NEXT:    ret void
@@ -2514,16 +2309,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_l22
 ; AMDGPU2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment, ptr [[DYN]])
 ; AMDGPU2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU2:       user_code.entry:
 ; AMDGPU2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU2-NEXT:    call void @__omp_outlined__1(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    call void @__omp_outlined__1(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU2-NEXT:    ret void
 ; AMDGPU2:       worker.exit:
@@ -2534,14 +2327,13 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__1
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU2-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU2-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9]]
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2549,6 +2341,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__2
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @p0() #[[ATTR11:[0-9]+]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -2557,14 +2351,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__2_wrapper
 ; AMDGPU2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU2-NEXT:    call void @__omp_outlined__2(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU2-NEXT:    call void @__omp_outlined__2(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2572,6 +2364,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__3
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -2580,14 +2374,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__3_wrapper
 ; AMDGPU2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU2-NEXT:    call void @__omp_outlined__3(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU2-NEXT:    call void @__omp_outlined__3(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2595,16 +2387,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39
 ; AMDGPU2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment, ptr [[DYN]])
 ; AMDGPU2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU2:       user_code.entry:
 ; AMDGPU2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU2-NEXT:    call void @__omp_outlined__4(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    call void @__omp_outlined__4(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU2-NEXT:    ret void
 ; AMDGPU2:       worker.exit:
@@ -2615,12 +2405,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__4
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU2-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
 ; AMDGPU2-NEXT:    call void @simple_state_machine_interprocedural_before.internalized() #[[ATTR9]]
 ; AMDGPU2-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9]]
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU2-NEXT:    call void @simple_state_machine_interprocedural_after.internalized() #[[ATTR9]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -2629,10 +2419,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_before.internalized
 ; AMDGPU2-SAME: () #[[ATTR6:[0-9]+]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2640,10 +2429,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_before
 ; AMDGPU2-SAME: () #[[ATTR1]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2651,6 +2439,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__5
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -2659,14 +2449,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__5_wrapper
 ; AMDGPU2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU2-NEXT:    call void @__omp_outlined__5(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU2-NEXT:    call void @__omp_outlined__5(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2674,10 +2462,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_after.internalized
 ; AMDGPU2-SAME: () #[[ATTR6]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2685,10 +2472,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_after
 ; AMDGPU2-SAME: () #[[ATTR1]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2696,16 +2482,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55
 ; AMDGPU2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment, ptr [[DYN]])
 ; AMDGPU2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU2:       user_code.entry:
 ; AMDGPU2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU2-NEXT:    call void @__omp_outlined__6(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    call void @__omp_outlined__6(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU2-NEXT:    ret void
 ; AMDGPU2:       worker.exit:
@@ -2716,13 +2500,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__6
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU2-NEXT:    [[CALL:%.*]] = call i32 @unknown() #[[ATTR11]]
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2730,6 +2513,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__7
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -2738,14 +2523,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__7_wrapper
 ; AMDGPU2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU2-NEXT:    call void @__omp_outlined__7(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU2-NEXT:    call void @__omp_outlined__7(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2753,6 +2536,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__8
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -2761,14 +2546,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__8_wrapper
 ; AMDGPU2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU2-NEXT:    call void @__omp_outlined__8(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU2-NEXT:    call void @__omp_outlined__8(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2776,16 +2559,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66
 ; AMDGPU2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment, ptr [[DYN]])
 ; AMDGPU2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU2:       user_code.entry:
 ; AMDGPU2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU2-NEXT:    call void @__omp_outlined__9(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    call void @__omp_outlined__9(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU2-NEXT:    ret void
 ; AMDGPU2:       worker.exit:
@@ -2796,13 +2577,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__9
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU2-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2810,6 +2590,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__10
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -2818,14 +2600,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__10_wrapper
 ; AMDGPU2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU2-NEXT:    call void @__omp_outlined__10(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU2-NEXT:    call void @__omp_outlined__10(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2833,6 +2613,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__11
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -2841,14 +2623,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__11_wrapper
 ; AMDGPU2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU2-NEXT:    call void @__omp_outlined__11(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU2-NEXT:    call void @__omp_outlined__11(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2856,16 +2636,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_pure_l77
 ; AMDGPU2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment, ptr [[DYN]])
 ; AMDGPU2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU2:       user_code.entry:
 ; AMDGPU2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU2-NEXT:    call void @__omp_outlined__12(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    call void @__omp_outlined__12(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU2-NEXT:    ret void
 ; AMDGPU2:       worker.exit:
@@ -2876,13 +2654,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__12
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU2-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2890,6 +2667,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__13
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -2898,14 +2677,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__13_wrapper
 ; AMDGPU2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU2-NEXT:    call void @__omp_outlined__13(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU2-NEXT:    call void @__omp_outlined__13(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2913,6 +2690,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__14
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -2921,14 +2700,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__14_wrapper
 ; AMDGPU2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU2-NEXT:    call void @__omp_outlined__14(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU2-NEXT:    call void @__omp_outlined__14(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -2936,16 +2713,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92
 ; AMDGPU2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment, ptr [[DYN]])
 ; AMDGPU2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU2:       user_code.entry:
 ; AMDGPU2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU2-NEXT:    call void @__omp_outlined__15(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    call void @__omp_outlined__15(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU2-NEXT:    ret void
 ; AMDGPU2:       worker.exit:
@@ -2956,6 +2731,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__15
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    [[CALL:%.*]] = call i32 @omp_get_thread_num() #[[ATTR9]]
 ; AMDGPU2-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after.internalized(i32 [[CALL]]) #[[ATTR9]]
 ; AMDGPU2-NEXT:    ret void
@@ -2965,15 +2742,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after.internalized
 ; AMDGPU2-SAME: (i32 [[A:%.*]]) #[[ATTR6]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[A_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    store i32 [[A]], ptr addrspace(5) [[A_ADDR]], align 4
-; AMDGPU2-NEXT:    [[TMP0:%.*]] = load i32, ptr addrspace(5) [[A_ADDR]], align 4
+; AMDGPU2-NEXT:    [[A_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    store i32 [[A]], ptr [[A_ADDR]], align 4
+; AMDGPU2-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; AMDGPU2-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP0]], 0
 ; AMDGPU2-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_END:%.*]]
 ; AMDGPU2:       if.then:
 ; AMDGPU2-NEXT:    br label [[RETURN:%.*]]
 ; AMDGPU2:       if.end:
-; AMDGPU2-NEXT:    [[TMP1:%.*]] = load i32, ptr addrspace(5) [[A_ADDR]], align 4
+; AMDGPU2-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; AMDGPU2-NEXT:    [[SUB:%.*]] = sub nsw i32 [[TMP1]], 1
 ; AMDGPU2-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after.internalized(i32 [[SUB]]) #[[ATTR9]]
 ; AMDGPU2-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after_after.internalized() #[[ATTR9]]
@@ -2986,16 +2763,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after
 ; AMDGPU2-SAME: (i32 [[A:%.*]]) #[[ATTR1]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[A_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[A_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[A_ADDR]] to ptr
-; AMDGPU2-NEXT:    store i32 [[A]], ptr [[A_ADDR_CAST]], align 4
-; AMDGPU2-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR_CAST]], align 4
+; AMDGPU2-NEXT:    [[A_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    store i32 [[A]], ptr [[A_ADDR]], align 4
+; AMDGPU2-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; AMDGPU2-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP0]], 0
 ; AMDGPU2-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_END:%.*]]
 ; AMDGPU2:       if.then:
 ; AMDGPU2-NEXT:    br label [[RETURN:%.*]]
 ; AMDGPU2:       if.end:
-; AMDGPU2-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR_CAST]], align 4
+; AMDGPU2-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; AMDGPU2-NEXT:    [[SUB:%.*]] = sub nsw i32 [[TMP1]], 1
 ; AMDGPU2-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after(i32 [[SUB]]) #[[ATTR11]]
 ; AMDGPU2-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after_after() #[[ATTR11]]
@@ -3008,16 +2784,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112
 ; AMDGPU2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment, ptr [[DYN]])
 ; AMDGPU2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU2:       user_code.entry:
 ; AMDGPU2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU2-NEXT:    call void @__omp_outlined__16(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    call void @__omp_outlined__16(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU2-NEXT:    ret void
 ; AMDGPU2:       worker.exit:
@@ -3028,6 +2802,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__16
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @weak_callee_empty() #[[ATTR9]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -3043,6 +2819,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__17
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -3051,14 +2829,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__17_wrapper
 ; AMDGPU2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU2-NEXT:    call void @__omp_outlined__17(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU2-NEXT:    call void @__omp_outlined__17(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -3066,6 +2842,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__18
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -3074,14 +2852,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__18_wrapper
 ; AMDGPU2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU2-NEXT:    call void @__omp_outlined__18(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU2-NEXT:    call void @__omp_outlined__18(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -3089,10 +2865,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after_after.internalized
 ; AMDGPU2-SAME: () #[[ATTR6]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -3100,10 +2875,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after_after
 ; AMDGPU2-SAME: () #[[ATTR1]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -3111,6 +2885,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__19
 ; AMDGPU2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
+; AMDGPU2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU2-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU2-NEXT:    ret void
 ;
@@ -3119,14 +2895,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2-LABEL: define {{[^@]+}}@__omp_outlined__19_wrapper
 ; AMDGPU2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU2-NEXT:  entry:
-; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU2-NEXT:    call void @__omp_outlined__19(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU2-NEXT:    call void @__omp_outlined__19(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU2-NEXT:    ret void
 ;
 ;
@@ -3134,16 +2908,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_no_state_machine_needed_l14
 ; AMDGPU3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0:[0-9]+]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment, ptr [[DYN]])
 ; AMDGPU3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU3:       user_code.entry:
 ; AMDGPU3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3:[0-9]+]]
-; AMDGPU3-NEXT:    call void @__omp_outlined__(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    call void @__omp_outlined__(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU3-NEXT:    ret void
 ; AMDGPU3:       worker.exit:
@@ -3154,6 +2926,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9:[0-9]+]]
 ; AMDGPU3-NEXT:    call void @unknown_no_openmp() #[[ATTR10:[0-9]+]]
 ; AMDGPU3-NEXT:    ret void
@@ -3197,16 +2971,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_l22
 ; AMDGPU3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment, ptr [[DYN]])
 ; AMDGPU3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU3:       user_code.entry:
 ; AMDGPU3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU3-NEXT:    call void @__omp_outlined__1(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    call void @__omp_outlined__1(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU3-NEXT:    ret void
 ; AMDGPU3:       worker.exit:
@@ -3217,14 +2989,13 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__1
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU3-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU3-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9]]
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3232,6 +3003,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__2
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @p0() #[[ATTR11:[0-9]+]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3240,14 +3013,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__2_wrapper
 ; AMDGPU3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU3-NEXT:    call void @__omp_outlined__2(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU3-NEXT:    call void @__omp_outlined__2(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3255,6 +3026,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__3
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3263,14 +3036,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__3_wrapper
 ; AMDGPU3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU3-NEXT:    call void @__omp_outlined__3(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU3-NEXT:    call void @__omp_outlined__3(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3278,16 +3049,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39
 ; AMDGPU3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment, ptr [[DYN]])
 ; AMDGPU3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU3:       user_code.entry:
 ; AMDGPU3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU3-NEXT:    call void @__omp_outlined__4(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    call void @__omp_outlined__4(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU3-NEXT:    ret void
 ; AMDGPU3:       worker.exit:
@@ -3298,12 +3067,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__4
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU3-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
 ; AMDGPU3-NEXT:    call void @simple_state_machine_interprocedural_before.internalized() #[[ATTR9]]
 ; AMDGPU3-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9]]
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU3-NEXT:    call void @simple_state_machine_interprocedural_after.internalized() #[[ATTR9]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3312,10 +3081,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_before.internalized
 ; AMDGPU3-SAME: () #[[ATTR6:[0-9]+]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3323,10 +3091,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_before
 ; AMDGPU3-SAME: () #[[ATTR1]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3334,6 +3101,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__5
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3342,14 +3111,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__5_wrapper
 ; AMDGPU3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU3-NEXT:    call void @__omp_outlined__5(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU3-NEXT:    call void @__omp_outlined__5(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3357,10 +3124,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_after.internalized
 ; AMDGPU3-SAME: () #[[ATTR6]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3368,10 +3134,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_after
 ; AMDGPU3-SAME: () #[[ATTR1]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3379,16 +3144,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55
 ; AMDGPU3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment, ptr [[DYN]])
 ; AMDGPU3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU3:       user_code.entry:
 ; AMDGPU3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU3-NEXT:    call void @__omp_outlined__6(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    call void @__omp_outlined__6(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU3-NEXT:    ret void
 ; AMDGPU3:       worker.exit:
@@ -3399,13 +3162,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__6
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU3-NEXT:    [[CALL:%.*]] = call i32 @unknown() #[[ATTR11]]
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3413,6 +3175,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__7
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3421,14 +3185,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__7_wrapper
 ; AMDGPU3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU3-NEXT:    call void @__omp_outlined__7(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU3-NEXT:    call void @__omp_outlined__7(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3436,6 +3198,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__8
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3444,14 +3208,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__8_wrapper
 ; AMDGPU3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU3-NEXT:    call void @__omp_outlined__8(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU3-NEXT:    call void @__omp_outlined__8(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3459,16 +3221,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66
 ; AMDGPU3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment, ptr [[DYN]])
 ; AMDGPU3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU3:       user_code.entry:
 ; AMDGPU3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU3-NEXT:    call void @__omp_outlined__9(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    call void @__omp_outlined__9(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU3-NEXT:    ret void
 ; AMDGPU3:       worker.exit:
@@ -3479,13 +3239,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__9
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU3-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3493,6 +3252,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__10
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3501,14 +3262,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__10_wrapper
 ; AMDGPU3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU3-NEXT:    call void @__omp_outlined__10(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU3-NEXT:    call void @__omp_outlined__10(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3516,6 +3275,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__11
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3524,14 +3285,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__11_wrapper
 ; AMDGPU3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU3-NEXT:    call void @__omp_outlined__11(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU3-NEXT:    call void @__omp_outlined__11(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3539,16 +3298,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_pure_l77
 ; AMDGPU3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment, ptr [[DYN]])
 ; AMDGPU3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU3:       user_code.entry:
 ; AMDGPU3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU3-NEXT:    call void @__omp_outlined__12(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    call void @__omp_outlined__12(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU3-NEXT:    ret void
 ; AMDGPU3:       worker.exit:
@@ -3559,13 +3316,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__12
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU3-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3573,6 +3329,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__13
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3581,14 +3339,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__13_wrapper
 ; AMDGPU3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU3-NEXT:    call void @__omp_outlined__13(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU3-NEXT:    call void @__omp_outlined__13(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3596,6 +3352,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__14
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @p1() #[[ATTR11]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3604,14 +3362,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__14_wrapper
 ; AMDGPU3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU3-NEXT:    call void @__omp_outlined__14(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU3-NEXT:    call void @__omp_outlined__14(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3619,16 +3375,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92
 ; AMDGPU3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment, ptr [[DYN]])
 ; AMDGPU3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU3:       user_code.entry:
 ; AMDGPU3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU3-NEXT:    call void @__omp_outlined__15(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    call void @__omp_outlined__15(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU3-NEXT:    ret void
 ; AMDGPU3:       worker.exit:
@@ -3639,6 +3393,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__15
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    [[CALL:%.*]] = call i32 @omp_get_thread_num() #[[ATTR9]]
 ; AMDGPU3-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after.internalized(i32 [[CALL]]) #[[ATTR9]]
 ; AMDGPU3-NEXT:    ret void
@@ -3648,15 +3404,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after.internalized
 ; AMDGPU3-SAME: (i32 [[A:%.*]]) #[[ATTR6]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[A_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    store i32 [[A]], ptr addrspace(5) [[A_ADDR]], align 4
-; AMDGPU3-NEXT:    [[TMP0:%.*]] = load i32, ptr addrspace(5) [[A_ADDR]], align 4
+; AMDGPU3-NEXT:    [[A_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    store i32 [[A]], ptr [[A_ADDR]], align 4
+; AMDGPU3-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; AMDGPU3-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP0]], 0
 ; AMDGPU3-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_END:%.*]]
 ; AMDGPU3:       if.then:
 ; AMDGPU3-NEXT:    br label [[RETURN:%.*]]
 ; AMDGPU3:       if.end:
-; AMDGPU3-NEXT:    [[TMP1:%.*]] = load i32, ptr addrspace(5) [[A_ADDR]], align 4
+; AMDGPU3-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; AMDGPU3-NEXT:    [[SUB:%.*]] = sub nsw i32 [[TMP1]], 1
 ; AMDGPU3-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after.internalized(i32 [[SUB]]) #[[ATTR9]]
 ; AMDGPU3-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after_after.internalized() #[[ATTR9]]
@@ -3669,16 +3425,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after
 ; AMDGPU3-SAME: (i32 [[A:%.*]]) #[[ATTR1]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[A_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[A_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[A_ADDR]] to ptr
-; AMDGPU3-NEXT:    store i32 [[A]], ptr [[A_ADDR_CAST]], align 4
-; AMDGPU3-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR_CAST]], align 4
+; AMDGPU3-NEXT:    [[A_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    store i32 [[A]], ptr [[A_ADDR]], align 4
+; AMDGPU3-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; AMDGPU3-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP0]], 0
 ; AMDGPU3-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_END:%.*]]
 ; AMDGPU3:       if.then:
 ; AMDGPU3-NEXT:    br label [[RETURN:%.*]]
 ; AMDGPU3:       if.end:
-; AMDGPU3-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR_CAST]], align 4
+; AMDGPU3-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; AMDGPU3-NEXT:    [[SUB:%.*]] = sub nsw i32 [[TMP1]], 1
 ; AMDGPU3-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after(i32 [[SUB]]) #[[ATTR11]]
 ; AMDGPU3-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after_after() #[[ATTR11]]
@@ -3691,16 +3446,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112
 ; AMDGPU3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment, ptr [[DYN]])
 ; AMDGPU3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; AMDGPU3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; AMDGPU3:       user_code.entry:
 ; AMDGPU3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; AMDGPU3-NEXT:    call void @__omp_outlined__16(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    call void @__omp_outlined__16(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    call void @__kmpc_target_deinit()
 ; AMDGPU3-NEXT:    ret void
 ; AMDGPU3:       worker.exit:
@@ -3711,6 +3464,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__16
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @weak_callee_empty() #[[ATTR9]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3726,6 +3481,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__17
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3734,14 +3491,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__17_wrapper
 ; AMDGPU3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU3-NEXT:    call void @__omp_outlined__17(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU3-NEXT:    call void @__omp_outlined__17(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3749,6 +3504,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__18
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3757,14 +3514,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__18_wrapper
 ; AMDGPU3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU3-NEXT:    call void @__omp_outlined__18(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU3-NEXT:    call void @__omp_outlined__18(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3772,10 +3527,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after_after.internalized
 ; AMDGPU3-SAME: () #[[ATTR6]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3783,10 +3537,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after_after
 ; AMDGPU3-SAME: () #[[ATTR1]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; AMDGPU3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; AMDGPU3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; AMDGPU3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3794,6 +3547,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__19
 ; AMDGPU3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
+; AMDGPU3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; AMDGPU3-NEXT:    call void @p0() #[[ATTR11]]
 ; AMDGPU3-NEXT:    ret void
 ;
@@ -3802,14 +3557,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3-LABEL: define {{[^@]+}}@__omp_outlined__19_wrapper
 ; AMDGPU3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; AMDGPU3-NEXT:  entry:
-; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; AMDGPU3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; AMDGPU3-NEXT:    call void @__omp_outlined__19(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; AMDGPU3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; AMDGPU3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; AMDGPU3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; AMDGPU3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; AMDGPU3-NEXT:    call void @__omp_outlined__19(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; AMDGPU3-NEXT:    ret void
 ;
 ;
@@ -3817,16 +3570,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_no_state_machine_needed_l14
 ; NVPTX2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0:[0-9]+]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment, ptr [[DYN]])
 ; NVPTX2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX2:       user_code.entry:
 ; NVPTX2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3:[0-9]+]]
-; NVPTX2-NEXT:    call void @__omp_outlined__(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    call void @__omp_outlined__(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX2-NEXT:    ret void
 ; NVPTX2:       worker.exit:
@@ -3837,6 +3588,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9:[0-9]+]]
 ; NVPTX2-NEXT:    call void @unknown_no_openmp() #[[ATTR10:[0-9]+]]
 ; NVPTX2-NEXT:    ret void
@@ -3880,16 +3633,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_l22
 ; NVPTX2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment, ptr [[DYN]])
 ; NVPTX2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX2:       user_code.entry:
 ; NVPTX2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX2-NEXT:    call void @__omp_outlined__1(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    call void @__omp_outlined__1(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX2-NEXT:    ret void
 ; NVPTX2:       worker.exit:
@@ -3900,14 +3651,13 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__1
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX2-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX2-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9]]
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -3915,6 +3665,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__2
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @p0() #[[ATTR11:[0-9]+]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -3923,14 +3675,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__2_wrapper
 ; NVPTX2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX2-NEXT:    call void @__omp_outlined__2(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX2-NEXT:    call void @__omp_outlined__2(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -3938,6 +3688,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__3
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -3946,14 +3698,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__3_wrapper
 ; NVPTX2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX2-NEXT:    call void @__omp_outlined__3(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX2-NEXT:    call void @__omp_outlined__3(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -3961,16 +3711,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39
 ; NVPTX2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment, ptr [[DYN]])
 ; NVPTX2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX2:       user_code.entry:
 ; NVPTX2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX2-NEXT:    call void @__omp_outlined__4(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    call void @__omp_outlined__4(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX2-NEXT:    ret void
 ; NVPTX2:       worker.exit:
@@ -3981,12 +3729,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__4
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX2-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
 ; NVPTX2-NEXT:    call void @simple_state_machine_interprocedural_before.internalized() #[[ATTR9]]
 ; NVPTX2-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9]]
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX2-NEXT:    call void @simple_state_machine_interprocedural_after.internalized() #[[ATTR9]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -3995,10 +3743,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_before.internalized
 ; NVPTX2-SAME: () #[[ATTR6:[0-9]+]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4006,10 +3753,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_before
 ; NVPTX2-SAME: () #[[ATTR1]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4017,6 +3763,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__5
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -4025,14 +3773,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__5_wrapper
 ; NVPTX2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX2-NEXT:    call void @__omp_outlined__5(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX2-NEXT:    call void @__omp_outlined__5(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4040,10 +3786,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_after.internalized
 ; NVPTX2-SAME: () #[[ATTR6]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4051,10 +3796,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_after
 ; NVPTX2-SAME: () #[[ATTR1]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4062,16 +3806,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55
 ; NVPTX2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment, ptr [[DYN]])
 ; NVPTX2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX2:       user_code.entry:
 ; NVPTX2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX2-NEXT:    call void @__omp_outlined__6(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    call void @__omp_outlined__6(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX2-NEXT:    ret void
 ; NVPTX2:       worker.exit:
@@ -4082,13 +3824,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__6
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX2-NEXT:    [[CALL:%.*]] = call i32 @unknown() #[[ATTR11]]
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4096,6 +3837,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__7
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -4104,14 +3847,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__7_wrapper
 ; NVPTX2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX2-NEXT:    call void @__omp_outlined__7(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX2-NEXT:    call void @__omp_outlined__7(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4119,6 +3860,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__8
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -4127,14 +3870,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__8_wrapper
 ; NVPTX2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX2-NEXT:    call void @__omp_outlined__8(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX2-NEXT:    call void @__omp_outlined__8(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4142,16 +3883,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66
 ; NVPTX2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment, ptr [[DYN]])
 ; NVPTX2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX2:       user_code.entry:
 ; NVPTX2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX2-NEXT:    call void @__omp_outlined__9(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    call void @__omp_outlined__9(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX2-NEXT:    ret void
 ; NVPTX2:       worker.exit:
@@ -4162,13 +3901,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__9
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX2-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4176,6 +3914,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__10
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -4184,14 +3924,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__10_wrapper
 ; NVPTX2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX2-NEXT:    call void @__omp_outlined__10(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX2-NEXT:    call void @__omp_outlined__10(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4199,6 +3937,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__11
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -4207,14 +3947,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__11_wrapper
 ; NVPTX2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX2-NEXT:    call void @__omp_outlined__11(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX2-NEXT:    call void @__omp_outlined__11(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4222,16 +3960,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_pure_l77
 ; NVPTX2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment, ptr [[DYN]])
 ; NVPTX2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX2:       user_code.entry:
 ; NVPTX2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX2-NEXT:    call void @__omp_outlined__12(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    call void @__omp_outlined__12(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX2-NEXT:    ret void
 ; NVPTX2:       worker.exit:
@@ -4242,13 +3978,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__12
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX2-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4256,6 +3991,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__13
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -4264,14 +4001,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__13_wrapper
 ; NVPTX2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX2-NEXT:    call void @__omp_outlined__13(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX2-NEXT:    call void @__omp_outlined__13(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4279,6 +4014,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__14
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -4287,14 +4024,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__14_wrapper
 ; NVPTX2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX2-NEXT:    call void @__omp_outlined__14(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX2-NEXT:    call void @__omp_outlined__14(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4302,16 +4037,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92
 ; NVPTX2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment, ptr [[DYN]])
 ; NVPTX2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX2:       user_code.entry:
 ; NVPTX2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX2-NEXT:    call void @__omp_outlined__15(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    call void @__omp_outlined__15(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX2-NEXT:    ret void
 ; NVPTX2:       worker.exit:
@@ -4322,6 +4055,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__15
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    [[CALL:%.*]] = call i32 @omp_get_thread_num() #[[ATTR9]]
 ; NVPTX2-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after.internalized(i32 [[CALL]]) #[[ATTR9]]
 ; NVPTX2-NEXT:    ret void
@@ -4331,15 +4066,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after.internalized
 ; NVPTX2-SAME: (i32 [[A:%.*]]) #[[ATTR6]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[A_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    store i32 [[A]], ptr addrspace(5) [[A_ADDR]], align 4
-; NVPTX2-NEXT:    [[TMP0:%.*]] = load i32, ptr addrspace(5) [[A_ADDR]], align 4
+; NVPTX2-NEXT:    [[A_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    store i32 [[A]], ptr [[A_ADDR]], align 4
+; NVPTX2-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; NVPTX2-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP0]], 0
 ; NVPTX2-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_END:%.*]]
 ; NVPTX2:       if.then:
 ; NVPTX2-NEXT:    br label [[RETURN:%.*]]
 ; NVPTX2:       if.end:
-; NVPTX2-NEXT:    [[TMP1:%.*]] = load i32, ptr addrspace(5) [[A_ADDR]], align 4
+; NVPTX2-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; NVPTX2-NEXT:    [[SUB:%.*]] = sub nsw i32 [[TMP1]], 1
 ; NVPTX2-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after.internalized(i32 [[SUB]]) #[[ATTR9]]
 ; NVPTX2-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after_after.internalized() #[[ATTR9]]
@@ -4352,16 +4087,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after
 ; NVPTX2-SAME: (i32 [[A:%.*]]) #[[ATTR1]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[A_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[A_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[A_ADDR]] to ptr
-; NVPTX2-NEXT:    store i32 [[A]], ptr [[A_ADDR_CAST]], align 4
-; NVPTX2-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR_CAST]], align 4
+; NVPTX2-NEXT:    [[A_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    store i32 [[A]], ptr [[A_ADDR]], align 4
+; NVPTX2-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; NVPTX2-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP0]], 0
 ; NVPTX2-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_END:%.*]]
 ; NVPTX2:       if.then:
 ; NVPTX2-NEXT:    br label [[RETURN:%.*]]
 ; NVPTX2:       if.end:
-; NVPTX2-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR_CAST]], align 4
+; NVPTX2-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; NVPTX2-NEXT:    [[SUB:%.*]] = sub nsw i32 [[TMP1]], 1
 ; NVPTX2-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after(i32 [[SUB]]) #[[ATTR11]]
 ; NVPTX2-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after_after() #[[ATTR11]]
@@ -4374,16 +4108,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112
 ; NVPTX2-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment, ptr [[DYN]])
 ; NVPTX2-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX2-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX2:       user_code.entry:
 ; NVPTX2-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX2-NEXT:    call void @__omp_outlined__16(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    call void @__omp_outlined__16(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX2-NEXT:    ret void
 ; NVPTX2:       worker.exit:
@@ -4394,6 +4126,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__16
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @weak_callee_empty() #[[ATTR9]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -4409,6 +4143,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__17
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -4417,14 +4153,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__17_wrapper
 ; NVPTX2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX2-NEXT:    call void @__omp_outlined__17(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX2-NEXT:    call void @__omp_outlined__17(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4432,6 +4166,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__18
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -4440,14 +4176,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__18_wrapper
 ; NVPTX2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX2-NEXT:    call void @__omp_outlined__18(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX2-NEXT:    call void @__omp_outlined__18(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4455,10 +4189,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after_after.internalized
 ; NVPTX2-SAME: () #[[ATTR6]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4466,10 +4199,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after_after
 ; NVPTX2-SAME: () #[[ATTR1]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX2-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX2-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX2-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4477,6 +4209,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__19
 ; NVPTX2-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
+; NVPTX2-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX2-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX2-NEXT:    ret void
 ;
@@ -4485,14 +4219,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2-LABEL: define {{[^@]+}}@__omp_outlined__19_wrapper
 ; NVPTX2-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX2-NEXT:  entry:
-; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX2-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX2-NEXT:    call void @__omp_outlined__19(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX2-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX2-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX2-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX2-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX2-NEXT:    call void @__omp_outlined__19(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX2-NEXT:    ret void
 ;
 ;
@@ -4500,16 +4232,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_no_state_machine_needed_l14
 ; NVPTX3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0:[0-9]+]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14_kernel_environment, ptr [[DYN]])
 ; NVPTX3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX3:       user_code.entry:
 ; NVPTX3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3:[0-9]+]]
-; NVPTX3-NEXT:    call void @__omp_outlined__(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    call void @__omp_outlined__(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX3-NEXT:    ret void
 ; NVPTX3:       worker.exit:
@@ -4520,6 +4250,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9:[0-9]+]]
 ; NVPTX3-NEXT:    call void @unknown_no_openmp() #[[ATTR10:[0-9]+]]
 ; NVPTX3-NEXT:    ret void
@@ -4563,16 +4295,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_l22
 ; NVPTX3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_l22_kernel_environment, ptr [[DYN]])
 ; NVPTX3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX3:       user_code.entry:
 ; NVPTX3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX3-NEXT:    call void @__omp_outlined__1(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    call void @__omp_outlined__1(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX3-NEXT:    ret void
 ; NVPTX3:       worker.exit:
@@ -4583,14 +4313,13 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__1
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX3-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__2, ptr @__omp_outlined__2_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX3-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9]]
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__3, ptr @__omp_outlined__3_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4598,6 +4327,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__2
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @p0() #[[ATTR11:[0-9]+]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -4606,14 +4337,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__2_wrapper
 ; NVPTX3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX3-NEXT:    call void @__omp_outlined__2(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX3-NEXT:    call void @__omp_outlined__2(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4621,6 +4350,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__3
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -4629,14 +4360,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__3_wrapper
 ; NVPTX3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX3-NEXT:    call void @__omp_outlined__3(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX3-NEXT:    call void @__omp_outlined__3(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4644,16 +4373,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39
 ; NVPTX3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39_kernel_environment, ptr [[DYN]])
 ; NVPTX3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX3:       user_code.entry:
 ; NVPTX3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX3-NEXT:    call void @__omp_outlined__4(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    call void @__omp_outlined__4(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX3-NEXT:    ret void
 ; NVPTX3:       worker.exit:
@@ -4664,12 +4391,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__4
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX3-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
 ; NVPTX3-NEXT:    call void @simple_state_machine_interprocedural_before.internalized() #[[ATTR9]]
 ; NVPTX3-NEXT:    call void @no_parallel_region_in_here.internalized() #[[ATTR9]]
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__5, ptr @__omp_outlined__5_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX3-NEXT:    call void @simple_state_machine_interprocedural_after.internalized() #[[ATTR9]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -4678,10 +4405,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_before.internalized
 ; NVPTX3-SAME: () #[[ATTR6:[0-9]+]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4689,10 +4415,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_before
 ; NVPTX3-SAME: () #[[ATTR1]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__17, ptr @__omp_outlined__17_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4700,6 +4425,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__5
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -4708,14 +4435,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__5_wrapper
 ; NVPTX3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX3-NEXT:    call void @__omp_outlined__5(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX3-NEXT:    call void @__omp_outlined__5(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4723,10 +4448,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_after.internalized
 ; NVPTX3-SAME: () #[[ATTR6]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4734,10 +4458,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_after
 ; NVPTX3-SAME: () #[[ATTR1]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__18, ptr @__omp_outlined__18_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4745,16 +4468,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55
 ; NVPTX3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55_kernel_environment, ptr [[DYN]])
 ; NVPTX3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX3:       user_code.entry:
 ; NVPTX3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX3-NEXT:    call void @__omp_outlined__6(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    call void @__omp_outlined__6(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX3-NEXT:    ret void
 ; NVPTX3:       worker.exit:
@@ -4765,13 +4486,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__6
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__7, ptr @__omp_outlined__7_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX3-NEXT:    [[CALL:%.*]] = call i32 @unknown() #[[ATTR11]]
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__8, ptr @__omp_outlined__8_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4779,6 +4499,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__7
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -4787,14 +4509,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__7_wrapper
 ; NVPTX3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX3-NEXT:    call void @__omp_outlined__7(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX3-NEXT:    call void @__omp_outlined__7(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4802,6 +4522,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__8
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -4810,14 +4532,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__8_wrapper
 ; NVPTX3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX3-NEXT:    call void @__omp_outlined__8(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX3-NEXT:    call void @__omp_outlined__8(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4825,16 +4545,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66
 ; NVPTX3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66_kernel_environment, ptr [[DYN]])
 ; NVPTX3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX3:       user_code.entry:
 ; NVPTX3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX3-NEXT:    call void @__omp_outlined__9(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    call void @__omp_outlined__9(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX3-NEXT:    ret void
 ; NVPTX3:       worker.exit:
@@ -4845,13 +4563,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__9
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__10, ptr @__omp_outlined__10_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX3-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__11, ptr @__omp_outlined__11_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4859,6 +4576,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__10
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -4867,14 +4586,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__10_wrapper
 ; NVPTX3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX3-NEXT:    call void @__omp_outlined__10(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX3-NEXT:    call void @__omp_outlined__10(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4882,6 +4599,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__11
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -4890,14 +4609,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__11_wrapper
 ; NVPTX3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX3-NEXT:    call void @__omp_outlined__11(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX3-NEXT:    call void @__omp_outlined__11(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4905,16 +4622,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_pure_l77
 ; NVPTX3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77_kernel_environment, ptr [[DYN]])
 ; NVPTX3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX3:       user_code.entry:
 ; NVPTX3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX3-NEXT:    call void @__omp_outlined__12(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    call void @__omp_outlined__12(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX3-NEXT:    ret void
 ; NVPTX3:       worker.exit:
@@ -4925,13 +4640,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__12
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS1]] to ptr
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS1:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX3-NEXT:    call void @unknown_no_openmp() #[[ATTR10]]
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr [[CAPTURED_VARS_ADDRS1_CAST]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__13, ptr @__omp_outlined__13_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB1]], i32 undef, i32 1, i32 -1, i32 -1, ptr @__omp_outlined__14, ptr @__omp_outlined__14_wrapper, ptr [[CAPTURED_VARS_ADDRS1]], i64 0)
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4939,6 +4653,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__13
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -4947,14 +4663,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__13_wrapper
 ; NVPTX3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX3-NEXT:    call void @__omp_outlined__13(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX3-NEXT:    call void @__omp_outlined__13(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4962,6 +4676,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__14
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @p1() #[[ATTR11]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -4970,14 +4686,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__14_wrapper
 ; NVPTX3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX3-NEXT:    call void @__omp_outlined__14(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX3-NEXT:    call void @__omp_outlined__14(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -4985,16 +4699,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92
 ; NVPTX3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92_kernel_environment, ptr [[DYN]])
 ; NVPTX3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX3:       user_code.entry:
 ; NVPTX3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX3-NEXT:    call void @__omp_outlined__15(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    call void @__omp_outlined__15(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX3-NEXT:    ret void
 ; NVPTX3:       worker.exit:
@@ -5005,6 +4717,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__15
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    [[CALL:%.*]] = call i32 @omp_get_thread_num() #[[ATTR9]]
 ; NVPTX3-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after.internalized(i32 [[CALL]]) #[[ATTR9]]
 ; NVPTX3-NEXT:    ret void
@@ -5014,15 +4728,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after.internalized
 ; NVPTX3-SAME: (i32 [[A:%.*]]) #[[ATTR6]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[A_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    store i32 [[A]], ptr addrspace(5) [[A_ADDR]], align 4
-; NVPTX3-NEXT:    [[TMP0:%.*]] = load i32, ptr addrspace(5) [[A_ADDR]], align 4
+; NVPTX3-NEXT:    [[A_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    store i32 [[A]], ptr [[A_ADDR]], align 4
+; NVPTX3-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; NVPTX3-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP0]], 0
 ; NVPTX3-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_END:%.*]]
 ; NVPTX3:       if.then:
 ; NVPTX3-NEXT:    br label [[RETURN:%.*]]
 ; NVPTX3:       if.end:
-; NVPTX3-NEXT:    [[TMP1:%.*]] = load i32, ptr addrspace(5) [[A_ADDR]], align 4
+; NVPTX3-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; NVPTX3-NEXT:    [[SUB:%.*]] = sub nsw i32 [[TMP1]], 1
 ; NVPTX3-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after.internalized(i32 [[SUB]]) #[[ATTR9]]
 ; NVPTX3-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after_after.internalized() #[[ATTR9]]
@@ -5035,16 +4749,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after
 ; NVPTX3-SAME: (i32 [[A:%.*]]) #[[ATTR1]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[A_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[A_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[A_ADDR]] to ptr
-; NVPTX3-NEXT:    store i32 [[A]], ptr [[A_ADDR_CAST]], align 4
-; NVPTX3-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR_CAST]], align 4
+; NVPTX3-NEXT:    [[A_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    store i32 [[A]], ptr [[A_ADDR]], align 4
+; NVPTX3-NEXT:    [[TMP0:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; NVPTX3-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP0]], 0
 ; NVPTX3-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_END:%.*]]
 ; NVPTX3:       if.then:
 ; NVPTX3-NEXT:    br label [[RETURN:%.*]]
 ; NVPTX3:       if.end:
-; NVPTX3-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR_CAST]], align 4
+; NVPTX3-NEXT:    [[TMP1:%.*]] = load i32, ptr [[A_ADDR]], align 4
 ; NVPTX3-NEXT:    [[SUB:%.*]] = sub nsw i32 [[TMP1]], 1
 ; NVPTX3-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after(i32 [[SUB]]) #[[ATTR11]]
 ; NVPTX3-NEXT:    call void @simple_state_machine_interprocedural_nested_recursive_after_after() #[[ATTR11]]
@@ -5057,16 +4770,14 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112
 ; NVPTX3-SAME: (ptr [[DYN:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTTHREADID_TEMP__CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTTHREADID_TEMP_]] to ptr
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTTHREADID_TEMP_:%.*]] = alloca i32, align 4
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_target_init(ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112_kernel_environment, ptr [[DYN]])
 ; NVPTX3-NEXT:    [[EXEC_USER_CODE:%.*]] = icmp eq i32 [[TMP0]], -1
 ; NVPTX3-NEXT:    br i1 [[EXEC_USER_CODE]], label [[USER_CODE_ENTRY:%.*]], label [[WORKER_EXIT:%.*]]
 ; NVPTX3:       user_code.entry:
 ; NVPTX3-NEXT:    [[TMP1:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB1]]) #[[ATTR3]]
-; NVPTX3-NEXT:    call void @__omp_outlined__16(ptr [[DOTTHREADID_TEMP__CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    call void @__omp_outlined__16(ptr [[DOTTHREADID_TEMP_]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    call void @__kmpc_target_deinit()
 ; NVPTX3-NEXT:    ret void
 ; NVPTX3:       worker.exit:
@@ -5077,6 +4788,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__16
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @weak_callee_empty() #[[ATTR9]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -5092,6 +4805,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__17
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -5100,14 +4815,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__17_wrapper
 ; NVPTX3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX3-NEXT:    call void @__omp_outlined__17(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX3-NEXT:    call void @__omp_outlined__17(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -5115,6 +4828,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__18
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -5123,14 +4838,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__18_wrapper
 ; NVPTX3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX3-NEXT:    call void @__omp_outlined__18(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX3-NEXT:    call void @__omp_outlined__18(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -5138,10 +4851,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after_after.internalized
 ; NVPTX3-SAME: () #[[ATTR6]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]]) #[[ATTR3]]
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -5149,10 +4861,9 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@simple_state_machine_interprocedural_nested_recursive_after_after
 ; NVPTX3-SAME: () #[[ATTR1]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[CAPTURED_VARS_ADDRS]] to ptr
+; NVPTX3-NEXT:    [[CAPTURED_VARS_ADDRS:%.*]] = alloca [0 x ptr], align 8
 ; NVPTX3-NEXT:    [[TMP0:%.*]] = call i32 @__kmpc_global_thread_num(ptr @[[GLOB2]])
-; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS_CAST]], i64 0)
+; NVPTX3-NEXT:    call void @__kmpc_parallel_51(ptr @[[GLOB2]], i32 [[TMP0]], i32 1, i32 -1, i32 -1, ptr @__omp_outlined__19, ptr @__omp_outlined__19_wrapper, ptr [[CAPTURED_VARS_ADDRS]], i64 0)
 ; NVPTX3-NEXT:    ret void
 ;
 ;
@@ -5160,6 +4871,8 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__19
 ; NVPTX3-SAME: (ptr noalias [[DOTGLOBAL_TID_:%.*]], ptr noalias [[DOTBOUND_TID_:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
+; NVPTX3-NEXT:    [[DOTGLOBAL_TID__ADDR:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    [[DOTBOUND_TID__ADDR:%.*]] = alloca ptr, align 8
 ; NVPTX3-NEXT:    call void @p0() #[[ATTR11]]
 ; NVPTX3-NEXT:    ret void
 ;
@@ -5168,14 +4881,12 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3-LABEL: define {{[^@]+}}@__omp_outlined__19_wrapper
 ; NVPTX3-SAME: (i16 zeroext [[TMP0:%.*]], i32 [[TMP1:%.*]]) #[[ATTR0]] {
 ; NVPTX3-NEXT:  entry:
-; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTADDR1_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTADDR1]] to ptr
-; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[DOTZERO_ADDR_CAST:%.*]] = addrspacecast ptr addrspace(5) [[DOTZERO_ADDR]] to ptr
-; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8, addrspace(5)
-; NVPTX3-NEXT:    [[GLOBAL_ARGS_CAST:%.*]] = addrspacecast ptr addrspace(5) [[GLOBAL_ARGS]] to ptr
-; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS_CAST]])
-; NVPTX3-NEXT:    call void @__omp_outlined__19(ptr [[DOTADDR1_CAST]], ptr [[DOTZERO_ADDR_CAST]]) #[[ATTR3]]
+; NVPTX3-NEXT:    [[DOTADDR:%.*]] = alloca i16, align 2
+; NVPTX3-NEXT:    [[DOTADDR1:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[DOTZERO_ADDR:%.*]] = alloca i32, align 4
+; NVPTX3-NEXT:    [[GLOBAL_ARGS:%.*]] = alloca ptr, align 8
+; NVPTX3-NEXT:    call void @__kmpc_get_shared_variables(ptr [[GLOBAL_ARGS]])
+; NVPTX3-NEXT:    call void @__omp_outlined__19(ptr [[DOTADDR1]], ptr [[DOTZERO_ADDR]]) #[[ATTR3]]
 ; NVPTX3-NEXT:    ret void
 ;
 ;.
@@ -5265,9 +4976,17 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU1: [[META5:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural_nested_recursive", i32 92, i32 6}
 ; AMDGPU1: [[META6:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"no_state_machine_weak_callee", i32 112, i32 7}
 ; AMDGPU1: [[META7:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine", i32 22, i32 1}
-; AMDGPU1: [[META8:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
-; AMDGPU1: [[META9:![0-9]+]] = !{i32 7, !"openmp", i32 50}
-; AMDGPU1: [[META10:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
+; AMDGPU1: [[META8:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14, !"kernel", i32 1}
+; AMDGPU1: [[META9:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_l22, !"kernel", i32 1}
+; AMDGPU1: [[META10:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39, !"kernel", i32 1}
+; AMDGPU1: [[META11:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55, !"kernel", i32 1}
+; AMDGPU1: [[META12:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66, !"kernel", i32 1}
+; AMDGPU1: [[META13:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77, !"kernel", i32 1}
+; AMDGPU1: [[META14:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92, !"kernel", i32 1}
+; AMDGPU1: [[META15:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112, !"kernel", i32 1}
+; AMDGPU1: [[META16:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
+; AMDGPU1: [[META17:![0-9]+]] = !{i32 7, !"openmp", i32 50}
+; AMDGPU1: [[META18:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
 ;.
 ; NVPTX1: [[META0:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural", i32 39, i32 2}
 ; NVPTX1: [[META1:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_no_openmp_attr", i32 66, i32 4}
@@ -5277,9 +4996,17 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX1: [[META5:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural_nested_recursive", i32 92, i32 6}
 ; NVPTX1: [[META6:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"no_state_machine_weak_callee", i32 112, i32 7}
 ; NVPTX1: [[META7:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine", i32 22, i32 1}
-; NVPTX1: [[META8:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
-; NVPTX1: [[META9:![0-9]+]] = !{i32 7, !"openmp", i32 50}
-; NVPTX1: [[META10:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
+; NVPTX1: [[META8:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14, !"kernel", i32 1}
+; NVPTX1: [[META9:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_l22, !"kernel", i32 1}
+; NVPTX1: [[META10:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39, !"kernel", i32 1}
+; NVPTX1: [[META11:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55, !"kernel", i32 1}
+; NVPTX1: [[META12:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66, !"kernel", i32 1}
+; NVPTX1: [[META13:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77, !"kernel", i32 1}
+; NVPTX1: [[META14:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92, !"kernel", i32 1}
+; NVPTX1: [[META15:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112, !"kernel", i32 1}
+; NVPTX1: [[META16:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
+; NVPTX1: [[META17:![0-9]+]] = !{i32 7, !"openmp", i32 50}
+; NVPTX1: [[META18:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
 ;.
 ; AMDGPU2: [[META0:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural", i32 39, i32 2}
 ; AMDGPU2: [[META1:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_no_openmp_attr", i32 66, i32 4}
@@ -5289,9 +5016,17 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU2: [[META5:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural_nested_recursive", i32 92, i32 6}
 ; AMDGPU2: [[META6:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"no_state_machine_weak_callee", i32 112, i32 7}
 ; AMDGPU2: [[META7:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine", i32 22, i32 1}
-; AMDGPU2: [[META8:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
-; AMDGPU2: [[META9:![0-9]+]] = !{i32 7, !"openmp", i32 50}
-; AMDGPU2: [[META10:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
+; AMDGPU2: [[META8:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14, !"kernel", i32 1}
+; AMDGPU2: [[META9:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_l22, !"kernel", i32 1}
+; AMDGPU2: [[META10:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39, !"kernel", i32 1}
+; AMDGPU2: [[META11:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55, !"kernel", i32 1}
+; AMDGPU2: [[META12:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66, !"kernel", i32 1}
+; AMDGPU2: [[META13:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77, !"kernel", i32 1}
+; AMDGPU2: [[META14:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92, !"kernel", i32 1}
+; AMDGPU2: [[META15:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112, !"kernel", i32 1}
+; AMDGPU2: [[META16:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
+; AMDGPU2: [[META17:![0-9]+]] = !{i32 7, !"openmp", i32 50}
+; AMDGPU2: [[META18:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
 ;.
 ; AMDGPU3: [[META0:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural", i32 39, i32 2}
 ; AMDGPU3: [[META1:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_no_openmp_attr", i32 66, i32 4}
@@ -5301,9 +5036,17 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; AMDGPU3: [[META5:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural_nested_recursive", i32 92, i32 6}
 ; AMDGPU3: [[META6:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"no_state_machine_weak_callee", i32 112, i32 7}
 ; AMDGPU3: [[META7:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine", i32 22, i32 1}
-; AMDGPU3: [[META8:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
-; AMDGPU3: [[META9:![0-9]+]] = !{i32 7, !"openmp", i32 50}
-; AMDGPU3: [[META10:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
+; AMDGPU3: [[META8:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14, !"kernel", i32 1}
+; AMDGPU3: [[META9:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_l22, !"kernel", i32 1}
+; AMDGPU3: [[META10:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39, !"kernel", i32 1}
+; AMDGPU3: [[META11:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55, !"kernel", i32 1}
+; AMDGPU3: [[META12:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66, !"kernel", i32 1}
+; AMDGPU3: [[META13:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77, !"kernel", i32 1}
+; AMDGPU3: [[META14:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92, !"kernel", i32 1}
+; AMDGPU3: [[META15:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112, !"kernel", i32 1}
+; AMDGPU3: [[META16:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
+; AMDGPU3: [[META17:![0-9]+]] = !{i32 7, !"openmp", i32 50}
+; AMDGPU3: [[META18:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
 ;.
 ; NVPTX2: [[META0:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural", i32 39, i32 2}
 ; NVPTX2: [[META1:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_no_openmp_attr", i32 66, i32 4}
@@ -5313,9 +5056,17 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX2: [[META5:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural_nested_recursive", i32 92, i32 6}
 ; NVPTX2: [[META6:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"no_state_machine_weak_callee", i32 112, i32 7}
 ; NVPTX2: [[META7:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine", i32 22, i32 1}
-; NVPTX2: [[META8:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
-; NVPTX2: [[META9:![0-9]+]] = !{i32 7, !"openmp", i32 50}
-; NVPTX2: [[META10:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
+; NVPTX2: [[META8:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14, !"kernel", i32 1}
+; NVPTX2: [[META9:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_l22, !"kernel", i32 1}
+; NVPTX2: [[META10:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39, !"kernel", i32 1}
+; NVPTX2: [[META11:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55, !"kernel", i32 1}
+; NVPTX2: [[META12:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66, !"kernel", i32 1}
+; NVPTX2: [[META13:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77, !"kernel", i32 1}
+; NVPTX2: [[META14:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92, !"kernel", i32 1}
+; NVPTX2: [[META15:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112, !"kernel", i32 1}
+; NVPTX2: [[META16:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
+; NVPTX2: [[META17:![0-9]+]] = !{i32 7, !"openmp", i32 50}
+; NVPTX2: [[META18:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
 ;.
 ; NVPTX3: [[META0:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural", i32 39, i32 2}
 ; NVPTX3: [[META1:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_no_openmp_attr", i32 66, i32 4}
@@ -5325,7 +5076,15 @@ attributes #9 = { convergent nounwind willreturn memory(read) }
 ; NVPTX3: [[META5:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine_interprocedural_nested_recursive", i32 92, i32 6}
 ; NVPTX3: [[META6:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"no_state_machine_weak_callee", i32 112, i32 7}
 ; NVPTX3: [[META7:![0-9]+]] = !{i32 0, i32 20, i32 171331627, !"simple_state_machine", i32 22, i32 1}
-; NVPTX3: [[META8:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
-; NVPTX3: [[META9:![0-9]+]] = !{i32 7, !"openmp", i32 50}
-; NVPTX3: [[META10:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
+; NVPTX3: [[META8:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_no_state_machine_needed_l14, !"kernel", i32 1}
+; NVPTX3: [[META9:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_l22, !"kernel", i32 1}
+; NVPTX3: [[META10:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_l39, !"kernel", i32 1}
+; NVPTX3: [[META11:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_with_fallback_l55, !"kernel", i32 1}
+; NVPTX3: [[META12:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_no_openmp_attr_l66, !"kernel", i32 1}
+; NVPTX3: [[META13:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_pure_l77, !"kernel", i32 1}
+; NVPTX3: [[META14:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_simple_state_machine_interprocedural_nested_recursive_l92, !"kernel", i32 1}
+; NVPTX3: [[META15:![0-9]+]] = !{ptr @__omp_offloading_14_a36502b_no_state_machine_weak_callee_l112, !"kernel", i32 1}
+; NVPTX3: [[META16:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
+; NVPTX3: [[META17:![0-9]+]] = !{i32 7, !"openmp", i32 50}
+; NVPTX3: [[META18:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
 ;.

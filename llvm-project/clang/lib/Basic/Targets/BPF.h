@@ -58,7 +58,7 @@ public:
   bool handleTargetFeatures(std::vector<std::string> &Features,
                             DiagnosticsEngine &Diags) override;
 
-  llvm::SmallVector<Builtin::InfosShard> getTargetBuiltins() const override;
+  ArrayRef<Builtin::Info> getTargetBuiltins() const override;
 
   std::string_view getClobbers() const override { return ""; }
 
@@ -67,7 +67,9 @@ public:
   }
 
   bool isValidGCCRegisterName(StringRef Name) const override { return true; }
-  ArrayRef<const char *> getGCCRegNames() const override { return {}; }
+  ArrayRef<const char *> getGCCRegNames() const override {
+    return std::nullopt;
+  }
 
   bool validateAsmConstraint(const char *&Name,
                              TargetInfo::ConstraintInfo &Info) const override {
@@ -84,7 +86,7 @@ public:
   }
 
   ArrayRef<TargetInfo::GCCRegAlias> getGCCRegAliases() const override {
-    return {};
+    return std::nullopt;
   }
 
   bool allowDebugInfoForExternalRef() const override { return true; }
@@ -94,7 +96,7 @@ public:
     default:
       return CCCR_Warning;
     case CC_C:
-    case CC_DeviceKernel:
+    case CC_OpenCLKernel:
       return CCCR_OK;
     }
   }
@@ -110,10 +112,6 @@ public:
 
     StringRef CPUName(Name);
     return isValidCPUName(CPUName);
-  }
-
-  std::pair<unsigned, unsigned> hardwareInterferenceSizes() const override {
-    return std::make_pair(32, 32);
   }
 };
 } // namespace targets

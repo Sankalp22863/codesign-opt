@@ -30,47 +30,19 @@ OMPThreadPrivateDecl *OMPThreadPrivateDecl::Create(ASTContext &C,
                                                    SourceLocation L,
                                                    ArrayRef<Expr *> VL) {
   auto *D = OMPDeclarativeDirective::createDirective<OMPThreadPrivateDecl>(
-      C, DC, {}, VL.size(), L);
+      C, DC, std::nullopt, VL.size(), L);
   D->setVars(VL);
   return D;
 }
 
 OMPThreadPrivateDecl *OMPThreadPrivateDecl::CreateDeserialized(ASTContext &C,
-                                                               GlobalDeclID ID,
+                                                               unsigned ID,
                                                                unsigned N) {
   return OMPDeclarativeDirective::createEmptyDirective<OMPThreadPrivateDecl>(
       C, ID, 0, N);
 }
 
 void OMPThreadPrivateDecl::setVars(ArrayRef<Expr *> VL) {
-  assert(VL.size() == Data->getNumChildren() &&
-         "Number of variables is not the same as the preallocated buffer");
-  llvm::copy(VL, getVars().begin());
-}
-
-//===----------------------------------------------------------------------===//
-// OMPGroupPrivateDecl Implementation.
-//===----------------------------------------------------------------------===//
-
-void OMPGroupPrivateDecl::anchor() {}
-
-OMPGroupPrivateDecl *OMPGroupPrivateDecl::Create(ASTContext &C, DeclContext *DC,
-                                                 SourceLocation L,
-                                                 ArrayRef<Expr *> VL) {
-  auto *D = OMPDeclarativeDirective::createDirective<OMPGroupPrivateDecl>(
-      C, DC, {}, VL.size(), L);
-  D->setVars(VL);
-  return D;
-}
-
-OMPGroupPrivateDecl *OMPGroupPrivateDecl::CreateDeserialized(ASTContext &C,
-                                                             GlobalDeclID ID,
-                                                             unsigned N) {
-  return OMPDeclarativeDirective::createEmptyDirective<OMPGroupPrivateDecl>(
-      C, ID, 0, N);
-}
-
-void OMPGroupPrivateDecl::setVars(ArrayRef<Expr *> VL) {
   assert(VL.size() == Data->getNumChildren() &&
          "Number of variables is not the same as the preallocated buffer");
   llvm::copy(VL, getVars().begin());
@@ -91,8 +63,7 @@ OMPAllocateDecl *OMPAllocateDecl::Create(ASTContext &C, DeclContext *DC,
   return D;
 }
 
-OMPAllocateDecl *OMPAllocateDecl::CreateDeserialized(ASTContext &C,
-                                                     GlobalDeclID ID,
+OMPAllocateDecl *OMPAllocateDecl::CreateDeserialized(ASTContext &C, unsigned ID,
                                                      unsigned NVars,
                                                      unsigned NClauses) {
   return OMPDeclarativeDirective::createEmptyDirective<OMPAllocateDecl>(
@@ -118,8 +89,7 @@ OMPRequiresDecl *OMPRequiresDecl::Create(ASTContext &C, DeclContext *DC,
                                                                    L);
 }
 
-OMPRequiresDecl *OMPRequiresDecl::CreateDeserialized(ASTContext &C,
-                                                     GlobalDeclID ID,
+OMPRequiresDecl *OMPRequiresDecl::CreateDeserialized(ASTContext &C, unsigned ID,
                                                      unsigned N) {
   return OMPDeclarativeDirective::createEmptyDirective<OMPRequiresDecl>(
       C, ID, N, 0, SourceLocation());
@@ -147,7 +117,7 @@ OMPDeclareReductionDecl *OMPDeclareReductionDecl::Create(
 }
 
 OMPDeclareReductionDecl *
-OMPDeclareReductionDecl::CreateDeserialized(ASTContext &C, GlobalDeclID ID) {
+OMPDeclareReductionDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) OMPDeclareReductionDecl(
       OMPDeclareReduction, /*DC=*/nullptr, SourceLocation(), DeclarationName(),
       QualType(), /*PrevDeclInScope=*/nullptr);
@@ -178,7 +148,7 @@ OMPDeclareMapperDecl *OMPDeclareMapperDecl::Create(
 }
 
 OMPDeclareMapperDecl *OMPDeclareMapperDecl::CreateDeserialized(ASTContext &C,
-                                                               GlobalDeclID ID,
+                                                               unsigned ID,
                                                                unsigned N) {
   return OMPDeclarativeDirective::createEmptyDirective<OMPDeclareMapperDecl>(
       C, ID, N, 1, SourceLocation(), DeclarationName(), QualType(),
@@ -209,7 +179,7 @@ OMPCapturedExprDecl *OMPCapturedExprDecl::Create(ASTContext &C, DeclContext *DC,
 }
 
 OMPCapturedExprDecl *OMPCapturedExprDecl::CreateDeserialized(ASTContext &C,
-                                                             GlobalDeclID ID) {
+                                                             unsigned ID) {
   return new (C, ID) OMPCapturedExprDecl(C, nullptr, nullptr, QualType(),
                                          /*TInfo=*/nullptr, SourceLocation());
 }

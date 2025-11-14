@@ -17,26 +17,23 @@ include "llvm/Target/Target.td"
 //===----------------------------------------------------------------------===//
 // Subtarget Features.
 //===----------------------------------------------------------------------===//
-
-include "XtensaFeatures.td"
-
+def FeatureDensity : SubtargetFeature<"density", "HasDensity", "true",
+                    "Enable Density instructions">;
+def HasDensity : Predicate<"Subtarget->hasDensity()">,
+                     AssemblerPredicate<(all_of FeatureDensity)>;
 //===----------------------------------------------------------------------===//
 // Xtensa supported processors.
 //===----------------------------------------------------------------------===//
+class Proc<string Name, list<SubtargetFeature> Features>
+    : Processor<Name, NoItineraries, Features>;
 
-include "XtensaProcessors.td"
+def : Proc<"generic", []>;
 
 //===----------------------------------------------------------------------===//
 // Register File Description
 //===----------------------------------------------------------------------===//
 
 include "XtensaRegisterInfo.td"
-
-//===----------------------------------------------------------------------===//
-// Calling Convention Description
-//===----------------------------------------------------------------------===//
-
-include "XtensaCallingConv.td"
 
 //===----------------------------------------------------------------------===//
 // Instruction Descriptions

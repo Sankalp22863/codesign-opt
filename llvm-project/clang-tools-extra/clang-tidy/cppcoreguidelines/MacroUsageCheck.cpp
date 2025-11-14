@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- MacroUsageCheck.cpp - clang-tidy----------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,12 +7,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "MacroUsageCheck.h"
-#include "clang/Basic/TokenKinds.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Regex.h"
+#include <algorithm>
 #include <cctype>
 #include <functional>
 
@@ -37,17 +37,14 @@ public:
                     const MacroDirective *MD) override {
     if (SM.isWrittenInBuiltinFile(MD->getLocation()) ||
         MD->getMacroInfo()->isUsedForHeaderGuard() ||
-        MD->getMacroInfo()->tokens_empty() ||
-        llvm::any_of(MD->getMacroInfo()->tokens(), [](const Token &T) {
-          return T.isOneOf(tok::TokenKind::hash, tok::TokenKind::hashhash);
-        }))
+        MD->getMacroInfo()->getNumTokens() == 0)
       return;
 
     if (IgnoreCommandLineMacros &&
         SM.isWrittenInCommandLineFile(MD->getLocation()))
       return;
 
-    const StringRef MacroName = MacroNameTok.getIdentifierInfo()->getName();
+    StringRef MacroName = MacroNameTok.getIdentifierInfo()->getName();
     if (MacroName == "__GCC_HAVE_DWARF2_CFI_ASM")
       return;
     if (!CheckCapsOnly && !RegExp.match(MacroName))
@@ -82,15 +79,6 @@ void MacroUsageCheck::registerPPCallbacks(const SourceManager &SM,
 void MacroUsageCheck::warnMacro(const MacroDirective *MD, StringRef MacroName) {
   const MacroInfo *Info = MD->getMacroInfo();
   StringRef Message;
-  bool MacroBodyExpressionLike;
-  if (Info->getNumTokens() > 0) {
-    const Token &Tok = Info->getReplacementToken(0);
-    // Now notice that keywords like `__attribute` cannot be a leading
-    // token in an expression.
-    MacroBodyExpressionLike = !Tok.is(tok::kw___attribute);
-  } else {
-    MacroBodyExpressionLike = true;
-  }
 
   if (llvm::all_of(Info->tokens(), std::mem_fn(&Token::isLiteral)))
     Message = "macro '%0' used to declare a constant; consider using a "
@@ -98,10 +86,10 @@ void MacroUsageCheck::warnMacro(const MacroDirective *MD, StringRef MacroName) {
   // A variadic macro is function-like at the same time. Therefore variadic
   // macros are checked first and will be excluded for the function-like
   // diagnostic.
-  else if (Info->isVariadic() && MacroBodyExpressionLike)
+  else if (Info->isVariadic())
     Message = "variadic macro '%0' used; consider using a 'constexpr' "
               "variadic template function";
-  else if (Info->isFunctionLike() && MacroBodyExpressionLike)
+  else if (Info->isFunctionLike())
     Message = "function-like macro '%0' used; consider a 'constexpr' template "
               "function";
 

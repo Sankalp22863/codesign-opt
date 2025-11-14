@@ -29,7 +29,8 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/StoreRef.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SymExpr.h"
 #include "llvm/ADT/APSInt.h"
-#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cassert>
 #include <cstdint>
@@ -42,21 +43,18 @@ StoreManager::StoreManager(ProgramStateManager &stateMgr)
     : svalBuilder(stateMgr.getSValBuilder()), StateMgr(stateMgr),
       MRMgr(svalBuilder.getRegionManager()), Ctx(stateMgr.getContext()) {}
 
-BindResult StoreManager::enterStackFrame(Store OldStore, const CallEvent &Call,
-                                         const StackFrameContext *LCtx) {
-  BindResult Result{StoreRef(OldStore, *this), {}};
+StoreRef StoreManager::enterStackFrame(Store OldStore,
+                                       const CallEvent &Call,
+                                       const StackFrameContext *LCtx) {
+  StoreRef Store = StoreRef(OldStore, *this);
 
   SmallVector<CallEvent::FrameBindingTy, 16> InitialBindings;
   Call.getInitialStackFrameContents(LCtx, InitialBindings);
 
-  for (const auto &[Location, Val] : InitialBindings) {
-    Store S = Result.ResultingStore.getStore();
-    BindResult Curr = Bind(S, Location.castAs<Loc>(), Val);
-    Result.ResultingStore = Curr.ResultingStore;
-    llvm::append_range(Result.FailedToBindValues, Curr.FailedToBindValues);
-  }
+  for (const auto &I : InitialBindings)
+    Store = Bind(Store.getStore(), I.first.castAs<Loc>(), I.second);
 
-  return Result;
+  return Store;
 }
 
 const ElementRegion *StoreManager::MakeElementRegion(const SubRegion *Base,
@@ -210,7 +208,7 @@ std::optional<const MemRegion *> StoreManager::castRegion(const MemRegion *R,
           // Is the offset a multiple of the size?  If so, we can layer the
           // ElementRegion (with elementType == PointeeTy) directly on top of
           // the base region.
-          if (off.isMultipleOf(pointeeTySize)) {
+          if (off % pointeeTySize == 0) {
             newIndex = off / pointeeTySize;
             newSuperR = baseR;
           }
@@ -474,17 +472,7 @@ SVal StoreManager::getLValueElement(QualType elementType, NonLoc Offset,
   const auto *ElemR = dyn_cast<ElementRegion>(BaseRegion);
 
   // Convert the offset to the appropriate size and signedness.
-  auto Off = svalBuilder.convertToArrayIndex(Offset).getAs<NonLoc>();
-  if (!Off) {
-    // Handle cases when LazyCompoundVal is used for an array index.
-    // Such case is possible if code does:
-    //   char b[4];
-    //   a[__builtin_bitcast(int, b)];
-    // Return UnknownVal, since we cannot model it.
-    return UnknownVal();
-  }
-
-  Offset = Off.value();
+  Offset = svalBuilder.convertToArrayIndex(Offset).castAs<NonLoc>();
 
   if (!ElemR) {
     // If the base region is not an ElementRegion, create one.
@@ -509,9 +497,13 @@ SVal StoreManager::getLValueElement(QualType elementType, NonLoc Offset,
   // Only allow non-integer offsets if the base region has no offset itself.
   // FIXME: This is a somewhat arbitrary restriction. We should be using
   // SValBuilder here to add the two offsets without checking their types.
-  if (!isa<nonloc::ConcreteInt>(Offset))
+  if (!isa<nonloc::ConcreteInt>(Offset)) {
+    if (isa<ElementRegion>(BaseRegion->StripCasts()))
+      return UnknownVal();
+
     return loc::MemRegionVal(MRMgr.getElementRegion(
         elementType, Offset, cast<SubRegion>(ElemR->getSuperRegion()), Ctx));
+  }
 
   const llvm::APSInt& OffI = Offset.castAs<nonloc::ConcreteInt>().getValue();
   assert(BaseIdxI.isSigned());

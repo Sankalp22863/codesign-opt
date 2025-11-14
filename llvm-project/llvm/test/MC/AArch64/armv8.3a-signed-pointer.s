@@ -5,7 +5,7 @@
 // RUN: FileCheck --check-prefixes=NO83,ALL %s < %t.1
 // RUN: FileCheck --check-prefix=CHECK-REQ %s < %t.2
 
-.text
+// ALL: .text
   mrs x0, apiakeylo_el1
   mrs x0, apiakeyhi_el1
   mrs x0, apibkeylo_el1
@@ -16,7 +16,8 @@
   mrs x0, apdbkeyhi_el1
   mrs x0, apgakeylo_el1
   mrs x0, apgakeyhi_el1
-// ALL: .text
+// ALL-EMPTY:
+// ALL-EMPTY:
 // CHECK-NEXT: mrs x0, APIAKeyLo_EL1     // encoding: [0x00,0x21,0x38,0xd5]
 // CHECK-NEXT: mrs x0, APIAKeyHi_EL1     // encoding: [0x20,0x21,0x38,0xd5]
 // CHECK-NEXT: mrs x0, APIBKeyLo_EL1     // encoding: [0x40,0x21,0x38,0xd5]

@@ -18,6 +18,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -107,6 +108,7 @@ public:
   std::vector<MCSymbol *> &getSymbols() { return Symbols; }
 
   bool hasName(StringRef Name) const;
+  bool hasNameRegex(StringRef Name) const;
   bool nameStartsWith(StringRef Prefix) const;
 
   bool hasSymbol(const MCSymbol *Symbol) const {
@@ -169,11 +171,6 @@ public:
     return Parent && (Parent == BD || Parent->isAncestorOf(BD));
   }
 
-  void updateSize(uint64_t N) {
-    if (N > Size)
-      Size = N;
-  }
-
   void setIsMoveable(bool Flag) { IsMoveable = Flag; }
   void setSection(BinarySection &NewSection);
   void setOutputSection(BinarySection &NewSection) {
@@ -231,6 +228,7 @@ inline raw_ostream &operator<<(raw_ostream &OS,
     Sep = ",\n        ";
     TotalCount += AccessInfo.Count;
   }
+  SS.flush();
 
   OS << TotalCount << " total counts : " << TempString;
   return OS;

@@ -46,13 +46,13 @@ void UBDialect::initialize() {
 #include "mlir/Dialect/UB/IR/UBOpsAttributes.cpp.inc"
       >();
   addInterfaces<UBInlinerInterface>();
-  declarePromisedInterface<ConvertToLLVMPatternInterface, UBDialect>();
+  declarePromisedInterface<UBDialect, ConvertToLLVMPatternInterface>();
 }
 
 Operation *UBDialect::materializeConstant(OpBuilder &builder, Attribute value,
                                           Type type, Location loc) {
   if (auto attr = dyn_cast<PoisonAttr>(value))
-    return PoisonOp::create(builder, loc, type, attr);
+    return builder.create<PoisonOp>(loc, type, attr);
 
   return nullptr;
 }

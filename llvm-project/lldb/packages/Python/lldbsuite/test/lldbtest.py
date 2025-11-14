@@ -31,12 +31,12 @@ $
 import abc
 from functools import wraps
 import gc
+import glob
 import io
 import json
 import os.path
 import re
 import shutil
-import shlex
 import signal
 from subprocess import *
 import sys
@@ -44,12 +44,11 @@ import time
 import traceback
 
 # Third-party modules
-import unittest
+import unittest2
 
 # LLDB modules
 import lldb
 from . import configuration
-from . import cpu_feature
 from . import decorators
 from . import lldbplatformutil
 from . import lldbtest_config
@@ -57,6 +56,7 @@ from . import lldbutil
 from . import test_categories
 from lldbsuite.support import encoded_file
 from lldbsuite.support import funcutils
+from lldbsuite.support import seven
 from lldbsuite.test_event import build_exception
 
 # See also dotest.parseOptionsAndInitTestdirs(), where the environment variables
@@ -144,8 +144,6 @@ STOPPED_DUE_TO_STEP_IN = "Process state is stopped due to step in"
 
 STOPPED_DUE_TO_WATCHPOINT = "Process should be stopped due to watchpoint"
 
-STOPPED_DUE_TO_HISTORY_BOUNDARY = "Process should be stopped due to history boundary"
-
 DATA_TYPES_DISPLAYED_CORRECTLY = "Data type(s) displayed correctly"
 
 VALID_BREAKPOINT = "Got a valid breakpoint"
@@ -175,9 +173,9 @@ VARIABLES_DISPLAYED_CORRECTLY = "Variable(s) displayed correctly"
 WATCHPOINT_CREATED = "Watchpoint created successfully"
 
 
-def CMD_MSG(command):
+def CMD_MSG(str):
     """A generic "Command '%s' did not return successfully" message generator."""
-    return f"Command '{command}' did not return successfully"
+    return "Command '%s' did not return successfully" % str
 
 
 def COMPLETION_MSG(str_before, str_after, completions):
@@ -231,7 +229,7 @@ def pointer_size():
 
 def is_exe(fpath):
     """Returns true if fpath is an executable."""
-    if fpath is None:
+    if fpath == None:
         return False
     if sys.platform == "win32":
         if not fpath.endswith(".exe"):
@@ -418,7 +416,7 @@ class _LocalProcess(_BaseProcess):
 
         self._proc = Popen(
             [executable] + args,
-            stdout=DEVNULL if not self._trace_on else None,
+            stdout=open(os.devnull) if not self._trace_on else None,
             stdin=PIPE,
             env=env,
         )
@@ -519,7 +517,7 @@ def builder_module():
     return lldbplatformutil.builder_module()
 
 
-class Base(unittest.TestCase):
+class Base(unittest2.TestCase):
     """
     Abstract base for performing lldb (see TestBase) or other generic tests (see
     BenchBase for one example).  lldbtest.Base works with the test driver to
@@ -532,14 +530,6 @@ class Base(unittest.TestCase):
 
     # Keep track of the old current working directory.
     oldcwd = None
-
-    # Maximum allowed attempts when launching the inferior process.
-    # Can be overridden by the LLDB_MAX_LAUNCH_COUNT environment variable.
-    maxLaunchCount = 1
-
-    # Time to wait before the next launching attempt in second(s).
-    # Can be overridden by the LLDB_TIME_WAIT_NEXT_LAUNCH environment variable.
-    timeWaitNextLaunch = 1.0
 
     @staticmethod
     def compute_mydir(test_file):
@@ -750,23 +740,17 @@ class Base(unittest.TestCase):
         """Return absolute path to a file in the test's source directory."""
         return os.path.join(self.getSourceDir(), name)
 
-    def getPlatformAvailablePorts(self):
-        """Return ports available for connection to a lldb server on the remote platform."""
-        return configuration.lldb_platform_available_ports
-
     @classmethod
     def setUpCommands(cls):
         commands = [
             # First of all, clear all settings to have clean state of global properties.
-            "settings clear --all",
+            "settings clear -all",
             # Disable Spotlight lookup. The testsuite creates
             # different binaries with the same UUID, because they only
             # differ in the debug info, which is not being hashed.
             "settings set symbols.enable-external-lookup false",
             # Inherit the TCC permissions from the inferior's parent.
             "settings set target.inherit-tcc true",
-            # Based on https://discourse.llvm.org/t/running-lldb-in-a-container/76801/4
-            "settings set target.disable-aslr false",
             # Kill rather than detach from the inferior if something goes wrong.
             "settings set target.detach-on-error false",
             # Disable fix-its by default so that incorrect expressions in tests don't
@@ -777,10 +761,7 @@ class Base(unittest.TestCase):
             'settings set symbols.clang-modules-cache-path "{}"'.format(
                 configuration.lldb_module_cache_dir
             ),
-            # Disable colors by default.
             "settings set use-color false",
-            # Disable the statusline by default.
-            "settings set show-statusline false",
         ]
 
         # Set any user-overridden settings.
@@ -812,12 +793,6 @@ class Base(unittest.TestCase):
         initializations."""
         # import traceback
         # traceback.print_stack()
-
-        if "LLDB_MAX_LAUNCH_COUNT" in os.environ:
-            self.maxLaunchCount = int(os.environ["LLDB_MAX_LAUNCH_COUNT"])
-
-        if "LLDB_TIME_WAIT_NEXT_LAUNCH" in os.environ:
-            self.timeWaitNextLaunch = float(os.environ["LLDB_TIME_WAIT_NEXT_LAUNCH"])
 
         if "LIBCXX_PATH" in os.environ:
             self.libcxxPath = os.environ["LIBCXX_PATH"]
@@ -875,9 +850,13 @@ class Base(unittest.TestCase):
         session_file = self.getLogBasenameForCurrentTest() + ".log"
         self.log_files.append(session_file)
 
+        # Python 3 doesn't support unbuffered I/O in text mode.  Open buffered.
+        self.session = encoded_file.open(session_file, "utf-8", mode="w")
+
         # Optimistically set __errored__, __failed__, __expected__ to False
         # initially.  If the test errored/failed, the session info
-        # is then dumped into a session specific file for diagnosis.
+        # (self.session) is then dumped into a session specific file for
+        # diagnosis.
         self.__cleanup_errored__ = False
         self.__errored__ = False
         self.__failed__ = False
@@ -955,55 +934,6 @@ class Base(unittest.TestCase):
         proc.launch(executable, args, extra_env=extra_env)
         self.subprocesses.append(proc)
         return proc
-
-    def runCmd(self, cmd, msg=None, check=True, trace=False, inHistory=False):
-        """
-        Ask the command interpreter to handle the command and then check its
-        return status.
-        """
-        # Fail fast if 'cmd' is not meaningful.
-        if cmd is None:
-            raise Exception("Bad 'cmd' parameter encountered")
-
-        trace = True if traceAlways else trace
-
-        if cmd.startswith("target create "):
-            cmd = cmd.replace("target create ", "file ")
-
-        running = cmd.startswith("run") or cmd.startswith("process launch")
-
-        for i in range(self.maxLaunchCount if running else 1):
-            with recording(self, trace) as sbuf:
-                print("runCmd:", cmd, file=sbuf)
-                if not check:
-                    print("check of return status not required", file=sbuf)
-
-            self.ci.HandleCommand(cmd, self.res, inHistory)
-
-            with recording(self, trace) as sbuf:
-                if self.res.Succeeded():
-                    print("output:", self.res.GetOutput(), file=sbuf)
-                else:
-                    print("runCmd failed!", file=sbuf)
-                    print(self.res.GetError(), file=sbuf)
-
-            if self.res.Succeeded():
-                break
-            elif running:
-                # For process launch, wait some time before possible next try.
-                time.sleep(self.timeWaitNextLaunch)
-                with recording(self, trace) as sbuf:
-                    print("Command '" + cmd + "' failed!", file=sbuf)
-
-        if check:
-            if not msg:
-                msg = CMD_MSG(cmd)
-            output = ""
-            if self.res.GetOutput():
-                output += "\nCommand output:\n" + self.res.GetOutput()
-            if self.res.GetError():
-                output += "\nError output:\n" + self.res.GetError()
-            self.assertTrue(self.res.Succeeded(), msg + output)
 
     def HideStdout(self):
         """Hide output to stdout from the user.
@@ -1130,9 +1060,7 @@ class Base(unittest.TestCase):
         lldb.SBModule.GarbageCollectAllocatedModules()
 
         # Assert that the global module cache is empty.
-        # FIXME: This assert fails on Windows.
-        if self.getPlatform() != "windows":
-            self.assertEqual(lldb.SBModule.GetNumberAllocatedModules(), 0)
+        self.assertEqual(lldb.SBModule.GetNumberAllocatedModules(), 0)
 
     # =========================================================
     # Various callbacks to allow introspection of test progress
@@ -1162,14 +1090,17 @@ class Base(unittest.TestCase):
             # Once by the Python unittest framework, and a second time by us.
             print("FAIL", file=sbuf)
 
-    def markExpectedFailure(self, err):
+    def markExpectedFailure(self, err, bugnumber):
         """Callback invoked when an expected failure/error occurred."""
         self.__expected__ = True
         with recording(self, False) as sbuf:
             # False because there's no need to write "expected failure" to the
             # stderr twice.
             # Once by the Python unittest framework, and a second time by us.
-            print("expected failure", file=sbuf)
+            if bugnumber is None:
+                print("expected failure", file=sbuf)
+            else:
+                print("expected failure (problem id:" + str(bugnumber) + ")", file=sbuf)
 
     def markSkippedTest(self):
         """Callback invoked when a test is skipped."""
@@ -1180,14 +1111,19 @@ class Base(unittest.TestCase):
             # Once by the Python unittest framework, and a second time by us.
             print("skipped test", file=sbuf)
 
-    def markUnexpectedSuccess(self):
+    def markUnexpectedSuccess(self, bugnumber):
         """Callback invoked when an unexpected success occurred."""
         self.__unexpected__ = True
         with recording(self, False) as sbuf:
             # False because there's no need to write "unexpected success" to the
             # stderr twice.
             # Once by the Python unittest framework, and a second time by us.
-            print("unexpected success", file=sbuf)
+            if bugnumber is None:
+                print("unexpected success", file=sbuf)
+            else:
+                print(
+                    "unexpected success (problem id:" + str(bugnumber) + ")", file=sbuf
+                )
 
     def getRerunArgs(self):
         return " -f %s.%s" % (self.__class__.__name__, self._testMethodName)
@@ -1241,25 +1177,20 @@ class Base(unittest.TestCase):
         else:
             prefix = "Success"
 
-        session_file = self.getLogBasenameForCurrentTest() + ".log"
-
-        # Python 3 doesn't support unbuffered I/O in text mode.  Open buffered.
-        session = encoded_file.open(session_file, "utf-8", mode="w")
-
         if not self.__unexpected__ and not self.__skipped__:
             for test, traceback in pairs:
                 if test is self:
-                    print(traceback, file=session)
+                    print(traceback, file=self.session)
 
         import datetime
 
         print(
             "Session info generated @",
             datetime.datetime.now().ctime(),
-            file=session,
+            file=self.session,
         )
-        session.close()
-        del session
+        self.session.close()
+        del self.session
 
         # process the log files
         if prefix != "Success" or lldbtest_config.log_success:
@@ -1316,59 +1247,57 @@ class Base(unittest.TestCase):
             return True
         return False
 
+    def getCPUInfo(self):
+        triple = self.dbg.GetSelectedPlatform().GetTriple()
+
+        # TODO other platforms, please implement this function
+        if not re.match(".*-.*-linux", triple):
+            return ""
+
+        # Need to do something different for non-Linux/Android targets
+        cpuinfo_path = self.getBuildArtifact("cpuinfo")
+        if configuration.lldb_platform_name:
+            self.runCmd('platform get-file "/proc/cpuinfo" ' + cpuinfo_path)
+        else:
+            cpuinfo_path = "/proc/cpuinfo"
+
+        try:
+            with open(cpuinfo_path, "r") as f:
+                cpuinfo = f.read()
+        except:
+            return ""
+
+        return cpuinfo
+
     def isAArch64(self):
         """Returns true if the architecture is AArch64."""
         arch = self.getArchitecture().lower()
         return arch in ["aarch64", "arm64", "arm64e"]
 
-    def isARM(self):
-        """Returns true if the architecture is ARM, meaning 32-bit ARM. Which could
-        be M profile, A profile Armv7-a, or the AArch32 mode of Armv8-a."""
-        return not self.isAArch64() and (
-            self.getArchitecture().lower().startswith("arm")
-        )
-
-    def isSupported(self, cpu_feature: cpu_feature.CPUFeature):
-        triple = self.dbg.GetSelectedPlatform().GetTriple()
-        cmd_runner = self.run_platform_command
-        return cpu_feature.is_supported(triple, cmd_runner)
-
     def isAArch64SVE(self):
-        return self.isAArch64() and self.isSupported(cpu_feature.AArch64.SVE)
+        return self.isAArch64() and "sve" in self.getCPUInfo()
 
     def isAArch64SME(self):
-        return self.isAArch64() and self.isSupported(cpu_feature.AArch64.SME)
+        return self.isAArch64() and "sme" in self.getCPUInfo()
 
     def isAArch64SME2(self):
         # If you have sme2, you also have sme.
-        return self.isAArch64() and self.isSupported(cpu_feature.AArch64.SME2)
+        return self.isAArch64() and "sme2" in self.getCPUInfo()
 
     def isAArch64SMEFA64(self):
         # smefa64 allows the use of the full A64 instruction set in streaming
         # mode. This is required by certain test programs to setup register
         # state.
-        return (
-            self.isAArch64()
-            and self.isSupported(cpu_feature.AArch64.SME)
-            and self.isSupported(cpu_feature.AArch64.SME_FA64)
-        )
+        cpuinfo = self.getCPUInfo()
+        return self.isAArch64() and "sme" in cpuinfo and "smefa64" in cpuinfo
 
     def isAArch64MTE(self):
-        return self.isAArch64() and self.isSupported(cpu_feature.AArch64.MTE)
-
-    def isAArch64MTEStoreOnly(self):
-        return self.isAArch64() and self.isSupported(cpu_feature.AArch64.MTE_STORE_ONLY)
-
-    def isAArch64GCS(self):
-        return self.isAArch64() and self.isSupported(cpu_feature.AArch64.GCS)
+        return self.isAArch64() and "mte" in self.getCPUInfo()
 
     def isAArch64PAuth(self):
         if self.getArchitecture() == "arm64e":
             return True
-        return self.isAArch64() and self.isSupported(cpu_feature.AArch64.PTR_AUTH)
-
-    def isAArch64FPMR(self):
-        return self.isAArch64() and self.isSupported(cpu_feature.AArch64.FPMR)
+        return self.isAArch64() and "paca" in self.getCPUInfo()
 
     def isAArch64Windows(self):
         """Returns true if the architecture is AArch64 and platform windows."""
@@ -1376,21 +1305,6 @@ class Base(unittest.TestCase):
             arch = self.getArchitecture().lower()
             return arch in ["aarch64", "arm64", "arm64e"]
         return False
-
-    def isLoongArch(self):
-        """Returns true if the architecture is LoongArch."""
-        arch = self.getArchitecture().lower()
-        return arch in ["loongarch64", "loongarch32"]
-
-    def isLoongArchLSX(self):
-        return self.isLoongArch() and self.isSupported(cpu_feature.Loong.LSX)
-
-    def isLoongArchLASX(self):
-        return self.isLoongArch() and self.isSupported(cpu_feature.Loong.LASX)
-
-    def isRISCV(self):
-        """Returns true if the architecture is RISCV64 or RISCV32."""
-        return self.getArchitecture() in ["riscv64", "riscv32"]
 
     def getArchitecture(self):
         """Returns the architecture in effect the test suite is running with."""
@@ -1403,6 +1317,10 @@ class Base(unittest.TestCase):
     def getCompiler(self):
         """Returns the compiler in effect the test suite is running with."""
         return lldbplatformutil.getCompiler()
+
+    def getCompilerBinary(self):
+        """Returns the compiler binary the test suite is running with."""
+        return lldbplatformutil.getCompilerBinary()
 
     def getCompilerVersion(self):
         """Returns a string that represents the compiler version.
@@ -1493,7 +1411,7 @@ class Base(unittest.TestCase):
         testname = self.getBuildDirBasename()
 
         module = builder_module()
-        command = module.getBuildCommand(
+        command = builder_module().getBuildCommand(
             debug_info,
             architecture,
             compiler,
@@ -1508,7 +1426,7 @@ class Base(unittest.TestCase):
         self.runBuildCommand(command)
 
     def runBuildCommand(self, command):
-        self.trace(shlex.join(command))
+        self.trace(seven.join_for_shell(command))
         try:
             output = check_output(command, stderr=STDOUT, errors="replace")
         except CalledProcessError as cpe:
@@ -1539,23 +1457,19 @@ class Base(unittest.TestCase):
             stdflag = "-std=c++11"
         return stdflag
 
-    def buildDriver(self, sources, exe_name, defines=None):
+    def buildDriver(self, sources, exe_name):
         """Platform-specific way to build a program that links with LLDB (via the liblldb.so
         or LLDB.framework).
         """
-        if defines is None:
-            defines = []
-
         stdflag = self.getstdFlag()
         stdlibflag = self.getstdlibFlag()
-        defines = " ".join(["-D{}={}".format(name, value) for name, value in defines])
 
         lib_dir = configuration.lldb_libs_dir
         if self.hasDarwinFramework():
             d = {
                 "CXX_SOURCES": sources,
                 "EXE": exe_name,
-                "CFLAGS_EXTRAS": "%s %s %s" % (stdflag, stdlibflag, defines),
+                "CFLAGS_EXTRAS": "%s %s" % (stdflag, stdlibflag),
                 "FRAMEWORK_INCLUDES": "-F%s" % self.framework_dir,
                 "LD_EXTRAS": "%s -Wl,-rpath,%s" % (self.lib_lldb, self.framework_dir),
             }
@@ -1563,13 +1477,11 @@ class Base(unittest.TestCase):
             d = {
                 "CXX_SOURCES": sources,
                 "EXE": exe_name,
-                "CFLAGS_EXTRAS": "%s %s -I%s -I%s %s"
+                "CFLAGS_EXTRAS": "%s %s -I%s"
                 % (
                     stdflag,
                     stdlibflag,
                     os.path.join(os.environ["LLDB_SRC"], "include"),
-                    os.path.join(configuration.lldb_obj_root, "include"),
-                    defines,
                 ),
                 "LD_EXTRAS": "-L%s -lliblldb" % lib_dir,
             }
@@ -1577,13 +1489,11 @@ class Base(unittest.TestCase):
             d = {
                 "CXX_SOURCES": sources,
                 "EXE": exe_name,
-                "CFLAGS_EXTRAS": "%s %s -I%s -I%s %s"
+                "CFLAGS_EXTRAS": "%s %s -I%s"
                 % (
                     stdflag,
                     stdlibflag,
                     os.path.join(os.environ["LLDB_SRC"], "include"),
-                    os.path.join(configuration.lldb_obj_root, "include"),
-                    defines,
                 ),
                 "LD_EXTRAS": "-L%s -llldb -Wl,-rpath,%s" % (lib_dir, lib_dir),
             }
@@ -1602,8 +1512,7 @@ class Base(unittest.TestCase):
             d = {
                 "DYLIB_CXX_SOURCES": sources,
                 "DYLIB_NAME": lib_name,
-                "CFLAGS_EXTRAS": "%s -stdlib=libc++ -I%s"
-                % (stdflag, os.path.join(configuration.lldb_obj_root, "include")),
+                "CFLAGS_EXTRAS": "%s -stdlib=libc++" % stdflag,
                 "FRAMEWORK_INCLUDES": "-F%s" % self.framework_dir,
                 "LD_EXTRAS": "%s -Wl,-rpath,%s -dynamiclib"
                 % (self.lib_lldb, self.framework_dir),
@@ -1612,24 +1521,16 @@ class Base(unittest.TestCase):
             d = {
                 "DYLIB_CXX_SOURCES": sources,
                 "DYLIB_NAME": lib_name,
-                "CFLAGS_EXTRAS": "%s -I%s -I%s"
-                % (
-                    stdflag,
-                    os.path.join(os.environ["LLDB_SRC"], "include"),
-                    os.path.join(configuration.lldb_obj_root, "include"),
-                ),
-                "LD_EXTRAS": "-shared -l%s\\liblldb.lib" % lib_dir,
+                "CFLAGS_EXTRAS": "%s -I%s "
+                % (stdflag, os.path.join(os.environ["LLDB_SRC"], "include")),
+                "LD_EXTRAS": "-shared -l%s\liblldb.lib" % lib_dir,
             }
         else:
             d = {
                 "DYLIB_CXX_SOURCES": sources,
                 "DYLIB_NAME": lib_name,
-                "CFLAGS_EXTRAS": "%s -I%s -I%s -fPIC"
-                % (
-                    stdflag,
-                    os.path.join(os.environ["LLDB_SRC"], "include"),
-                    os.path.join(configuration.lldb_obj_root, "include"),
-                ),
+                "CFLAGS_EXTRAS": "%s -I%s -fPIC"
+                % (stdflag, os.path.join(os.environ["LLDB_SRC"], "include")),
                 "LD_EXTRAS": "-shared -L%s -llldb -Wl,-rpath,%s" % (lib_dir, lib_dir),
             }
         if self.TraceOn():
@@ -1641,6 +1542,14 @@ class Base(unittest.TestCase):
         """Platform specific way to build an executable from C/C++ sources."""
         d = {"CXX_SOURCES": sources, "EXE": exe_name}
         self.build(dictionary=d)
+
+    def signBinary(self, binary_path):
+        if sys.platform.startswith("darwin"):
+            codesign_cmd = 'codesign --force --sign "%s" %s' % (
+                lldbtest_config.codesign_identity,
+                binary_path,
+            )
+            call(codesign_cmd, shell=True)
 
     def findBuiltClang(self):
         """Tries to find and use Clang from the build directory as the compiler (instead of the system compiler)."""
@@ -1678,29 +1587,6 @@ class Base(unittest.TestCase):
             command += ["--max-size=%d" % max_size]
         self.runBuildCommand(command)
 
-    def yaml2macho_core(self, yaml_path, obj_path, uuids=None):
-        """
-        Create a Mach-O corefile at the given path from a yaml file.
-
-        Throws subprocess.CalledProcessError if the object could not be created.
-        """
-        yaml2macho_core_bin = configuration.get_yaml2macho_core_path()
-        if not yaml2macho_core_bin:
-            self.assertTrue(False, "No valid yaml2macho-core executable specified")
-        if uuids != None:
-            command = [
-                yaml2macho_core_bin,
-                "-i",
-                yaml_path,
-                "-o",
-                obj_path,
-                "-u",
-                uuids,
-            ]
-        else:
-            command = [yaml2macho_core_bin, "-i", yaml_path, "-o", obj_path]
-        self.runBuildCommand(command)
-
     def cleanup(self, dictionary=None):
         """Platform specific way to do cleanup after build."""
         module = builder_module()
@@ -1723,6 +1609,21 @@ class Base(unittest.TestCase):
         with recording(self, trace) as sbuf:
             print(str(method) + ":", result, file=sbuf)
         return result
+
+    def getLLDBLibraryEnvVal(self):
+        """Returns the path that the OS-specific library search environment variable
+        (self.dylibPath) should be set to in order for a program to find the LLDB
+        library. If an environment variable named self.dylibPath is already set,
+        the new path is appended to it and returned.
+        """
+        existing_library_path = (
+            os.environ[self.dylibPath] if self.dylibPath in os.environ else None
+        )
+        if existing_library_path:
+            return "%s:%s" % (existing_library_path, configuration.lldb_libs_dir)
+        if sys.platform.startswith("darwin") and configuration.lldb_framework_path:
+            return configuration.lldb_framework_path
+        return configuration.lldb_libs_dir
 
     def getLibcPlusPlusLibs(self):
         if self.getPlatform() in ("freebsd", "linux", "netbsd", "openbsd"):
@@ -1777,24 +1678,20 @@ class LLDBTestCaseFactory(type):
                 attrvalue, "__no_debug_info_test__", False
             ):
                 # If any debug info categories were explicitly tagged, assume that list to be
-                # authoritative.  If none were specified, try with all debug info formats.
-                test_method_categories = set(getattr(attrvalue, "categories", []))
+                # authoritative.  If none were specified, try with all debug
+                # info formats.
                 all_dbginfo_categories = set(
                     test_categories.debug_info_categories.keys()
                 )
-                dbginfo_categories = test_method_categories & all_dbginfo_categories
-                other_categories = list(test_method_categories - all_dbginfo_categories)
-                if not dbginfo_categories:
-                    dbginfo_categories = [
+                categories = (
+                    set(getattr(attrvalue, "categories", [])) & all_dbginfo_categories
+                )
+                if not categories:
+                    categories = [
                         category
                         for category, can_replicate in test_categories.debug_info_categories.items()
                         if can_replicate
                     ]
-
-                    # PDB is off by default, because it has a lot of failures right now.
-                    # See llvm.org/pr149498
-                    if original_testcase.TEST_WITH_PDB_DEBUG_INFO:
-                        dbginfo_categories.append("pdb")
 
                 xfail_for_debug_info_cat_fn = getattr(
                     attrvalue, "__xfail_for_debug_info_cat_fn__", no_reason
@@ -1802,8 +1699,9 @@ class LLDBTestCaseFactory(type):
                 skip_for_debug_info_cat_fn = getattr(
                     attrvalue, "__skip_for_debug_info_cat_fn__", no_reason
                 )
-                for cat in dbginfo_categories:
+                for cat in categories:
 
+                    @decorators.add_test_categories([cat])
                     @wraps(attrvalue)
                     def test_method(self, attrvalue=attrvalue):
                         return attrvalue(self)
@@ -1811,15 +1709,16 @@ class LLDBTestCaseFactory(type):
                     method_name = attrname + "_" + cat
                     test_method.__name__ = method_name
                     test_method.debug_info = cat
-                    test_method.categories = other_categories + [cat]
 
                     xfail_reason = xfail_for_debug_info_cat_fn(cat)
                     if xfail_reason:
-                        test_method = unittest.expectedFailure(test_method)
+                        test_method = unittest2.expectedFailure(xfail_reason)(
+                            test_method
+                        )
 
                     skip_reason = skip_for_debug_info_cat_fn(cat)
                     if skip_reason:
-                        test_method = unittest.skip(skip_reason)(test_method)
+                        test_method = unittest2.skip(skip_reason)(test_method)
 
                     newattrs[method_name] = test_method
 
@@ -1883,12 +1782,13 @@ class TestBase(Base, metaclass=LLDBTestCaseFactory):
     # test multiple times with various debug info types.
     NO_DEBUG_INFO_TESTCASE = False
 
-    TEST_WITH_PDB_DEBUG_INFO = False
-    """
-    Subclasses can set this to True to test with PDB in addition to the other debug info
-    types. This id off by default because many tests will fail due to missing functionality in PDB.
-    See llvm.org/pr149498.
-    """
+    # Maximum allowed attempts when launching the inferior process.
+    # Can be overridden by the LLDB_MAX_LAUNCH_COUNT environment variable.
+    maxLaunchCount = 1
+
+    # Time to wait before the next launching attempt in second(s).
+    # Can be overridden by the LLDB_TIME_WAIT_NEXT_LAUNCH environment variable.
+    timeWaitNextLaunch = 1.0
 
     def generateSource(self, source):
         template = source + ".template"
@@ -1929,6 +1829,12 @@ class TestBase(Base, metaclass=LLDBTestCaseFactory):
 
         for s in self.setUpCommands():
             self.runCmd(s)
+
+        if "LLDB_MAX_LAUNCH_COUNT" in os.environ:
+            self.maxLaunchCount = int(os.environ["LLDB_MAX_LAUNCH_COUNT"])
+
+        if "LLDB_TIME_WAIT_NEXT_LAUNCH" in os.environ:
+            self.timeWaitNextLaunch = float(os.environ["LLDB_TIME_WAIT_NEXT_LAUNCH"])
 
         # We want our debugger to be synchronous.
         self.dbg.SetAsync(False)
@@ -2044,7 +1950,7 @@ class TestBase(Base, metaclass=LLDBTestCaseFactory):
         """Get the working directory that should be used when launching processes for local or remote processes."""
         if lldb.remote_platform:
             # Remote tests set the platform working directory up in
-            # Base.setUp()
+            # TestBase.setUp()
             return lldb.remote_platform.GetWorkingDirectory()
         else:
             # local tests change directory into each test subdirectory
@@ -2094,6 +2000,57 @@ class TestBase(Base, metaclass=LLDBTestCaseFactory):
             matched = thread_line_pattern.match(line)
             if matched:
                 self.runCmd("thread select %s" % matched.group(1))
+
+    def runCmd(self, cmd, msg=None, check=True, trace=False, inHistory=False):
+        """
+        Ask the command interpreter to handle the command and then check its
+        return status.
+        """
+        # Fail fast if 'cmd' is not meaningful.
+        if cmd is None:
+            raise Exception("Bad 'cmd' parameter encountered")
+
+        trace = True if traceAlways else trace
+
+        if cmd.startswith("target create "):
+            cmd = cmd.replace("target create ", "file ")
+
+        running = cmd.startswith("run") or cmd.startswith("process launch")
+
+        for i in range(self.maxLaunchCount if running else 1):
+            with recording(self, trace) as sbuf:
+                print("runCmd:", cmd, file=sbuf)
+                if not check:
+                    print("check of return status not required", file=sbuf)
+
+            self.ci.HandleCommand(cmd, self.res, inHistory)
+
+            with recording(self, trace) as sbuf:
+                if self.res.Succeeded():
+                    print("output:", self.res.GetOutput(), file=sbuf)
+                else:
+                    print("runCmd failed!", file=sbuf)
+                    print(self.res.GetError(), file=sbuf)
+
+            if self.res.Succeeded():
+                break
+            elif running:
+                # For process launch, wait some time before possible next try.
+                time.sleep(self.timeWaitNextLaunch)
+                with recording(self, trace) as sbuf:
+                    print("Command '" + cmd + "' failed!", file=sbuf)
+
+        if check:
+            output = ""
+            if self.res.GetOutput():
+                output += "\nCommand output:\n" + self.res.GetOutput()
+            if self.res.GetError():
+                output += "\nError output:\n" + self.res.GetError()
+            if msg:
+                msg += output
+            if cmd:
+                cmd += output
+            self.assertTrue(self.res.Succeeded(), msg if (msg) else CMD_MSG(cmd))
 
     def match(
         self, str, patterns, msg=None, trace=False, error=False, matching=True, exe=True
@@ -2252,7 +2209,7 @@ class TestBase(Base, metaclass=LLDBTestCaseFactory):
         if num_matches == 0:
             compare_string = str_input
         else:
-            if common_match is not None and len(common_match) > 0:
+            if common_match != None and len(common_match) > 0:
                 compare_string = str_input + common_match
             else:
                 compare_string = ""
@@ -2270,20 +2227,18 @@ class TestBase(Base, metaclass=LLDBTestCaseFactory):
                 substrs=[p],
             )
 
-    def completions_match(self, command, completions, max_completions=-1):
+    def completions_match(self, command, completions):
         """Checks that the completions for the given command are equal to the
         given list of completions"""
         interp = self.dbg.GetCommandInterpreter()
         match_strings = lldb.SBStringList()
-        interp.HandleCompletion(
-            command, len(command), 0, max_completions, match_strings
-        )
+        interp.HandleCompletion(command, len(command), 0, -1, match_strings)
         # match_strings is a 1-indexed list, so we have to slice...
-        self.assertCountEqual(
+        self.assertItemsEqual(
             completions, list(match_strings)[1:], "List of returned completion is wrong"
         )
 
-    def completions_contain(self, command, completions, match=True):
+    def completions_contain(self, command, completions):
         """Checks that the completions for the given command contain the given
         list of completions."""
         interp = self.dbg.GetCommandInterpreter()
@@ -2291,16 +2246,9 @@ class TestBase(Base, metaclass=LLDBTestCaseFactory):
         interp.HandleCompletion(command, len(command), 0, -1, match_strings)
         for completion in completions:
             # match_strings is a 1-indexed list, so we have to slice...
-            if match:
-                self.assertIn(
-                    completion,
-                    list(match_strings)[1:],
-                    "Couldn't find expected completion",
-                )
-            else:
-                self.assertNotIn(
-                    completion, list(match_strings)[1:], "Found unexpected completion"
-                )
+            self.assertIn(
+                completion, list(match_strings)[1:], "Couldn't find expected completion"
+            )
 
     def filecheck(
         self, command, check_file, filecheck_options="", expect_cmd_failure=False
@@ -2387,9 +2335,8 @@ FileCheck output:
         matches the patterns contained in 'patterns'.
 
         When matching is true and ordered is true, which are both the default,
-        the strings in the substrs array, and regex in the patterns array, have
-        to appear in the command output in the order in which they appear in
-        their respective array.
+        the strings in the substrs array have to appear in the command output
+        in the order in which they appear in the array.
 
         If the keyword argument error is set to True, it signifies that the API
         client is expecting the command to fail.  In this case, the error stream
@@ -2492,9 +2439,9 @@ FileCheck output:
         if substrs and matched == matching:
             start = 0
             for substr in substrs:
-                index = output.find(substr, start)
+                index = output[start:].find(substr)
+                start = start + index + len(substr) if ordered and matching else 0
                 matched = index != -1
-                start = index + len(substr) if ordered and matched else 0
                 log_lines.append(
                     '{} sub string: "{}" ({})'.format(
                         expecting_str, substr, found_str(matched)
@@ -2505,21 +2452,20 @@ FileCheck output:
                     break
 
         if patterns and matched == matching:
-            start = 0
             for pattern in patterns:
-                pat = re.compile(pattern)
-                match = pat.search(output, start)
-                matched = bool(match)
-                start = match.end() if ordered and matched else 0
+                matched = re.search(pattern, output)
 
                 pattern_line = '{} regex pattern: "{}" ({}'.format(
                     expecting_str, pattern, found_str(matched)
                 )
-                if match:
-                    pattern_line += ', matched "{}"'.format(match.group(0))
+                if matched:
+                    pattern_line += ', matched "{}"'.format(matched.group(0))
                 pattern_line += ")"
                 log_lines.append(pattern_line)
 
+                # Convert to bool because match objects
+                # are True-ish but != True itself
+                matched = bool(matched)
                 if matched != matching:
                     break
 
@@ -2624,7 +2570,7 @@ FileCheck output:
         if obj.Success():
             self.fail(self._formatMessage(msg, "Error not in a fail state"))
 
-        if error_str is None:
+        if error_str == None:
             return
 
         error = obj.GetCString()

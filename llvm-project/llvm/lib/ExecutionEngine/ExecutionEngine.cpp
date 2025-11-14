@@ -14,6 +14,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ExecutionEngine/GenericValue.h"
@@ -150,8 +151,8 @@ bool ExecutionEngine::removeModule(Module *M) {
 }
 
 Function *ExecutionEngine::FindFunctionNamed(StringRef FnName) {
-  for (const auto &M : Modules) {
-    Function *F = M->getFunction(FnName);
+  for (unsigned i = 0, e = Modules.size(); i != e; ++i) {
+    Function *F = Modules[i]->getFunction(FnName);
     if (F && !F->isDeclaration())
       return F;
   }
@@ -159,8 +160,8 @@ Function *ExecutionEngine::FindFunctionNamed(StringRef FnName) {
 }
 
 GlobalVariable *ExecutionEngine::FindGlobalVariableNamed(StringRef Name, bool AllowInternal) {
-  for (const auto &M : Modules) {
-    GlobalVariable *GV = M->getGlobalVariable(Name, AllowInternal);
+  for (unsigned i = 0, e = Modules.size(); i != e; ++i) {
+    GlobalVariable *GV = Modules[i]->getGlobalVariable(Name,AllowInternal);
     if (GV && !GV->isDeclaration())
       return GV;
   }
@@ -191,9 +192,9 @@ std::string ExecutionEngine::getMangledName(const GlobalValue *GV) {
   SmallString<128> FullName;
 
   const DataLayout &DL =
-    GV->getDataLayout().isDefault()
+    GV->getParent()->getDataLayout().isDefault()
       ? getDataLayout()
-      : GV->getDataLayout();
+      : GV->getParent()->getDataLayout();
 
   Mangler::getNameWithPrefix(FullName, GV->getName(), DL);
   return std::string(FullName);
@@ -313,8 +314,8 @@ const GlobalValue *ExecutionEngine::getGlobalValueAtAddress(void *Addr) {
 
   if (I != EEState.getGlobalAddressReverseMap().end()) {
     StringRef Name = I->second;
-    for (const auto &M : Modules)
-      if (GlobalValue *GV = M->getNamedValue(Name))
+    for (unsigned i = 0, e = Modules.size(); i != e; ++i)
+      if (GlobalValue *GV = Modules[i]->getNamedValue(Name))
         return GV;
   }
   return nullptr;
@@ -347,7 +348,7 @@ void *ArgvArray::reset(LLVMContext &C, ExecutionEngine *EE,
     LLVM_DEBUG(dbgs() << "JIT: ARGV[" << i << "] = " << (void *)Dest.get()
                       << "\n");
 
-    llvm::copy(InputArgv[i], Dest.get());
+    std::copy(InputArgv[i].begin(), InputArgv[i].end(), Dest.get());
     Dest[Size-1] = 0;
 
     // Endian safe: Array[i] = (PointerTy)Dest;
@@ -394,7 +395,7 @@ void ExecutionEngine::runStaticConstructorsDestructors(Module &module,
 
     // Execute the ctor/dtor function!
     if (Function *F = dyn_cast<Function>(FP))
-      runFunction(F, {});
+      runFunction(F, std::nullopt);
 
     // FIXME: It is marginally lame that we just do nothing here if we see an
     // entry we don't recognize. It might not be unreasonable for the verifier
@@ -952,7 +953,8 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
       if (CAZ) {
         GenericValue floatZero;
         floatZero.FloatVal = 0.f;
-        llvm::fill(Result.AggregateVal, floatZero);
+        std::fill(Result.AggregateVal.begin(), Result.AggregateVal.end(),
+                  floatZero);
         break;
       }
       if(CV) {
@@ -973,7 +975,8 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
       if (CAZ) {
         GenericValue doubleZero;
         doubleZero.DoubleVal = 0.0;
-        llvm::fill(Result.AggregateVal, doubleZero);
+        std::fill(Result.AggregateVal.begin(), Result.AggregateVal.end(),
+                  doubleZero);
         break;
       }
       if(CV) {
@@ -994,7 +997,8 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
       if (CAZ) {
         GenericValue intZero;
         intZero.IntVal = APInt(ElemTy->getScalarSizeInBits(), 0ull);
-        llvm::fill(Result.AggregateVal, intZero);
+        std::fill(Result.AggregateVal.begin(), Result.AggregateVal.end(),
+                  intZero);
         break;
       }
       if(CV) {
@@ -1052,7 +1056,7 @@ void ExecutionEngine::StoreValueToMemory(const GenericValue &Val,
     *((double*)Ptr) = Val.DoubleVal;
     break;
   case Type::X86_FP80TyID:
-    memcpy(static_cast<void *>(Ptr), Val.IntVal.getRawData(), 10);
+    memcpy(Ptr, Val.IntVal.getRawData(), 10);
     break;
   case Type::PointerTyID:
     // Ensure 64 bit target pointers are fully initialized on 32 bit hosts.
@@ -1215,8 +1219,9 @@ void ExecutionEngine::emitGlobals() {
            const GlobalValue*> LinkedGlobalsMap;
 
   if (Modules.size() != 1) {
-    for (const auto &M : Modules) {
-      for (const auto &GV : M->globals()) {
+    for (unsigned m = 0, e = Modules.size(); m != e; ++m) {
+      Module &M = *Modules[m];
+      for (const auto &GV : M.globals()) {
         if (GV.hasLocalLinkage() || GV.isDeclaration() ||
             GV.hasAppendingLinkage() || !GV.hasName())
           continue;// Ignore external globals and globals with internal linkage.
@@ -1244,8 +1249,9 @@ void ExecutionEngine::emitGlobals() {
   }
 
   std::vector<const GlobalValue*> NonCanonicalGlobals;
-  for (const auto &M : Modules) {
-    for (const auto &GV : M->globals()) {
+  for (unsigned m = 0, e = Modules.size(); m != e; ++m) {
+    Module &M = *Modules[m];
+    for (const auto &GV : M.globals()) {
       // In the multi-module case, see what this global maps to.
       if (!LinkedGlobalsMap.empty()) {
         if (const GlobalValue *GVEntry = LinkedGlobalsMap[std::make_pair(
@@ -1287,7 +1293,7 @@ void ExecutionEngine::emitGlobals() {
 
     // Now that all of the globals are set up in memory, loop through them all
     // and initialize their contents.
-    for (const auto &GV : M->globals()) {
+    for (const auto &GV : M.globals()) {
       if (!GV.isDeclaration()) {
         if (!LinkedGlobalsMap.empty()) {
           if (const GlobalValue *GVEntry = LinkedGlobalsMap[std::make_pair(

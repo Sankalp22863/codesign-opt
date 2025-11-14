@@ -1,5 +1,4 @@
-; RUN: llc -O0 -mtriple=spirv64v1.3-unknown-unknown  %s -o - | FileCheck %s --check-prefix=CHECK-SPIRV
-; RUN: %if spirv-tools %{ llc -O0 -mtriple=spirv64v1.3-unknown-unknown %s -o - -filetype=obj | spirv-val %}
+; RUN: llc -O0 -mtriple=spirv64-unknown-unknown --mattr=+spirv1.3  %s -o - | FileCheck %s --check-prefix=CHECK-SPIRV
 
 ;; kernel void test(int global *in, int global *in2) {
 ;;   if (!in)
@@ -12,7 +11,7 @@
 ;;     return;
 ;; }
 
-; CHECK-SPIRV: OpSpecConstantOp %[[#]] ConvertPtrToU
+; CHECK-SPIRV: OpConvertPtrToU
 ; CHECK-SPIRV: OpConvertPtrToU
 ; CHECK-SPIRV: OpINotEqual
 ; CHECK-SPIRV: OpConvertPtrToU

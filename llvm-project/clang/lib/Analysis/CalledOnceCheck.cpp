@@ -11,11 +11,11 @@
 #include "clang/AST/Attr.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
-#include "clang/AST/DynamicRecursiveASTVisitor.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/OperationKinds.h"
 #include "clang/AST/ParentMap.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtObjC.h"
 #include "clang/AST/StmtVisitor.h"
@@ -28,10 +28,12 @@
 #include "clang/Basic/LLVM.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/BitmaskEnum.h"
+#include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <memory>
@@ -161,7 +163,7 @@ public:
     NotVisited = 0x8, /* 1000 */
     // We already reported a violation and stopped tracking calls for this
     // parameter.
-    Reported = 0xF, /* 1111 */
+    Reported = 0x15, /* 1111 */
     LLVM_MARK_AS_BITMASK_ENUM(/* LargestValue = */ Reported)
   };
 
@@ -424,7 +426,7 @@ const Expr *getCondition(const Stmt *S) {
 /// of the AST will end up in the results.
 /// Results might have duplicate names, if this is a problem, convert to
 /// string sets afterwards.
-class NamesCollector : public DynamicRecursiveASTVisitor {
+class NamesCollector : public RecursiveASTVisitor<NamesCollector> {
 public:
   static constexpr unsigned EXPECTED_NUMBER_OF_NAMES = 5;
   using NameCollection =
@@ -436,12 +438,12 @@ public:
     return Impl.Result;
   }
 
-  bool VisitDeclRefExpr(DeclRefExpr *E) override {
+  bool VisitDeclRefExpr(const DeclRefExpr *E) {
     Result.push_back(E->getDecl()->getName());
     return true;
   }
 
-  bool VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *E) override {
+  bool VisitObjCPropertyRefExpr(const ObjCPropertyRefExpr *E) {
     llvm::StringRef Name;
 
     if (E->isImplicitProperty()) {
@@ -930,8 +932,7 @@ private:
     ParameterStatus &CurrentParamStatus = CurrentState.getStatusFor(Index);
 
     // Escape overrides whatever error we think happened.
-    if (CurrentParamStatus.isErrorStatus() &&
-        CurrentParamStatus.getKind() != ParameterStatus::Kind::Reported) {
+    if (CurrentParamStatus.isErrorStatus()) {
       CurrentParamStatus = ParameterStatus::Escaped;
     }
   }

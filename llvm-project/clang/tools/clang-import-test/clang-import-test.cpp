@@ -31,7 +31,6 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/Signals.h"
-#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/TargetParser/Host.h"
 
 #include <memory>
@@ -162,18 +161,17 @@ private:
 };
 
 std::unique_ptr<CompilerInstance> BuildCompilerInstance() {
-  DiagnosticOptions DiagOpts;
+  auto Ins = std::make_unique<CompilerInstance>();
   auto DC = std::make_unique<TestDiagnosticConsumer>();
-  auto Diags = CompilerInstance::createDiagnostics(
-      *llvm::vfs::getRealFileSystem(), DiagOpts, DC.get(),
-      /*ShouldOwnClient=*/false);
+  const bool ShouldOwnClient = true;
+  Ins->createDiagnostics(DC.release(), ShouldOwnClient);
 
   auto Inv = std::make_unique<CompilerInvocation>();
 
   std::vector<const char *> ClangArgv(ClangArgs.size());
   std::transform(ClangArgs.begin(), ClangArgs.end(), ClangArgv.begin(),
                  [](const std::string &s) -> const char * { return s.data(); });
-  CompilerInvocation::CreateFromArgs(*Inv, ClangArgv, *Diags);
+  CompilerInvocation::CreateFromArgs(*Inv, ClangArgv, Ins->getDiagnostics());
 
   {
     using namespace driver::types;
@@ -205,18 +203,14 @@ std::unique_ptr<CompilerInstance> BuildCompilerInstance() {
   Inv->getCodeGenOpts().setDebugInfo(llvm::codegenoptions::FullDebugInfo);
   Inv->getTargetOpts().Triple = llvm::sys::getDefaultTargetTriple();
 
-  auto Ins = std::make_unique<CompilerInstance>(std::move(Inv));
-
-  Ins->createVirtualFileSystem(llvm::vfs::getRealFileSystem(), DC.get());
-  Ins->createDiagnostics(DC.release(), /*ShouldOwnClient=*/true);
+  Ins->setInvocation(std::move(Inv));
 
   TargetInfo *TI = TargetInfo::CreateTargetInfo(
-      Ins->getDiagnostics(), Ins->getInvocation().getTargetOpts());
+      Ins->getDiagnostics(), Ins->getInvocation().TargetOpts);
   Ins->setTarget(TI);
-  Ins->getTarget().adjust(Ins->getDiagnostics(), Ins->getLangOpts(),
-                          /*AuxTarget=*/nullptr);
+  Ins->getTarget().adjust(Ins->getDiagnostics(), Ins->getLangOpts());
   Ins->createFileManager();
-  Ins->createSourceManager();
+  Ins->createSourceManager(Ins->getFileManager());
   Ins->createPreprocessor(TU_Complete);
 
   return Ins;
@@ -236,7 +230,7 @@ std::unique_ptr<CodeGenerator> BuildCodeGen(CompilerInstance &CI,
                                             llvm::LLVMContext &LLVMCtx) {
   StringRef ModuleName("$__module");
   return std::unique_ptr<CodeGenerator>(CreateLLVMCodeGen(
-      CI.getDiagnostics(), ModuleName, CI.getVirtualFileSystemPtr(),
+      CI.getDiagnostics(), ModuleName, &CI.getVirtualFileSystem(),
       CI.getHeaderSearchOpts(), CI.getPreprocessorOpts(), CI.getCodeGenOpts(),
       LLVMCtx));
 }

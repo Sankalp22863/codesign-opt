@@ -11,8 +11,8 @@ add_mlir_library(MLIRSparseTensorRuntime
   Storage.cpp
 
   EXCLUDE_FROM_LIBMLIR
-  )
-mlir_target_link_libraries(MLIRSparseTensorRuntime PUBLIC
+
+  LINK_LIBS PUBLIC
   MLIRSparseTensorEnums
   mlir_float16_utils
   )
@@ -21,6 +21,6 @@ set_property(TARGET MLIRSparseTensorRuntime PROPERTY CXX_STANDARD 17)
 check_cxx_compiler_flag(-Wweak-vtables
   COMPILER_SUPPORTS_WARNING_WEAK_VTABLES)
 if(COMPILER_SUPPORTS_WARNING_WEAK_VTABLES)
-  target_compile_options(MLIRSparseTensorRuntime PRIVATE
+  target_compile_options(MLIRSparseTensorRuntime PUBLIC
     "-Wweak-vtables")
 endif()

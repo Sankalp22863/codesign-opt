@@ -40,7 +40,7 @@ class SparcInstrInfo : public SparcGenInstrInfo {
   const SparcSubtarget& Subtarget;
   virtual void anchor();
 public:
-  explicit SparcInstrInfo(const SparcSubtarget &ST);
+  explicit SparcInstrInfo(SparcSubtarget &ST);
 
   /// getRegisterInfo - TargetInstrInfo is a superset of MRegister info.  As
   /// such, whenever a client has an instance of instruction info, it should
@@ -53,7 +53,7 @@ public:
   /// the destination along with the FrameIndex of the loaded stack slot.  If
   /// not, return 0.  This predicate must return 0 if the instruction has
   /// any side effects other than loading from the stack slot.
-  Register isLoadFromStackSlot(const MachineInstr &MI,
+  unsigned isLoadFromStackSlot(const MachineInstr &MI,
                                int &FrameIndex) const override;
 
   /// isStoreToStackSlot - If the specified machine instruction is a direct
@@ -61,7 +61,7 @@ public:
   /// the source reg along with the FrameIndex of the loaded stack slot.  If
   /// not, return 0.  This predicate must return 0 if the instruction has
   /// any side effects other than storing to the stack slot.
-  Register isStoreToStackSlot(const MachineInstr &MI,
+  unsigned isStoreToStackSlot(const MachineInstr &MI,
                               int &FrameIndex) const override;
 
   MachineBasicBlock *getBranchDestBlock(const MachineInstr &MI) const override;
@@ -86,20 +86,21 @@ public:
   bool isBranchOffsetInRange(unsigned BranchOpc, int64_t Offset) const override;
 
   void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
-                   const DebugLoc &DL, Register DestReg, Register SrcReg,
-                   bool KillSrc, bool RenamableDest = false,
-                   bool RenamableSrc = false) const override;
+                   const DebugLoc &DL, MCRegister DestReg, MCRegister SrcReg,
+                   bool KillSrc) const override;
 
-  void storeRegToStackSlot(
-      MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI, Register SrcReg,
-      bool isKill, int FrameIndex, const TargetRegisterClass *RC, Register VReg,
-      MachineInstr::MIFlag Flags = MachineInstr::NoFlags) const override;
+  void storeRegToStackSlot(MachineBasicBlock &MBB,
+                           MachineBasicBlock::iterator MBBI, Register SrcReg,
+                           bool isKill, int FrameIndex,
+                           const TargetRegisterClass *RC,
+                           const TargetRegisterInfo *TRI,
+                           Register VReg) const override;
 
-  void loadRegFromStackSlot(
-      MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
-      Register DestReg, int FrameIndex, const TargetRegisterClass *RC,
-      Register VReg,
-      MachineInstr::MIFlag Flags = MachineInstr::NoFlags) const override;
+  void loadRegFromStackSlot(MachineBasicBlock &MBB,
+                            MachineBasicBlock::iterator MBBI, Register DestReg,
+                            int FrameIndex, const TargetRegisterClass *RC,
+                            const TargetRegisterInfo *TRI,
+                            Register VReg) const override;
 
   Register getGlobalBaseReg(MachineFunction *MF) const;
 

@@ -15,6 +15,7 @@
 #include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Section.h"
+#include "lldb/Core/ValueObjectVariable.h"
 #include "lldb/DataFormatters/ValueObjectPrinter.h"
 #include "lldb/Host/OptionParser.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
@@ -55,15 +56,13 @@
 #include "lldb/Utility/Stream.h"
 #include "lldb/Utility/StructuredData.h"
 #include "lldb/Utility/Timer.h"
-#include "lldb/ValueObject/ValueObjectVariable.h"
 #include "lldb/lldb-enumerations.h"
-#include "lldb/lldb-forward.h"
 #include "lldb/lldb-private-enumerations.h"
 
+#include "clang/CodeGen/ObjectFilePCHContainerOperations.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Frontend/FrontendActions.h"
-#include "clang/Serialization/ObjectFilePCHContainerReader.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FileSystem.h"
@@ -98,7 +97,7 @@ static void DumpTargetInfo(uint32_t target_idx, Target *target,
 
   uint32_t properties = 0;
   if (target_arch.IsValid()) {
-    strm.Printf(" ( arch=");
+    strm.Printf("%sarch=", properties++ > 0 ? ", " : " ( ");
     target_arch.DumpTriple(strm.AsRawOstream());
     properties++;
   }
@@ -187,8 +186,8 @@ public:
       if (error.Success())
         m_load_dependent_files = tmp_load_dependents;
     } else {
-      error = Status::FromErrorStringWithFormat(
-          "unrecognized short option '%c'", short_option);
+      error.SetErrorStringWithFormat("unrecognized short option '%c'",
+                                     short_option);
     }
 
     return error;
@@ -230,8 +229,19 @@ public:
         m_remote_file(
             LLDB_OPT_SET_1, false, "remote-file", 'r', 0, eArgTypeFilename,
             "Fullpath to the file on the remote host if debugging remotely.") {
+    CommandArgumentEntry arg;
+    CommandArgumentData file_arg;
 
-    AddSimpleArgumentList(eArgTypeFilename);
+    // Define the first (and only) variant of this arg.
+    file_arg.arg_type = eArgTypeFilename;
+    file_arg.arg_repetition = eArgRepeatPlain;
+
+    // There is only one variant this argument could be; put it into the
+    // argument entry.
+    arg.push_back(file_arg);
+
+    // Push the data for the first argument into the m_arguments vector.
+    m_arguments.push_back(arg);
 
     m_option_group.Append(&m_arch_option, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
     m_option_group.Append(&m_platform_options, LLDB_OPT_SET_ALL, 1);
@@ -246,6 +256,13 @@ public:
   ~CommandObjectTargetCreate() override = default;
 
   Options *GetOptions() override { return &m_option_group; }
+
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+        GetCommandInterpreter(), lldb::eDiskFileCompletion, request, nullptr);
+  }
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
@@ -418,11 +435,7 @@ protected:
         if (process_sp) {
           // Seems weird that we Launch a core file, but that is what we
           // do!
-          {
-            ElapsedTime load_core_time(
-                target_sp->GetStatistics().GetLoadCoreTime());
-            error = process_sp->LoadCore();
-          }
+          error = process_sp->LoadCore();
 
           if (error.Fail()) {
             result.AppendError(error.AsCString("unknown core file format"));
@@ -497,7 +510,8 @@ public:
       : CommandObjectParsed(
             interpreter, "target select",
             "Select a target as the current target by target index.", nullptr) {
-    AddSimpleArgumentList(eArgTypeTargetID);
+    CommandArgumentData target_arg{eArgTypeTargetID, eArgRepeatPlain};
+    m_arguments.push_back({target_arg});
   }
 
   ~CommandObjectTargetSelect() override = default;
@@ -579,7 +593,8 @@ public:
     m_option_group.Append(&m_all_option, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
     m_option_group.Append(&m_cleanup_option, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
     m_option_group.Finalize();
-    AddSimpleArgumentList(eArgTypeTargetID, eArgRepeatStar);
+    CommandArgumentData target_arg{eArgTypeTargetID, eArgRepeatStar};
+    m_arguments.push_back({target_arg});
   }
 
   ~CommandObjectTargetDelete() override = default;
@@ -653,6 +668,8 @@ protected:
     result.GetOutputStream().Printf("%u targets deleted.\n",
                                     (uint32_t)num_targets_to_delete);
     result.SetStatus(eReturnStatusSuccessFinishResult);
+
+    return;
   }
 
   OptionGroupOptions m_option_group;
@@ -719,7 +736,19 @@ public:
             "A basename or fullpath to a shared library to use in the search "
             "for global "
             "variables. This option can be specified multiple times.") {
-    AddSimpleArgumentList(eArgTypeVarName, eArgRepeatPlus);
+    CommandArgumentEntry arg;
+    CommandArgumentData var_name_arg;
+
+    // Define the first (and only) variant of this arg.
+    var_name_arg.arg_type = eArgTypeVarName;
+    var_name_arg.arg_repetition = eArgRepeatPlus;
+
+    // There is only one variant this argument could be; put it into the
+    // argument entry.
+    arg.push_back(var_name_arg);
+
+    // Push the data for the first argument into the m_arguments vector.
+    m_arguments.push_back(arg);
 
     m_option_group.Append(&m_varobj_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
     m_option_group.Append(&m_option_variable, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
@@ -787,8 +816,7 @@ public:
 
     options.SetRootValueObjectName(root_name);
 
-    if (llvm::Error error = valobj_sp->Dump(s, options))
-      s << "error: " << toString(std::move(error));
+    valobj_sp->Dump(s, options);
   }
 
   static size_t GetVariableCallback(void *baton, const char *name,
@@ -806,9 +834,7 @@ public:
 protected:
   void DumpGlobalVariableList(const ExecutionContext &exe_ctx,
                               const SymbolContext &sc,
-                              const VariableList &variable_list,
-                              CommandReturnObject &result) {
-    Stream &s = result.GetOutputStream();
+                              const VariableList &variable_list, Stream &s) {
     if (variable_list.Empty())
       return;
     if (sc.module_sp) {
@@ -829,16 +855,15 @@ protected:
       ValueObjectSP valobj_sp(ValueObjectVariable::Create(
           exe_ctx.GetBestExecutionContextScope(), var_sp));
 
-      if (valobj_sp) {
-        result.GetValueObjectList().Append(valobj_sp);
+      if (valobj_sp)
         DumpValueObject(s, var_sp, valobj_sp, var_sp->GetName().GetCString());
-      }
     }
   }
 
   void DoExecute(Args &args, CommandReturnObject &result) override {
     Target *target = m_exe_ctx.GetTargetPtr();
     const size_t argc = args.GetArgumentCount();
+    Stream &s = result.GetOutputStream();
 
     if (argc > 0) {
       for (const Args::ArgEntry &arg : args) {
@@ -880,7 +905,7 @@ protected:
                     m_exe_ctx.GetBestExecutionContextScope(), var_sp);
 
               if (valobj_sp)
-                DumpValueObject(result.GetOutputStream(), var_sp, valobj_sp,
+                DumpValueObject(s, var_sp, valobj_sp,
                                 use_var_name ? var_sp->GetName().GetCString()
                                              : arg.c_str());
             }
@@ -909,8 +934,7 @@ protected:
             if (comp_unit_varlist_sp) {
               size_t count = comp_unit_varlist_sp->GetSize();
               if (count > 0) {
-                DumpGlobalVariableList(m_exe_ctx, sc, *comp_unit_varlist_sp,
-                                       result);
+                DumpGlobalVariableList(m_exe_ctx, sc, *comp_unit_varlist_sp, s);
                 success = true;
               }
             }
@@ -971,8 +995,7 @@ protected:
             VariableListSP comp_unit_varlist_sp(
                 sc.comp_unit->GetVariableList(can_create));
             if (comp_unit_varlist_sp)
-              DumpGlobalVariableList(m_exe_ctx, sc, *comp_unit_varlist_sp,
-                                     result);
+              DumpGlobalVariableList(m_exe_ctx, sc, *comp_unit_varlist_sp, s);
           } else if (sc.module_sp) {
             // Get all global variables for this module
             lldb_private::RegularExpression all_globals_regex(
@@ -980,7 +1003,7 @@ protected:
             VariableList variable_list;
             sc.module_sp->FindGlobalVariables(all_globals_regex, UINT32_MAX,
                                               variable_list);
-            DumpGlobalVariableList(m_exe_ctx, sc, variable_list, result);
+            DumpGlobalVariableList(m_exe_ctx, sc, variable_list, s);
           }
         }
       }
@@ -1035,7 +1058,7 @@ public:
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = &GetSelectedTarget();
     const size_t argc = command.GetArgumentCount();
     if (argc & 1) {
       result.AppendError("add requires an even number of arguments\n");
@@ -1053,7 +1076,7 @@ protected:
                       from, to);
           }
           bool last_pair = ((argc - i) == 2);
-          target.GetImageSearchPathList().Append(
+          target->GetImageSearchPathList().Append(
               from, to, last_pair); // Notify if this is the last pair
           result.SetStatus(eReturnStatusSuccessFinishNoResult);
         } else {
@@ -1082,9 +1105,9 @@ public:
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = &GetSelectedTarget();
     bool notify = true;
-    target.GetImageSearchPathList().Clear(notify);
+    target->GetImageSearchPathList().Clear(notify);
     result.SetStatus(eReturnStatusSuccessFinishNoResult);
   }
 };
@@ -1156,7 +1179,7 @@ public:
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = &GetSelectedTarget();
     size_t argc = command.GetArgumentCount();
     // check for at least 3 arguments and an odd number of parameters
     if (argc >= 3 && argc & 1) {
@@ -1179,8 +1202,8 @@ protected:
 
         if (from[0] && to[0]) {
           bool last_pair = ((argc - i) == 2);
-          target.GetImageSearchPathList().Insert(from, to, insert_idx,
-                                                 last_pair);
+          target->GetImageSearchPathList().Insert(from, to, insert_idx,
+                                                  last_pair);
           result.SetStatus(eReturnStatusSuccessFinishNoResult);
         } else {
           if (from[0])
@@ -1211,8 +1234,9 @@ public:
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
-    target.GetImageSearchPathList().Dump(&result.GetOutputStream());
+    Target *target = &GetSelectedTarget();
+
+    target->GetImageSearchPathList().Dump(&result.GetOutputStream());
     result.SetStatus(eReturnStatusSuccessFinishResult);
   }
 };
@@ -1226,14 +1250,26 @@ public:
             interpreter, "target modules search-paths query",
             "Transform a path using the first applicable image search path.",
             nullptr, eCommandRequiresTarget) {
-    AddSimpleArgumentList(eArgTypeDirectoryName);
+    CommandArgumentEntry arg;
+    CommandArgumentData path_arg;
+
+    // Define the first (and only) variant of this arg.
+    path_arg.arg_type = eArgTypeDirectoryName;
+    path_arg.arg_repetition = eArgRepeatPlain;
+
+    // There is only one variant this argument could be; put it into the
+    // argument entry.
+    arg.push_back(path_arg);
+
+    // Push the data for the first argument into the m_arguments vector.
+    m_arguments.push_back(arg);
   }
 
   ~CommandObjectTargetModulesSearchPathsQuery() override = default;
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = &GetSelectedTarget();
     if (command.GetArgumentCount() != 1) {
       result.AppendError("query requires one argument\n");
       return;
@@ -1241,7 +1277,7 @@ protected:
 
     ConstString orig(command.GetArgumentAtIndex(0));
     ConstString transformed;
-    if (target.GetImageSearchPathList().RemapPath(orig, transformed))
+    if (target->GetImageSearchPathList().RemapPath(orig, transformed))
       result.GetOutputStream().Printf("%s\n", transformed.GetCString());
     else
       result.GetOutputStream().Printf("%s\n", orig.GetCString());
@@ -1416,13 +1452,11 @@ static bool DumpModuleSymbolFile(Stream &strm, Module *module) {
 }
 
 static bool GetSeparateDebugInfoList(StructuredData::Array &list,
-                                     Module *module, bool errors_only,
-                                     bool load_all_debug_info) {
+                                     Module *module, bool errors_only) {
   if (module) {
     if (SymbolFile *symbol_file = module->GetSymbolFile(/*can_create=*/true)) {
       StructuredData::Dictionary d;
-      if (symbol_file->GetSeparateDebugInfo(d, errors_only,
-                                            load_all_debug_info)) {
+      if (symbol_file->GetSeparateDebugInfo(d, errors_only)) {
         list.AddItem(
             std::make_shared<StructuredData::Dictionary>(std::move(d)));
         return true;
@@ -1532,8 +1566,8 @@ static bool LookupAddressInModule(CommandInterpreter &interpreter, Stream &strm,
     Address so_addr;
     SymbolContext sc;
     Target *target = interpreter.GetExecutionContext().GetTargetPtr();
-    if (target && target->HasLoadedSections()) {
-      if (!target->ResolveLoadAddress(addr, so_addr))
+    if (target && !target->GetSectionLoadList().IsEmpty()) {
+      if (!target->GetSectionLoadList().ResolveLoadAddress(addr, so_addr))
         return false;
       else if (so_addr.GetModule().get() != module)
         return false;
@@ -1631,15 +1665,12 @@ static void DumpSymbolContextList(
     if (!first_module)
       strm.EOL();
 
-    Address addr;
-    if (sc.line_entry.IsValid())
-      addr = sc.line_entry.range.GetBaseAddress();
-    else if (sc.block && sc.block->GetContainingInlinedBlock())
-      sc.block->GetContainingInlinedBlock()->GetStartAddress(addr);
-    else
-      addr = sc.GetFunctionOrSymbolAddress();
+    AddressRange range;
 
-    DumpAddress(exe_scope, addr, verbose, all_ranges, strm, settings);
+    sc.GetAddressRange(eSymbolContextEverything, 0, true, range);
+
+    DumpAddress(exe_scope, range.GetBaseAddress(), verbose, all_ranges, strm,
+                settings);
     first_module = false;
   }
   strm.IndentLess();
@@ -1857,7 +1888,19 @@ public:
                                                const char *syntax,
                                                uint32_t flags = 0)
       : CommandObjectParsed(interpreter, name, help, syntax, flags) {
-    AddSimpleArgumentList(eArgTypeFilename, eArgRepeatStar);
+    CommandArgumentEntry arg;
+    CommandArgumentData file_arg;
+
+    // Define the first (and only) variant of this arg.
+    file_arg.arg_type = eArgTypeFilename;
+    file_arg.arg_repetition = eArgRepeatStar;
+
+    // There is only one variant this argument could be; put it into the
+    // argument entry.
+    arg.push_back(file_arg);
+
+    // Push the data for the first argument into the m_arguments vector.
+    m_arguments.push_back(arg);
   }
 
   ~CommandObjectTargetModulesModuleAutoComplete() override = default;
@@ -1882,7 +1925,19 @@ public:
       CommandInterpreter &interpreter, const char *name, const char *help,
       const char *syntax, uint32_t flags)
       : CommandObjectParsed(interpreter, name, help, syntax, flags) {
-    AddSimpleArgumentList(eArgTypeSourceFile, eArgRepeatPlus);
+    CommandArgumentEntry arg;
+    CommandArgumentData source_file_arg;
+
+    // Define the first (and only) variant of this arg.
+    source_file_arg.arg_type = eArgTypeSourceFile;
+    source_file_arg.arg_repetition = eArgRepeatPlus;
+
+    // There is only one variant this argument could be; put it into the
+    // argument entry.
+    arg.push_back(source_file_arg);
+
+    // Push the data for the first argument into the m_arguments vector.
+    m_arguments.push_back(arg);
   }
 
   ~CommandObjectTargetModulesSourceFileAutoComplete() override = default;
@@ -1910,9 +1965,9 @@ public:
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = &GetSelectedTarget();
 
-    uint32_t addr_byte_size = target.GetArchitecture().GetAddressByteSize();
+    uint32_t addr_byte_size = target->GetArchitecture().GetAddressByteSize();
     result.GetOutputStream().SetAddressByteSize(addr_byte_size);
     result.GetErrorStream().SetAddressByteSize(addr_byte_size);
 
@@ -1920,7 +1975,7 @@ protected:
     if (command.GetArgumentCount() == 0) {
       // Dump all headers for all modules images
       num_dumped = DumpModuleObjfileHeaders(result.GetOutputStream(),
-                                            target.GetImages());
+                                            target->GetImages());
       if (num_dumped == 0) {
         result.AppendError("the target has no associated executable images");
       }
@@ -1932,7 +1987,7 @@ protected:
            (arg_cstr = command.GetArgumentAtIndex(arg_idx)) != nullptr;
            ++arg_idx) {
         size_t num_matched =
-            FindModulesByName(&target, arg_cstr, module_list, true);
+            FindModulesByName(target, arg_cstr, module_list, true);
         if (num_matched == 0) {
           result.AppendWarningWithFormat(
               "Unable to find an image that matches '%s'.\n", arg_cstr);
@@ -2011,19 +2066,19 @@ public:
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = &GetSelectedTarget();
     uint32_t num_dumped = 0;
     Mangled::NamePreference name_preference =
         (m_options.m_prefer_mangled ? Mangled::ePreferMangled
                                     : Mangled::ePreferDemangled);
 
-    uint32_t addr_byte_size = target.GetArchitecture().GetAddressByteSize();
+    uint32_t addr_byte_size = target->GetArchitecture().GetAddressByteSize();
     result.GetOutputStream().SetAddressByteSize(addr_byte_size);
     result.GetErrorStream().SetAddressByteSize(addr_byte_size);
 
     if (command.GetArgumentCount() == 0) {
       // Dump all sections for all modules images
-      const ModuleList &module_list = target.GetImages();
+      const ModuleList &module_list = target->GetImages();
       std::lock_guard<std::recursive_mutex> guard(module_list.GetMutex());
       const size_t num_modules = module_list.GetSize();
       if (num_modules > 0) {
@@ -2056,7 +2111,7 @@ protected:
            ++arg_idx) {
         ModuleList module_list;
         const size_t num_matches =
-            FindModulesByName(&target, arg_cstr, module_list, true);
+            FindModulesByName(target, arg_cstr, module_list, true);
         if (num_matches > 0) {
           for (ModuleSP module_sp : module_list.Modules()) {
             if (module_sp) {
@@ -2109,16 +2164,16 @@ public:
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = &GetSelectedTarget();
     uint32_t num_dumped = 0;
 
-    uint32_t addr_byte_size = target.GetArchitecture().GetAddressByteSize();
+    uint32_t addr_byte_size = target->GetArchitecture().GetAddressByteSize();
     result.GetOutputStream().SetAddressByteSize(addr_byte_size);
     result.GetErrorStream().SetAddressByteSize(addr_byte_size);
 
     if (command.GetArgumentCount() == 0) {
       // Dump all sections for all modules images
-      const size_t num_modules = target.GetImages().GetSize();
+      const size_t num_modules = target->GetImages().GetSize();
       if (num_modules == 0) {
         result.AppendError("the target has no associated executable images");
         return;
@@ -2135,7 +2190,7 @@ protected:
         num_dumped++;
         DumpModuleSections(
             m_interpreter, result.GetOutputStream(),
-            target.GetImages().GetModulePointerAtIndex(image_idx));
+            target->GetImages().GetModulePointerAtIndex(image_idx));
       }
     } else {
       // Dump specified images (by basename or fullpath)
@@ -2145,7 +2200,7 @@ protected:
            ++arg_idx) {
         ModuleList module_list;
         const size_t num_matches =
-            FindModulesByName(&target, arg_cstr, module_list, true);
+            FindModulesByName(target, arg_cstr, module_list, true);
         if (num_matches > 0) {
           for (size_t i = 0; i < num_matches; ++i) {
             if (INTERRUPT_REQUESTED(GetDebugger(),
@@ -2186,7 +2241,8 @@ public:
             interpreter, "target modules dump pcm-info",
             "Dump information about the given clang module (pcm).") {
     // Take a single file argument.
-    AddSimpleArgumentList(eArgTypeFilename);
+    CommandArgumentData arg{eArgTypeFilename, eArgRepeatPlain};
+    m_arguments.push_back({arg});
   }
 
   ~CommandObjectTargetModulesDumpClangPCMInfo() override = default;
@@ -2212,11 +2268,11 @@ protected:
       return;
     }
 
-    const char *clang_args[] = {"clang", pcm_path};
-    clang::CompilerInstance compiler(clang::createInvocation(clang_args));
-    compiler.setVirtualFileSystem(
-        FileSystem::Instance().GetVirtualFileSystem());
+    clang::CompilerInstance compiler;
     compiler.createDiagnostics();
+
+    const char *clang_args[] = {"clang", pcm_path};
+    compiler.setInvocation(clang::createInvocation(clang_args));
 
     // Pass empty deleter to not attempt to free memory that was allocated
     // outside of the current scope, possibly statically.
@@ -2243,35 +2299,21 @@ public:
       : CommandObjectTargetModulesModuleAutoComplete(
             interpreter, "target modules dump ast",
             "Dump the clang ast for a given module's symbol file.",
-            "target modules dump ast [--filter <name>] [<file1> ...]",
-            eCommandRequiresTarget),
-        m_filter(LLDB_OPT_SET_1, false, "filter", 'f', 0, eArgTypeName,
-                 "Dump only the decls whose names contain the specified filter "
-                 "string.",
-                 /*default_value=*/"") {
-    m_option_group.Append(&m_filter, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
-    m_option_group.Finalize();
-  }
-
-  Options *GetOptions() override { return &m_option_group; }
+            //"target modules dump ast [<file1> ...]")
+            nullptr, eCommandRequiresTarget) {}
 
   ~CommandObjectTargetModulesDumpClangAST() override = default;
 
-  OptionGroupOptions m_option_group;
-  OptionGroupString m_filter;
-
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = &GetSelectedTarget();
 
-    const ModuleList &module_list = target.GetImages();
+    const ModuleList &module_list = target->GetImages();
     const size_t num_modules = module_list.GetSize();
     if (num_modules == 0) {
       result.AppendError("the target has no associated executable images");
       return;
     }
-
-    llvm::StringRef filter = m_filter.GetOptionValue().GetCurrentValueAsRef();
 
     if (command.GetArgumentCount() == 0) {
       // Dump all ASTs for all modules images
@@ -2281,8 +2323,7 @@ protected:
         if (INTERRUPT_REQUESTED(GetDebugger(), "Interrupted dumping clang ast"))
           break;
         if (SymbolFile *sf = module_sp->GetSymbolFile())
-          sf->DumpClangAST(result.GetOutputStream(), filter,
-                           GetCommandInterpreter().GetDebugger().GetUseColor());
+          sf->DumpClangAST(result.GetOutputStream());
       }
       result.SetStatus(eReturnStatusSuccessFinishResult);
       return;
@@ -2292,7 +2333,7 @@ protected:
     for (const Args::ArgEntry &arg : command.entries()) {
       ModuleList module_list;
       const size_t num_matches =
-          FindModulesByName(&target, arg.c_str(), module_list, true);
+          FindModulesByName(target, arg.c_str(), module_list, true);
       if (num_matches == 0) {
         // Check the global list
         std::lock_guard<std::recursive_mutex> guard(
@@ -2311,8 +2352,7 @@ protected:
 
         Module *m = module_list.GetModulePointerAtIndex(i);
         if (SymbolFile *sf = m->GetSymbolFile())
-          sf->DumpClangAST(result.GetOutputStream(), filter,
-                           GetCommandInterpreter().GetDebugger().GetUseColor());
+          sf->DumpClangAST(result.GetOutputStream());
       }
     }
     result.SetStatus(eReturnStatusSuccessFinishResult);
@@ -2337,16 +2377,16 @@ public:
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = &GetSelectedTarget();
     uint32_t num_dumped = 0;
 
-    uint32_t addr_byte_size = target.GetArchitecture().GetAddressByteSize();
+    uint32_t addr_byte_size = target->GetArchitecture().GetAddressByteSize();
     result.GetOutputStream().SetAddressByteSize(addr_byte_size);
     result.GetErrorStream().SetAddressByteSize(addr_byte_size);
 
     if (command.GetArgumentCount() == 0) {
       // Dump all sections for all modules images
-      const ModuleList &target_modules = target.GetImages();
+      const ModuleList &target_modules = target->GetImages();
       std::lock_guard<std::recursive_mutex> guard(target_modules.GetMutex());
       const size_t num_modules = target_modules.GetSize();
       if (num_modules == 0) {
@@ -2372,7 +2412,7 @@ protected:
            ++arg_idx) {
         ModuleList module_list;
         const size_t num_matches =
-            FindModulesByName(&target, arg_cstr, module_list, true);
+            FindModulesByName(target, arg_cstr, module_list, true);
         if (num_matches > 0) {
           for (size_t i = 0; i < num_matches; ++i) {
             if (INTERRUPT_REQUESTED(GetDebugger(), "Interrupted dumping {0} "
@@ -2428,7 +2468,7 @@ protected:
     result.GetErrorStream().SetAddressByteSize(addr_byte_size);
 
     if (command.GetArgumentCount() == 0) {
-      result.AppendError("file option must be specified");
+      result.AppendError("file option must be specified.");
       return;
     } else {
       // Dump specified images (by basename or fullpath)
@@ -2532,10 +2572,6 @@ public:
       const int short_option = m_getopt_table[option_idx].val;
 
       switch (short_option) {
-      case 'f':
-        m_load_all_debug_info.SetCurrentValue(true);
-        m_load_all_debug_info.SetOptionWasSet();
-        break;
       case 'j':
         m_json.SetCurrentValue(true);
         m_json.SetOptionWasSet();
@@ -2553,7 +2589,6 @@ public:
     void OptionParsingStarting(ExecutionContext *execution_context) override {
       m_json.Clear();
       m_errors_only.Clear();
-      m_load_all_debug_info.Clear();
     }
 
     llvm::ArrayRef<OptionDefinition> GetDefinitions() override {
@@ -2562,12 +2597,11 @@ public:
 
     OptionValueBoolean m_json = false;
     OptionValueBoolean m_errors_only = false;
-    OptionValueBoolean m_load_all_debug_info = false;
   };
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target &target = GetSelectedTarget();
     uint32_t num_dumped = 0;
 
     uint32_t addr_byte_size = target.GetArchitecture().GetAddressByteSize();
@@ -2594,8 +2628,7 @@ protected:
 
         if (GetSeparateDebugInfoList(separate_debug_info_lists_by_module,
                                      module_sp.get(),
-                                     bool(m_options.m_errors_only),
-                                     bool(m_options.m_load_all_debug_info)))
+                                     bool(m_options.m_errors_only)))
           num_dumped++;
       }
     } else {
@@ -2616,8 +2649,7 @@ protected:
               break;
             Module *module = module_list.GetModulePointerAtIndex(i);
             if (GetSeparateDebugInfoList(separate_debug_info_lists_by_module,
-                                         module, bool(m_options.m_errors_only),
-                                         bool(m_options.m_load_all_debug_info)))
+                                         module, bool(m_options.m_errors_only)))
               num_dumped++;
           }
         } else
@@ -2749,12 +2781,20 @@ public:
                           LLDB_OPT_SET_1);
     m_option_group.Append(&m_symbol_file, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
     m_option_group.Finalize();
-    AddSimpleArgumentList(eArgTypePath, eArgRepeatStar);
+    CommandArgumentData module_arg{eArgTypePath, eArgRepeatStar};
+    m_arguments.push_back({module_arg});
   }
 
   ~CommandObjectTargetModulesAdd() override = default;
 
   Options *GetOptions() override { return &m_option_group; }
+
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+        GetCommandInterpreter(), lldb::eDiskFileCompletion, request, nullptr);
+  }
 
 protected:
   OptionGroupOptions m_option_group;
@@ -2762,7 +2802,7 @@ protected:
   OptionGroupFile m_symbol_file;
 
   void DoExecute(Args &args, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = &GetSelectedTarget();
     bool flush = false;
 
     const size_t argc = args.GetArgumentCount();
@@ -2778,7 +2818,7 @@ protected:
         Status error;
         if (PluginManager::DownloadObjectAndSymbolFile(module_spec, error)) {
           ModuleSP module_sp(
-              target.GetOrCreateModule(module_spec, true /* notify */));
+              target->GetOrCreateModule(module_spec, true /* notify */));
           if (module_sp) {
             result.SetStatus(eReturnStatusSuccessFinishResult);
             return;
@@ -2812,7 +2852,7 @@ protected:
           result.AppendErrorWithFormat(
               "Unable to locate the executable or symbol file with UUID %s",
               strm.GetData());
-          result.SetError(std::move(error));
+          result.SetError(error);
           return;
         }
       } else {
@@ -2835,10 +2875,10 @@ protected:
             module_spec.GetSymbolFileSpec() =
                 m_symbol_file.GetOptionValue().GetCurrentValue();
           if (!module_spec.GetArchitecture().IsValid())
-            module_spec.GetArchitecture() = target.GetArchitecture();
+            module_spec.GetArchitecture() = target->GetArchitecture();
           Status error;
-          ModuleSP module_sp(
-              target.GetOrCreateModule(module_spec, true /* notify */, &error));
+          ModuleSP module_sp(target->GetOrCreateModule(
+              module_spec, true /* notify */, &error));
           if (!module_sp) {
             const char *error_cstr = error.AsCString();
             if (error_cstr)
@@ -2867,7 +2907,7 @@ protected:
     }
 
     if (flush) {
-      ProcessSP process = target.GetProcessSP();
+      ProcessSP process = target->GetProcessSP();
       if (process)
         process->Flush();
     }
@@ -2912,7 +2952,7 @@ public:
 
 protected:
   void DoExecute(Args &args, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = &GetSelectedTarget();
     const bool load = m_load_option.GetOptionValue().GetCurrentValue();
     const bool set_pc = m_pc_option.GetOptionValue().GetCurrentValue();
 
@@ -2924,7 +2964,7 @@ protected:
     if (load) {
       if (!m_file_option.GetOptionValue().OptionWasSet() &&
           !m_uuid_option_group.GetOptionValue().OptionWasSet()) {
-        ModuleList &module_list = target.GetImages();
+        ModuleList &module_list = target->GetImages();
         if (module_list.GetSize() == 1) {
           search_using_module_spec = true;
           module_spec.GetFileSpec() =
@@ -2939,7 +2979,7 @@ protected:
       const bool use_global_module_list = true;
       ModuleList module_list;
       const size_t num_matches = FindModulesByName(
-          &target, arg_cstr, module_list, use_global_module_list);
+          target, arg_cstr, module_list, use_global_module_list);
       if (num_matches == 1) {
         module_spec.GetFileSpec() =
             module_list.GetModuleAtIndex(0)->GetFileSpec();
@@ -2962,7 +3002,7 @@ protected:
 
     if (search_using_module_spec) {
       ModuleList matching_modules;
-      target.GetImages().FindModules(module_spec, matching_modules);
+      target->GetImages().FindModules(module_spec, matching_modules);
       const size_t num_matches = matching_modules.GetSize();
 
       char path[PATH_MAX];
@@ -2979,7 +3019,7 @@ protected:
                   const addr_t slide =
                       m_slide_option.GetOptionValue().GetCurrentValue();
                   const bool slide_is_offset = true;
-                  module->SetLoadAddress(target, slide, slide_is_offset,
+                  module->SetLoadAddress(*target, slide, slide_is_offset,
                                          changed);
                 } else {
                   result.AppendError("one or more section name + load "
@@ -3011,8 +3051,8 @@ protected:
                               sect_name);
                           break;
                         } else {
-                          if (target.SetSectionLoadAddress(section_sp,
-                                                           load_addr))
+                          if (target->GetSectionLoadList()
+                                  .SetSectionLoadAddress(section_sp, load_addr))
                             changed = true;
                           result.AppendMessageWithFormat(
                               "section '%s' loaded at 0x%" PRIx64 "\n",
@@ -3043,13 +3083,13 @@ protected:
               }
 
               if (changed) {
-                target.ModulesDidLoad(matching_modules);
+                target->ModulesDidLoad(matching_modules);
                 Process *process = m_exe_ctx.GetProcessPtr();
                 if (process)
                   process->Flush();
               }
               if (load) {
-                ProcessSP process = target.CalculateProcess();
+                ProcessSP process = target->CalculateProcess();
                 Address file_entry = objfile->GetEntryPointAddress();
                 if (!process) {
                   result.AppendError("No process");
@@ -3060,7 +3100,7 @@ protected:
                   return;
                 }
                 std::vector<ObjectFile::LoadableData> loadables(
-                    objfile->GetLoadableData(target));
+                    objfile->GetLoadableData(*target));
                 if (loadables.size() == 0) {
                   result.AppendError("No loadable sections");
                   return;
@@ -3074,7 +3114,7 @@ protected:
                   ThreadList &thread_list = process->GetThreadList();
                   RegisterContextSP reg_context(
                       thread_list.GetSelectedThread()->GetRegisterContext());
-                  addr_t file_entry_addr = file_entry.GetLoadAddress(&target);
+                  addr_t file_entry_addr = file_entry.GetLoadAddress(target);
                   if (!reg_context->SetPC(file_entry_addr)) {
                     result.AppendErrorWithFormat("failed to set PC value to "
                                                  "0x%" PRIx64 "\n",
@@ -3193,7 +3233,8 @@ public:
       : CommandObjectParsed(
             interpreter, "target modules list",
             "List current executable and dependent shared library images.") {
-    AddSimpleArgumentList(eArgTypeModule, eArgRepeatStar);
+    CommandArgumentData module_arg{eArgTypeShlibName, eArgRepeatStar};
+    m_arguments.push_back({module_arg});
   }
 
   ~CommandObjectTargetModulesList() override = default;
@@ -3202,37 +3243,50 @@ public:
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = GetDebugger().GetSelectedTarget().get();
     const bool use_global_module_list = m_options.m_use_global_module_list;
     // Define a local module list here to ensure it lives longer than any
     // "locker" object which might lock its contents below (through the
     // "module_list_ptr" variable).
     ModuleList module_list;
-    uint32_t addr_byte_size = target.GetArchitecture().GetAddressByteSize();
-    result.GetOutputStream().SetAddressByteSize(addr_byte_size);
-    result.GetErrorStream().SetAddressByteSize(addr_byte_size);
-    // Dump all sections for all modules images
-    Stream &strm = result.GetOutputStream();
-
-    if (m_options.m_module_addr != LLDB_INVALID_ADDRESS) {
-      Address module_address;
-      if (module_address.SetLoadAddress(m_options.m_module_addr, &target)) {
-        ModuleSP module_sp(module_address.GetModule());
-        if (module_sp) {
-          PrintModule(target, module_sp.get(), 0, strm);
-          result.SetStatus(eReturnStatusSuccessFinishResult);
-        } else {
-          result.AppendErrorWithFormat(
-              "Couldn't find module matching address: 0x%" PRIx64 ".",
-              m_options.m_module_addr);
-        }
-      } else {
-        result.AppendErrorWithFormat(
-            "Couldn't find module containing address: 0x%" PRIx64 ".",
-            m_options.m_module_addr);
-      }
+    if (target == nullptr && !use_global_module_list) {
+      result.AppendError("invalid target, create a debug target using the "
+                         "'target create' command");
       return;
-    }
+    } else {
+      if (target) {
+        uint32_t addr_byte_size =
+            target->GetArchitecture().GetAddressByteSize();
+        result.GetOutputStream().SetAddressByteSize(addr_byte_size);
+        result.GetErrorStream().SetAddressByteSize(addr_byte_size);
+      }
+      // Dump all sections for all modules images
+      Stream &strm = result.GetOutputStream();
+
+      if (m_options.m_module_addr != LLDB_INVALID_ADDRESS) {
+        if (target) {
+          Address module_address;
+          if (module_address.SetLoadAddress(m_options.m_module_addr, target)) {
+            ModuleSP module_sp(module_address.GetModule());
+            if (module_sp) {
+              PrintModule(target, module_sp.get(), 0, strm);
+              result.SetStatus(eReturnStatusSuccessFinishResult);
+            } else {
+              result.AppendErrorWithFormat(
+                  "Couldn't find module matching address: 0x%" PRIx64 ".",
+                  m_options.m_module_addr);
+            }
+          } else {
+            result.AppendErrorWithFormat(
+                "Couldn't find module containing address: 0x%" PRIx64 ".",
+                m_options.m_module_addr);
+          }
+        } else {
+          result.AppendError(
+              "Can only look up modules by address with a valid target.");
+        }
+        return;
+      }
 
       size_t num_modules = 0;
 
@@ -3250,13 +3304,13 @@ protected:
           guard.lock();
           num_modules = Module::GetNumberAllocatedModules();
         } else {
-          module_list_ptr = &target.GetImages();
+          module_list_ptr = &target->GetImages();
         }
       } else {
         for (const Args::ArgEntry &arg : command) {
           // Dump specified images (by basename or fullpath)
           const size_t num_matches = FindModulesByName(
-              &target, arg.c_str(), module_list, use_global_module_list);
+              target, arg.c_str(), module_list, use_global_module_list);
           if (num_matches == 0) {
             if (argc == 1) {
               result.AppendErrorWithFormat("no modules found that match '%s'",
@@ -3309,9 +3363,10 @@ protected:
         }
         return;
       }
+    }
   }
 
-  void PrintModule(Target &target, Module *module, int indent, Stream &strm) {
+  void PrintModule(Target *target, Module *module, int indent, Stream &strm) {
     if (module == nullptr) {
       strm.PutCString("Null module");
       return;
@@ -3360,16 +3415,17 @@ protected:
         // Image header address
         {
           uint32_t addr_nibble_width =
-              target.GetArchitecture().GetAddressByteSize() * 2;
+              target ? (target->GetArchitecture().GetAddressByteSize() * 2)
+                     : 16;
 
           ObjectFile *objfile = module->GetObjectFile();
           if (objfile) {
             Address base_addr(objfile->GetBaseAddress());
             if (base_addr.IsValid()) {
-              if (target.HasLoadedSections()) {
-                lldb::addr_t load_addr = base_addr.GetLoadAddress(&target);
+              if (target && !target->GetSectionLoadList().IsEmpty()) {
+                lldb::addr_t load_addr = base_addr.GetLoadAddress(target);
                 if (load_addr == LLDB_INVALID_ADDRESS) {
-                  base_addr.Dump(&strm, &target,
+                  base_addr.Dump(&strm, target,
                                  Address::DumpStyleModuleWithFileAddress,
                                  Address::DumpStyleFileAddress);
                 } else {
@@ -3388,7 +3444,7 @@ protected:
               }
               // The address was valid, but the image isn't loaded, output the
               // address in an appropriate format
-              base_addr.Dump(&strm, &target, Address::DumpStyleFileAddress);
+              base_addr.Dump(&strm, target, Address::DumpStyleFileAddress);
               break;
             }
           }
@@ -3398,19 +3454,15 @@ protected:
 
       case 'r': {
         size_t ref_count = 0;
-        char in_shared_cache = 'Y';
-
         ModuleSP module_sp(module->shared_from_this());
-        if (!ModuleList::ModuleIsInCache(module))
-          in_shared_cache = 'N';
         if (module_sp) {
           // Take one away to make sure we don't count our local "module_sp"
           ref_count = module_sp.use_count() - 1;
         }
         if (width)
-          strm.Printf("{%c %*" PRIu64 "}", in_shared_cache, width, (uint64_t)ref_count);
+          strm.Printf("{%*" PRIu64 "}", width, (uint64_t)ref_count);
         else
-          strm.Printf("{%c %" PRIu64 "}", in_shared_cache, (uint64_t)ref_count);
+          strm.Printf("{%" PRIu64 "}", (uint64_t)ref_count);
       } break;
 
       case 's':
@@ -3498,25 +3550,14 @@ public:
         m_addr = OptionArgParser::ToAddress(execution_context, option_arg,
                                             LLDB_INVALID_ADDRESS, &error);
         if (m_addr == LLDB_INVALID_ADDRESS)
-          error = Status::FromErrorStringWithFormat(
-              "invalid address string '%s'", option_arg.str().c_str());
+          error.SetErrorStringWithFormat("invalid address string '%s'",
+                                         option_arg.str().c_str());
         break;
       }
 
       case 'n':
         m_str = std::string(option_arg);
         m_type = eLookupTypeFunctionOrSymbol;
-        break;
-
-      case 'c':
-        bool value, success;
-        value = OptionArgParser::ToBoolean(option_arg, false, &success);
-        if (success) {
-          m_cached = value;
-        } else {
-          return Status::FromErrorStringWithFormatv(
-              "invalid boolean value '%s' passed for -c option", option_arg);
-        }
         break;
 
       default:
@@ -3530,7 +3571,6 @@ public:
       m_type = eLookupTypeInvalid;
       m_str.clear();
       m_addr = LLDB_INVALID_ADDRESS;
-      m_cached = false;
     }
 
     llvm::ArrayRef<OptionDefinition> GetDefinitions() override {
@@ -3543,7 +3583,6 @@ public:
                                      // parsing options
     std::string m_str; // Holds name lookup
     lldb::addr_t m_addr = LLDB_INVALID_ADDRESS; // Holds the address to lookup
-    bool m_cached = true;
   };
 
   CommandObjectTargetModulesShowUnwind(CommandInterpreter &interpreter)
@@ -3573,13 +3612,13 @@ protected:
 
     ThreadList threads(process->GetThreadList());
     if (threads.GetSize() == 0) {
-      result.AppendError("the process must be paused to use this command");
+      result.AppendError("The process must be paused to use this command.");
       return;
     }
 
     ThreadSP thread(threads.GetThreadAtIndex(0));
     if (!thread) {
-      result.AppendError("the process must be paused to use this command");
+      result.AppendError("The process must be paused to use this command.");
       return;
     }
 
@@ -3594,7 +3633,8 @@ protected:
                                         function_options, sc_list);
     } else if (m_options.m_type == eLookupTypeAddress && target) {
       Address addr;
-      if (target->ResolveLoadAddress(m_options.m_addr, addr)) {
+      if (target->GetSectionLoadList().ResolveLoadAddress(m_options.m_addr,
+                                                          addr)) {
         SymbolContext sc;
         ModuleSP module_sp(addr.GetModule());
         module_sp->ResolveSymbolContextForAddress(addr,
@@ -3620,22 +3660,22 @@ protected:
         continue;
       if (!sc.module_sp || sc.module_sp->GetObjectFile() == nullptr)
         continue;
-      Address addr = sc.GetFunctionOrSymbolAddress();
-      if (!addr.IsValid())
+      AddressRange range;
+      if (!sc.GetAddressRange(eSymbolContextFunction | eSymbolContextSymbol, 0,
+                              false, range))
+        continue;
+      if (!range.GetBaseAddress().IsValid())
         continue;
       ConstString funcname(sc.GetFunctionName());
       if (funcname.IsEmpty())
         continue;
-      addr_t start_addr = addr.GetLoadAddress(target);
+      addr_t start_addr = range.GetBaseAddress().GetLoadAddress(target);
       if (abi)
         start_addr = abi->FixCodeAddress(start_addr);
 
-      UnwindTable &uw_table = sc.module_sp->GetUnwindTable();
-      FuncUnwindersSP func_unwinders_sp =
-          m_options.m_cached
-              ? uw_table.GetFuncUnwindersContainingAddress(start_addr, sc)
-              : uw_table.GetUncachedFuncUnwindersContainingAddress(start_addr,
-                                                                   sc);
+      FuncUnwindersSP func_unwinders_sp(
+          sc.module_sp->GetUnwindTable()
+              .GetUncachedFuncUnwindersContainingAddress(start_addr, sc));
       if (!func_unwinders_sp)
         continue;
 
@@ -3669,70 +3709,77 @@ protected:
 
       result.GetOutputStream().Printf("\n");
 
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
-              func_unwinders_sp->GetUnwindPlanAtNonCallSite(*target, *thread)) {
+      UnwindPlanSP non_callsite_unwind_plan =
+          func_unwinders_sp->GetUnwindPlanAtNonCallSite(*target, *thread);
+      if (non_callsite_unwind_plan) {
         result.GetOutputStream().Printf(
             "Asynchronous (not restricted to call-sites) UnwindPlan is '%s'\n",
-            plan_sp->GetSourceName().AsCString());
+            non_callsite_unwind_plan->GetSourceName().AsCString());
       }
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
-              func_unwinders_sp->GetUnwindPlanAtCallSite(*target, *thread)) {
+      UnwindPlanSP callsite_unwind_plan =
+          func_unwinders_sp->GetUnwindPlanAtCallSite(*target, *thread);
+      if (callsite_unwind_plan) {
         result.GetOutputStream().Printf(
             "Synchronous (restricted to call-sites) UnwindPlan is '%s'\n",
-            plan_sp->GetSourceName().AsCString());
+            callsite_unwind_plan->GetSourceName().AsCString());
       }
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
-              func_unwinders_sp->GetUnwindPlanFastUnwind(*target, *thread)) {
-        result.GetOutputStream().Printf("Fast UnwindPlan is '%s'\n",
-                                        plan_sp->GetSourceName().AsCString());
+      UnwindPlanSP fast_unwind_plan =
+          func_unwinders_sp->GetUnwindPlanFastUnwind(*target, *thread);
+      if (fast_unwind_plan) {
+        result.GetOutputStream().Printf(
+            "Fast UnwindPlan is '%s'\n",
+            fast_unwind_plan->GetSourceName().AsCString());
       }
 
       result.GetOutputStream().Printf("\n");
 
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
-              func_unwinders_sp->GetAssemblyUnwindPlan(*target, *thread)) {
+      UnwindPlanSP assembly_sp =
+          func_unwinders_sp->GetAssemblyUnwindPlan(*target, *thread);
+      if (assembly_sp) {
         result.GetOutputStream().Printf(
             "Assembly language inspection UnwindPlan:\n");
-        plan_sp->Dump(result.GetOutputStream(), thread.get(),
-                      LLDB_INVALID_ADDRESS);
+        assembly_sp->Dump(result.GetOutputStream(), thread.get(),
+                          LLDB_INVALID_ADDRESS);
         result.GetOutputStream().Printf("\n");
       }
 
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
-              func_unwinders_sp->GetObjectFileUnwindPlan(*target)) {
+      UnwindPlanSP of_unwind_sp =
+          func_unwinders_sp->GetObjectFileUnwindPlan(*target);
+      if (of_unwind_sp) {
         result.GetOutputStream().Printf("object file UnwindPlan:\n");
-        plan_sp->Dump(result.GetOutputStream(), thread.get(),
-                      LLDB_INVALID_ADDRESS);
+        of_unwind_sp->Dump(result.GetOutputStream(), thread.get(),
+                           LLDB_INVALID_ADDRESS);
         result.GetOutputStream().Printf("\n");
       }
 
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
-              func_unwinders_sp->GetObjectFileAugmentedUnwindPlan(*target,
-                                                                  *thread)) {
+      UnwindPlanSP of_unwind_augmented_sp =
+          func_unwinders_sp->GetObjectFileAugmentedUnwindPlan(*target, *thread);
+      if (of_unwind_augmented_sp) {
         result.GetOutputStream().Printf("object file augmented UnwindPlan:\n");
-        plan_sp->Dump(result.GetOutputStream(), thread.get(),
-                      LLDB_INVALID_ADDRESS);
+        of_unwind_augmented_sp->Dump(result.GetOutputStream(), thread.get(),
+                                     LLDB_INVALID_ADDRESS);
         result.GetOutputStream().Printf("\n");
       }
 
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
-              func_unwinders_sp->GetEHFrameUnwindPlan(*target)) {
+      UnwindPlanSP ehframe_sp =
+          func_unwinders_sp->GetEHFrameUnwindPlan(*target);
+      if (ehframe_sp) {
         result.GetOutputStream().Printf("eh_frame UnwindPlan:\n");
-        plan_sp->Dump(result.GetOutputStream(), thread.get(),
-                      LLDB_INVALID_ADDRESS);
+        ehframe_sp->Dump(result.GetOutputStream(), thread.get(),
+                         LLDB_INVALID_ADDRESS);
         result.GetOutputStream().Printf("\n");
       }
 
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
-              func_unwinders_sp->GetEHFrameAugmentedUnwindPlan(*target,
-                                                               *thread)) {
+      UnwindPlanSP ehframe_augmented_sp =
+          func_unwinders_sp->GetEHFrameAugmentedUnwindPlan(*target, *thread);
+      if (ehframe_augmented_sp) {
         result.GetOutputStream().Printf("eh_frame augmented UnwindPlan:\n");
-        plan_sp->Dump(result.GetOutputStream(), thread.get(),
-                      LLDB_INVALID_ADDRESS);
+        ehframe_augmented_sp->Dump(result.GetOutputStream(), thread.get(),
+                                   LLDB_INVALID_ADDRESS);
         result.GetOutputStream().Printf("\n");
       }
 
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
+      if (UnwindPlanSP plan_sp =
               func_unwinders_sp->GetDebugFrameUnwindPlan(*target)) {
         result.GetOutputStream().Printf("debug_frame UnwindPlan:\n");
         plan_sp->Dump(result.GetOutputStream(), thread.get(),
@@ -3740,7 +3787,7 @@ protected:
         result.GetOutputStream().Printf("\n");
       }
 
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
+      if (UnwindPlanSP plan_sp =
               func_unwinders_sp->GetDebugFrameAugmentedUnwindPlan(*target,
                                                                   *thread)) {
         result.GetOutputStream().Printf("debug_frame augmented UnwindPlan:\n");
@@ -3749,52 +3796,55 @@ protected:
         result.GetOutputStream().Printf("\n");
       }
 
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
-              func_unwinders_sp->GetArmUnwindUnwindPlan(*target)) {
+      UnwindPlanSP arm_unwind_sp =
+          func_unwinders_sp->GetArmUnwindUnwindPlan(*target);
+      if (arm_unwind_sp) {
         result.GetOutputStream().Printf("ARM.exidx unwind UnwindPlan:\n");
-        plan_sp->Dump(result.GetOutputStream(), thread.get(),
-                      LLDB_INVALID_ADDRESS);
+        arm_unwind_sp->Dump(result.GetOutputStream(), thread.get(),
+                            LLDB_INVALID_ADDRESS);
         result.GetOutputStream().Printf("\n");
       }
 
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
+      if (UnwindPlanSP symfile_plan_sp =
               func_unwinders_sp->GetSymbolFileUnwindPlan(*thread)) {
         result.GetOutputStream().Printf("Symbol file UnwindPlan:\n");
-        plan_sp->Dump(result.GetOutputStream(), thread.get(),
-                      LLDB_INVALID_ADDRESS);
+        symfile_plan_sp->Dump(result.GetOutputStream(), thread.get(),
+                              LLDB_INVALID_ADDRESS);
         result.GetOutputStream().Printf("\n");
       }
 
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
-              func_unwinders_sp->GetCompactUnwindUnwindPlan(*target)) {
+      UnwindPlanSP compact_unwind_sp =
+          func_unwinders_sp->GetCompactUnwindUnwindPlan(*target);
+      if (compact_unwind_sp) {
         result.GetOutputStream().Printf("Compact unwind UnwindPlan:\n");
-        plan_sp->Dump(result.GetOutputStream(), thread.get(),
-                      LLDB_INVALID_ADDRESS);
+        compact_unwind_sp->Dump(result.GetOutputStream(), thread.get(),
+                                LLDB_INVALID_ADDRESS);
         result.GetOutputStream().Printf("\n");
       }
 
-      if (std::shared_ptr<const UnwindPlan> plan_sp =
-              func_unwinders_sp->GetUnwindPlanFastUnwind(*target, *thread)) {
+      if (fast_unwind_plan) {
         result.GetOutputStream().Printf("Fast UnwindPlan:\n");
-        plan_sp->Dump(result.GetOutputStream(), thread.get(),
-                      LLDB_INVALID_ADDRESS);
+        fast_unwind_plan->Dump(result.GetOutputStream(), thread.get(),
+                               LLDB_INVALID_ADDRESS);
         result.GetOutputStream().Printf("\n");
       }
 
       ABISP abi_sp = process->GetABI();
       if (abi_sp) {
-        if (UnwindPlanSP plan_sp = abi_sp->CreateDefaultUnwindPlan()) {
+        UnwindPlan arch_default(lldb::eRegisterKindGeneric);
+        if (abi_sp->CreateDefaultUnwindPlan(arch_default)) {
           result.GetOutputStream().Printf("Arch default UnwindPlan:\n");
-          plan_sp->Dump(result.GetOutputStream(), thread.get(),
-                        LLDB_INVALID_ADDRESS);
+          arch_default.Dump(result.GetOutputStream(), thread.get(),
+                            LLDB_INVALID_ADDRESS);
           result.GetOutputStream().Printf("\n");
         }
 
-        if (UnwindPlanSP plan_sp = abi_sp->CreateFunctionEntryUnwindPlan()) {
+        UnwindPlan arch_entry(lldb::eRegisterKindGeneric);
+        if (abi_sp->CreateFunctionEntryUnwindPlan(arch_entry)) {
           result.GetOutputStream().Printf(
               "Arch default at entry point UnwindPlan:\n");
-          plan_sp->Dump(result.GetOutputStream(), thread.get(),
-                        LLDB_INVALID_ADDRESS);
+          arch_entry.Dump(result.GetOutputStream(), thread.get(),
+                          LLDB_INVALID_ADDRESS);
           result.GetOutputStream().Printf("\n");
         }
       }
@@ -3844,8 +3894,8 @@ public:
 
       case 'o':
         if (option_arg.getAsInteger(0, m_offset))
-          error = Status::FromErrorStringWithFormat(
-              "invalid offset string '%s'", option_arg.str().c_str());
+          error.SetErrorStringWithFormat("invalid offset string '%s'",
+                                         option_arg.str().c_str());
         break;
 
       case 's':
@@ -3864,10 +3914,10 @@ public:
 
       case 'l':
         if (option_arg.getAsInteger(0, m_line_number))
-          error = Status::FromErrorStringWithFormat(
-              "invalid line number string '%s'", option_arg.str().c_str());
+          error.SetErrorStringWithFormat("invalid line number string '%s'",
+                                         option_arg.str().c_str());
         else if (m_line_number == 0)
-          error = Status::FromErrorString("zero is an invalid line number");
+          error.SetErrorString("zero is an invalid line number");
         m_type = eLookupTypeFileLine;
         break;
 
@@ -3925,9 +3975,8 @@ public:
     Status OptionParsingFinished(ExecutionContext *execution_context) override {
       Status status;
       if (m_all_ranges && !m_verbose) {
-        status =
-            Status::FromErrorString("--show-variable-ranges must be used in "
-                                    "conjunction with --verbose.");
+        status.SetErrorString("--show-variable-ranges must be used in "
+                              "conjunction with --verbose.");
       }
       return status;
     }
@@ -3957,7 +4006,19 @@ public:
                             "Look up information within executable and "
                             "dependent shared library images.",
                             nullptr, eCommandRequiresTarget) {
-    AddSimpleArgumentList(eArgTypeFilename, eArgRepeatStar);
+    CommandArgumentEntry arg;
+    CommandArgumentData file_arg;
+
+    // Define the first (and only) variant of this arg.
+    file_arg.arg_type = eArgTypeFilename;
+    file_arg.arg_repetition = eArgRepeatStar;
+
+    // There is only one variant this argument could be; put it into the
+    // argument entry.
+    arg.push_back(file_arg);
+
+    // Push the data for the first argument into the m_arguments vector.
+    m_arguments.push_back(arg);
   }
 
   ~CommandObjectTargetModulesLookup() override = default;
@@ -3993,7 +4054,7 @@ public:
       return false;
     case eLookupTypeType:
       if (!m_options.m_str.empty()) {
-        if (LookupTypeHere(&GetTarget(), m_interpreter,
+        if (LookupTypeHere(&GetSelectedTarget(), m_interpreter,
                            result.GetOutputStream(), *sym_ctx.module_sp,
                            m_options.m_str.c_str(), m_options.m_use_regex)) {
           result.SetStatus(eReturnStatusSuccessFinishResult);
@@ -4072,8 +4133,8 @@ public:
     case eLookupTypeType:
       if (!m_options.m_str.empty()) {
         if (LookupTypeInModule(
-                &GetTarget(), m_interpreter, result.GetOutputStream(), module,
-                m_options.m_str.c_str(), m_options.m_use_regex)) {
+                &GetSelectedTarget(), m_interpreter, result.GetOutputStream(),
+                module, m_options.m_str.c_str(), m_options.m_use_regex)) {
           result.SetStatus(eReturnStatusSuccessFinishResult);
           return true;
         }
@@ -4083,8 +4144,7 @@ public:
     default:
       m_options.GenerateOptionUsage(
           result.GetErrorStream(), *this,
-          GetCommandInterpreter().GetDebugger().GetTerminalWidth(),
-          GetCommandInterpreter().GetDebugger().GetUseColor());
+          GetCommandInterpreter().GetDebugger().GetTerminalWidth());
       syntax_error = true;
       break;
     }
@@ -4095,16 +4155,18 @@ public:
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target *target = &GetSelectedTarget();
     bool syntax_error = false;
     uint32_t i;
     uint32_t num_successful_lookups = 0;
-    uint32_t addr_byte_size = target.GetArchitecture().GetAddressByteSize();
+    uint32_t addr_byte_size = target->GetArchitecture().GetAddressByteSize();
     result.GetOutputStream().SetAddressByteSize(addr_byte_size);
     result.GetErrorStream().SetAddressByteSize(addr_byte_size);
     // Dump all sections for all modules images
 
     if (command.GetArgumentCount() == 0) {
+      ModuleSP current_module;
+
       // Where it is possible to look in the current symbol context first,
       // try that.  If this search was successful and --all was not passed,
       // don't print anything else.
@@ -4119,7 +4181,7 @@ protected:
 
       // Dump all sections for all other modules
 
-      const ModuleList &target_modules = target.GetImages();
+      const ModuleList &target_modules = target->GetImages();
       std::lock_guard<std::recursive_mutex> guard(target_modules.GetMutex());
       if (target_modules.GetSize() == 0) {
         result.AppendError("the target has no associated executable images");
@@ -4127,7 +4189,8 @@ protected:
       }
 
       for (ModuleSP module_sp : target_modules.ModulesNoLocking()) {
-        if (LookupInModule(m_interpreter, module_sp.get(), result,
+        if (module_sp != current_module &&
+            LookupInModule(m_interpreter, module_sp.get(), result,
                            syntax_error)) {
           result.GetOutputStream().EOL();
           num_successful_lookups++;
@@ -4141,7 +4204,7 @@ protected:
            ++i) {
         ModuleList module_list;
         const size_t num_matches =
-            FindModulesByName(&target, arg_cstr, module_list, false);
+            FindModulesByName(target, arg_cstr, module_list, false);
         if (num_matches > 0) {
           for (size_t j = 0; j < num_matches; ++j) {
             Module *module = module_list.GetModulePointerAtIndex(j);
@@ -4274,10 +4337,18 @@ public:
     m_option_group.Append(&m_current_stack_option, LLDB_OPT_SET_2,
                           LLDB_OPT_SET_2);
     m_option_group.Finalize();
-    AddSimpleArgumentList(eArgTypeFilename);
+    CommandArgumentData module_arg{eArgTypeShlibName, eArgRepeatPlain};
+    m_arguments.push_back({module_arg});
   }
 
   ~CommandObjectTargetSymbolsAdd() override = default;
+
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+        GetCommandInterpreter(), lldb::eDiskFileCompletion, request, nullptr);
+  }
 
   Options *GetOptions() override { return &m_option_group; }
 
@@ -4446,7 +4517,7 @@ protected:
         return AddModuleSymbols(m_exe_ctx.GetTargetPtr(), module_spec, flush,
                                 result);
     } else {
-      result.SetError(std::move(error));
+      result.SetError(error);
     }
     return false;
   }
@@ -4531,8 +4602,11 @@ protected:
 
     ModuleSpec module_spec;
     module_spec.GetUUID() = frame_module_sp->GetUUID();
-    module_spec.GetArchitecture() = frame_module_sp->GetArchitecture();
-    module_spec.GetFileSpec() = frame_module_sp->GetPlatformFileSpec();
+
+    if (FileSystem::Instance().Exists(frame_module_sp->GetPlatformFileSpec())) {
+      module_spec.GetArchitecture() = frame_module_sp->GetArchitecture();
+      module_spec.GetFileSpec() = frame_module_sp->GetPlatformFileSpec();
+    }
 
     if (!DownloadObjectAndSymbolFile(module_spec, result, flush)) {
       result.AppendError("unable to find debug symbols for the current frame");
@@ -4577,8 +4651,12 @@ protected:
 
       ModuleSpec module_spec;
       module_spec.GetUUID() = frame_module_sp->GetUUID();
-      module_spec.GetFileSpec() = frame_module_sp->GetPlatformFileSpec();
-      module_spec.GetArchitecture() = frame_module_sp->GetArchitecture();
+
+      if (FileSystem::Instance().Exists(
+              frame_module_sp->GetPlatformFileSpec())) {
+        module_spec.GetArchitecture() = frame_module_sp->GetArchitecture();
+        module_spec.GetFileSpec() = frame_module_sp->GetPlatformFileSpec();
+      }
 
       bool current_frame_flush = false;
       if (DownloadObjectAndSymbolFile(module_spec, result, current_frame_flush))
@@ -4747,8 +4825,8 @@ public:
 
       case 'e':
         if (option_arg.getAsInteger(0, m_line_end)) {
-          error = Status::FromErrorStringWithFormat(
-              "invalid end line number: \"%s\"", option_arg.str().c_str());
+          error.SetErrorStringWithFormat("invalid end line number: \"%s\"",
+                                         option_arg.str().c_str());
           break;
         }
         m_sym_ctx_specified = true;
@@ -4760,14 +4838,14 @@ public:
         if (success) {
           m_auto_continue = value;
         } else
-          error = Status::FromErrorStringWithFormat(
+          error.SetErrorStringWithFormat(
               "invalid boolean value '%s' passed for -G option",
               option_arg.str().c_str());
       } break;
       case 'l':
         if (option_arg.getAsInteger(0, m_line_start)) {
-          error = Status::FromErrorStringWithFormat(
-              "invalid start line number: \"%s\"", option_arg.str().c_str());
+          error.SetErrorStringWithFormat("invalid start line number: \"%s\"",
+                                         option_arg.str().c_str());
           break;
         }
         m_sym_ctx_specified = true;
@@ -4795,8 +4873,8 @@ public:
 
       case 't':
         if (option_arg.getAsInteger(0, m_thread_id))
-          error = Status::FromErrorStringWithFormat(
-              "invalid thread id string '%s'", option_arg.str().c_str());
+          error.SetErrorStringWithFormat("invalid thread id string '%s'",
+                                         option_arg.str().c_str());
         m_thread_specified = true;
         break;
 
@@ -4812,8 +4890,8 @@ public:
 
       case 'x':
         if (option_arg.getAsInteger(0, m_thread_index))
-          error = Status::FromErrorStringWithFormat(
-              "invalid thread index string '%s'", option_arg.str().c_str());
+          error.SetErrorStringWithFormat("invalid thread index string '%s'",
+                                         option_arg.str().c_str());
         m_thread_specified = true;
         break;
 
@@ -4821,17 +4899,6 @@ public:
         m_use_one_liner = true;
         m_one_liner.push_back(std::string(option_arg));
         break;
-
-      case 'I': {
-        bool value, success;
-        value = OptionArgParser::ToBoolean(option_arg, false, &success);
-        if (success)
-          m_at_initial_stop = value;
-        else
-          error = Status::FromErrorStringWithFormat(
-              "invalid boolean value '%s' passed for -F option",
-              option_arg.str().c_str());
-      } break;
 
       default:
         llvm_unreachable("Unimplemented option");
@@ -4859,7 +4926,6 @@ public:
       m_use_one_liner = false;
       m_one_liner.clear();
       m_auto_continue = false;
-      m_at_initial_stop = true;
     }
 
     std::string m_class_name;
@@ -4880,7 +4946,6 @@ public:
     // Instance variables to hold the values for one_liner options.
     bool m_use_one_liner = false;
     std::vector<std::string> m_one_liner;
-    bool m_at_initial_stop;
 
     bool m_auto_continue = false;
   };
@@ -4901,9 +4966,9 @@ public:
 Command Based stop-hooks:
 -------------------------
   Stop hooks can run a list of lldb commands by providing one or more
-  --one-liner options.  The commands will get run in the order they are added.
-  Or you can provide no commands, in which case you will enter a command editor
-  where you can enter the commands to be run.
+  --one-line-command options.  The commands will get run in the order they are
+  added.  Or you can provide no commands, in which case you will enter a
+  command editor where you can enter the commands to be run.
 
 Python Based Stop Hooks:
 ------------------------
@@ -4953,13 +5018,11 @@ Filter Options:
 
 protected:
   void IOHandlerActivated(IOHandler &io_handler, bool interactive) override {
-    if (interactive) {
-      if (lldb::LockableStreamFileSP output_sp =
-              io_handler.GetOutputStreamFileSP()) {
-        LockedStreamFile locked_stream = output_sp->Lock();
-        locked_stream.PutCString(
-            "Enter your stop hook command(s).  Type 'DONE' to end.\n");
-      }
+    StreamFileSP output_sp(io_handler.GetOutputStreamFileSP());
+    if (output_sp && interactive) {
+      output_sp->PutCString(
+          "Enter your stop hook command(s).  Type 'DONE' to end.\n");
+      output_sp->Flush();
     }
   }
 
@@ -4967,25 +5030,28 @@ protected:
                               std::string &line) override {
     if (m_stop_hook_sp) {
       if (line.empty()) {
-        if (lldb::LockableStreamFileSP error_sp =
-                io_handler.GetErrorStreamFileSP()) {
-          LockedStreamFile locked_stream = error_sp->Lock();
-          locked_stream.Printf("error: stop hook #%" PRIu64
-                               " aborted, no commands.\n",
-                               m_stop_hook_sp->GetID());
+        StreamFileSP error_sp(io_handler.GetErrorStreamFileSP());
+        if (error_sp) {
+          error_sp->Printf("error: stop hook #%" PRIu64
+                           " aborted, no commands.\n",
+                           m_stop_hook_sp->GetID());
+          error_sp->Flush();
         }
-        GetTarget().UndoCreateStopHook(m_stop_hook_sp->GetID());
+        Target *target = GetDebugger().GetSelectedTarget().get();
+        if (target) {
+          target->UndoCreateStopHook(m_stop_hook_sp->GetID());
+        }
       } else {
         // The IOHandler editor is only for command lines stop hooks:
         Target::StopHookCommandLine *hook_ptr =
             static_cast<Target::StopHookCommandLine *>(m_stop_hook_sp.get());
 
         hook_ptr->SetActionFromString(line);
-        if (lldb::LockableStreamFileSP output_sp =
-                io_handler.GetOutputStreamFileSP()) {
-          LockedStreamFile locked_stream = output_sp->Lock();
-          locked_stream.Printf("Stop hook #%" PRIu64 " added.\n",
-                               m_stop_hook_sp->GetID());
+        StreamFileSP output_sp(io_handler.GetOutputStreamFileSP());
+        if (output_sp) {
+          output_sp->Printf("Stop hook #%" PRIu64 " added.\n",
+                            m_stop_hook_sp->GetID());
+          output_sp->Flush();
         }
       }
       m_stop_hook_sp.reset();
@@ -4996,7 +5062,7 @@ protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
     m_stop_hook_sp.reset();
 
-    Target &target = GetTarget();
+    Target &target = GetSelectedOrDummyTarget();
     Target::StopHookSP new_hook_sp =
         target.CreateStopHook(m_python_class_options.GetName().empty() ?
                                Target::StopHook::StopHookKind::CommandBased
@@ -5045,9 +5111,6 @@ protected:
 
     if (specifier_up)
       new_hook_sp->SetSpecifier(specifier_up.release());
-
-    // Should we run at the initial stop:
-    new_hook_sp->SetRunAtInitialStop(m_options.m_at_initial_stop);
 
     // Next see if any of the thread options have been entered:
 
@@ -5121,16 +5184,8 @@ public:
       : CommandObjectParsed(interpreter, "target stop-hook delete",
                             "Delete a stop-hook.",
                             "target stop-hook delete [<idx>]") {
-    SetHelpLong(
-        R"(
-Deletes the stop hook by index.
-
-At any given stop, all enabled stop hooks that pass the stop filter will
-get a chance to run.  That means if one stop-hook deletes another stop hook 
-while executing, the deleted stop hook will still fire for the stop at which 
-it was deleted.
-        )");
-    AddSimpleArgumentList(eArgTypeStopHookID, eArgRepeatStar);
+    CommandArgumentData hook_arg{eArgTypeStopHookID, eArgRepeatStar};
+    m_arguments.push_back({hook_arg});
   }
 
   ~CommandObjectTargetStopHookDelete() override = default;
@@ -5140,12 +5195,13 @@ it was deleted.
                            OptionElementVector &opt_element_vector) override {
     if (request.GetCursorIndex())
       return;
-    CommandObject::HandleArgumentCompletion(request, opt_element_vector);
+    lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+        GetCommandInterpreter(), lldb::eStopHookIDCompletion, request, nullptr);
   }
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target &target = GetSelectedOrDummyTarget();
     // FIXME: see if we can use the breakpoint id style parser?
     size_t num_args = command.GetArgumentCount();
     if (num_args == 0) {
@@ -5184,7 +5240,8 @@ public:
                                            bool enable, const char *name,
                                            const char *help, const char *syntax)
       : CommandObjectParsed(interpreter, name, help, syntax), m_enable(enable) {
-    AddSimpleArgumentList(eArgTypeStopHookID, eArgRepeatStar);
+    CommandArgumentData hook_arg{eArgTypeStopHookID, eArgRepeatStar};
+    m_arguments.push_back({hook_arg});
   }
 
   ~CommandObjectTargetStopHookEnableDisable() override = default;
@@ -5194,12 +5251,13 @@ public:
                            OptionElementVector &opt_element_vector) override {
     if (request.GetCursorIndex())
       return;
-    CommandObject::HandleArgumentCompletion(request, opt_element_vector);
+    lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+        GetCommandInterpreter(), lldb::eStopHookIDCompletion, request, nullptr);
   }
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target &target = GetSelectedOrDummyTarget();
     // FIXME: see if we can use the breakpoint id style parser?
     size_t num_args = command.GetArgumentCount();
     bool success;
@@ -5232,72 +5290,33 @@ private:
 #pragma mark CommandObjectTargetStopHookList
 
 // CommandObjectTargetStopHookList
-#define LLDB_OPTIONS_target_stop_hook_list
-#include "CommandOptions.inc"
 
 class CommandObjectTargetStopHookList : public CommandObjectParsed {
 public:
   CommandObjectTargetStopHookList(CommandInterpreter &interpreter)
       : CommandObjectParsed(interpreter, "target stop-hook list",
-                            "List all stop-hooks.") {}
+                            "List all stop-hooks.", "target stop-hook list") {}
 
   ~CommandObjectTargetStopHookList() override = default;
 
-  Options *GetOptions() override { return &m_options; }
-
-  class CommandOptions : public Options {
-  public:
-    CommandOptions() = default;
-    ~CommandOptions() override = default;
-
-    Status SetOptionValue(uint32_t option_idx, llvm::StringRef option_arg,
-                          ExecutionContext *execution_context) override {
-      Status error;
-      const int short_option = m_getopt_table[option_idx].val;
-
-      switch (short_option) {
-      case 'i':
-        m_internal = true;
-        break;
-      default:
-        llvm_unreachable("Unimplemented option");
-      }
-
-      return error;
-    }
-
-    void OptionParsingStarting(ExecutionContext *execution_context) override {
-      m_internal = false;
-    }
-
-    llvm::ArrayRef<OptionDefinition> GetDefinitions() override {
-      return llvm::ArrayRef(g_target_stop_hook_list_options);
-    }
-
-    // Instance variables to hold the values for command options.
-    bool m_internal = false;
-  };
-
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
+    Target &target = GetSelectedOrDummyTarget();
 
-    bool printed_hook = false;
-    for (auto &hook : target.GetStopHooks(m_options.m_internal)) {
-      if (printed_hook)
-        result.GetOutputStream().PutCString("\n");
-      hook->GetDescription(result.GetOutputStream(), eDescriptionLevelFull);
-      printed_hook = true;
-    }
-
-    if (!printed_hook)
+    size_t num_hooks = target.GetNumStopHooks();
+    if (num_hooks == 0) {
       result.GetOutputStream().PutCString("No stop hooks.\n");
-
+    } else {
+      for (size_t i = 0; i < num_hooks; i++) {
+        Target::StopHookSP this_hook = target.GetStopHookAtIndex(i);
+        if (i > 0)
+          result.GetOutputStream().PutCString("\n");
+        this_hook->GetDescription(result.GetOutputStream(),
+                                  eDescriptionLevelFull);
+      }
+    }
     result.SetStatus(eReturnStatusSuccessFinishResult);
   }
-
-private:
-  CommandOptions m_options;
 };
 
 #pragma mark CommandObjectMultiwordTargetStopHooks
@@ -5348,10 +5367,9 @@ public:
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
     // Go over every scratch TypeSystem and dump to the command output.
-    for (lldb::TypeSystemSP ts : GetTarget().GetScratchTypeSystems())
+    for (lldb::TypeSystemSP ts : GetSelectedTarget().GetScratchTypeSystems())
       if (ts)
-        ts->Dump(result.GetOutputStream().AsRawOstream(), "",
-                 GetCommandInterpreter().GetDebugger().GetUseColor());
+        ts->Dump(result.GetOutputStream().AsRawOstream());
 
     result.SetStatus(eReturnStatusSuccessFinishResult);
   }
@@ -5373,8 +5391,8 @@ public:
 
 protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
-    Target &target = GetTarget();
-    target.DumpSectionLoadList(result.GetOutputStream());
+    Target &target = GetSelectedTarget();
+    target.GetSectionLoadList().Dump(result.GetOutputStream(), &target);
     result.SetStatus(eReturnStatusSuccessFinishResult);
   }
 };

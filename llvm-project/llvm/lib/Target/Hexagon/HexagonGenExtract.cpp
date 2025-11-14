@@ -6,7 +6,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Hexagon.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/IR/BasicBlock.h"
@@ -44,13 +43,25 @@ static cl::opt<unsigned> ExtractCutoff("extract-cutoff", cl::init(~0U),
 static cl::opt<bool> NoSR0("extract-nosr0", cl::init(true), cl::Hidden,
   cl::desc("No extract instruction with offset 0"));
 
+static cl::opt<bool> NeedAnd("extract-needand", cl::init(true), cl::Hidden,
+  cl::desc("Require & in extract patterns"));
+
+namespace llvm {
+
+void initializeHexagonGenExtractPass(PassRegistry&);
+FunctionPass *createHexagonGenExtract();
+
+} // end namespace llvm
+
 namespace {
 
   class HexagonGenExtract : public FunctionPass {
   public:
     static char ID;
 
-    HexagonGenExtract() : FunctionPass(ID) {}
+    HexagonGenExtract() : FunctionPass(ID) {
+      initializeHexagonGenExtractPass(*PassRegistry::getPassRegistry());
+    }
 
     StringRef getPassName() const override {
       return "Hexagon generate \"extract\" instructions";
@@ -160,7 +171,7 @@ bool HexagonGenExtract::convert(Instruction *In) {
     // this value.
     if (!LogicalSR && (SR > SL))
       return false;
-    APInt A = APInt(BW, ~0ULL, true).lshr(SR).shl(SL);
+    APInt A = APInt(BW, ~0ULL).lshr(SR).shl(SL);
     CM = ConstantInt::get(Ctx, A);
   }
 
@@ -200,8 +211,9 @@ bool HexagonGenExtract::convert(Instruction *In) {
   IRBuilder<> IRB(In);
   Intrinsic::ID IntId = (BW == 32) ? Intrinsic::hexagon_S2_extractu
                                    : Intrinsic::hexagon_S2_extractup;
-  Value *NewIn =
-      IRB.CreateIntrinsic(IntId, {BF, IRB.getInt32(W), IRB.getInt32(SR)});
+  Module *Mod = BB->getParent()->getParent();
+  Function *ExtF = Intrinsic::getDeclaration(Mod, IntId);
+  Value *NewIn = IRB.CreateCall(ExtF, {BF, IRB.getInt32(W), IRB.getInt32(SR)});
   if (SL != 0)
     NewIn = IRB.CreateShl(NewIn, SL, CSL->getName());
   In->replaceAllUsesWith(NewIn);

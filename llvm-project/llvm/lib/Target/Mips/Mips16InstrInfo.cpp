@@ -22,8 +22,11 @@
 #include "llvm/CodeGen/RegisterScavenging.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/IR/DebugLoc.h"
+#include "llvm/MC/MCAsmInfo.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <cctype>
 #include <cstdint>
@@ -37,14 +40,18 @@ using namespace llvm;
 #define DEBUG_TYPE "mips16-instrinfo"
 
 Mips16InstrInfo::Mips16InstrInfo(const MipsSubtarget &STI)
-    : MipsInstrInfo(STI, RI, Mips::Bimm16), RI(STI) {}
+    : MipsInstrInfo(STI, Mips::Bimm16) {}
+
+const MipsRegisterInfo &Mips16InstrInfo::getRegisterInfo() const {
+  return RI;
+}
 
 /// isLoadFromStackSlot - If the specified machine instruction is a direct
 /// load from a stack slot, return the virtual or physical register number of
 /// the destination along with the FrameIndex of the loaded stack slot.  If
 /// not, return 0.  This predicate must return 0 if the instruction has
 /// any side effects other than loading from the stack slot.
-Register Mips16InstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
+unsigned Mips16InstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
                                               int &FrameIndex) const {
   return 0;
 }
@@ -54,16 +61,15 @@ Register Mips16InstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
 /// the source reg along with the FrameIndex of the loaded stack slot.  If
 /// not, return 0.  This predicate must return 0 if the instruction has
 /// any side effects other than storing to the stack slot.
-Register Mips16InstrInfo::isStoreToStackSlot(const MachineInstr &MI,
+unsigned Mips16InstrInfo::isStoreToStackSlot(const MachineInstr &MI,
                                              int &FrameIndex) const {
   return 0;
 }
 
 void Mips16InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                   MachineBasicBlock::iterator I,
-                                  const DebugLoc &DL, Register DestReg,
-                                  Register SrcReg, bool KillSrc,
-                                  bool RenamableDest, bool RenamableSrc) const {
+                                  const DebugLoc &DL, MCRegister DestReg,
+                                  MCRegister SrcReg, bool KillSrc) const {
   unsigned Opc = 0;
 
   if (Mips::CPU16RegsRegClass.contains(DestReg) &&
@@ -101,8 +107,8 @@ void Mips16InstrInfo::storeRegToStack(MachineBasicBlock &MBB,
                                       MachineBasicBlock::iterator I,
                                       Register SrcReg, bool isKill, int FI,
                                       const TargetRegisterClass *RC,
-                                      int64_t Offset,
-                                      MachineInstr::MIFlag Flags) const {
+                                      const TargetRegisterInfo *TRI,
+                                      int64_t Offset) const {
   DebugLoc DL;
   if (I != MBB.end()) DL = I->getDebugLoc();
   MachineMemOperand *MMO = GetMemOperand(MBB, FI, MachineMemOperand::MOStore);
@@ -119,8 +125,8 @@ void Mips16InstrInfo::loadRegFromStack(MachineBasicBlock &MBB,
                                        MachineBasicBlock::iterator I,
                                        Register DestReg, int FI,
                                        const TargetRegisterClass *RC,
-                                       int64_t Offset,
-                                       MachineInstr::MIFlag Flags) const {
+                                       const TargetRegisterInfo *TRI,
+                                       int64_t Offset) const {
   DebugLoc DL;
   if (I != MBB.end()) DL = I->getDebugLoc();
   MachineMemOperand *MMO = GetMemOperand(MBB, FI, MachineMemOperand::MOLoad);
@@ -402,9 +408,9 @@ unsigned Mips16InstrInfo::loadImmediate(unsigned FrameReg, int64_t Imm,
       }
       if (SecondRegSaved)
         copyPhysReg(MBB, II, DL, SecondRegSavedTo, SecondRegSaved, true);
-    } else {
-      Available.reset(SpReg);
     }
+   else
+     Available.reset(SpReg);
     copyPhysReg(MBB, II, DL, SpReg, Mips::SP, false);
     BuildMI(MBB, II, DL, get(Mips::AdduRxRyRz16), Reg)
         .addReg(SpReg, RegState::Kill)

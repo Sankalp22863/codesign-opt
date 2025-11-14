@@ -14,6 +14,7 @@
 #include "AVRELFStreamer.h"
 #include "AVRInstPrinter.h"
 #include "AVRMCAsmInfo.h"
+#include "AVRMCELFStreamer.h"
 #include "AVRTargetStreamer.h"
 #include "TargetInfo/AVRTargetInfo.h"
 
@@ -24,7 +25,6 @@
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/TargetRegistry.h"
-#include "llvm/Support/Compiler.h"
 
 #define GET_INSTRINFO_MC_DESC
 #define ENABLE_INSTR_PREDICATE_VERIFIER
@@ -72,9 +72,10 @@ static MCInstPrinter *createAVRMCInstPrinter(const Triple &T,
 static MCStreamer *createMCStreamer(const Triple &T, MCContext &Context,
                                     std::unique_ptr<MCAsmBackend> &&MAB,
                                     std::unique_ptr<MCObjectWriter> &&OW,
-                                    std::unique_ptr<MCCodeEmitter> &&Emitter) {
+                                    std::unique_ptr<MCCodeEmitter> &&Emitter,
+                                    bool RelaxAll) {
   return createELFStreamer(Context, std::move(MAB), std::move(OW),
-                           std::move(Emitter));
+                           std::move(Emitter), RelaxAll);
 }
 
 static MCTargetStreamer *
@@ -84,11 +85,12 @@ createAVRObjectTargetStreamer(MCStreamer &S, const MCSubtargetInfo &STI) {
 
 static MCTargetStreamer *createMCAsmTargetStreamer(MCStreamer &S,
                                                    formatted_raw_ostream &OS,
-                                                   MCInstPrinter *InstPrint) {
+                                                   MCInstPrinter *InstPrint,
+                                                   bool isVerboseAsm) {
   return new AVRTargetAsmStreamer(S);
 }
 
-extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAVRTargetMC() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAVRTargetMC() {
   // Register the MC asm info.
   RegisterMCAsmInfo<AVRMCAsmInfo> X(getTheAVRTarget());
 

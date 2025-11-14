@@ -13,10 +13,12 @@
 #include "llvm/ObjectYAML/MachOYAML.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/MachO.h"
+#include "llvm/Support/Format.h"
+#include "llvm/Support/SystemZ/zOSSupport.h"
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/SystemZ/zOSSupport.h"
 #include "llvm/TargetParser/Host.h"
+#include <cinttypes>
 #include <cstdint>
 #include <cstring>
 
@@ -346,10 +348,7 @@ void MappingTraits<MachOYAML::Section>::mapping(IO &IO,
 std::string
 MappingTraits<MachOYAML::Section>::validate(IO &IO,
                                             MachOYAML::Section &Section) {
-  // Can't check the `size`, as it's required and may be left uninitialized by
-  // previous error.
-  if (!IO.error() && Section.content &&
-      Section.size < Section.content->binary_size())
+  if (Section.content && Section.size < Section.content->binary_size())
     return "Section size must be greater than or equal to the content size";
   return "";
 }

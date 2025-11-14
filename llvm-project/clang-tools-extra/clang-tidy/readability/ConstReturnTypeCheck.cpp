@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- ConstReturnTypeCheck.cpp - clang-tidy ---------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -32,13 +32,13 @@ findConstToRemove(const FunctionDecl *Def,
   // written in the source (for out-of-line declarations). A FunctionDecl's
   // "location" is the start of its name, so, when the name is unqualified, we
   // use `getLocation()`.
-  const SourceLocation NameBeginLoc = Def->getQualifier()
-                                          ? Def->getQualifierLoc().getBeginLoc()
-                                          : Def->getLocation();
+  SourceLocation NameBeginLoc = Def->getQualifier()
+                                    ? Def->getQualifierLoc().getBeginLoc()
+                                    : Def->getLocation();
   // Since either of the locs can be in a macro, use `makeFileCharRange` to be
   // sure that we have a consistent `CharSourceRange`, located entirely in the
   // source file.
-  const CharSourceRange FileRange = Lexer::makeFileCharRange(
+  CharSourceRange FileRange = Lexer::makeFileCharRange(
       CharSourceRange::getCharRange(Def->getBeginLoc(), NameBeginLoc),
       *Result.SourceManager, Result.Context->getLangOpts());
 
@@ -53,6 +53,14 @@ namespace {
 
 AST_MATCHER(QualType, isLocalConstQualified) {
   return Node.isLocalConstQualified();
+}
+
+AST_MATCHER(QualType, isTypeOfType) {
+  return isa<TypeOfType>(Node.getTypePtr());
+}
+
+AST_MATCHER(QualType, isTypeOfExprType) {
+  return isa<TypeOfExprType>(Node.getTypePtr());
 }
 
 struct CheckResult {
@@ -102,11 +110,16 @@ void ConstReturnTypeCheck::storeOptions(ClangTidyOptions::OptionMap &Opts) {
 void ConstReturnTypeCheck::registerMatchers(MatchFinder *Finder) {
   // Find all function definitions for which the return types are `const`
   // qualified, ignoring decltype types.
+  auto NonLocalConstType =
+      qualType(unless(isLocalConstQualified()),
+               anyOf(decltypeType(), autoType(), isTypeOfType(),
+                     isTypeOfExprType(), substTemplateTypeParmType()));
   Finder->addMatcher(
-      functionDecl(returns(isLocalConstQualified()),
-                   anyOf(isDefinition(), cxxMethodDecl(isPure())),
-                   // Overridden functions are not actionable.
-                   unless(cxxMethodDecl(isOverride())))
+      functionDecl(
+          returns(allOf(isConstQualified(), unless(NonLocalConstType))),
+          anyOf(isDefinition(), cxxMethodDecl(isPure())),
+          // Overridden functions are not actionable.
+          unless(cxxMethodDecl(isOverride())))
           .bind("func"),
       this);
 }
@@ -118,12 +131,12 @@ void ConstReturnTypeCheck::check(const MatchFinder::MatchResult &Result) {
       (Def->getBeginLoc().isMacroID() || Def->getEndLoc().isMacroID()))
     return;
 
-  const CheckResult CR = checkDef(Def, Result);
+  CheckResult CR = checkDef(Def, Result);
   {
     // Clang only supports one in-flight diagnostic at a time. So, delimit the
     // scope of `Diagnostic` to allow further diagnostics after the scope.  We
     // use `getInnerLocStart` to get the start of the return type.
-    const DiagnosticBuilder Diagnostic =
+    DiagnosticBuilder Diagnostic =
         diag(Def->getInnerLocStart(),
              "return type %0 is 'const'-qualified at the top level, which may "
              "reduce code readability without improving const correctness")

@@ -32,6 +32,7 @@
 #include "SymbolTable.h"
 #include "Symbols.h"
 #include "Writer.h"
+#include "lld/Common/ErrorHandler.h"
 #include "lld/Common/Timer.h"
 #include "llvm/Support/Parallel.h"
 #include "llvm/Support/Path.h"
@@ -74,9 +75,10 @@ static void sortUniqueSymbols(std::vector<Defined *> &syms,
 
   // Remove duplicate symbol pointers
   parallelSort(v, std::less<SortEntry>());
-  auto end = llvm::unique(v, [](const SortEntry &a, const SortEntry &b) {
-    return a.first == b.first;
-  });
+  auto end = std::unique(v.begin(), v.end(),
+                         [](const SortEntry &a, const SortEntry &b) {
+                           return a.first == b.first;
+                         });
   v.erase(end, v.end());
 
   // Sort by RVA then original order
@@ -120,18 +122,17 @@ static void getSymbols(const COFFLinkerContext &ctx,
     if (!file->live)
       continue;
 
-    if (file->impSym)
-      syms.push_back(file->impSym);
-    if (file->thunkSym && file->thunkSym->isLive())
-      syms.push_back(file->thunkSym);
-    if (file->auxThunkSym && file->auxThunkSym->isLive())
-      syms.push_back(file->auxThunkSym);
-    if (file->impchkThunk)
-      syms.push_back(file->impchkThunk->sym);
-    if (file->impECSym)
-      syms.push_back(file->impECSym);
-    if (file->auxImpCopySym)
-      syms.push_back(file->auxImpCopySym);
+    if (!file->thunkSym)
+      continue;
+
+    if (!file->thunkLive)
+      continue;
+
+    if (auto *thunkSym = dyn_cast<Defined>(file->thunkSym))
+      syms.push_back(thunkSym);
+
+    if (auto *impSym = dyn_cast_or_null<Defined>(file->impSym))
+      syms.push_back(impSym);
   }
 
   sortUniqueSymbols(syms, ctx.config.imageBase);
@@ -207,7 +208,7 @@ void lld::coff::writeMapFile(COFFLinkerContext &ctx) {
   std::error_code ec;
   raw_fd_ostream os(ctx.config.mapFile, ec, sys::fs::OF_None);
   if (ec)
-    Fatal(ctx) << "cannot open " << ctx.config.mapFile << ": " << ec.message();
+    fatal("cannot open " + ctx.config.mapFile + ": " + ec.message());
 
   ScopedTimer t1(ctx.totalMapTimer);
 
@@ -299,7 +300,7 @@ void lld::coff::writeMapFile(COFFLinkerContext &ctx) {
   uint64_t entryAddress = 0;
 
   if (!ctx.config.noEntry) {
-    Defined *entry = dyn_cast_or_null<Defined>(ctx.symtab.entry);
+    Defined *entry = dyn_cast_or_null<Defined>(ctx.config.entry);
     if (entry) {
       Chunk *chunk = entry->getChunk();
       entrySecIndex = chunk->getOutputSectionIdx();
@@ -324,7 +325,7 @@ void lld::coff::writeMapFile(COFFLinkerContext &ctx) {
     os << " Exports\n";
     os << "\n";
     os << "  ordinal    name\n\n";
-    for (Export &e : ctx.symtab.exports) {
+    for (Export &e : ctx.config.exports) {
       os << format("  %7d", e.ordinal) << "    " << e.name << "\n";
       if (!e.extName.empty() && e.extName != e.name)
         os << "               exported name: " << e.extName << "\n";

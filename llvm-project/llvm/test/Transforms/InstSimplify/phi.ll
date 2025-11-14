@@ -81,8 +81,7 @@ define i32 @undef(i1 %cond, i32 %v) {
 ; CHECK:       B:
 ; CHECK-NEXT:    br label [[EXIT]]
 ; CHECK:       EXIT:
-; CHECK-NEXT:    [[W:%.*]] = phi i32 [ [[V:%.*]], [[A]] ], [ undef, [[B]] ]
-; CHECK-NEXT:    ret i32 [[W]]
+; CHECK-NEXT:    ret i32 [[V:%.*]]
 ;
   br i1 %cond, label %A, label %B
 A:
@@ -142,7 +141,7 @@ define i8 @only_poison(i1 %cond) {
 ; CHECK:       B:
 ; CHECK-NEXT:    br label [[EXIT]]
 ; CHECK:       EXIT:
-; CHECK-NEXT:    ret i8 poison
+; CHECK-NEXT:    ret i8 undef
 ;
   br i1 %cond, label %A, label %B
 A:

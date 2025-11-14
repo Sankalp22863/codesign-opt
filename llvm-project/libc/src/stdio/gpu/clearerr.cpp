@@ -7,21 +7,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/stdio/clearerr.h"
-
 #include "file.h"
-#include "hdr/types/FILE.h"
-#include "src/__support/common.h"
 
-namespace LIBC_NAMESPACE_DECL {
+#include <stdio.h>
+
+namespace LIBC_NAMESPACE {
 
 LLVM_LIBC_FUNCTION(void, clearerr, (::FILE * stream)) {
-  rpc::Client::Port port = rpc::client.open<LIBC_CLEARERR>();
+  rpc::Client::Port port = rpc::client.open<RPC_CLEARERR>();
   port.send_and_recv(
-      [=](rpc::Buffer *buffer, uint32_t) {
-        buffer->data[0] = file::from_stream(stream);
-      },
-      [&](rpc::Buffer *, uint32_t) {});
+      [=](rpc::Buffer *buffer) { buffer->data[0] = file::from_stream(stream); },
+      [&](rpc::Buffer *) {});
   port.close();
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

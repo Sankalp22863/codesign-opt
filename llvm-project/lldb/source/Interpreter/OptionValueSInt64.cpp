@@ -8,7 +8,6 @@
 
 #include "lldb/Interpreter/OptionValueSInt64.h"
 
-#include "lldb/Interpreter/OptionValue.h"
 #include "lldb/Utility/Stream.h"
 
 using namespace lldb;
@@ -27,11 +26,6 @@ void OptionValueSInt64::DumpValue(const ExecutionContext *exe_ctx, Stream &strm,
     if (dump_mask & eDumpOptionType)
       strm.PutCString(" = ");
     strm.Printf("%" PRIi64, m_current_value);
-    if (dump_mask & eDumpOptionDefaultValue &&
-        m_current_value != m_default_value) {
-      DefaultValueFormat label(strm);
-      strm.Printf("%" PRIi64, m_default_value);
-    }
   }
 }
 
@@ -54,13 +48,13 @@ Status OptionValueSInt64::SetValueFromString(llvm::StringRef value_ref,
         m_current_value = value;
         NotifyValueChanged();
       } else
-        error = Status::FromErrorStringWithFormat(
+        error.SetErrorStringWithFormat(
             "%" PRIi64 " is out of range, valid values must be between %" PRIi64
             " and %" PRIi64 ".",
             value, m_min_value, m_max_value);
     } else {
-      error = Status::FromErrorStringWithFormat(
-          "invalid int64_t string value: '%s'", value_ref.str().c_str());
+      error.SetErrorStringWithFormat("invalid int64_t string value: '%s'",
+                                     value_ref.str().c_str());
     }
   } break;
 

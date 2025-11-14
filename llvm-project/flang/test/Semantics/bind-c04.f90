@@ -19,7 +19,7 @@ subroutine sub(x, y)
     end
   end interface
 
-  !ERROR: A procedure declaration statement with a binding name may not declare multiple procedures
+  !Acceptable (as an extension)
   procedure(proc), bind(c, name="aaa") :: pc1, pc2
 
   !ERROR: A procedure pointer may not have a BIND attribute with a name
@@ -37,7 +37,7 @@ subroutine sub(x, y)
 
   procedure(proc), bind(c) :: y
 
-  !WARNING: Attribute 'BIND(C)' cannot be used more than once [-Wredundant-attribute]
+  !WARNING: Attribute 'BIND(C)' cannot be used more than once
   !ERROR: A procedure pointer may not have a BIND attribute with a name
   procedure(proc), bind(c, name="pc8"), bind(c), pointer :: pc8
 

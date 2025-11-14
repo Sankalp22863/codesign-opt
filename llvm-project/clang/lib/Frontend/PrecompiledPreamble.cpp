@@ -28,7 +28,6 @@
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/VirtualFileSystem.h"
@@ -57,9 +56,11 @@ createVFSOverlayForPreamblePCH(StringRef PCHFilename,
                                IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS) {
   // We want only the PCH file from the real filesystem to be available,
   // so we create an in-memory VFS with just that and overlay it on top.
-  auto PCHFS = llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> PCHFS(
+      new llvm::vfs::InMemoryFileSystem());
   PCHFS->addFile(PCHFilename, 0, std::move(PCHBuffer));
-  auto Overlay = llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(VFS);
+  IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> Overlay(
+      new llvm::vfs::OverlayFileSystem(VFS));
   Overlay->pushOverlay(PCHFS);
   return Overlay;
 }
@@ -97,8 +98,7 @@ public:
                           StringRef FileName, bool IsAngled,
                           CharSourceRange FilenameRange,
                           OptionalFileEntryRef File, StringRef SearchPath,
-                          StringRef RelativePath, const Module *SuggestedModule,
-                          bool ModuleImported,
+                          StringRef RelativePath, const Module *Imported,
                           SrcMgr::CharacteristicKind FileType) override {
     // File is std::nullopt if it wasn't found.
     // (We have some false negatives if PP recovered e.g. <foo> -> "foo")
@@ -289,11 +289,12 @@ private:
 
 class PrecompilePreambleConsumer : public PCHGenerator {
 public:
-  PrecompilePreambleConsumer(PrecompilePreambleAction &Action, Preprocessor &PP,
-                             ModuleCache &ModCache, StringRef isysroot,
-                             std::shared_ptr<PCHBuffer> Buffer,
-                             const CodeGenOptions &CodeGenOpts)
-      : PCHGenerator(PP, ModCache, "", isysroot, std::move(Buffer), CodeGenOpts,
+  PrecompilePreambleConsumer(PrecompilePreambleAction &Action,
+                             const Preprocessor &PP,
+                             InMemoryModuleCache &ModuleCache,
+                             StringRef isysroot,
+                             std::shared_ptr<PCHBuffer> Buffer)
+      : PCHGenerator(PP, ModuleCache, "", isysroot, std::move(Buffer),
                      ArrayRef<std::shared_ptr<ModuleFileExtension>>(),
                      /*AllowASTWithErrors=*/true),
         Action(Action) {}
@@ -336,8 +337,7 @@ PrecompilePreambleAction::CreateASTConsumer(CompilerInstance &CI,
     Sysroot.clear();
 
   return std::make_unique<PrecompilePreambleConsumer>(
-      *this, CI.getPreprocessor(), CI.getModuleCache(), Sysroot, Buffer,
-      CI.getCodeGenOpts());
+      *this, CI.getPreprocessor(), CI.getModuleCache(), Sysroot, Buffer);
 }
 
 template <class T> bool moveOnNoError(llvm::ErrorOr<T> Val, T &Output) {
@@ -412,7 +412,7 @@ PrecompiledPreamble::operator=(PrecompiledPreamble &&) = default;
 llvm::ErrorOr<PrecompiledPreamble> PrecompiledPreamble::Build(
     const CompilerInvocation &Invocation,
     const llvm::MemoryBuffer *MainFileBuffer, PreambleBounds Bounds,
-    IntrusiveRefCntPtr<DiagnosticsEngine> Diagnostics,
+    DiagnosticsEngine &Diagnostics,
     IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS,
     std::shared_ptr<PCHContainerOperations> PCHContainerOps, bool StoreInMemory,
     StringRef StoragePath, PreambleCallbacks &Callbacks) {
@@ -454,14 +454,15 @@ llvm::ErrorOr<PrecompiledPreamble> PrecompiledPreamble::Build(
   PreprocessorOpts.GeneratePreamble = true;
 
   // Create the compiler instance to use for building the precompiled preamble.
-  auto Clang = std::make_unique<CompilerInstance>(std::move(PreambleInvocation),
-                                                  std::move(PCHContainerOps));
+  std::unique_ptr<CompilerInstance> Clang(
+      new CompilerInstance(std::move(PCHContainerOps)));
 
   // Recover resources if we crash before exiting this method.
   llvm::CrashRecoveryContextCleanupRegistrar<CompilerInstance> CICleanup(
       Clang.get());
 
-  Clang->setDiagnostics(Diagnostics);
+  Clang->setInvocation(std::move(PreambleInvocation));
+  Clang->setDiagnostics(&Diagnostics);
 
   // Create the target instance.
   if (!Clang->createTarget())
@@ -476,15 +477,18 @@ llvm::ErrorOr<PrecompiledPreamble> PrecompiledPreamble::Build(
   }
 
   // Clear out old caches and data.
-  Diagnostics->Reset();
-  ProcessWarningOptions(*Diagnostics, Clang->getDiagnosticOpts(), *VFS);
+  Diagnostics.Reset();
+  ProcessWarningOptions(Diagnostics, Clang->getDiagnosticOpts());
+
+  VFS =
+      createVFSFromCompilerInvocation(Clang->getInvocation(), Diagnostics, VFS);
 
   // Create a file manager object to provide access to and cache the filesystem.
-  Clang->createVirtualFileSystem(VFS);
-  Clang->createFileManager();
+  Clang->setFileManager(new FileManager(Clang->getFileSystemOpts(), VFS));
 
   // Create the source manager.
-  Clang->createSourceManager();
+  Clang->setSourceManager(
+      new SourceManager(Diagnostics, Clang->getFileManager()));
 
   auto PreambleDepCollector = std::make_shared<PreambleDependencyCollector>();
   Clang->addDependencyCollector(PreambleDepCollector);
@@ -509,7 +513,7 @@ llvm::ErrorOr<PrecompiledPreamble> PrecompiledPreamble::Build(
       std::move(Buffer),
       /*WritePCHFile=*/Storage->getKind() == PCHStorage::Kind::TempFile,
       Callbacks);
-  if (!Act->BeginSourceFile(*Clang, Clang->getFrontendOpts().Inputs[0]))
+  if (!Act->BeginSourceFile(*Clang.get(), Clang->getFrontendOpts().Inputs[0]))
     return BuildPreambleError::BeginSourceFileFailed;
 
   // Performed after BeginSourceFile to ensure Clang->Preprocessor can be

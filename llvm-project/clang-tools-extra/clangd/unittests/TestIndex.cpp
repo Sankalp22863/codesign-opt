@@ -38,7 +38,7 @@ static std::string replace(llvm::StringRef Haystack, llvm::StringRef Needle,
 // Helpers to produce fake index symbols for memIndex() or completions().
 // USRFormat is a regex replacement string for the unqualified part of the USR.
 Symbol sym(llvm::StringRef QName, index::SymbolKind Kind,
-           llvm::StringRef USRFormat, llvm::StringRef Signature) {
+           llvm::StringRef USRFormat) {
   Symbol Sym;
   std::string USR = "c:"; // We synthesize a few simple cases of USRs by hand!
   size_t Pos = QName.rfind("::");
@@ -55,7 +55,6 @@ Symbol sym(llvm::StringRef QName, index::SymbolKind Kind,
   Sym.SymInfo.Kind = Kind;
   Sym.Flags |= Symbol::IndexedForCodeCompletion;
   Sym.Origin = SymbolOrigin::Static;
-  Sym.Signature = Signature;
   return Sym;
 }
 
@@ -85,10 +84,6 @@ Symbol ns(llvm::StringRef Name) {
 
 Symbol conceptSym(llvm::StringRef Name) {
   return sym(Name, index::SymbolKind::Concept, "@CT@\\0");
-}
-
-Symbol macro(llvm::StringRef Name, llvm::StringRef ArgList) {
-  return sym(Name, index::SymbolKind::Macro, "@macro@\\0", ArgList);
 }
 
 Symbol objcSym(llvm::StringRef Name, index::SymbolKind Kind,
@@ -151,7 +146,7 @@ std::vector<std::string> match(const SymbolIndex &I,
 std::vector<std::string> lookup(const SymbolIndex &I,
                                 llvm::ArrayRef<SymbolID> IDs) {
   LookupRequest Req;
-  Req.IDs.insert_range(IDs);
+  Req.IDs.insert(IDs.begin(), IDs.end());
   std::vector<std::string> Results;
   I.lookup(Req, [&](const Symbol &Sym) {
     Results.push_back(getQualifiedName(Sym));

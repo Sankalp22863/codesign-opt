@@ -1,5 +1,4 @@
-CXX_SOURCES := main.cpp
-
-ENABLE_THREADS := YES
+C_SOURCES := main.c
+CFLAGS_EXTRAS := -lpthread
 
 include Makefile.rules

@@ -15,7 +15,6 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
 #include "llvm/Support/FormatVariadic.h"
-#include "llvm/Support/InterleavedRange.h"
 
 using namespace mlir;
 
@@ -49,6 +48,14 @@ mlir::reifyResultShapes(OpBuilder &b, Operation *op,
     assert(shapedType.getRank() ==
                static_cast<int64_t>(reifiedReturnShapes[resultIdx].size()) &&
            "incorrect implementation of ReifyRankedShapedTypeOpInterface");
+    for (int64_t dim = 0; dim < shapedType.getRank(); ++dim) {
+      // reifyResultShapes must return:
+      // * Attribute for static dimensions
+      // * Value for dynamic dimensions
+      assert(shapedType.isDynamicDim(dim) ==
+                 reifiedReturnShapes[resultIdx][dim].is<Value>() &&
+             "incorrect implementation of ReifyRankedShapedTypeOpInterface");
+    }
     ++resultIdx;
   }
   // Assert that every shaped value result was reified.
@@ -58,30 +65,14 @@ mlir::reifyResultShapes(OpBuilder &b, Operation *op,
   return status;
 }
 
-FailureOr<SmallVector<OpFoldResult>>
-mlir::reifyShapeOfResult(OpBuilder &b, Operation *op, int resultIndex) {
-  auto reifiableOp = dyn_cast<ReifyRankedShapedTypeOpInterface>(op);
-  if (!reifiableOp)
-    return failure();
-  return reifiableOp.reifyShapeOfResult(b, resultIndex);
-}
-
-FailureOr<OpFoldResult> mlir::reifyDimOfResult(OpBuilder &b, Operation *op,
-                                               int resultIndex, int dim) {
-  auto reifiableOp = dyn_cast<ReifyRankedShapedTypeOpInterface>(op);
-  if (!reifiableOp)
-    return failure();
-  return reifiableOp.reifyDimOfResult(b, resultIndex, dim);
-}
-
 bool ShapeAdaptor::hasRank() const {
   if (val.isNull())
     return false;
   if (auto t = llvm::dyn_cast_if_present<Type>(val))
     return cast<ShapedType>(t).hasRank();
-  if (isa<Attribute>(val))
+  if (val.is<Attribute>())
     return true;
-  return cast<ShapedTypeComponents *>(val)->hasRank();
+  return val.get<ShapedTypeComponents *>()->hasRank();
 }
 
 Type ShapeAdaptor::getElementType() const {
@@ -89,9 +80,9 @@ Type ShapeAdaptor::getElementType() const {
     return nullptr;
   if (auto t = llvm::dyn_cast_if_present<Type>(val))
     return cast<ShapedType>(t).getElementType();
-  if (isa<Attribute>(val))
+  if (val.is<Attribute>())
     return nullptr;
-  return cast<ShapedTypeComponents *>(val)->getElementType();
+  return val.get<ShapedTypeComponents *>()->getElementType();
 }
 
 void ShapeAdaptor::getDims(SmallVectorImpl<int64_t> &res) const {
@@ -106,7 +97,7 @@ void ShapeAdaptor::getDims(SmallVectorImpl<int64_t> &res) const {
     for (auto it : dattr.getValues<APInt>())
       res.push_back(it.getSExtValue());
   } else {
-    auto vals = cast<ShapedTypeComponents *>(val)->getDims();
+    auto vals = val.get<ShapedTypeComponents *>()->getDims();
     res.assign(vals.begin(), vals.end());
   }
 }
@@ -125,7 +116,7 @@ int64_t ShapeAdaptor::getDimSize(int index) const {
     return cast<DenseIntElementsAttr>(attr)
         .getValues<APInt>()[index]
         .getSExtValue();
-  auto *stc = cast<ShapedTypeComponents *>(val);
+  auto *stc = val.get<ShapedTypeComponents *>();
   return stc->getDims()[index];
 }
 
@@ -135,7 +126,7 @@ int64_t ShapeAdaptor::getRank() const {
     return cast<ShapedType>(t).getRank();
   if (auto attr = llvm::dyn_cast_if_present<Attribute>(val))
     return cast<DenseIntElementsAttr>(attr).size();
-  return cast<ShapedTypeComponents *>(val)->getDims().size();
+  return val.get<ShapedTypeComponents *>()->getDims().size();
 }
 
 bool ShapeAdaptor::hasStaticShape() const {
@@ -151,7 +142,7 @@ bool ShapeAdaptor::hasStaticShape() const {
         return false;
     return true;
   }
-  auto *stc = cast<ShapedTypeComponents *>(val);
+  auto *stc = val.get<ShapedTypeComponents *>();
   return llvm::none_of(stc->getDims(), ShapedType::isDynamic);
 }
 
@@ -171,7 +162,7 @@ int64_t ShapeAdaptor::getNumElements() const {
     return num;
   }
 
-  auto *stc = cast<ShapedTypeComponents *>(val);
+  auto *stc = val.get<ShapedTypeComponents *>();
   int64_t num = 1;
   for (int64_t dim : stc->getDims()) {
     num *= dim;
@@ -193,8 +184,9 @@ void ShapeAdaptor::dump() const {
       return "?";
     return llvm::formatv("{0}", dim).str();
   });
-  llvm::errs() << "rank = " << getRank()
-               << " dims = " << llvm::interleaved_array(mapped, "x") << "\n";
+  llvm::errs() << "rank = " << getRank() << " dims = [";
+  llvm::interleave(mapped, llvm::errs(), "x");
+  llvm::errs() << "]\n";
 }
 
 ShapeAdaptor ValueShapeRange::getValueAsShape(int index) {
@@ -254,17 +246,4 @@ LogicalResult mlir::detail::verifyInferredResultTypes(Operation *op) {
     op->emitOpError() << "failed to infer returned types";
 
   return result;
-}
-
-void mlir::detail::reportFatalInferReturnTypesError(OperationState &state) {
-  std::string buffer;
-  llvm::raw_string_ostream os(buffer);
-  os << "Failed to infer result type(s):\n"
-     << "\"" << state.name << "\"(...) "
-     << state.attributes.getDictionary(state.location.getContext()) << " : ("
-     << llvm::interleaved(llvm::map_range(
-            state.operands, [](Value val) { return val.getType(); }))
-     << ") -> ( ??? )";
-  emitRemark(state.location, "location of op");
-  llvm::report_fatal_error(llvm::StringRef(buffer));
 }

@@ -30,7 +30,6 @@
 #include "refactor/Rename.h"
 #include "refactor/Tweak.h"
 #include "support/Cancellation.h"
-#include "support/Context.h"
 #include "support/Logger.h"
 #include "support/MemoryTree.h"
 #include "support/ThreadsafeFS.h"
@@ -113,12 +112,7 @@ struct UpdateIndexCallbacks : public ParsingCallbacks {
                  // Index outlives TUScheduler (declared first)
                  FIndex(FIndex),
                  // shared_ptr extends lifetime
-                 Stdlib(Stdlib),
-                 // We have some FS implementations that rely on information in
-                 // the context.
-                 Ctx(Context::current().clone())]() mutable {
-      // Make sure we install the context into current thread.
-      WithContext C(std::move(Ctx));
+                 Stdlib(Stdlib)]() mutable {
       clang::noteBottomOfStack();
       IndexFileIn IF;
       IF.Symbols = indexStandardLibrary(std::move(CI), Loc, *TFS);
@@ -215,10 +209,7 @@ ClangdServer::ClangdServer(const GlobalCompilationDatabase &CDB,
                            const ThreadsafeFS &TFS, const Options &Opts,
                            Callbacks *Callbacks)
     : FeatureModules(Opts.FeatureModules), CDB(CDB), TFS(TFS),
-      DynamicIdx(Opts.BuildDynamicSymbolIndex
-                     ? new FileIndex(Opts.EnableOutgoingCalls)
-                     : nullptr),
-      ModulesManager(Opts.ModulesManager),
+      DynamicIdx(Opts.BuildDynamicSymbolIndex ? new FileIndex() : nullptr),
       ClangTidyProvider(Opts.ClangTidyProvider),
       UseDirtyHeaders(Opts.UseDirtyHeaders),
       LineFoldingOnly(Opts.LineFoldingOnly),
@@ -258,7 +249,6 @@ ClangdServer::ClangdServer(const GlobalCompilationDatabase &CDB,
         Callbacks->onBackgroundIndexProgress(S);
     };
     BGOpts.ContextProvider = Opts.ContextProvider;
-    BGOpts.SupportContainedRefs = Opts.EnableOutgoingCalls;
     BackgroundIdx = std::make_unique<BackgroundIndex>(
         TFS, CDB,
         BackgroundIndexStorage::createDiskBackedStorageFactory(
@@ -312,7 +302,6 @@ void ClangdServer::addDocument(PathRef File, llvm::StringRef Contents,
   Inputs.Index = Index;
   Inputs.ClangTidyProvider = ClangTidyProvider;
   Inputs.FeatureModules = FeatureModules;
-  Inputs.ModulesManager = ModulesManager;
   bool NewFile = WorkScheduler->update(File, Inputs, WantDiags);
   // If we loaded Foo.h, we want to make sure Foo.cpp is indexed.
   if (NewFile && BackgroundIdx)
@@ -454,33 +443,23 @@ void ClangdServer::codeComplete(PathRef File, Position Pos,
 
     CodeCompleteOpts.MainFileSignals = IP->Signals;
     CodeCompleteOpts.AllScopes = Config::current().Completion.AllScopes;
-    CodeCompleteOpts.ArgumentLists = Config::current().Completion.ArgumentLists;
-    CodeCompleteOpts.InsertIncludes =
-        Config::current().Completion.HeaderInsertion;
-    CodeCompleteOpts.CodePatterns = Config::current().Completion.CodePatterns;
     // FIXME(ibiryukov): even if Preamble is non-null, we may want to check
     // both the old and the new version in case only one of them matches.
     CodeCompleteResult Result = clangd::codeComplete(
         File, Pos, IP->Preamble, ParseInput, CodeCompleteOpts,
         SpecFuzzyFind ? &*SpecFuzzyFind : nullptr);
-    // We don't want `codeComplete` to wait for the async call if it doesn't use
-    // the result (e.g. non-index completion, speculation fails), so that `CB`
-    // is called as soon as results are available.
     {
       clang::clangd::trace::Span Tracer("Completion results callback");
       CB(std::move(Result));
     }
-    if (!SpecFuzzyFind)
-      return;
-    if (SpecFuzzyFind->NewReq) {
+    if (SpecFuzzyFind && SpecFuzzyFind->NewReq) {
       std::lock_guard<std::mutex> Lock(CachedCompletionFuzzyFindRequestMutex);
       CachedCompletionFuzzyFindRequestByFile[File] = *SpecFuzzyFind->NewReq;
     }
-    // Explicitly block until async task completes, this is fine as we've
-    // already provided reply to the client and running as a preamble task
-    // (i.e. won't block other preamble tasks).
-    if (SpecFuzzyFind->Result.valid())
-      SpecFuzzyFind->Result.wait();
+    // SpecFuzzyFind is only destroyed after speculative fuzzy find finishes.
+    // We don't want `codeComplete` to wait for the async call if it doesn't use
+    // the result (e.g. non-index completion, speculation fails), so that `CB`
+    // is called as soon as results are available.
   };
 
   // We use a potentially-stale preamble because latency is critical here.
@@ -521,33 +500,30 @@ void ClangdServer::signatureHelp(PathRef File, Position Pos,
                                  std::move(Action));
 }
 
-void ClangdServer::formatFile(PathRef File, const std::vector<Range> &Rngs,
+void ClangdServer::formatFile(PathRef File, std::optional<Range> Rng,
                               Callback<tooling::Replacements> CB) {
   auto Code = getDraft(File);
   if (!Code)
     return CB(llvm::make_error<LSPError>("trying to format non-added document",
                                          ErrorCode::InvalidParams));
-  std::vector<tooling::Range> RequestedRanges;
-  if (!Rngs.empty()) {
-    RequestedRanges.reserve(Rngs.size());
-    for (const auto &Rng : Rngs) {
-      llvm::Expected<size_t> Begin = positionToOffset(*Code, Rng.start);
-      if (!Begin)
-        return CB(Begin.takeError());
-      llvm::Expected<size_t> End = positionToOffset(*Code, Rng.end);
-      if (!End)
-        return CB(End.takeError());
-      RequestedRanges.emplace_back(*Begin, *End - *Begin);
-    }
+  tooling::Range RequestedRange;
+  if (Rng) {
+    llvm::Expected<size_t> Begin = positionToOffset(*Code, Rng->start);
+    if (!Begin)
+      return CB(Begin.takeError());
+    llvm::Expected<size_t> End = positionToOffset(*Code, Rng->end);
+    if (!End)
+      return CB(End.takeError());
+    RequestedRange = tooling::Range(*Begin, *End - *Begin);
   } else {
-    RequestedRanges = {tooling::Range(0, Code->size())};
+    RequestedRange = tooling::Range(0, Code->size());
   }
 
   // Call clang-format.
   auto Action = [File = File.str(), Code = std::move(*Code),
-                 Ranges = std::move(RequestedRanges), CB = std::move(CB),
-                 this]() mutable {
-    format::FormatStyle Style = getFormatStyleForFile(File, Code, TFS, true);
+                 Ranges = std::vector<tooling::Range>{RequestedRange},
+                 CB = std::move(CB), this]() mutable {
+    format::FormatStyle Style = getFormatStyleForFile(File, Code, TFS);
     tooling::Replacements IncludeReplaces =
         format::sortIncludes(Style, Code, Ranges, File);
     auto Changed = tooling::applyAllReplacements(Code, IncludeReplaces);
@@ -575,10 +551,15 @@ void ClangdServer::formatOnType(PathRef File, Position Pos,
   auto Action = [File = File.str(), Code = std::move(*Code),
                  TriggerText = TriggerText.str(), CursorPos = *CursorPos,
                  CB = std::move(CB), this]() mutable {
-    auto Style = getFormatStyleForFile(File, Code, TFS, false);
+    auto Style = format::getStyle(format::DefaultFormatStyle, File,
+                                  format::DefaultFallbackStyle, Code,
+                                  TFS.view(/*CWD=*/std::nullopt).get());
+    if (!Style)
+      return CB(Style.takeError());
+
     std::vector<TextEdit> Result;
     for (const tooling::Replacement &R :
-         formatIncremental(Code, CursorPos, TriggerText, Style))
+         formatIncremental(Code, CursorPos, TriggerText, *Style))
       Result.push_back(replacementToEdit(Code, R));
     return CB(Result);
   };
@@ -629,7 +610,7 @@ void ClangdServer::rename(PathRef File, Position Pos, llvm::StringRef NewName,
 
     if (Opts.WantFormat) {
       auto Style = getFormatStyleForFile(File, InpAST->Inputs.Contents,
-                                         *InpAST->Inputs.TFS, false);
+                                         *InpAST->Inputs.TFS);
       llvm::Error Err = llvm::Error::success();
       for (auto &E : R->GlobalChanges)
         Err =
@@ -644,10 +625,9 @@ void ClangdServer::rename(PathRef File, Position Pos, llvm::StringRef NewName,
   WorkScheduler->runWithAST("Rename", File, std::move(Action));
 }
 
-namespace {
 // May generate several candidate selections, due to SelectionTree ambiguity.
 // vector of pointers because GCC doesn't like non-copyable Selection.
-llvm::Expected<std::vector<std::unique_ptr<Tweak::Selection>>>
+static llvm::Expected<std::vector<std::unique_ptr<Tweak::Selection>>>
 tweakSelection(const Range &Sel, const InputsAndAST &AST,
                llvm::vfs::FileSystem *FS) {
   auto Begin = positionToOffset(AST.Inputs.Contents, Sel.start);
@@ -667,27 +647,6 @@ tweakSelection(const Range &Sel, const InputsAndAST &AST,
   assert(!Result.empty() && "Expected at least one SelectionTree");
   return std::move(Result);
 }
-
-// Some fixes may perform local renaming, we want to convert those to clangd
-// rename commands, such that we can leverage the index for more accurate
-// results.
-std::optional<ClangdServer::CodeActionResult::Rename>
-tryConvertToRename(const Diag *Diag, const Fix &Fix) {
-  bool IsClangTidyRename = Diag->Source == Diag::ClangTidy &&
-                           Diag->Name == "readability-identifier-naming" &&
-                           !Fix.Edits.empty();
-  if (IsClangTidyRename && Diag->InsideMainFile) {
-    ClangdServer::CodeActionResult::Rename R;
-    R.NewName = Fix.Edits.front().newText;
-    R.FixMessage = Fix.Message;
-    R.Diag = {Diag->Range, Diag->Message};
-    return R;
-  }
-
-  return std::nullopt;
-}
-
-} // namespace
 
 void ClangdServer::codeAction(const CodeActionInputs &Params,
                               Callback<CodeActionResult> CB) {
@@ -709,22 +668,16 @@ void ClangdServer::codeAction(const CodeActionInputs &Params,
     CodeActionResult Result;
     Result.Version = InpAST->AST.version().str();
     if (KindAllowed(CodeAction::QUICKFIX_KIND)) {
-      auto FindMatchedDiag = [&InpAST](const DiagRef &DR) -> const Diag * {
+      auto FindMatchedFixes =
+          [&InpAST](const DiagRef &DR) -> llvm::ArrayRef<Fix> {
         for (const auto &Diag : InpAST->AST.getDiagnostics())
           if (Diag.Range == DR.Range && Diag.Message == DR.Message)
-            return &Diag;
-        return nullptr;
+            return Diag.Fixes;
+        return {};
       };
-      for (const auto &DiagRef : Params.Diagnostics) {
-        if (const auto *Diag = FindMatchedDiag(DiagRef))
-          for (const auto &Fix : Diag->Fixes) {
-            if (auto Rename = tryConvertToRename(Diag, Fix)) {
-              Result.Renames.emplace_back(std::move(*Rename));
-            } else {
-              Result.QuickFixes.push_back({DiagRef, Fix});
-            }
-          }
-      }
+      for (const auto &Diag : Params.Diagnostics)
+        for (const auto &Fix : FindMatchedFixes(Diag))
+          Result.QuickFixes.push_back({Diag, Fix});
     }
 
     // Collect Tweaks
@@ -786,7 +739,7 @@ void ClangdServer::applyTweak(PathRef File, Range Sel, StringRef TweakID,
       for (auto &It : (*Effect)->ApplyEdits) {
         Edit &E = It.second;
         format::FormatStyle Style =
-            getFormatStyleForFile(File, E.InitialCode, TFS, false);
+            getFormatStyleForFile(File, E.InitialCode, TFS);
         if (llvm::Error Err = reformatEdit(E, Style))
           elog("Failed to format {0}: {1}", It.first(), std::move(Err));
       }
@@ -849,7 +802,7 @@ void ClangdServer::findHover(PathRef File, Position Pos,
     if (!InpAST)
       return CB(InpAST.takeError());
     format::FormatStyle Style = getFormatStyleForFile(
-        File, InpAST->Inputs.Contents, *InpAST->Inputs.TFS, false);
+        File, InpAST->Inputs.Contents, *InpAST->Inputs.TFS);
     CB(clangd::getHover(InpAST->AST, Pos, std::move(Style), Index));
   };
 
@@ -925,15 +878,6 @@ void ClangdServer::inlayHints(PathRef File, std::optional<Range> RestrictRange,
     CB(clangd::inlayHints(InpAST->AST, std::move(RestrictRange)));
   };
   WorkScheduler->runWithAST("InlayHints", File, std::move(Action), Transient);
-}
-
-void ClangdServer::outgoingCalls(
-    const CallHierarchyItem &Item,
-    Callback<std::vector<CallHierarchyOutgoingCall>> CB) {
-  WorkScheduler->run("Outgoing Calls", "",
-                     [CB = std::move(CB), Item, this]() mutable {
-                       CB(clangd::outgoingCalls(Item, Index));
-                     });
 }
 
 void ClangdServer::onFileEvent(const DidChangeWatchedFilesParams &Params) {

@@ -2,10 +2,10 @@
 // Created by kirill on 8/30/22.
 //
 
-#ifndef LLVM_LIBC_TEST_SRC_MATH_IN_FLOAT_RANGE_TEST_HELPER_H
-#define LLVM_LIBC_TEST_SRC_MATH_IN_FLOAT_RANGE_TEST_HELPER_H
+#ifndef LLVM_IN_FLOAT_RANGE_TEST_HELPER_H
+#define LLVM_IN_FLOAT_RANGE_TEST_HELPER_H
 
-#include "hdr/stdint_proxy.h"
+#include <stdint.h>
 
 #define CHECK_DATA(start, stop, mfp_op, f, f_check, count, prec)               \
   {                                                                            \
@@ -23,4 +23,4 @@
     }                                                                          \
   }
 
-#endif // LLVM_LIBC_TEST_SRC_MATH_IN_FLOAT_RANGE_TEST_HELPER_H
+#endif // LLVM_IN_FLOAT_RANGE_TEST_HELPER_H

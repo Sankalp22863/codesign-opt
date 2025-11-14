@@ -27,6 +27,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Host.h"
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -268,11 +269,11 @@ Expected<StringRef> ArchiveMemberHeader::getName(uint64_t Size) const {
       return Name;
     // System libraries from the Windows SDK for Windows 11 contain this symbol.
     // It looks like a CFG guard: we just skip it for now.
-    if (Name == "/<XFGHASHMAP>/")
+    if (Name.equals("/<XFGHASHMAP>/"))
       return Name;
     // Some libraries (e.g., arm64rt.lib) from the Windows WDK
     // (version 10.0.22000.0) contain this undocumented special member.
-    if (Name == "/<ECSYMBOLS>/")
+    if (Name.equals("/<ECSYMBOLS>/"))
       return Name;
     // It's a long name.
     // Get the string table offset.
@@ -307,7 +308,7 @@ Expected<StringRef> ArchiveMemberHeader::getName(uint64_t Size) const {
       if (End == StringRef::npos || End < 1 ||
           Parent->getStringTable()[End - 1] != '/') {
         return malformedError("string table at long name offset " +
-                              Twine(StringOffset) + " not terminated");
+                              Twine(StringOffset) + "not terminated");
       }
       return Parent->getStringTable().slice(StringOffset, End - 1);
     }
@@ -473,7 +474,9 @@ Archive::Child::Child(const Archive *Parent, const char *Start, Error *Err)
   }
 
   Header = Parent->createArchiveMemberHeader(
-      Start, Parent->getData().size() - (Start - Parent->getData().data()),
+      Start,
+      Parent ? Parent->getData().size() - (Start - Parent->getData().data())
+             : 0,
       Err);
 
   // If we are pointed to real data, Start is not a nullptr, then there must be
@@ -705,7 +708,7 @@ void Archive::setFirstRegular(const Child &C) {
 
 Archive::Archive(MemoryBufferRef Source, Error &Err)
     : Binary(Binary::ID_Archive, Source) {
-  ErrorAsOutParameter ErrAsOutParam(Err);
+  ErrorAsOutParameter ErrAsOutParam(&Err);
   StringRef Buffer = Data.getBuffer();
   // Check for sufficient magic.
   if (Buffer.starts_with(ThinArchiveMagic)) {
@@ -966,19 +969,12 @@ Archive::Archive(MemoryBufferRef Source, Error &Err)
   Err = Error::success();
 }
 
-object::Archive::Kind Archive::getDefaultKindForTriple(const Triple &T) {
-  if (T.isOSDarwin())
-    return object::Archive::K_DARWIN;
-  if (T.isOSAIX())
-    return object::Archive::K_AIXBIG;
-  if (T.isOSWindows())
-    return object::Archive::K_COFF;
-  return object::Archive::K_GNU;
-}
-
-object::Archive::Kind Archive::getDefaultKind() {
-  Triple HostTriple(sys::getDefaultTargetTriple());
-  return getDefaultKindForTriple(HostTriple);
+object::Archive::Kind Archive::getDefaultKindForHost() {
+  Triple HostTriple(sys::getProcessTriple());
+  return HostTriple.isOSDarwin()
+             ? object::Archive::K_DARWIN
+             : (HostTriple.isOSAIX() ? object::Archive::K_AIXBIG
+                                     : object::Archive::K_GNU);
 }
 
 Archive::child_iterator Archive::child_begin(Error &Err,

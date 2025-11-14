@@ -630,8 +630,8 @@ void LiveRange::join(LiveRange &Other,
                      const int *LHSValNoAssignments,
                      const int *RHSValNoAssignments,
                      SmallVectorImpl<VNInfo *> &NewVNInfo) {
-  assert(verify());
-  assert(Other.verify());
+  verify();
+  Other.verify();
 
   // Determine if any of our values are mapped.  This is uncommon, so we want
   // to avoid the range scan if not.
@@ -797,7 +797,7 @@ void LiveRange::flushSegmentSet() {
       "segment set can be used only initially before switching to the array");
   segments.append(segmentSet->begin(), segmentSet->end());
   segmentSet = nullptr;
-  assert(verify());
+  verify();
 }
 
 bool LiveRange::isLiveAtIndexes(ArrayRef<SlotIndex> Slots) const {
@@ -869,14 +869,14 @@ void LiveInterval::clearSubRanges() {
 /// For each VNI in \p SR, check whether or not that value defines part
 /// of the mask describe by \p LaneMask and if not, remove that value
 /// from \p SR.
-static void stripValuesNotDefiningMask(Register Reg, LiveInterval::SubRange &SR,
+static void stripValuesNotDefiningMask(unsigned Reg, LiveInterval::SubRange &SR,
                                        LaneBitmask LaneMask,
                                        const SlotIndexes &Indexes,
                                        const TargetRegisterInfo &TRI,
                                        unsigned ComposeSubRegIdx) {
   // Phys reg should not be tracked at subreg level.
   // Same for noreg (Reg == 0).
-  if (!Reg || !Reg.isVirtual())
+  if (!Register::isVirtualRegister(Reg) || !Reg)
     return;
   // Remove the values that don't define those lanes.
   SmallVector<VNInfo *, 8> ToBeRemoved;
@@ -996,17 +996,6 @@ LLVM_DUMP_METHOD void LiveRange::Segment::dump() const {
 }
 #endif
 
-void VNInfo::print(raw_ostream &OS) const {
-  OS << id << '@';
-  if (isUnused()) {
-    OS << 'x';
-  } else {
-    OS << def;
-    if (isPHIDef())
-      OS << "-phi";
-  }
-}
-
 void LiveRange::print(raw_ostream &OS) const {
   if (empty())
     OS << "EMPTY";
@@ -1024,10 +1013,15 @@ void LiveRange::print(raw_ostream &OS) const {
     for (const_vni_iterator i = vni_begin(), e = vni_end(); i != e;
          ++i, ++vnum) {
       const VNInfo *vni = *i;
-      if (vnum)
-        OS << ' ';
-      OS << *vni;
-      assert(vnum == vni->id && "Bad VNInfo");
+      if (vnum) OS << ' ';
+      OS << vnum << '@';
+      if (vni->isUnused()) {
+        OS << 'x';
+      } else {
+        OS << vni->def;
+        if (vni->isPHIDef())
+          OS << "-phi";
+      }
     }
   }
 }
@@ -1047,9 +1041,9 @@ void LiveInterval::print(raw_ostream &OS) const {
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-LLVM_DUMP_METHOD void VNInfo::dump() const { dbgs() << *this << '\n'; }
-
-LLVM_DUMP_METHOD void LiveRange::dump() const { dbgs() << *this << '\n'; }
+LLVM_DUMP_METHOD void LiveRange::dump() const {
+  dbgs() << *this << '\n';
+}
 
 LLVM_DUMP_METHOD void LiveInterval::SubRange::dump() const {
   dbgs() << *this << '\n';
@@ -1061,36 +1055,24 @@ LLVM_DUMP_METHOD void LiveInterval::dump() const {
 #endif
 
 #ifndef NDEBUG
-bool LiveRange::verify() const {
+void LiveRange::verify() const {
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
-    if (!I->start.isValid())
-      return false;
-    if (!I->end.isValid())
-      return false;
-    if (I->start >= I->end)
-      return false;
-    if (I->valno == nullptr)
-      return false;
-    if (I->valno->id >= valnos.size())
-      return false;
-    if (I->valno != valnos[I->valno->id])
-      return false;
+    assert(I->start.isValid());
+    assert(I->end.isValid());
+    assert(I->start < I->end);
+    assert(I->valno != nullptr);
+    assert(I->valno->id < valnos.size());
+    assert(I->valno == valnos[I->valno->id]);
     if (std::next(I) != E) {
-      if (I->end > std::next(I)->start)
-        return false;
-      if (I->end == std::next(I)->start) {
-        if (I->valno == std::next(I)->valno)
-          return false;
-      }
+      assert(I->end <= std::next(I)->start);
+      if (I->end == std::next(I)->start)
+        assert(I->valno != std::next(I)->valno);
     }
   }
-
-  return true;
 }
 
-bool LiveInterval::verify(const MachineRegisterInfo *MRI) const {
-  if (!super::verify())
-    return false;
+void LiveInterval::verify(const MachineRegisterInfo *MRI) const {
+  super::verify();
 
   // Make sure SubRanges are fine and LaneMasks are disjunct.
   LaneBitmask Mask;
@@ -1098,28 +1080,18 @@ bool LiveInterval::verify(const MachineRegisterInfo *MRI) const {
                                        : LaneBitmask::getAll();
   for (const SubRange &SR : subranges()) {
     // Subrange lanemask should be disjunct to any previous subrange masks.
-    if ((Mask & SR.LaneMask).any())
-      return false;
-
+    assert((Mask & SR.LaneMask).none());
     Mask |= SR.LaneMask;
 
     // subrange mask should not contained in maximum lane mask for the vreg.
-    if ((Mask & ~MaxMask).any())
-      return false;
-
+    assert((Mask & ~MaxMask).none());
     // empty subranges must be removed.
-    if (SR.empty())
-      return false;
+    assert(!SR.empty());
 
-    if (!SR.verify())
-      return false;
-
+    SR.verify();
     // Main liverange should cover subrange.
-    if (!covers(SR))
-      return false;
+    assert(covers(SR));
   }
-
-  return true;
 }
 #endif
 
@@ -1168,8 +1140,8 @@ void LiveRangeUpdater::print(raw_ostream &OS) const {
   for (const auto &S : make_range(LR->begin(), WriteI))
     OS << ' ' << S;
   OS << "\n  Spills:";
-  for (const LiveRange::Segment &Spill : Spills)
-    OS << ' ' << Spill;
+  for (unsigned I = 0, E = Spills.size(); I != E; ++I)
+    OS << ' ' << Spills[I];
   OS << "\n  Area 2:";
   for (const auto &S : make_range(ReadI, LR->end()))
     OS << ' ' << S;
@@ -1311,7 +1283,7 @@ void LiveRangeUpdater::flush() {
   // Nothing to merge?
   if (Spills.empty()) {
     LR->segments.erase(WriteI, ReadI);
-    assert(LR->verify());
+    LR->verify();
     return;
   }
 
@@ -1329,7 +1301,7 @@ void LiveRangeUpdater::flush() {
   }
   ReadI = WriteI + Spills.size();
   mergeSpills();
-  assert(LR->verify());
+  LR->verify();
 }
 
 unsigned ConnectedVNInfoEqClasses::Classify(const LiveRange &LR) {

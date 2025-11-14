@@ -1,3 +1,4 @@
+#include "testing.h"
 #include "../../lib/Evaluate/host.h"
 #include "flang/Evaluate/call.h"
 #include "flang/Evaluate/expression.h"
@@ -6,7 +7,6 @@
 #include "flang/Evaluate/intrinsics.h"
 #include "flang/Evaluate/target.h"
 #include "flang/Evaluate/tools.h"
-#include "flang/Testing/testing.h"
 #include <tuple>
 
 using namespace Fortran::evaluate;
@@ -50,11 +50,10 @@ void TestHostRuntimeSubnormalFlushing() {
     TargetCharacteristics noFlushingTargetCharacteristics;
     noFlushingTargetCharacteristics.set_areSubnormalsFlushedToZero(false);
     Fortran::common::LanguageFeatureControl languageFeatures;
-    std::set<std::string> tempNames;
     FoldingContext flushingContext{messages, defaults, intrinsics,
-        flushingTargetCharacteristics, languageFeatures, tempNames};
+        flushingTargetCharacteristics, languageFeatures};
     FoldingContext noFlushingContext{messages, defaults, intrinsics,
-        noFlushingTargetCharacteristics, languageFeatures, tempNames};
+        noFlushingTargetCharacteristics, languageFeatures};
 
     DynamicType r4{R4{}.GetType()};
     // Test subnormal argument flushing

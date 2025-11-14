@@ -24,7 +24,7 @@ class Context:
 
     @staticmethod
     def getDefaultInstance():
-        if Context.defaultInstance is None:
+        if Context.defaultInstance == None:
             Context.defaultInstance = Context()
 
         return Context.defaultInstance
@@ -33,12 +33,12 @@ class Context:
 class IslObject:
     def __init__(self, string="", ctx=None, ptr=None):
         self.initialize_isl_methods()
-        if ptr is not None:
+        if ptr != None:
             self.ptr = ptr
             self.ctx = self.get_isl_method("get_ctx")(self)
             return
 
-        if ctx is None:
+        if ctx == None:
             ctx = Context.getDefaultInstance()
 
         self.ctx = ctx
@@ -72,7 +72,7 @@ class IslObject:
         if hasattr(self.__class__, "initialized"):
             return
 
-        self.__class__.initialized = True
+        self.__class__.initalized = True
         self.get_isl_method("read_from_str").argtypes = [Context, c_char_p, c_int]
         self.get_isl_method("copy").argtypes = [self.__class__]
         self.get_isl_method("copy").restype = c_int
@@ -204,7 +204,7 @@ class Dim(IslObject):
         if hasattr(self.__class__, "initialized"):
             return
 
-        self.__class__.initialized = True
+        self.__class__.initalized = True
         self.get_isl_method("copy").argtypes = [self.__class__]
         self.get_isl_method("copy").restype = c_int
         self.get_isl_method("free").argtypes = [self.__class__]
@@ -236,7 +236,7 @@ class Printer:
     FORMAT_EXT_POLYLIB = 6
 
     def __init__(self, ctx=None):
-        if ctx is None:
+        if ctx == None:
             ctx = Context.getDefaultInstance()
 
         self.ctx = ctx

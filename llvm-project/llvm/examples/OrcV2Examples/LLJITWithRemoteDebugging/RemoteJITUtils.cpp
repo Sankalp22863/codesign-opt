@@ -29,8 +29,7 @@ using namespace llvm::orc;
 
 Expected<std::unique_ptr<DefinitionGenerator>>
 loadDylib(ExecutionSession &ES, StringRef RemotePath) {
-  if (auto Handle = ES.getExecutorProcessControl().getDylibMgr().loadDylib(
-          RemotePath.data()))
+  if (auto Handle = ES.getExecutorProcessControl().loadDylib(RemotePath.data()))
     return std::make_unique<EPCDynamicLibrarySearchGenerator>(ES, *Handle);
   else
     return Handle.takeError();
@@ -130,7 +129,7 @@ launchLocalExecutor(StringRef ExecutablePath) {
   close(FromExecutor[WriteEnd]);
 
   auto EPC = SimpleRemoteEPC::Create<FDSimpleRemoteEPCTransport>(
-      std::make_unique<DynamicThreadPoolTaskDispatcher>(std::nullopt),
+      std::make_unique<DynamicThreadPoolTaskDispatcher>(),
       SimpleRemoteEPC::Setup(),
       FromExecutor[ReadEnd], ToExecutor[WriteEnd]);
   if (!EPC)
@@ -202,7 +201,7 @@ connectTCPSocket(StringRef NetworkAddress) {
     return CreateErr(toString(SockFD.takeError()));
 
   return SimpleRemoteEPC::Create<FDSimpleRemoteEPCTransport>(
-      std::make_unique<DynamicThreadPoolTaskDispatcher>(std::nullopt),
+      std::make_unique<DynamicThreadPoolTaskDispatcher>(),
       SimpleRemoteEPC::Setup(), *SockFD);
 }
 

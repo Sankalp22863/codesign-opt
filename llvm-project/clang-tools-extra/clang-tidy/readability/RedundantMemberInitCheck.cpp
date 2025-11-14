@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- RedundantMemberInitCheck.cpp - clang-tidy-------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -12,6 +12,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Lex/Lexer.h"
+#include <algorithm>
 
 using namespace clang::ast_matchers;
 using namespace clang::tidy::matchers;
@@ -40,35 +41,25 @@ void RedundantMemberInitCheck::storeOptions(ClangTidyOptions::OptionMap &Opts) {
 
 void RedundantMemberInitCheck::registerMatchers(MatchFinder *Finder) {
   auto ConstructorMatcher =
-      cxxConstructExpr(
-          argumentCountIs(0),
-          hasDeclaration(cxxConstructorDecl(
-              ofClass(cxxRecordDecl(unless(isTriviallyDefaultConstructible()))
-                          .bind("class")))))
+      cxxConstructExpr(argumentCountIs(0),
+                       hasDeclaration(cxxConstructorDecl(ofClass(cxxRecordDecl(
+                           unless(isTriviallyDefaultConstructible()))))))
           .bind("construct");
-
-  auto HasUnionAsParent = hasParent(recordDecl(isUnion()));
-
-  auto HasTypeEqualToConstructorClass = hasType(qualType(
-      hasCanonicalType(qualType(hasDeclaration(equalsBoundNode("class"))))));
 
   Finder->addMatcher(
       cxxConstructorDecl(
           unless(isDelegatingConstructor()), ofClass(unless(isUnion())),
           forEachConstructorInitializer(
-              cxxCtorInitializer(
-                  withInitializer(ConstructorMatcher),
-                  anyOf(isBaseInitializer(),
-                        forField(fieldDecl(unless(hasType(isConstQualified())),
-                                           unless(HasUnionAsParent),
-                                           HasTypeEqualToConstructorClass))))
+              cxxCtorInitializer(withInitializer(ConstructorMatcher),
+                                 unless(forField(fieldDecl(
+                                     anyOf(hasType(isConstQualified()),
+                                           hasParent(recordDecl(isUnion())))))))
                   .bind("init")))
           .bind("constructor"),
       this);
 
   Finder->addMatcher(fieldDecl(hasInClassInitializer(ConstructorMatcher),
-                               HasTypeEqualToConstructorClass,
-                               unless(HasUnionAsParent))
+                               unless(hasParent(recordDecl(isUnion()))))
                          .bind("field"),
                      this);
 }

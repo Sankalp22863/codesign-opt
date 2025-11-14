@@ -30,13 +30,11 @@
 ; RUN:     | FileCheck %s --check-prefixes=CHECK,CHECK-LTO
 
 ; CHECK-DIS: Running analysis: InnerAnalysisManagerProxy
-; CHECK-DIS-NEXT: Running pass: EntryExitInstrumenterPass
 ; CHECK-DIS-NEXT: Running pass: AddDiscriminatorsPass
 ; CHECK-DIS-NEXT: Running pass: AlwaysInlinerPass
 ; CHECK-DIS-NEXT: Running analysis: ProfileSummaryAnalysis
-; CHECK-DEFAULT: Running analysis: InnerAnalysisManagerProxy
-; CHECK-DEFAULT-NEXT: Running pass: EntryExitInstrumenterPass
-; CHECK-DEFAULT-NEXT: Running pass: AlwaysInlinerPass
+; CHECK-DEFAULT: Running pass: AlwaysInlinerPass
+; CHECK-DEFAULT-NEXT: Running analysis: InnerAnalysisManagerProxy
 ; CHECK-DEFAULT-NEXT: Running analysis: ProfileSummaryAnalysis
 ; CHECK-MATRIX: Running pass: LowerMatrixIntrinsicsPass
 ; CHECK-MATRIX-NEXT: Running analysis: TargetIRAnalysis
@@ -44,7 +42,6 @@
 ; CHECK-PRE-LINK: Running pass: CanonicalizeAliasesPass
 ; CHECK-PRE-LINK-NEXT: Running pass: NameAnonGlobalPass
 ; CHECK-THINLTO: Running pass: LowerTypeTestsPass
-; CHECK-THINLTO-NEXT: Running pass: CoroConditionalWrapper
 ; CHECK-THINLTO-NEXT: Running pass: EliminateAvailableExternallyPass
 ; CHECK-THINLTO-NEXT: Running pass: GlobalDCEPass
 ; CHECK-LTO: Running pass: CrossDSOCFIPass on [module]
@@ -52,7 +49,6 @@
 ; CHECK-LTO-NEXT: Running analysis: InnerAnalysisManagerProxy
 ; CHECK-LTO-NEXT: Running pass: LowerTypeTestsPass
 ; CHECK-LTO-NEXT: Running pass: LowerTypeTestsPass
-; CHECK-LTO-NEXT: CoroConditionalWrapper
 ; CHECK-CORO-NEXT: Running pass: AnnotationRemarksPass
 ; CHECK-CORO-NEXT: Running analysis: TargetLibraryAnalysis
 ; CHECK-LTO-NEXT: Running pass: AnnotationRemarksPass

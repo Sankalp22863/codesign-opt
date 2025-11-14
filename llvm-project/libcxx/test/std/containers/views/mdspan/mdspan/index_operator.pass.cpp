@@ -32,15 +32,14 @@
 #include <mdspan>
 #include <cassert>
 #include <cstdint>
-#include <span> // dynamic_extent
 
 #include "test_macros.h"
 
 #include "../ConvertibleToIntegral.h"
 #include "../CustomTestLayouts.h"
 
-// Apple Clang does not support argument packs as input to operator []
-#ifdef TEST_COMPILER_APPLE_CLANG
+// Clang 16 does not support argument packs as input to operator []
+#if defined(__clang_major__) && __clang_major__ < 17
 template <class MDS>
 constexpr auto& access(MDS mds) {
   return mds[];
@@ -84,7 +83,7 @@ template <class MDS, class... Args>
 constexpr void iterate(MDS mds, Args... args) {
   constexpr int r = static_cast<int>(MDS::extents_type::rank()) - 1 - static_cast<int>(sizeof...(Args));
   if constexpr (-1 == r) {
-#ifdef TEST_COMPILER_APPLE_CLANG
+#if defined(__clang_major__) && __clang_major__ < 17
     int* ptr1 = &access(mds, args...);
 #else
     int* ptr1 = &mds[args...];
@@ -123,8 +122,8 @@ constexpr void test_layout() {
   test_iteration(construct_mapping(Layout(), std::extents<unsigned, 7, 8>()));
   test_iteration(construct_mapping(Layout(), std::extents<signed char, D, D, D, D>(1, 1, 1, 1)));
 
-// TODO(LLVM 20): Enable this once AppleClang is upgraded
-#ifndef TEST_COMPILER_APPLE_CLANG
+// TODO enable for GCC 13, when the CI pipeline is switched, doesn't work with GCC 12
+#if defined(__clang_major__) && __clang_major__ >= 17
   int data[1];
   // Check operator constraint for number of arguments
   static_assert(check_operator_constraints(std::mdspan(data, construct_mapping(Layout(), std::extents<int, D>(1))), 0));
@@ -217,7 +216,7 @@ constexpr void test_layout() {
       assert(!check_operator_constraints(std::mdspan(data, construct_mapping(Layout(), std::extents<int, D>(1))), s));
     }
   }
-#endif // TEST_COMPILER_APPLE_CLANG
+#endif
 }
 
 template <class Layout>

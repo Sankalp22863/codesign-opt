@@ -10,6 +10,19 @@
 #define LLVM_CLANG_BASIC_DIAGNOSTICANALYSIS_H
 
 #include "clang/Basic/Diagnostic.h"
-#include "clang/Basic/DiagnosticAnalysisInterface.inc"
+
+namespace clang {
+namespace diag {
+enum {
+#define DIAG(ENUM, FLAGS, DEFAULT_MAPPING, DESC, GROUP, SFINAE, NOWERROR,      \
+             SHOWINSYSHEADER, SHOWINSYSMACRO, DEFERRABLE, CATEGORY)            \
+  ENUM,
+#define ANALYSISSTART
+#include "clang/Basic/DiagnosticAnalysisKinds.inc"
+#undef DIAG
+  NUM_BUILTIN_ANALYSIS_DIAGNOSTICS
+};
+} // end namespace diag
+} // end namespace clang
 
 #endif // LLVM_CLANG_BASIC_DIAGNOSTICANALYSIS_H

@@ -13,7 +13,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/IR/LegacyPassManager.h"
-#include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/TargetSelect.h"
@@ -52,14 +51,14 @@ protected:
 
   void SetUp() override {
     std::string Error;
-    Triple TargetTriple("amdgcn--amdpal");
-    const Target *T = TargetRegistry::lookupTarget(TargetTriple, Error);
+    const Target *T = TargetRegistry::lookupTarget("amdgcn--amdpal", Error);
     if (!T)
       GTEST_SKIP();
 
     TargetOptions Options;
-    TM = std::unique_ptr<TargetMachine>(T->createTargetMachine(
-        TargetTriple, "gfx1010", "", Options, std::nullopt));
+    TM = std::unique_ptr<LLVMTargetMachine>(
+        static_cast<LLVMTargetMachine *>(T->createTargetMachine(
+            "amdgcn--amdpal", "gfx1010", "", Options, std::nullopt)));
     if (!TM)
       GTEST_SKIP();
 
@@ -80,7 +79,7 @@ protected:
   static std::string PalMDString;
 
   LLVMContext Context;
-  std::unique_ptr<TargetMachine> TM;
+  std::unique_ptr<LLVMTargetMachine> TM;
   std::unique_ptr<Module> M;
   SmallString<1024> Elf;
 };

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# ===-----------------------------------------------------------------------===#
+# ===- rename_check.py - clang-tidy check renamer ------------*- python -*--===#
 #
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
@@ -8,16 +8,16 @@
 #
 # ===-----------------------------------------------------------------------===#
 
+from __future__ import unicode_literals
+
 import argparse
 import glob
 import io
 import os
 import re
-import sys
-from typing import List
 
 
-def replaceInFileRegex(fileName: str, sFrom: str, sTo: str) -> None:
+def replaceInFileRegex(fileName, sFrom, sTo):
     if sFrom == sTo:
         return
 
@@ -35,7 +35,7 @@ def replaceInFileRegex(fileName: str, sFrom: str, sTo: str) -> None:
         f.write(txt)
 
 
-def replaceInFile(fileName: str, sFrom: str, sTo: str) -> None:
+def replaceInFile(fileName, sFrom, sTo):
     if sFrom == sTo:
         return
     txt = None
@@ -51,7 +51,31 @@ def replaceInFile(fileName: str, sFrom: str, sTo: str) -> None:
         f.write(txt)
 
 
-def fileRename(fileName: str, sFrom: str, sTo: str) -> str:
+def generateCommentLineHeader(filename):
+    return "".join(
+        [
+            "//===--- ",
+            os.path.basename(filename),
+            " - clang-tidy ",
+            "-" * max(0, 42 - len(os.path.basename(filename))),
+            "*- C++ -*-===//",
+        ]
+    )
+
+
+def generateCommentLineSource(filename):
+    return "".join(
+        [
+            "//===--- ",
+            os.path.basename(filename),
+            " - clang-tidy",
+            "-" * max(0, 52 - len(os.path.basename(filename))),
+            "-===//",
+        ]
+    )
+
+
+def fileRename(fileName, sFrom, sTo):
     if sFrom not in fileName or sFrom == sTo:
         return fileName
     newFileName = fileName.replace(sFrom, sTo)
@@ -60,7 +84,7 @@ def fileRename(fileName: str, sFrom: str, sTo: str) -> str:
     return newFileName
 
 
-def deleteMatchingLines(fileName: str, pattern: str) -> bool:
+def deleteMatchingLines(fileName, pattern):
     lines = None
     with io.open(fileName, "r", encoding="utf8") as f:
         lines = f.readlines()
@@ -77,7 +101,7 @@ def deleteMatchingLines(fileName: str, pattern: str) -> bool:
     return True
 
 
-def getListOfFiles(clang_tidy_path: str) -> List[str]:
+def getListOfFiles(clang_tidy_path):
     files = glob.glob(os.path.join(clang_tidy_path, "**"), recursive=True)
     files += [
         os.path.normpath(os.path.join(clang_tidy_path, "../docs/ReleaseNotes.rst"))
@@ -100,7 +124,7 @@ def getListOfFiles(clang_tidy_path: str) -> List[str]:
 
 # Adapts the module's CMakelist file. Returns 'True' if it could add a new
 # entry and 'False' if the entry already existed.
-def adapt_cmake(module_path: str, check_name_camel: str) -> bool:
+def adapt_cmake(module_path, check_name_camel):
     filename = os.path.join(module_path, "CMakeLists.txt")
     with io.open(filename, "r", encoding="utf8") as f:
         lines = f.readlines()
@@ -129,9 +153,7 @@ def adapt_cmake(module_path: str, check_name_camel: str) -> bool:
 
 
 # Modifies the module to include the new check.
-def adapt_module(
-    module_path: str, module: str, check_name: str, check_name_camel: str
-) -> None:
+def adapt_module(module_path, module, check_name, check_name_camel):
     modulecpp = next(
         iter(
             filter(
@@ -182,9 +204,7 @@ def adapt_module(
 
 
 # Adds a release notes entry.
-def add_release_notes(
-    clang_tidy_path: str, old_check_name: str, new_check_name: str
-) -> None:
+def add_release_notes(clang_tidy_path, old_check_name, new_check_name):
     filename = os.path.normpath(
         os.path.join(clang_tidy_path, "../docs/ReleaseNotes.rst")
     )
@@ -242,7 +262,7 @@ def add_release_notes(
             f.write(line)
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(description="Rename clang-tidy check.")
     parser.add_argument("old_check_name", type=str, help="Old check name.")
     parser.add_argument("new_check_name", type=str, help="New check name.")
@@ -291,7 +311,7 @@ def main() -> None:
                 "Check name '%s' not found in %s. Exiting."
                 % (check_name_camel, cmake_lists)
             )
-            sys.exit(1)
+            return 1
 
         modulecpp = next(
             iter(
@@ -313,6 +333,16 @@ def main() -> None:
         )
         filename = fileRename(filename, args.old_check_name, args.new_check_name)
         filename = fileRename(filename, check_name_camel, new_check_name_camel)
+        replaceInFile(
+            filename,
+            generateCommentLineHeader(originalName),
+            generateCommentLineHeader(filename),
+        )
+        replaceInFile(
+            filename,
+            generateCommentLineSource(originalName),
+            generateCommentLineSource(filename),
+        )
         for header_guard in header_guard_variants:
             replaceInFile(filename, header_guard, header_guard_new)
 

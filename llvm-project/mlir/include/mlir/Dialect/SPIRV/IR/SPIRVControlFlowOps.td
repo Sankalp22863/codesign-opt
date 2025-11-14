@@ -15,7 +15,6 @@
 #define MLIR_DIALECT_SPIRV_IR_CONTROLFLOW_OPS
 
 include "mlir/Dialect/SPIRV/IR/SPIRVBase.td"
-include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
@@ -188,8 +187,7 @@ def SPIRV_BranchConditionalOp : SPIRV_Op<"BranchConditional", [
 // -----
 
 def SPIRV_FunctionCallOp : SPIRV_Op<"FunctionCall", [
-    InFunctionScope, DeclareOpInterfaceMethods<CallOpInterface>,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+    InFunctionScope, DeclareOpInterfaceMethods<CallOpInterface>]> {
   let summary = "Call a function.";
 
   let description = [{
@@ -216,23 +214,12 @@ def SPIRV_FunctionCallOp : SPIRV_Op<"FunctionCall", [
 
   let arguments = (ins
     FlatSymbolRefAttr:$callee,
-    Variadic<SPIRV_Type>:$arguments,
-    OptionalAttr<DictArrayAttr>:$arg_attrs,
-    OptionalAttr<DictArrayAttr>:$res_attrs
+    Variadic<SPIRV_Type>:$arguments
   );
 
   let results = (outs
     Optional<SPIRV_Type>:$return_value
   );
-
-  let builders = [
-    OpBuilder<(ins "Type":$returnType, "FlatSymbolRefAttr":$callee,
-      "ValueRange":$arguments),
-    [{
-      build($_builder, $_state, returnType, callee, arguments,
-            /*arg_attrs=*/nullptr, /*res_attrs=*/nullptr);
-    }]>
-  ];
 
   let autogenSerialization = 0;
 
@@ -240,48 +227,6 @@ def SPIRV_FunctionCallOp : SPIRV_Op<"FunctionCall", [
     $callee `(` $arguments `)` attr-dict `:`
       functional-type($arguments, results)
   }];
-}
-
-// -----
-
-def SPIRV_KillOp : SPIRV_Op<"Kill", [Terminator]> {
-  let summary = [{
-    Deprecated (use OpTerminateInvocation or OpDemoteToHelperInvocation).
-  }];
-
-  let description = [{
-    Fragment-shader discard.
-
-    Ceases all further processing in any invocation that executes it: Only
-    instructions these invocations executed before OpKill have observable
-    side effects. If this instruction is executed in non-uniform control
-    flow, all subsequent control flow is non-uniform (for invocations that
-    continue to execute).
-
-    This instruction must be the last instruction in a block.
-
-    This instruction is only valid in the Fragment Execution Model.
-
-    <!-- End of AutoGen section -->
-
-    #### Example:
-
-    ```mlir
-    spirv.Kill
-    ```
-  }];
-
-  let availability = [
-    MinVersion<SPIRV_V_1_0>,
-    MaxVersion<SPIRV_V_1_6>,
-    Extension<[]>,
-    Capability<[SPIRV_C_Shader]>
-  ];
-
-  let arguments = (ins);
-  let results = (outs);
-  let assemblyFormat = "attr-dict";
-  let hasVerifier = 0;
 }
 
 // -----
@@ -313,27 +258,17 @@ def SPIRV_LoopOp : SPIRV_Op<"mlir.loop", [InFunctionScope]> {
     The continue block should be the second to last block and it should have a
     branch to the loop header block. The loop continue block should be the only
     block, except the entry block, branching to the header block.
-
-    Values defined inside the loop regions cannot be directly used
-    outside of them; however, the loop region can yield values. These values are
-    yielded using a `spirv.mlir.merge` op and returned as a result of the loop op.
   }];
 
   let arguments = (ins
     SPIRV_LoopControlAttr:$loop_control
   );
 
-  let results = (outs Variadic<AnyType>:$results);
+  let results = (outs);
 
   let regions = (region AnyRegion:$body);
 
-  let builders = [
-    OpBuilder<(ins)>,
-    OpBuilder<(ins "spirv::LoopControl":$loopControl),
-    [{
-      build($_builder, $_state, TypeRange(), loopControl);
-    }]>
-  ];
+  let builders = [OpBuilder<(ins)>];
 
   let extraClassDeclaration = [{
     // Returns the entry block.
@@ -350,7 +285,7 @@ def SPIRV_LoopOp : SPIRV_Op<"mlir.loop", [InFunctionScope]> {
 
     // Adds an empty entry block and loop merge block containing one
     // spirv.mlir.merge op.
-    void addEntryAndMergeBlock(OpBuilder &builder);
+    void addEntryAndMergeBlock();
   }];
 
   let hasOpcode = 0;
@@ -363,8 +298,7 @@ def SPIRV_LoopOp : SPIRV_Op<"mlir.loop", [InFunctionScope]> {
 
 // -----
 
-def SPIRV_MergeOp : SPIRV_Op<"mlir.merge", [
-    Pure, Terminator, ParentOneOf<["SelectionOp", "LoopOp"]>, ReturnLike]> {
+def SPIRV_MergeOp : SPIRV_Op<"mlir.merge", [Pure, Terminator]> {
   let summary = "A special terminator for merging a structured selection/loop.";
 
   let description = [{
@@ -373,29 +307,17 @@ def SPIRV_MergeOp : SPIRV_Op<"mlir.merge", [
     merge point, which is the next op following the `spirv.mlir.selection` or
     `spirv.mlir.loop` op. This op does not have a corresponding instruction in the
     SPIR-V binary format; it's solely for structural purpose.
-
-    The instruction is also used to yield values from inside the selection/loop region
-    to the outside, as values that were sunk into the region cannot otherwise escape it.
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands);
+  let arguments = (ins);
 
   let results = (outs);
 
-  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
-
-  let builders = [
-    OpBuilder<(ins),
-    [{
-      build($_builder, $_state, ValueRange());
-    }]>
-  ];
+  let assemblyFormat = "attr-dict";
 
   let hasOpcode = 0;
 
   let autogenSerialization = 0;
-
-  let hasVerifier = 0;
 }
 
 // -----
@@ -487,17 +409,13 @@ def SPIRV_SelectionOp : SPIRV_Op<"mlir.selection", [InFunctionScope]> {
     header block, and one selection merge. The selection header block should be
     the first block. The selection merge block should be the last block.
     The merge block should only contain a `spirv.mlir.merge` op.
-
-    Values defined inside the selection regions cannot be directly used
-    outside of them; however, the selection region can yield values. These values are
-    yielded using a `spirv.mlir.merge` op and returned as a result of the selection op.
   }];
 
   let arguments = (ins
     SPIRV_SelectionControlAttr:$selection_control
   );
 
-  let results = (outs Variadic<AnyType>:$results);
+  let results = (outs);
 
   let regions = (region AnyRegion:$body);
 
@@ -509,7 +427,7 @@ def SPIRV_SelectionOp : SPIRV_Op<"mlir.selection", [InFunctionScope]> {
     Block *getMergeBlock();
 
     /// Adds a selection merge block containing one spirv.mlir.merge op.
-    void addMergeBlock(OpBuilder &builder);
+    void addMergeBlock();
 
     /// Creates a spirv.mlir.selection op for `if (<condition>) then { <thenBody> }`
     /// with `builder`. `builder`'s insertion point will remain at after the
@@ -519,13 +437,6 @@ def SPIRV_SelectionOp : SPIRV_Op<"mlir.selection", [InFunctionScope]> {
         function_ref<void(OpBuilder &builder)> thenBody,
         OpBuilder &builder);
   }];
-
-  let builders = [
-    OpBuilder<(ins "spirv::SelectionControl":$selectionControl),
-    [{
-      build($_builder, $_state, TypeRange(), selectionControl);
-    }]>
-  ];
 
   let hasOpcode = 0;
 

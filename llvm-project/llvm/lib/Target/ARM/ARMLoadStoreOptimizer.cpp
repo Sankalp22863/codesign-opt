@@ -31,7 +31,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/CodeGen/LiveRegUnits.h"
+#include "llvm/CodeGen/LivePhysRegs.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -50,6 +50,7 @@
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DebugLoc.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Type.h"
 #include "llvm/InitializePasses.h"
@@ -60,6 +61,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
@@ -107,7 +109,7 @@ namespace {
     const ARMSubtarget *STI;
     const TargetLowering *TL;
     ARMFunctionInfo *AFI;
-    LiveRegUnits LiveRegs;
+    LivePhysRegs LiveRegs;
     RegisterClassInfo RegClassInfo;
     MachineBasicBlock::const_iterator LiveRegPos;
     bool LiveRegsValid;
@@ -119,7 +121,8 @@ namespace {
     bool runOnMachineFunction(MachineFunction &Fn) override;
 
     MachineFunctionProperties getRequiredProperties() const override {
-      return MachineFunctionProperties().setNoVRegs();
+      return MachineFunctionProperties().set(
+          MachineFunctionProperties::Property::NoVRegs);
     }
 
     StringRef getPassName() const override { return ARM_LOAD_STORE_OPT_NAME; }
@@ -492,7 +495,7 @@ void ARMLoadStoreOpt::UpdateBaseRegUses(MachineBasicBlock &MBB,
     bool InsertSub = false;
     unsigned Opc = MBBI->getOpcode();
 
-    if (MBBI->readsRegister(Base, /*TRI=*/nullptr)) {
+    if (MBBI->readsRegister(Base)) {
       int Offset;
       bool IsLoad =
         Opc == ARM::tLDRi || Opc == ARM::tLDRHi || Opc == ARM::tLDRBi;
@@ -557,8 +560,7 @@ void ARMLoadStoreOpt::UpdateBaseRegUses(MachineBasicBlock &MBB,
       return;
     }
 
-    if (MBBI->killsRegister(Base, /*TRI=*/nullptr) ||
-        MBBI->definesRegister(Base, /*TRI=*/nullptr))
+    if (MBBI->killsRegister(Base) || MBBI->definesRegister(Base))
       // Register got killed. Stop updating.
       return;
   }
@@ -587,7 +589,7 @@ unsigned ARMLoadStoreOpt::findFreeReg(const TargetRegisterClass &RegClass) {
   }
 
   for (unsigned Reg : RegClassInfo.getOrder(&RegClass))
-    if (LiveRegs.available(Reg) && !MF->getRegInfo().isReserved(Reg))
+    if (LiveRegs.available(MF->getRegInfo(), Reg))
       return Reg;
   return 0;
 }
@@ -611,7 +613,7 @@ void ARMLoadStoreOpt::moveLiveRegsBefore(const MachineBasicBlock &MBB,
   }
 }
 
-static bool ContainsReg(ArrayRef<std::pair<unsigned, bool>> Regs,
+static bool ContainsReg(const ArrayRef<std::pair<unsigned, bool>> &Regs,
                         unsigned Reg) {
   for (const std::pair<unsigned, bool> &R : Regs)
     if (R.first == Reg)
@@ -886,7 +888,7 @@ MachineInstr *ARMLoadStoreOpt::MergeOpsUpdate(const MergeCandidate &Cand) {
         if (is_contained(ImpDefs, DefReg))
           continue;
         // We can ignore cases where the super-reg is read and written.
-        if (MI->readsRegister(DefReg, /*TRI=*/nullptr))
+        if (MI->readsRegister(DefReg))
           continue;
         ImpDefs.push_back(DefReg);
       }
@@ -901,7 +903,7 @@ MachineInstr *ARMLoadStoreOpt::MergeOpsUpdate(const MergeCandidate &Cand) {
   MachineBasicBlock &MBB = *LatestMI->getParent();
   unsigned Offset = getMemoryOpOffset(*First);
   Register Base = getLoadStoreBaseOp(*First).getReg();
-  bool BaseKill = LatestMI->killsRegister(Base, /*TRI=*/nullptr);
+  bool BaseKill = LatestMI->killsRegister(Base);
   Register PredReg;
   ARMCC::CondCodes Pred = getInstrPredicate(*First, PredReg);
   DebugLoc DL = First->getDebugLoc();
@@ -2074,8 +2076,7 @@ bool ARMLoadStoreOpt::CombineMovBx(MachineBasicBlock &MBB) {
 
   MachineBasicBlock::iterator Prev = MBBI;
   --Prev;
-  if (Prev->getOpcode() != ARM::tMOVr ||
-      !Prev->definesRegister(ARM::LR, /*TRI=*/nullptr))
+  if (Prev->getOpcode() != ARM::tMOVr || !Prev->definesRegister(ARM::LR))
     return false;
 
   for (auto Use : Prev->uses())
@@ -2158,8 +2159,8 @@ namespace {
 
     void getAnalysisUsage(AnalysisUsage &AU) const override {
       AU.addRequired<AAResultsWrapperPass>();
-      AU.addRequired<MachineDominatorTreeWrapperPass>();
-      AU.addPreserved<MachineDominatorTreeWrapperPass>();
+      AU.addRequired<MachineDominatorTree>();
+      AU.addPreserved<MachineDominatorTree>();
       MachineFunctionPass::getAnalysisUsage(AU);
     }
 
@@ -2183,7 +2184,7 @@ char ARMPreAllocLoadStoreOpt::ID = 0;
 
 INITIALIZE_PASS_BEGIN(ARMPreAllocLoadStoreOpt, "arm-prera-ldst-opt",
                       ARM_PREALLOC_LOAD_STORE_OPT_NAME, false, false)
-INITIALIZE_PASS_DEPENDENCY(MachineDominatorTreeWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
 INITIALIZE_PASS_END(ARMPreAllocLoadStoreOpt, "arm-prera-ldst-opt",
                     ARM_PREALLOC_LOAD_STORE_OPT_NAME, false, false)
 
@@ -2201,7 +2202,7 @@ bool ARMPreAllocLoadStoreOpt::runOnMachineFunction(MachineFunction &Fn) {
   TII = STI->getInstrInfo();
   TRI = STI->getRegisterInfo();
   MRI = &Fn.getRegInfo();
-  DT = &getAnalysis<MachineDominatorTreeWrapperPass>().getDomTree();
+  DT = &getAnalysis<MachineDominatorTree>();
   MF  = &Fn;
   AA = &getAnalysis<AAResultsWrapperPass>().getAAResults();
 
@@ -2424,7 +2425,7 @@ bool ARMPreAllocLoadStoreOpt::RescheduleOps(
           Ops.pop_back();
 
           const MCInstrDesc &MCID = TII->get(NewOpc);
-          const TargetRegisterClass *TRC = TII->getRegClass(MCID, 0);
+          const TargetRegisterClass *TRC = TII->getRegClass(MCID, 0, TRI, *MF);
           MRI->constrainRegClass(FirstReg, TRC);
           MRI->constrainRegClass(SecondReg, TRC);
 
@@ -2514,7 +2515,9 @@ static void updateRegisterMapForDbgValueListAfterMove(
     if (RegIt == RegisterMap.end())
       return;
     auto &InstrVec = RegIt->getSecond();
-    llvm::replace(InstrVec, InstrToReplace, DbgValueListInstr);
+    for (unsigned I = 0; I < InstrVec.size(); I++)
+      if (InstrVec[I] == InstrToReplace)
+        InstrVec[I] = DbgValueListInstr;
   });
 }
 
@@ -2528,7 +2531,8 @@ bool
 ARMPreAllocLoadStoreOpt::RescheduleLoadStoreInstrs(MachineBasicBlock *MBB) {
   bool RetVal = false;
 
-  DenseMap<MachineInstr *, unsigned> MI2LocMap;
+  DenseMap<MachineInstr*, unsigned> MI2LocMap;
+  using MapIt = DenseMap<unsigned, SmallVector<MachineInstr *, 4>>::iterator;
   using Base2InstMap = DenseMap<unsigned, SmallVector<MachineInstr *, 4>>;
   using BaseVec = SmallVector<unsigned, 4>;
   Base2InstMap Base2LdsMap;
@@ -2566,15 +2570,15 @@ ARMPreAllocLoadStoreOpt::RescheduleLoadStoreInstrs(MachineBasicBlock *MBB) {
       Register Base = MI.getOperand(1).getReg();
       int Offset = getMemoryOpOffset(MI);
       bool StopHere = false;
-      auto FindBases = [&](Base2InstMap &Base2Ops, BaseVec &Bases) {
-        auto [BI, Inserted] = Base2Ops.try_emplace(Base);
-        if (Inserted) {
-          BI->second.push_back(&MI);
+      auto FindBases = [&] (Base2InstMap &Base2Ops, BaseVec &Bases) {
+        MapIt BI = Base2Ops.find(Base);
+        if (BI == Base2Ops.end()) {
+          Base2Ops[Base].push_back(&MI);
           Bases.push_back(Base);
           return;
         }
-        for (const MachineInstr *MI : BI->second) {
-          if (Offset == getMemoryOpOffset(*MI)) {
+        for (unsigned i = 0, e = BI->second.size(); i != e; ++i) {
+          if (Offset == getMemoryOpOffset(*BI->second[i])) {
             StopHere = true;
             break;
           }
@@ -2848,10 +2852,12 @@ ARMPreAllocLoadStoreOpt::RescheduleLoadStoreInstrs(MachineBasicBlock *MBB) {
         //  Erase the entry into the DbgValueSinkCandidates for the DBG_VALUE
         //  that was moved.
         auto DbgVar = createDebugVariableFromMachineInstr(DbgInstr);
-        // Erase DbgVar from DbgValueSinkCandidates if still present.  If the
-        // instruction is a DBG_VALUE_LIST, it may have already been erased from
-        // DbgValueSinkCandidates.
-        DbgValueSinkCandidates.erase(DbgVar);
+        auto DbgIt = DbgValueSinkCandidates.find(DbgVar);
+        // If the instruction is a DBG_VALUE_LIST, it may have already been
+        // erased from the DbgValueSinkCandidates. Only erase if it exists in
+        // the DbgValueSinkCandidates.
+        if (DbgIt != DbgValueSinkCandidates.end())
+          DbgValueSinkCandidates.erase(DbgIt);
         // Zero out original dbg instr
         forEachDbgRegOperand(DbgInstr,
                              [&](MachineOperand &Op) { Op.setReg(0); });
@@ -3014,7 +3020,7 @@ static void AdjustBaseAndOffset(MachineInstr *MI, Register NewBaseReg,
   MachineFunction *MF = MI->getMF();
   MachineRegisterInfo &MRI = MF->getRegInfo();
   const MCInstrDesc &MCID = TII->get(MI->getOpcode());
-  const TargetRegisterClass *TRC = TII->getRegClass(MCID, BaseOp);
+  const TargetRegisterClass *TRC = TII->getRegClass(MCID, BaseOp, TRI, *MF);
   MRI.constrainRegClass(NewBaseReg, TRC);
 
   int OldOffset = MI->getOperand(BaseOp + 1).getImm();
@@ -3071,10 +3077,10 @@ static MachineInstr *createPostIncLoadStore(MachineInstr *MI, int Offset,
 
   const MCInstrDesc &MCID = TII->get(NewOpcode);
   // Constrain the def register class
-  const TargetRegisterClass *TRC = TII->getRegClass(MCID, 0);
+  const TargetRegisterClass *TRC = TII->getRegClass(MCID, 0, TRI, *MF);
   MRI.constrainRegClass(NewReg, TRC);
   // And do the same for the base operand
-  TRC = TII->getRegClass(MCID, 2);
+  TRC = TII->getRegClass(MCID, 2, TRI, *MF);
   MRI.constrainRegClass(MI->getOperand(1).getReg(), TRC);
 
   unsigned AddrMode = (MCID.TSFlags & ARMII::AddrModeMask);
@@ -3170,7 +3176,7 @@ bool ARMPreAllocLoadStoreOpt::DistributeIncrements(Register Base) {
     if (PrePostInc || BaseAccess->getParent() != Increment->getParent())
       return false;
     Register PredReg;
-    if (Increment->definesRegister(ARM::CPSR, /*TRI=*/nullptr) ||
+    if (Increment->definesRegister(ARM::CPSR) ||
         getInstrPredicate(*Increment, PredReg) != ARMCC::AL)
       return false;
 
@@ -3283,7 +3289,7 @@ bool ARMPreAllocLoadStoreOpt::DistributeIncrements() {
         continue;
 
       Register Base = MI.getOperand(BaseOp).getReg();
-      if (!Base.isVirtual())
+      if (!Base.isVirtual() || Visited.count(Base))
         continue;
 
       Visited.insert(Base);

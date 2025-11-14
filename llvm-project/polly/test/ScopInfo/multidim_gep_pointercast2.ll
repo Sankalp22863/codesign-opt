@@ -1,6 +1,6 @@
-; RUN: opt %loadNPMPolly '-passes=print<polly-function-scops>' -disable-output < %s 2>&1 | FileCheck %s
+; RUN: opt %loadPolly -polly-print-scops -disable-output < %s | FileCheck %s
 ;
-; Verify that we do not use the GetElementPtr information to delinearize A
+; Verfy that we do not use the GetElementPtr information to delinearize A
 ; because of the cast in-between. Use the single-dimensional modeling instead.
 ;
 ;    void f(short A[][2]) {

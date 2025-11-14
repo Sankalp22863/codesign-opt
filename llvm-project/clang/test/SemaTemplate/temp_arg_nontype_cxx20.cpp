@@ -101,7 +101,7 @@ namespace ConvertedConstant {
   struct {
     int i : 2;
   } b;
-  template <const int&> struct Y {}; // expected-note {{template parameter is declared here}}
+  template <const int&> struct Y {};
   void f(Y<b.i>) {} // expected-error {{reference cannot bind to bit-field in converted constant expression}}
 }
 
@@ -238,7 +238,7 @@ namespace UnnamedBitfield {
 }
 
 namespace Temporary {
-  template<const int &> struct A {}; // expected-note {{template parameter is declared here}}
+  template<const int &> struct A {};
   A<0> a0; // expected-error {{conversion from 'int' to 'const int &' in converted constant expression would bind reference to a temporary}}
 
   A<(const int&)1> a1; // expected-error {{reference to temporary object is not allowed in a template argument}}
@@ -370,19 +370,4 @@ namespace ReportedRegression2 {
   void use() {
     fn<str>();
   }
-}
-
-namespace GH151531 {
-struct w {
-    int n;
-};
-
-template <const w *X> void f() { static_assert(X->n == 42); }
-
-template <w X> void g() { f<&X>(); }
-
-void test() {
-    constexpr w X = {42};
-    g<X>();
-}
 }

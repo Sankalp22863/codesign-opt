@@ -39,16 +39,14 @@ StressRA("stress-regalloc", cl::Hidden, cl::init(0), cl::value_desc("N"),
 
 RegisterClassInfo::RegisterClassInfo() = default;
 
-void RegisterClassInfo::runOnMachineFunction(const MachineFunction &mf,
-                                             bool Rev) {
+void RegisterClassInfo::runOnMachineFunction(const MachineFunction &mf) {
   bool Update = false;
   MF = &mf;
 
   auto &STI = MF->getSubtarget();
 
   // Allocate new array the first time we see a new target.
-  if (STI.getRegisterInfo() != TRI || Reverse != Rev) {
-    Reverse = Rev;
+  if (STI.getRegisterInfo() != TRI) {
     TRI = STI.getRegisterInfo();
     RegClass.reset(new RCInfo[TRI->getNumRegClasses()]);
     Update = true;
@@ -82,10 +80,10 @@ void RegisterClassInfo::runOnMachineFunction(const MachineFunction &mf,
     LastCalleeSavedRegs.clear();
     // Build a CSRAlias map. Every CSR alias saves the last
     // overlapping CSR.
-    CalleeSavedAliases.assign(TRI->getNumRegUnits(), 0);
+    CalleeSavedAliases.assign(TRI->getNumRegs(), 0);
     for (const MCPhysReg *I = CSR; *I; ++I) {
-      for (MCRegUnit U : TRI->regunits(*I))
-        CalleeSavedAliases[U] = *I;
+      for (MCRegAliasIterator AI(*I, TRI, true); AI.isValid(); ++AI)
+        CalleeSavedAliases[*AI] = *I;
       LastCalleeSavedRegs.push_back(*I);
     }
 
@@ -97,9 +95,9 @@ void RegisterClassInfo::runOnMachineFunction(const MachineFunction &mf,
   BitVector CSRHintsForAllocOrder(TRI->getNumRegs());
   for (const MCPhysReg *I = CSR; *I; ++I)
     for (MCRegAliasIterator AI(*I, TRI, true); AI.isValid(); ++AI)
-      CSRHintsForAllocOrder[(*AI).id()] =
-          STI.ignoreCSRForAllocationOrder(mf, *AI);
-  if (IgnoreCSRForAllocOrder != CSRHintsForAllocOrder) {
+      CSRHintsForAllocOrder[*AI] = STI.ignoreCSRForAllocationOrder(mf, *AI);
+  if (IgnoreCSRForAllocOrder.size() != CSRHintsForAllocOrder.size() ||
+      IgnoreCSRForAllocOrder != CSRHintsForAllocOrder) {
     Update = true;
     IgnoreCSRForAllocOrder = CSRHintsForAllocOrder;
   }
@@ -108,7 +106,7 @@ void RegisterClassInfo::runOnMachineFunction(const MachineFunction &mf,
 
   // Different reserved registers?
   const BitVector &RR = MF->getRegInfo().getReservedRegs();
-  if (RR != Reserved) {
+  if (Reserved.size() != RR.size() || RR != Reserved) {
     Update = true;
     Reserved = RR;
   }
@@ -144,12 +142,7 @@ void RegisterClassInfo::compute(const TargetRegisterClass *RC) const {
 
   // FIXME: Once targets reserve registers instead of removing them from the
   // allocation order, we can simply use begin/end here.
-  ArrayRef<MCPhysReg> RawOrder = RC->getRawAllocationOrder(*MF, Reverse);
-  std::vector<MCPhysReg> ReverseOrder;
-  if (Reverse) {
-    llvm::append_range(ReverseOrder, reverse(RawOrder));
-    RawOrder = ArrayRef<MCPhysReg>(ReverseOrder);
-  }
+  ArrayRef<MCPhysReg> RawOrder = RC->getRawAllocationOrder(*MF);
   for (unsigned PhysReg : RawOrder) {
     // Remove reserved registers from the allocation order.
     if (Reserved.test(PhysReg))
@@ -157,7 +150,7 @@ void RegisterClassInfo::compute(const TargetRegisterClass *RC) const {
     uint8_t Cost = RegCosts[PhysReg];
     MinCost = std::min(MinCost, Cost);
 
-    if (getLastCalleeSavedAlias(PhysReg) &&
+    if (CalleeSavedAliases[PhysReg] &&
         !STI.ignoreCSRForAllocationOrder(*MF, PhysReg))
       // PhysReg aliases a CSR, save it for later.
       CSRAlias.push_back(PhysReg);

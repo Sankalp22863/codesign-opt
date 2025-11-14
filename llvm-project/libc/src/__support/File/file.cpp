@@ -8,15 +8,14 @@
 
 #include "file.h"
 
-#include "hdr/func/realloc.h"
-#include "hdr/stdio_macros.h"
-#include "hdr/types/off_t.h"
 #include "src/__support/CPP/new.h"
 #include "src/__support/CPP/span.h"
-#include "src/__support/libc_errno.h" // For error macros
-#include "src/__support/macros/config.h"
+#include "src/errno/libc_errno.h" // For error macros
 
-namespace LIBC_NAMESPACE_DECL {
+#include <stdio.h>
+#include <stdlib.h>
+
+namespace LIBC_NAMESPACE {
 
 FileIOResult File::write_unlocked(const void *data, size_t len) {
   if (!write_allowed()) {
@@ -42,7 +41,7 @@ FileIOResult File::write_unlocked_nbf(const uint8_t *data, size_t len) {
   if (pos > 0) { // If the buffer is not empty
     // Flush the buffer
     const size_t write_size = pos;
-    FileIOResult write_result = platform_write(this, buf, write_size);
+    auto write_result = platform_write(this, buf, write_size);
     pos = 0; // Buffer is now empty so reset pos to the beginning.
     // If less bytes were written than expected, then an error occurred.
     if (write_result < write_size) {
@@ -52,7 +51,7 @@ FileIOResult File::write_unlocked_nbf(const uint8_t *data, size_t len) {
     }
   }
 
-  FileIOResult write_result = platform_write(this, data, len);
+  auto write_result = platform_write(this, data, len);
   if (write_result < len)
     err = true;
   return write_result;
@@ -99,7 +98,7 @@ FileIOResult File::write_unlocked_fbf(const uint8_t *data, size_t len) {
   // is full.
   const size_t write_size = pos;
 
-  FileIOResult buf_result = platform_write(this, buf, write_size);
+  auto buf_result = platform_write(this, buf, write_size);
   size_t bytes_written = buf_result.value;
 
   pos = 0; // Buffer is now empty so reset pos to the beginning.
@@ -121,9 +120,8 @@ FileIOResult File::write_unlocked_fbf(const uint8_t *data, size_t len) {
     pos = remainder.size();
   } else {
 
-    FileIOResult result =
-        platform_write(this, remainder.data(), remainder.size());
-    size_t bytes_written = result.value;
+    auto result = platform_write(this, remainder.data(), remainder.size());
+    size_t bytes_written = buf_result.value;
 
     // If less bytes were written than expected, then an error occurred. Return
     // the number of bytes that have been written from |data|.
@@ -191,17 +189,6 @@ FileIOResult File::read_unlocked(void *data, size_t len) {
 
   prev_op = FileOp::READ;
 
-  if (bufmode == _IONBF) { // unbuffered.
-    return read_unlocked_nbf(static_cast<uint8_t *>(data), len);
-  } else if (bufmode == _IOFBF) { // fully buffered
-    return read_unlocked_fbf(static_cast<uint8_t *>(data), len);
-  } else /*if (bufmode == _IOLBF) */ { // line buffered
-    // There is no line buffered mode for read. Use fully buffered instead.
-    return read_unlocked_fbf(static_cast<uint8_t *>(data), len);
-  }
-}
-
-size_t File::copy_data_from_buf(uint8_t *data, size_t len) {
   cpp::span<uint8_t> bufref(static_cast<uint8_t *>(buf), bufsize);
   cpp::span<uint8_t> dataref(static_cast<uint8_t *>(data), len);
 
@@ -221,42 +208,32 @@ size_t File::copy_data_from_buf(uint8_t *data, size_t len) {
   for (size_t i = 0; i < available_data; ++i)
     dataref[i] = bufref[i + pos];
   read_limit = pos = 0; // Reset the pointers.
-
-  return available_data;
-}
-
-FileIOResult File::read_unlocked_fbf(uint8_t *data, size_t len) {
-  // Read data from the buffer first.
-  size_t available_data = copy_data_from_buf(data, len);
-  if (available_data == len)
-    return available_data;
-
   // Update the dataref to reflect that fact that we have already
   // copied |available_data| into |data|.
-  size_t to_fetch = len - available_data;
-  cpp::span<uint8_t> dataref(static_cast<uint8_t *>(data) + available_data,
-                             to_fetch);
+  dataref = cpp::span<uint8_t>(dataref.data() + available_data,
+                               dataref.size() - available_data);
 
+  size_t to_fetch = len - available_data;
   if (to_fetch > bufsize) {
-    FileIOResult result = platform_read(this, dataref.data(), to_fetch);
+    auto result = platform_read(this, dataref.data(), to_fetch);
     size_t fetched_size = result.value;
     if (result.has_error() || fetched_size < to_fetch) {
       if (!result.has_error())
         eof = true;
       else
         err = true;
-      return {available_data + fetched_size, result.error};
+      return {available_data + fetched_size, result.has_error()};
     }
     return len;
   }
 
   // Fetch and buffer another buffer worth of data.
-  FileIOResult result = platform_read(this, buf, bufsize);
+  auto result = platform_read(this, buf, bufsize);
   size_t fetched_size = result.value;
   read_limit += fetched_size;
   size_t transfer_size = fetched_size >= to_fetch ? to_fetch : fetched_size;
   for (size_t i = 0; i < transfer_size; ++i)
-    dataref[i] = buf[i];
+    dataref[i] = bufref[i];
   pos += transfer_size;
   if (result.has_error() || fetched_size < to_fetch) {
     if (!result.has_error())
@@ -265,26 +242,6 @@ FileIOResult File::read_unlocked_fbf(uint8_t *data, size_t len) {
       err = true;
   }
   return {transfer_size + available_data, result.error};
-}
-
-FileIOResult File::read_unlocked_nbf(uint8_t *data, size_t len) {
-  // Check whether there is a character in the ungetc buffer.
-  size_t available_data = copy_data_from_buf(data, len);
-  if (available_data == len)
-    return available_data;
-
-  // Directly copy the data into |data|.
-  cpp::span<uint8_t> dataref(static_cast<uint8_t *>(data) + available_data,
-                             len - available_data);
-  FileIOResult result = platform_read(this, dataref.data(), dataref.size());
-
-  if (result.has_error() || result < dataref.size()) {
-    if (!result.has_error())
-      eof = true;
-    else
-      err = true;
-  }
-  return {result + available_data, result.error};
 }
 
 int File::ungetc_unlocked(int c) {
@@ -325,11 +282,11 @@ int File::ungetc_unlocked(int c) {
   return c;
 }
 
-ErrorOr<int> File::seek(off_t offset, int whence) {
+ErrorOr<int> File::seek(long offset, int whence) {
   FileLock lock(this);
   if (prev_op == FileOp::WRITE && pos > 0) {
 
-    FileIOResult buf_result = platform_write(this, buf, pos);
+    auto buf_result = platform_write(this, buf, pos);
     if (buf_result.has_error() || buf_result.value < pos) {
       err = true;
       return Error(buf_result.error);
@@ -348,26 +305,28 @@ ErrorOr<int> File::seek(off_t offset, int whence) {
   auto result = platform_seek(this, offset, whence);
   if (!result.has_value())
     return Error(result.error());
-  return 0;
+  else
+    return 0;
 }
 
-ErrorOr<off_t> File::tell() {
+ErrorOr<long> File::tell() {
   FileLock lock(this);
   auto seek_target = eof ? SEEK_END : SEEK_CUR;
   auto result = platform_seek(this, 0, seek_target);
   if (!result.has_value() || result.value() < 0)
     return Error(result.error());
-  off_t platform_offset = result.value();
+  long platform_offset = result.value();
   if (prev_op == FileOp::READ)
     return platform_offset - (read_limit - pos);
-  if (prev_op == FileOp::WRITE)
+  else if (prev_op == FileOp::WRITE)
     return platform_offset + pos;
-  return platform_offset;
+  else
+    return platform_offset;
 }
 
 int File::flush_unlocked() {
   if (prev_op == FileOp::WRITE && pos > 0) {
-    FileIOResult buf_result = platform_write(this, buf, pos);
+    auto buf_result = platform_write(this, buf, pos);
     if (buf_result.has_error() || buf_result.value < pos) {
       err = true;
       return buf_result.error;
@@ -474,4 +433,4 @@ File::ModeFlags File::mode_flags(const char *mode) {
   return flags;
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

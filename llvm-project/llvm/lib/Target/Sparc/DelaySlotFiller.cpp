@@ -21,6 +21,7 @@
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Target/TargetMachine.h"
 
 using namespace llvm;
 
@@ -58,7 +59,8 @@ namespace {
     }
 
     MachineFunctionProperties getRequiredProperties() const override {
-      return MachineFunctionProperties().setNoVRegs();
+      return MachineFunctionProperties().set(
+          MachineFunctionProperties::Property::NoVRegs);
     }
 
     void insertCallDefsUses(MachineBasicBlock::iterator MI,
@@ -206,8 +208,8 @@ Filler::findDelayInstr(MachineBasicBlock &MBB,
     if (!done)
       --I;
 
-    // Skip meta instructions.
-    if (I->isMetaInstruction())
+    // skip debug instruction
+    if (I->isDebugInstr())
       continue;
 
     if (I->hasUnmodeledSideEffects() || I->isInlineAsm() || I->isPosition() ||
@@ -280,20 +282,6 @@ bool Filler::delayHasHazard(MachineBasicBlock::iterator candidate,
       Opcode >=  SP::FDIVD && Opcode <= SP::FSQRTD)
     return true;
 
-  if (Subtarget->fixTN0009() && candidate->mayStore())
-    return true;
-
-  if (Subtarget->fixTN0013()) {
-    switch (Opcode) {
-    case SP::FDIVS:
-    case SP::FDIVD:
-    case SP::FSQRTS:
-    case SP::FSQRTD:
-      return true;
-    default:
-      break;
-    }
-  }
 
   return false;
 }
@@ -308,8 +296,7 @@ void Filler::insertCallDefsUses(MachineBasicBlock::iterator MI,
 
   switch(MI->getOpcode()) {
   default: llvm_unreachable("Unknown opcode.");
-  case SP::CALL:
-    break;
+  case SP::CALL: break;
   case SP::CALLrr:
   case SP::CALLri:
     assert(MI->getNumOperands() >= 2);
@@ -371,13 +358,9 @@ bool Filler::needsUnimp(MachineBasicBlock::iterator I, unsigned &StructSize)
   unsigned structSizeOpNum = 0;
   switch (I->getOpcode()) {
   default: llvm_unreachable("Unknown call opcode.");
-  case SP::CALL:
-    structSizeOpNum = 1;
-    break;
+  case SP::CALL: structSizeOpNum = 1; break;
   case SP::CALLrr:
-  case SP::CALLri:
-    structSizeOpNum = 2;
-    break;
+  case SP::CALLri: structSizeOpNum = 2; break;
   case SP::TLS_CALL: return false;
   case SP::TAIL_CALLri:
   case SP::TAIL_CALL: return false;

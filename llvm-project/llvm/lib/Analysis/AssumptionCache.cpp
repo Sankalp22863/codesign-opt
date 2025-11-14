@@ -32,6 +32,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
+#include <utility>
 
 using namespace llvm;
 using namespace llvm::PatternMatch;
@@ -49,23 +50,9 @@ AssumptionCache::getOrInsertAffectedValues(Value *V) {
   if (AVI != AffectedValues.end())
     return AVI->second;
 
-  return AffectedValues[AffectedValueCallbackVH(V, this)];
-}
-
-void AssumptionCache::findValuesAffectedByOperandBundle(
-    OperandBundleUse Bundle, function_ref<void(Value *)> InsertAffected) {
-  auto AddAffectedVal = [&](Value *V) {
-    if (isa<Argument, GlobalValue, Instruction>(V))
-      InsertAffected(V);
-  };
-
-  if (Bundle.getTagName() == "separate_storage") {
-    assert(Bundle.Inputs.size() == 2 && "separate_storage must have two args");
-    AddAffectedVal(getUnderlyingObject(Bundle.Inputs[0]));
-    AddAffectedVal(getUnderlyingObject(Bundle.Inputs[1]));
-  } else if (Bundle.Inputs.size() > ABA_WasOn &&
-             Bundle.getTagName() != IgnoreBundleTag)
-    AddAffectedVal(Bundle.Inputs[ABA_WasOn]);
+  auto AVIP = AffectedValues.insert(
+      {AffectedValueCallbackVH(V, this), SmallVector<ResultElem, 1>()});
+  return AVIP.first->second;
 }
 
 static void
@@ -74,31 +61,85 @@ findAffectedValues(CallBase *CI, TargetTransformInfo *TTI,
   // Note: This code must be kept in-sync with the code in
   // computeKnownBitsFromAssume in ValueTracking.
 
-  auto InsertAffected = [&Affected](Value *V) {
-    Affected.push_back({V, AssumptionCache::ExprResultIdx});
-  };
-
-  auto AddAffectedVal = [&Affected](Value *V, unsigned Idx) {
-    if (isa<Argument>(V) || isa<GlobalValue>(V) || isa<Instruction>(V)) {
+  auto AddAffected = [&Affected](Value *V, unsigned Idx =
+                                               AssumptionCache::ExprResultIdx) {
+    if (isa<Argument>(V) || isa<GlobalValue>(V)) {
       Affected.push_back({V, Idx});
+    } else if (auto *I = dyn_cast<Instruction>(V)) {
+      Affected.push_back({I, Idx});
+
+      // Peek through unary operators to find the source of the condition.
+      Value *Op;
+      if (match(I, m_PtrToInt(m_Value(Op)))) {
+        if (isa<Instruction>(Op) || isa<Argument>(Op))
+          Affected.push_back({Op, Idx});
+      }
     }
   };
 
-  for (unsigned Idx = 0; Idx != CI->getNumOperandBundles(); Idx++)
-    AssumptionCache::findValuesAffectedByOperandBundle(
-        CI->getOperandBundleAt(Idx),
-        [&](Value *V) { Affected.push_back({V, Idx}); });
+  for (unsigned Idx = 0; Idx != CI->getNumOperandBundles(); Idx++) {
+    OperandBundleUse Bundle = CI->getOperandBundleAt(Idx);
+    if (Bundle.getTagName() == "separate_storage") {
+      assert(Bundle.Inputs.size() == 2 &&
+             "separate_storage must have two args");
+      AddAffected(getUnderlyingObject(Bundle.Inputs[0]), Idx);
+      AddAffected(getUnderlyingObject(Bundle.Inputs[1]), Idx);
+    } else if (Bundle.Inputs.size() > ABA_WasOn &&
+               Bundle.getTagName() != IgnoreBundleTag)
+      AddAffected(Bundle.Inputs[ABA_WasOn], Idx);
+  }
 
-  Value *Cond = CI->getArgOperand(0);
-  findValuesAffectedByCondition(Cond, /*IsAssume=*/true, InsertAffected);
+  Value *Cond = CI->getArgOperand(0), *A, *B;
+  AddAffected(Cond);
+  if (match(Cond, m_Not(m_Value(A))))
+    AddAffected(A);
+
+  CmpInst::Predicate Pred;
+  if (match(Cond, m_Cmp(Pred, m_Value(A), m_Value(B)))) {
+    AddAffected(A);
+    AddAffected(B);
+
+    if (Pred == ICmpInst::ICMP_EQ) {
+      if (match(B, m_ConstantInt())) {
+        Value *X;
+        // (X & C) or (X | C) or (X ^ C).
+        // (X << C) or (X >>_s C) or (X >>_u C).
+        if (match(A, m_BitwiseLogic(m_Value(X), m_ConstantInt())) ||
+            match(A, m_Shift(m_Value(X), m_ConstantInt())))
+          AddAffected(X);
+      }
+    } else if (Pred == ICmpInst::ICMP_NE) {
+      Value *X;
+      // Handle (X & pow2 != 0).
+      if (match(A, m_And(m_Value(X), m_Power2())) && match(B, m_Zero()))
+        AddAffected(X);
+    } else if (Pred == ICmpInst::ICMP_ULT) {
+      Value *X;
+      // Handle (A + C1) u< C2, which is the canonical form of A > C3 && A < C4,
+      // and recognized by LVI at least.
+      if (match(A, m_Add(m_Value(X), m_ConstantInt())) &&
+          match(B, m_ConstantInt()))
+        AddAffected(X);
+    } else if (CmpInst::isFPPredicate(Pred)) {
+      // fcmp fneg(x), y
+      // fcmp fabs(x), y
+      // fcmp fneg(fabs(x)), y
+      if (match(A, m_FNeg(m_Value(A))))
+        AddAffected(A);
+      if (match(A, m_FAbs(m_Value(A))))
+        AddAffected(A);
+    }
+  } else if (match(Cond, m_Intrinsic<Intrinsic::is_fpclass>(m_Value(A),
+                                                            m_Value(B)))) {
+    AddAffected(A);
+  }
 
   if (TTI) {
     const Value *Ptr;
     unsigned AS;
     std::tie(Ptr, AS) = TTI->getPredicatedAddrSpace(Cond);
     if (Ptr)
-      AddAffectedVal(const_cast<Value *>(Ptr->stripInBoundsOffsets()),
-                     AssumptionCache::ExprResultIdx);
+      AddAffected(const_cast<Value *>(Ptr->stripInBoundsOffsets()));
   }
 }
 
@@ -180,7 +221,7 @@ void AssumptionCache::scanFunction() {
   for (BasicBlock &B : F)
     for (Instruction &I : B)
       if (isa<AssumeInst>(&I))
-        AssumeHandles.push_back(&I);
+        AssumeHandles.push_back({&I, ExprResultIdx});
 
   // Mark the scan as complete.
   Scanned = true;
@@ -196,7 +237,7 @@ void AssumptionCache::registerAssumption(AssumeInst *CI) {
   if (!Scanned)
     return;
 
-  AssumeHandles.push_back(CI);
+  AssumeHandles.push_back({CI, ExprResultIdx});
 
 #ifndef NDEBUG
   assert(CI->getParent() &&
@@ -300,7 +341,9 @@ void AssumptionCacheTracker::verifyAnalysis() const {
   }
 }
 
-AssumptionCacheTracker::AssumptionCacheTracker() : ImmutablePass(ID) {}
+AssumptionCacheTracker::AssumptionCacheTracker() : ImmutablePass(ID) {
+  initializeAssumptionCacheTrackerPass(*PassRegistry::getPassRegistry());
+}
 
 AssumptionCacheTracker::~AssumptionCacheTracker() = default;
 

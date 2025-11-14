@@ -32,8 +32,10 @@ class VirtualFileHelper {
 
 public:
   VirtualFileHelper()
-      : Diagnostics(DiagnosticIDs::create(), DiagOpts),
-        DiagnosticPrinter(llvm::outs(), DiagOpts),
+      : DiagOpts(new DiagnosticOptions()),
+        Diagnostics(IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs),
+                    &*DiagOpts),
+        DiagnosticPrinter(llvm::outs(), &*DiagOpts),
         Files((FileSystemOptions())) {}
 
   /// Create a virtual file \p FileName, with content \p Code.
@@ -58,14 +60,14 @@ public:
          I != E; ++I) {
       std::unique_ptr<llvm::MemoryBuffer> Buf =
           llvm::MemoryBuffer::getMemBuffer(I->Code);
-      FileEntryRef Entry = SM.getFileManager().getVirtualFileRef(
+      const FileEntry *Entry = SM.getFileManager().getVirtualFile(
           I->FileName, Buf->getBufferSize(), /*ModificationTime=*/0);
       SM.overrideFileContents(Entry, std::move(Buf));
     }
   }
 
 private:
-  DiagnosticOptions DiagOpts;
+  IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts;
   DiagnosticsEngine Diagnostics;
   TextDiagnosticPrinter DiagnosticPrinter;
   FileManager Files;

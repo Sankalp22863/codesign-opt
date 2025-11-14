@@ -39,53 +39,53 @@ class HexagonMCChecker {
   bool ReportErrors;
 
   /// Set of definitions: register #, if predicated, if predicated true.
-  using PredSense = std::pair<MCRegister, bool>;
+  using PredSense = std::pair<unsigned, bool>;
   static const PredSense Unconditional;
   using PredSet = std::multiset<PredSense>;
   using PredSetIterator = std::multiset<PredSense>::iterator;
 
-  using DefsIterator = DenseMap<MCRegister, PredSet>::iterator;
-  DenseMap<MCRegister, PredSet> Defs;
+  using DefsIterator = DenseMap<unsigned, PredSet>::iterator;
+  DenseMap<unsigned, PredSet> Defs;
 
   /// Set of weak definitions whose clashes should be enforced selectively.
-  using SoftDefsIterator = std::set<MCRegister>::iterator;
-  std::set<MCRegister> SoftDefs;
+  using SoftDefsIterator = std::set<unsigned>::iterator;
+  std::set<unsigned> SoftDefs;
 
   /// Set of temporary definitions not committed to the register file.
-  using TmpDefsIterator = std::set<MCRegister>::iterator;
-  std::set<MCRegister> TmpDefs;
+  using TmpDefsIterator = std::set<unsigned>::iterator;
+  std::set<unsigned> TmpDefs;
 
   /// Set of new predicates used.
-  using NewPredsIterator = std::set<MCRegister>::iterator;
-  std::set<MCRegister> NewPreds;
+  using NewPredsIterator = std::set<unsigned>::iterator;
+  std::set<unsigned> NewPreds;
 
   /// Set of predicates defined late.
-  using LatePredsIterator = std::multiset<MCRegister>::iterator;
-  std::multiset<MCRegister> LatePreds;
+  using LatePredsIterator = std::multiset<unsigned>::iterator;
+  std::multiset<unsigned> LatePreds;
 
   /// Set of uses.
-  using UsesIterator = std::set<MCRegister>::iterator;
-  std::set<MCRegister> Uses;
+  using UsesIterator = std::set<unsigned>::iterator;
+  std::set<unsigned> Uses;
 
   /// Pre-defined set of read-only registers.
-  using ReadOnlyIterator = std::set<MCRegister>::iterator;
-  std::set<MCRegister> ReadOnly;
+  using ReadOnlyIterator = std::set<unsigned>::iterator;
+  std::set<unsigned> ReadOnly;
 
   // Contains the vector-pair-registers with the even number
   // first ("v0:1", e.g.) used/def'd in this packet.
-  std::set<MCRegister> ReversePairs;
+  std::set<unsigned> ReversePairs;
 
   void init();
   void init(MCInst const &);
-  void initReg(MCInst const &, MCRegister, MCRegister &PredReg, bool &isTrue);
+  void initReg(MCInst const &, unsigned, unsigned &PredReg, bool &isTrue);
 
-  bool registerUsed(MCRegister Register);
+  bool registerUsed(unsigned Register);
 
   /// \return a tuple of: pointer to the producer instruction or nullptr if
   /// none was found, the operand index, and the PredicateInfo for the
   /// producer.
   std::tuple<MCInst const *, unsigned, HexagonMCInstrInfo::PredicateInfo>
-  registerProducer(MCRegister Register,
+  registerProducer(unsigned Register,
                    HexagonMCInstrInfo::PredicateInfo Predicated);
 
   // Checks performed.
@@ -107,7 +107,7 @@ class HexagonMCChecker {
 
   static void compoundRegisterMap(unsigned &);
 
-  bool isLoopRegister(MCRegister R) const {
+  bool isLoopRegister(unsigned R) const {
     return (Hexagon::SA0 == R || Hexagon::LC0 == R || Hexagon::SA1 == R ||
             Hexagon::LC1 == R);
   }
@@ -120,8 +120,8 @@ public:
                             MCSubtargetInfo const &STI, bool CopyReportErrors);
 
   bool check(bool FullCheck = true);
-  void reportErrorRegisters(MCRegister Register);
-  void reportErrorNewValue(MCRegister Register);
+  void reportErrorRegisters(unsigned Register);
+  void reportErrorNewValue(unsigned Register);
   void reportError(SMLoc Loc, Twine const &Msg);
   void reportNote(SMLoc Loc, Twine const &Msg);
   void reportError(Twine const &Msg);

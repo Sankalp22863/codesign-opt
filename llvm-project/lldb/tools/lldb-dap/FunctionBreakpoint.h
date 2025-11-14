@@ -9,23 +9,18 @@
 #ifndef LLDB_TOOLS_LLDB_DAP_FUNCTIONBREAKPOINT_H
 #define LLDB_TOOLS_LLDB_DAP_FUNCTIONBREAKPOINT_H
 
-#include "Breakpoint.h"
-#include "DAPForward.h"
-#include "Protocol/ProtocolTypes.h"
+#include "BreakpointBase.h"
 
 namespace lldb_dap {
 
-class FunctionBreakpoint : public Breakpoint {
-public:
-  FunctionBreakpoint(DAP &dap, const protocol::FunctionBreakpoint &breakpoint);
+struct FunctionBreakpoint : public BreakpointBase {
+  std::string functionName;
 
-  /// Set this breakpoint in LLDB as a new breakpoint.
+  FunctionBreakpoint() = default;
+  FunctionBreakpoint(const llvm::json::Object &obj);
+
+  // Set this breakpoint in LLDB as a new breakpoint
   void SetBreakpoint();
-
-  llvm::StringRef GetFunctionName() const { return m_function_name; }
-
-protected:
-  std::string m_function_name;
 };
 
 } // namespace lldb_dap

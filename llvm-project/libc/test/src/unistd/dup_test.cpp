@@ -6,29 +6,27 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "src/errno/libc_errno.h"
 #include "src/fcntl/open.h"
 #include "src/unistd/close.h"
 #include "src/unistd/dup.h"
 #include "src/unistd/read.h"
 #include "src/unistd/unlink.h"
 #include "src/unistd/write.h"
-#include "test/UnitTest/ErrnoCheckingTest.h"
 #include "test/UnitTest/ErrnoSetterMatcher.h"
 #include "test/UnitTest/Test.h"
 
 #include <sys/stat.h>
 
-using LlvmLibcdupTest = LIBC_NAMESPACE::testing::ErrnoCheckingTest;
-
-TEST_F(LlvmLibcdupTest, ReadAndWriteViaDup) {
+TEST(LlvmLibcdupTest, ReadAndWriteViaDup) {
+  libc_errno = 0;
   using LIBC_NAMESPACE::testing::ErrnoSetterMatcher::Succeeds;
-  constexpr const char *FILENAME = "dup.test";
-  auto TEST_FILE = libc_make_test_file_path(FILENAME);
+  constexpr const char *TEST_FILE = "testdata/dup.test";
   int fd = LIBC_NAMESPACE::open(TEST_FILE, O_WRONLY | O_CREAT, S_IRWXU);
-  ASSERT_ERRNO_SUCCESS();
+  ASSERT_EQ(libc_errno, 0);
   ASSERT_GT(fd, 0);
   int dupfd = LIBC_NAMESPACE::dup(fd);
-  ASSERT_ERRNO_SUCCESS();
+  ASSERT_EQ(libc_errno, 0);
   ASSERT_GT(dupfd, 0);
 
   // Write something via the dup
@@ -40,10 +38,10 @@ TEST_F(LlvmLibcdupTest, ReadAndWriteViaDup) {
 
   // Reopen the file for reading and create a dup.
   fd = LIBC_NAMESPACE::open(TEST_FILE, O_RDONLY);
-  ASSERT_ERRNO_SUCCESS();
+  ASSERT_EQ(libc_errno, 0);
   ASSERT_GT(fd, 0);
   dupfd = LIBC_NAMESPACE::dup(fd);
-  ASSERT_ERRNO_SUCCESS();
+  ASSERT_EQ(libc_errno, 0);
   ASSERT_GT(dupfd, 0);
 
   // Read the file content via the dup.
@@ -56,7 +54,7 @@ TEST_F(LlvmLibcdupTest, ReadAndWriteViaDup) {
   ASSERT_THAT(LIBC_NAMESPACE::unlink(TEST_FILE), Succeeds(0));
 }
 
-TEST_F(LlvmLibcdupTest, DupBadFD) {
+TEST(LlvmLibcdupTest, DupBadFD) {
   using LIBC_NAMESPACE::testing::ErrnoSetterMatcher::Fails;
   ASSERT_THAT(LIBC_NAMESPACE::dup(-1), Fails(EBADF));
 }

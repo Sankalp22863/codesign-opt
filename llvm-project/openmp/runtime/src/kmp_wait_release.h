@@ -104,8 +104,7 @@ template <> struct flag_traits<flag_oncore> {
 template <flag_type FlagType> class kmp_flag {
 protected:
   flag_properties t; /**< "Type" of the flag in loc */
-  /**< Threads sleeping on this thread. */
-  kmp_info_t *waiting_threads[1] = {nullptr};
+  kmp_info_t *waiting_threads[1]; /**< Threads sleeping on this thread. */
   kmp_uint32 num_waiting_threads; /**< Num threads sleeping on this thread. */
   std::atomic<bool> *sleepLoc;
 
@@ -141,7 +140,7 @@ template <typename PtrType, flag_type FlagType, bool Sleepable>
 class kmp_flag_native : public kmp_flag<FlagType> {
 protected:
   volatile PtrType *loc;
-  PtrType checker = (PtrType)0; /**< When flag==checker, it has been released */
+  PtrType checker; /**< When flag==checker, it has been released. */
   typedef flag_traits<FlagType> traits_type;
 
 public:
@@ -235,7 +234,7 @@ template <typename PtrType, flag_type FlagType, bool Sleepable>
 class kmp_flag_atomic : public kmp_flag<FlagType> {
 protected:
   std::atomic<PtrType> *loc; /**< Pointer to flag location to wait on */
-  PtrType checker = (PtrType)0; /**< Flag==checker means it has been released */
+  PtrType checker; /**< Flag == checker means it has been released. */
 public:
   typedef flag_traits<FlagType> traits_type;
   typedef PtrType flag_t;
@@ -324,21 +323,19 @@ static void __ompt_implicit_task_end(kmp_info_t *this_thr,
                                      ompt_state_t ompt_state,
                                      ompt_data_t *tId) {
   int ds_tid = this_thr->th.th_info.ds.ds_tid;
-  if (ompt_state == ompt_state_wait_barrier_implicit_parallel ||
-      ompt_state == ompt_state_wait_barrier_teams) {
+  if (ompt_state == ompt_state_wait_barrier_implicit) {
     this_thr->th.ompt_thread_info.state = ompt_state_overhead;
 #if OMPT_OPTIONAL
     void *codeptr = NULL;
-    ompt_sync_region_t sync_kind = ompt_sync_region_barrier_implicit_parallel;
-    if (this_thr->th.ompt_thread_info.parallel_flags & ompt_parallel_league)
-      sync_kind = ompt_sync_region_barrier_teams;
     if (ompt_enabled.ompt_callback_sync_region_wait) {
       ompt_callbacks.ompt_callback(ompt_callback_sync_region_wait)(
-          sync_kind, ompt_scope_end, NULL, tId, codeptr);
+          ompt_sync_region_barrier_implicit, ompt_scope_end, NULL, tId,
+          codeptr);
     }
     if (ompt_enabled.ompt_callback_sync_region) {
       ompt_callbacks.ompt_callback(ompt_callback_sync_region)(
-          sync_kind, ompt_scope_end, NULL, tId, codeptr);
+          ompt_sync_region_barrier_implicit, ompt_scope_end, NULL, tId,
+          codeptr);
     }
 #endif
     if (!KMP_MASTER_TID(ds_tid)) {
@@ -458,9 +455,7 @@ final_spin=FALSE)
   ompt_data_t *tId;
   if (ompt_enabled.enabled) {
     ompt_entry_state = this_thr->th.ompt_thread_info.state;
-    if (!final_spin ||
-        (ompt_entry_state != ompt_state_wait_barrier_implicit_parallel &&
-         ompt_entry_state != ompt_state_wait_barrier_teams) ||
+    if (!final_spin || ompt_entry_state != ompt_state_wait_barrier_implicit ||
         KMP_MASTER_TID(this_thr->th.th_info.ds.ds_tid)) {
       ompt_lw_taskteam_t *team = NULL;
       if (this_thr->th.th_team)
@@ -936,8 +931,7 @@ class kmp_flag_oncore : public kmp_flag_native<kmp_uint64, flag_oncore, false> {
   kmp_uint32 offset; /**< Portion of flag of interest for an operation. */
   bool flag_switch; /**< Indicates a switch in flag location. */
   enum barrier_type bt; /**< Barrier type. */
-  /**< Thread to redirect to different flag location. */
-  kmp_info_t *this_thr = nullptr;
+  kmp_info_t *this_thr; /**< Thread to redirect to different flag location. */
 #if USE_ITT_BUILD
   void *itt_sync_obj; /**< ITT object to pass to new flag location. */
 #endif

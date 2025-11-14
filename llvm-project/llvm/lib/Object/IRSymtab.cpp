@@ -8,11 +8,11 @@
 
 #include "llvm/Object/IRSymtab.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/IR/Comdat.h"
@@ -22,7 +22,6 @@
 #include "llvm/IR/Mangler.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/RuntimeLibcalls.h"
 #include "llvm/MC/StringTableBuilder.h"
 #include "llvm/Object/ModuleSymbolTable.h"
 #include "llvm/Object/SymbolicFile.h"
@@ -45,6 +44,17 @@ using namespace irsymtab;
 static cl::opt<bool> DisableBitcodeVersionUpgrade(
     "disable-bitcode-version-upgrade", cl::Hidden,
     cl::desc("Disable automatic bitcode upgrade for version mismatch"));
+
+static const char *PreservedSymbols[] = {
+#define HANDLE_LIBCALL(code, name) name,
+#include "llvm/IR/RuntimeLibcalls.def"
+#undef HANDLE_LIBCALL
+    // There are global variables, so put it here instead of in
+    // RuntimeLibcalls.def.
+    // TODO: Are there similar such variables?
+    "__ssp_canary_word",
+    "__stack_chk_guard",
+};
 
 namespace {
 
@@ -73,16 +83,12 @@ struct Builder {
   // The StringTableBuilder does not create a copy of any strings added to it,
   // so this provides somewhere to store any strings that we create.
   Builder(SmallVector<char, 0> &Symtab, StringTableBuilder &StrtabBuilder,
-          BumpPtrAllocator &Alloc, const Triple &TT)
-      : Symtab(Symtab), StrtabBuilder(StrtabBuilder), Saver(Alloc), TT(TT),
-        Libcalls(TT) {}
+          BumpPtrAllocator &Alloc)
+      : Symtab(Symtab), StrtabBuilder(StrtabBuilder), Saver(Alloc) {}
 
   DenseMap<const Comdat *, int> ComdatMap;
   Mangler Mang;
-  const Triple &TT;
-
-  // FIXME: This shouldn't be here.
-  RTLIB::RuntimeLibcallsInfo Libcalls;
+  Triple TT;
 
   std::vector<storage::Comdat> Comdats;
   std::vector<storage::Module> Mods;
@@ -93,10 +99,6 @@ struct Builder {
   raw_string_ostream COFFLinkerOptsOS{COFFLinkerOpts};
 
   std::vector<storage::Str> DependentLibraries;
-
-  bool isPreservedName(StringRef Name) {
-    return Libcalls.getSupportedLibcallImpl(Name) != RTLIB::Unsupported;
-  }
 
   void setStr(storage::Str &S, StringRef Value) {
     S.Offset = StrtabBuilder.add(Value);
@@ -140,7 +142,7 @@ Error Builder::addModule(Module *M) {
   SmallVector<GlobalValue *, 4> UsedV;
   collectUsedGlobalVariables(*M, UsedV, /*CompilerUsed=*/false);
   collectUsedGlobalVariables(*M, UsedV, /*CompilerUsed=*/true);
-  SmallPtrSet<GlobalValue *, 4> Used(llvm::from_range, UsedV);
+  SmallPtrSet<GlobalValue *, 4> Used(UsedV.begin(), UsedV.end());
 
   ModuleSymbolTable Msymtab;
   Msymtab.addModule(M);
@@ -213,6 +215,11 @@ Expected<int> Builder::getComdatIndex(const Comdat *C, const Module *M) {
   return P.first->second;
 }
 
+static DenseSet<StringRef> buildPreservedSymbolsSet() {
+  return DenseSet<StringRef>(std::begin(PreservedSymbols),
+                             std::end(PreservedSymbols));
+}
+
 Error Builder::addSymbol(const ModuleSymbolTable &Msymtab,
                          const SmallPtrSet<GlobalValue *, 4> &Used,
                          ModuleSymbolTable::Symbol Msym) {
@@ -266,10 +273,13 @@ Error Builder::addSymbol(const ModuleSymbolTable &Msymtab,
     return Error::success();
   }
 
-  StringRef GVName = GV->getName();
-  setStr(Sym.IRName, GVName);
+  setStr(Sym.IRName, GV->getName());
 
-  if (Used.count(GV) || isPreservedName(GVName))
+  static const DenseSet<StringRef> PreservedSymbolsSet =
+      buildPreservedSymbolsSet();
+  bool IsPreservedSymbol = PreservedSymbolsSet.contains(GV->getName());
+
+  if (Used.count(GV) || IsPreservedSymbol)
     Sym.Flags |= 1 << storage::Symbol::FB_used;
   if (GV->isThreadLocal())
     Sym.Flags |= 1 << storage::Symbol::FB_tls;
@@ -285,7 +295,7 @@ Error Builder::addSymbol(const ModuleSymbolTable &Msymtab,
       return make_error<StringError>("Only variables can have common linkage!",
                                      inconvertibleErrorCode());
     Uncommon().CommonSize =
-        GV->getDataLayout().getTypeAllocSize(GV->getValueType());
+        GV->getParent()->getDataLayout().getTypeAllocSize(GV->getValueType());
     Uncommon().CommonAlign = GVar->getAlign() ? GVar->getAlign()->value() : 0;
   }
 
@@ -334,8 +344,9 @@ Error Builder::build(ArrayRef<Module *> IRMods) {
   assert(!IRMods.empty());
   Hdr.Version = storage::Header::kCurrentVersion;
   setStr(Hdr.Producer, kExpectedProducerName);
-  setStr(Hdr.TargetTriple, IRMods[0]->getTargetTriple().str());
+  setStr(Hdr.TargetTriple, IRMods[0]->getTargetTriple());
   setStr(Hdr.SourceFileName, IRMods[0]->getSourceFileName());
+  TT = Triple(IRMods[0]->getTargetTriple());
 
   for (auto *M : IRMods)
     if (Error Err = addModule(M))
@@ -361,8 +372,7 @@ Error Builder::build(ArrayRef<Module *> IRMods) {
 Error irsymtab::build(ArrayRef<Module *> Mods, SmallVector<char, 0> &Symtab,
                       StringTableBuilder &StrtabBuilder,
                       BumpPtrAllocator &Alloc) {
-  const Triple &TT = Mods[0]->getTargetTriple();
-  return Builder(Symtab, StrtabBuilder, Alloc, TT).build(Mods);
+  return Builder(Symtab, StrtabBuilder, Alloc).build(Mods);
 }
 
 // Upgrade a vector of bitcode modules created by an old version of LLVM by

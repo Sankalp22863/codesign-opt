@@ -6,9 +6,7 @@
 
 macro(FindPython3)
   # Use PYTHON_HOME as a hint to find Python 3.
-  if(NOT Python3_ROOT_DIR)
-    set(Python3_ROOT_DIR "${PYTHON_HOME}")
-  endif()
+  set(Python3_ROOT_DIR "${PYTHON_HOME}")
   find_package(Python3 COMPONENTS Interpreter Development)
   if(Python3_FOUND AND Python3_Interpreter_FOUND)
 
@@ -65,10 +63,4 @@ else()
                                       Python3_INCLUDE_DIRS
                                       Python3_EXECUTABLE
                                       LLDB_ENABLE_SWIG)
-endif()
-
-set(LLDB_RECOMMENDED_PYTHON "3.8")
-if(PYTHONANDSWIG_FOUND AND "${Python3_VERSION}" VERSION_LESS "${LLDB_RECOMMENDED_PYTHON}")
-  message(WARNING "Using Python ${Python3_VERSION}. ${LLDB_RECOMMENDED_PYTHON} "
-                  "is recommended and will be required from LLDB 21.")
 endif()

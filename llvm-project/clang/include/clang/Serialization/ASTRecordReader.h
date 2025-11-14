@@ -24,7 +24,6 @@
 #include "llvm/ADT/APSInt.h"
 
 namespace clang {
-class OpenACCClause;
 class OMPTraitInfo;
 class OMPChildren;
 
@@ -32,6 +31,7 @@ class OMPChildren;
 class ASTRecordReader
     : public serialization::DataStreamBasicReader<ASTRecordReader> {
   using ModuleFile = serialization::ModuleFile;
+  using LocSeq = SourceLocationSequence;
 
   ASTReader *Reader;
   ModuleFile *F;
@@ -102,6 +102,13 @@ public:
                                                  DC);
   }
 
+  /// Read the record that describes the visible contents of a DC.
+  bool readVisibleDeclContextStorage(uint64_t Offset,
+                                     serialization::DeclID ID) {
+    return Reader->ReadVisibleDeclContextStorage(*F, F->DeclsCursor, Offset,
+                                                 ID);
+  }
+
   ExplicitSpecifier readExplicitSpec() {
     uint64_t Kind = readInt();
     bool HasExpr = Kind & 0x1;
@@ -135,7 +142,8 @@ public:
   /// Reads a declaration with the given local ID in the given module.
   ///
   /// \returns The requested declaration, casted to the given return type.
-  template <typename T> T *GetLocalDeclAs(LocalDeclID LocalID) {
+  template<typename T>
+  T *GetLocalDeclAs(uint32_t LocalID) {
     return cast_or_null<T>(Reader->GetLocalDecl(*F, LocalID));
   }
 
@@ -159,10 +167,10 @@ public:
   TypeSourceInfo *readTypeSourceInfo();
 
   /// Reads the location information for a type.
-  void readTypeLoc(TypeLoc TL);
+  void readTypeLoc(TypeLoc TL, LocSeq *Seq = nullptr);
 
   /// Map a local type ID within a given AST file to a global type ID.
-  serialization::TypeID getGlobalTypeID(serialization::TypeID LocalID) const {
+  serialization::TypeID getGlobalTypeID(unsigned LocalID) const {
     return Reader->getGlobalTypeID(*F, LocalID);
   }
 
@@ -181,7 +189,9 @@ public:
   /// Reads a declaration ID from the given position in this record.
   ///
   /// \returns The declaration ID read from the record, adjusted to a global ID.
-  GlobalDeclID readDeclID() { return Reader->ReadDeclID(*F, Record, Idx); }
+  serialization::DeclID readDeclID() {
+    return Reader->ReadDeclID(*F, Record, Idx);
+  }
 
   /// Reads a declaration from the given position in a record in the
   /// given module, advancing Idx.
@@ -211,10 +221,6 @@ public:
     return Reader->ReadSelector(*F, Record, Idx);
   }
 
-  TypeCoupledDeclRefInfo readTypeCoupledDeclRefInfo();
-
-  SpirvOperand readHLSLSpirvOperand();
-
   /// Read a declaration name, advancing Idx.
   // DeclarationName readDeclarationName(); (inherited)
   DeclarationNameLoc readDeclarationNameLoc(DeclarationName Name);
@@ -223,7 +229,7 @@ public:
   void readQualifierInfo(QualifierInfo &Info);
 
   /// Return a nested name specifier, advancing Idx.
-  // NestedNameSpecifier readNestedNameSpecifier(); (inherited)
+  // NestedNameSpecifier *readNestedNameSpecifier(); (inherited)
 
   NestedNameSpecifierLoc readNestedNameSpecifierLoc();
 
@@ -270,29 +276,14 @@ public:
   /// Read an OpenMP children, advancing Idx.
   void readOMPChildren(OMPChildren *Data);
 
-  /// Read a list of Exprs used for a var-list.
-  llvm::SmallVector<Expr *> readOpenACCVarList();
-
-  /// Read a list of Exprs used for a int-expr-list.
-  llvm::SmallVector<Expr *> readOpenACCIntExprList();
-
-  /// Read an OpenACC clause, advancing Idx.
-  OpenACCClause *readOpenACCClause();
-
-  /// Read a list of OpenACC clauses into the passed SmallVector, during
-  /// statement reading.
-  void readOpenACCClauseList(MutableArrayRef<const OpenACCClause *> Clauses);
-
-  void readOpenACCRoutineDeclAttr(OpenACCRoutineDeclAttr *A);
-
   /// Read a source location, advancing Idx.
-  SourceLocation readSourceLocation() {
-    return Reader->ReadSourceLocation(*F, Record, Idx);
+  SourceLocation readSourceLocation(LocSeq *Seq = nullptr) {
+    return Reader->ReadSourceLocation(*F, Record, Idx, Seq);
   }
 
   /// Read a source range, advancing Idx.
-  SourceRange readSourceRange() {
-    return Reader->ReadSourceRange(*F, Record, Idx);
+  SourceRange readSourceRange(LocSeq *Seq = nullptr) {
+    return Reader->ReadSourceRange(*F, Record, Idx, Seq);
   }
 
   /// Read an arbitrary constant value, advancing Idx.
@@ -318,10 +309,6 @@ public:
   /// Read a 64-bit unsigned value; required to satisfy BasicReader.
   uint64_t readUInt64() {
     return readInt();
-  }
-
-  UnsignedOrNone readUnsignedOrNone() {
-    return UnsignedOrNone::fromInternalRepresentation(unsigned(readInt()));
   }
 
   /// Read a string, advancing Idx.

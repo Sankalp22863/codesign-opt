@@ -47,13 +47,12 @@ enum ID {
 #undef OPTION
 };
 
-#define OPTTABLE_STR_TABLE_CODE
+#define PREFIX(NAME, VALUE)                                                    \
+  static constexpr StringLiteral NAME##_init[] = VALUE;                        \
+  static constexpr ArrayRef<StringLiteral> NAME(NAME##_init,                   \
+                                                std::size(NAME##_init) - 1);
 #include "Opts.inc"
-#undef OPTTABLE_STR_TABLE_CODE
-
-#define OPTTABLE_PREFIXES_TABLE_CODE
-#include "Opts.inc"
-#undef OPTTABLE_PREFIXES_TABLE_CODE
+#undef PREFIX
 
 using namespace llvm::opt;
 static constexpr opt::OptTable::Info InfoTable[] = {
@@ -64,8 +63,7 @@ static constexpr opt::OptTable::Info InfoTable[] = {
 
 class DwpOptTable : public opt::GenericOptTable {
 public:
-  DwpOptTable()
-      : GenericOptTable(OptionStrTable, OptionPrefixesTable, InfoTable) {}
+  DwpOptTable() : GenericOptTable(InfoTable) {}
 };
 } // end anonymous namespace
 
@@ -93,8 +91,8 @@ getDWOFilenames(StringRef ExecFilename) {
     std::string DWOCompDir =
         dwarf::toString(Die.find(dwarf::DW_AT_comp_dir), "");
     if (!DWOCompDir.empty()) {
-      SmallString<16> DWOPath(DWOName);
-      sys::path::make_absolute(DWOCompDir, DWOPath);
+      SmallString<16> DWOPath(std::move(DWOName));
+      sys::fs::make_absolute(DWOCompDir, DWOPath);
       if (!sys::fs::exists(DWOPath) && sys::fs::exists(DWOName))
         DWOPaths.push_back(std::move(DWOName));
       else
@@ -190,11 +188,8 @@ int llvm_dwp_main(int argc, char **argv, const llvm::ToolContext &) {
                         std::make_move_iterator(DWOs->end()));
   }
 
-  if (DWOFilenames.empty()) {
-    WithColor::defaultWarningHandler(make_error<DWPError>(
-        "executable file does not contain any references to dwo files"));
+  if (DWOFilenames.empty())
     return 0;
-  }
 
   std::string ErrorStr;
   StringRef Context = "dwarf streamer init";
@@ -217,21 +212,20 @@ int llvm_dwp_main(int argc, char **argv, const llvm::ToolContext &) {
   if (!TheTarget)
     return error(ErrorStr, Context);
   std::string TripleName = ErrOrTriple->getTriple();
-  Triple TheTriple(TripleName);
 
   // Create all the MC Objects.
-  std::unique_ptr<MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TheTriple));
+  std::unique_ptr<MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TripleName));
   if (!MRI)
     return error(Twine("no register info for target ") + TripleName, Context);
 
   MCTargetOptions MCOptions = llvm::mc::InitMCTargetOptionsFromFlags();
   std::unique_ptr<MCAsmInfo> MAI(
-      TheTarget->createMCAsmInfo(*MRI, TheTriple, MCOptions));
+      TheTarget->createMCAsmInfo(*MRI, TripleName, MCOptions));
   if (!MAI)
     return error("no asm info for target " + TripleName, Context);
 
   std::unique_ptr<MCSubtargetInfo> MSTI(
-      TheTarget->createMCSubtargetInfo(TheTriple, "", ""));
+      TheTarget->createMCSubtargetInfo(TripleName, "", ""));
   if (!MSTI)
     return error("no subtarget info for target " + TripleName, Context);
 
@@ -269,8 +263,9 @@ int llvm_dwp_main(int argc, char **argv, const llvm::ToolContext &) {
 
   std::unique_ptr<MCStreamer> MS(TheTarget->createMCObjectStreamer(
       *ErrOrTriple, MC, std::unique_ptr<MCAsmBackend>(MAB),
-      MAB->createObjectWriter(*OS), std::unique_ptr<MCCodeEmitter>(MCE),
-      *MSTI));
+      MAB->createObjectWriter(*OS), std::unique_ptr<MCCodeEmitter>(MCE), *MSTI,
+      MCOptions.MCRelaxAll, MCOptions.MCIncrementalLinkerCompatible,
+      /*DWARFMustBeAtTheEnd*/ false));
   if (!MS)
     return error("no object streamer for target " + TripleName, Context);
 

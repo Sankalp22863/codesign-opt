@@ -12,8 +12,8 @@
 //===----------------------------------------------------------------------===//
 #include "llvm/XRay/BlockIndexer.h"
 
-using namespace llvm;
-using namespace llvm::xray;
+namespace llvm {
+namespace xray {
 
 Error BlockIndexer::visit(BufferExtents &) { return Error::success(); }
 
@@ -80,12 +80,18 @@ Error BlockIndexer::visit(FunctionRecord &R) {
 }
 
 Error BlockIndexer::flush() {
-  Indices[{CurrentBlock.ProcessID, CurrentBlock.ThreadID}].push_back(
-      {CurrentBlock.ProcessID, CurrentBlock.ThreadID,
-       CurrentBlock.WallclockTime, std::move(CurrentBlock.Records)});
+  Index::iterator It;
+  std::tie(It, std::ignore) =
+      Indices.insert({{CurrentBlock.ProcessID, CurrentBlock.ThreadID}, {}});
+  It->second.push_back({CurrentBlock.ProcessID, CurrentBlock.ThreadID,
+                        CurrentBlock.WallclockTime,
+                        std::move(CurrentBlock.Records)});
   CurrentBlock.ProcessID = 0;
   CurrentBlock.ThreadID = 0;
   CurrentBlock.Records = {};
   CurrentBlock.WallclockTime = nullptr;
   return Error::success();
 }
+
+} // namespace xray
+} // namespace llvm

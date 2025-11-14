@@ -47,7 +47,7 @@ static void MaybePrintStackTrace(uptr pc, uptr bp) {
   if (!flags()->print_stacktrace)
     return;
 
-  UNINITIALIZED BufferedStackTrace stack;
+  BufferedStackTrace stack;
   ubsan_GetStackTrace(&stack, kStackTraceMax, pc, bp, nullptr,
                 common_flags()->fast_unwind_on_fatal);
   stack.Print();
@@ -402,7 +402,7 @@ ScopedReport::~ScopedReport() {
     Die();
 }
 
-alignas(64) static char suppression_placeholder[sizeof(SuppressionContext)];
+ALIGNED(64) static char suppression_placeholder[sizeof(SuppressionContext)];
 static SuppressionContext *suppression_ctx = nullptr;
 static const char kVptrCheck[] = "vptr_check";
 static const char *kSuppressionTypes[] = {

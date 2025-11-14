@@ -1,4 +1,5 @@
-//===-- FormattersHelpers.h -------------------------------------*- C++ -*-===//
+//===-- FormattersHelpers.h --------------------------------------*- C++
+//-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -53,15 +54,7 @@ void AddFilter(TypeCategoryImpl::SharedPointer category_sp,
                llvm::StringRef type_name,
                ScriptedSyntheticChildren::Flags flags, bool regex = false);
 
-std::optional<size_t> ExtractIndexFromString(const char *item_name);
-
-/// Prints the summary for the pointer value of a C++
-/// std::unique_ptr/std::shared_ptr/std::weak_ptr.
-void DumpCxxSmartPtrPointerSummary(Stream &stream, ValueObject &ptr,
-                                   const TypeSummaryOptions &options);
-
-bool ContainerSizeSummaryProvider(ValueObject &valobj, Stream &stream,
-                                  const TypeSummaryOptions &options);
+size_t ExtractIndexFromString(const char *item_name);
 
 Address GetArrayAddressOrPointerValue(ValueObject &valobj);
 

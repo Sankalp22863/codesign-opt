@@ -107,7 +107,7 @@ Status CommandOptionsProcessLaunch::SetOptionValue(
     if (success)
       disable_aslr = disable_aslr_arg ? eLazyBoolYes : eLazyBoolNo;
     else
-      return Status::FromErrorStringWithFormat(
+      error.SetErrorStringWithFormat(
           "Invalid boolean value for disable-aslr option: '%s'",
           option_arg.empty() ? "<null>" : option_arg.str().c_str());
     break;
@@ -121,15 +121,11 @@ Status CommandOptionsProcessLaunch::SetOptionValue(
     if (success)
       launch_info.SetShellExpandArguments(expand_args);
     else
-      return Status::FromErrorStringWithFormat(
+      error.SetErrorStringWithFormat(
           "Invalid boolean value for shell-expand-args option: '%s'",
           option_arg.empty() ? "<null>" : option_arg.str().c_str());
     break;
   }
-
-  case 'M':
-    launch_info.GetFlags().Set(eLaunchFlagMemoryTagging);
-    break;
 
   case 'c':
     if (!option_arg.empty())
@@ -143,8 +139,9 @@ Status CommandOptionsProcessLaunch::SetOptionValue(
     break;
 
   default:
-    return Status::FromErrorStringWithFormat(
-        "unrecognized short option character '%c'", short_option);
+    error.SetErrorStringWithFormat("unrecognized short option character '%c'",
+                                   short_option);
+    break;
   }
   return error;
 }

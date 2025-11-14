@@ -31,9 +31,9 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/IntrinsicsAArch64.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/InitializePasses.h"
+#include "llvm/Support/Debug.h"
 #include <optional>
 
 using namespace llvm;
@@ -44,7 +44,9 @@ using namespace llvm::PatternMatch;
 namespace {
 struct SVEIntrinsicOpts : public ModulePass {
   static char ID; // Pass identification, replacement for typeid
-  SVEIntrinsicOpts() : ModulePass(ID) {}
+  SVEIntrinsicOpts() : ModulePass(ID) {
+    initializeSVEIntrinsicOptsPass(*PassRegistry::getPassRegistry());
+  }
 
   bool runOnModule(Module &M) override;
   void getAnalysisUsage(AnalysisUsage &AU) const override;
@@ -136,8 +138,8 @@ bool SVEIntrinsicOpts::coalescePTrueIntrinsicCalls(
     return false;
 
   // Find the ptrue with the most lanes.
-  auto *MostEncompassingPTrue =
-      *llvm::max_element(PTrues, [](auto *PTrue1, auto *PTrue2) {
+  auto *MostEncompassingPTrue = *std::max_element(
+      PTrues.begin(), PTrues.end(), [](auto *PTrue1, auto *PTrue2) {
         auto *PTrue1VTy = cast<ScalableVectorType>(PTrue1->getType());
         auto *PTrue2VTy = cast<ScalableVectorType>(PTrue2->getType());
         return PTrue1VTy->getElementCount().getKnownMinValue() <
@@ -326,9 +328,9 @@ bool SVEIntrinsicOpts::optimizePredicateStore(Instruction *I) {
   Builder.CreateStore(BitCast->getOperand(0), Store->getPointerOperand());
 
   Store->eraseFromParent();
-  if (IntrI->use_empty())
+  if (IntrI->getNumUses() == 0)
     IntrI->eraseFromParent();
-  if (BitCast->use_empty())
+  if (BitCast->getNumUses() == 0)
     BitCast->eraseFromParent();
 
   return true;
@@ -384,9 +386,9 @@ bool SVEIntrinsicOpts::optimizePredicateLoad(Instruction *I) {
 
   BitCast->replaceAllUsesWith(LoadPred);
   BitCast->eraseFromParent();
-  if (IntrI->use_empty())
+  if (IntrI->getNumUses() == 0)
     IntrI->eraseFromParent();
-  if (Load->use_empty())
+  if (Load->getNumUses() == 0)
     Load->eraseFromParent();
 
   return true;

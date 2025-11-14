@@ -15,6 +15,7 @@
 #include "llvm/Analysis/MLModelRunner.h"
 #include "llvm/IR/PassManager.h"
 
+#include <deque>
 #include <map>
 #include <memory>
 #include <optional>
@@ -23,17 +24,14 @@ namespace llvm {
 class DiagnosticInfoOptimizationBase;
 class Module;
 class MLInlineAdvice;
-class ProfileSummaryInfo;
 
 class MLInlineAdvisor : public InlineAdvisor {
 public:
   MLInlineAdvisor(Module &M, ModuleAnalysisManager &MAM,
-                  std::function<std::unique_ptr<MLModelRunner>(
-                      const std::vector<TensorSpec> &)>
-                      GetModelRunner,
+                  std::unique_ptr<MLModelRunner> ModelRunner,
                   std::function<bool(CallBase &)> GetDefaultAdvice);
 
-  ~MLInlineAdvisor() override = default;
+  virtual ~MLInlineAdvisor() = default;
 
   void onPassEntry(LazyCallGraph::SCC *SCC) override;
   void onPassExit(LazyCallGraph::SCC *SCC) override;
@@ -46,10 +44,8 @@ public:
 
   bool isForcedToStop() const { return ForceStop; }
   int64_t getLocalCalls(Function &F);
-  const MLModelRunner &getModelRunner() const { return *ModelRunner; }
+  const MLModelRunner &getModelRunner() const { return *ModelRunner.get(); }
   FunctionPropertiesInfo &getCachedFPI(Function &) const;
-  const std::vector<TensorSpec> &getFeatureMap() const { return FeatureMap; };
-  static const std::vector<TensorSpec> &getInitialFeatureMap();
 
 protected:
   std::unique_ptr<InlineAdvice> getAdviceImpl(CallBase &CB) override;
@@ -69,7 +65,6 @@ protected:
 
   std::unique_ptr<MLModelRunner> ModelRunner;
   std::function<bool(CallBase &)> GetDefaultAdvice;
-  std::vector<TensorSpec> FeatureMap;
 
 private:
   int64_t getModuleIRSize() const;
@@ -87,16 +82,13 @@ private:
   int64_t NodeCount = 0;
   int64_t EdgeCount = 0;
   int64_t EdgesOfLastSeenNodes = 0;
-  const bool UseIR2Vec;
 
   std::map<const LazyCallGraph::Node *, unsigned> FunctionLevels;
   const int32_t InitialIRSize = 0;
   int32_t CurrentIRSize = 0;
   llvm::SmallPtrSet<const LazyCallGraph::Node *, 1> NodesInLastSCC;
   DenseSet<const LazyCallGraph::Node *> AllNodes;
-  DenseSet<Function *> DeadFunctions;
   bool ForceStop = false;
-  ProfileSummaryInfo &PSI;
 };
 
 /// InlineAdvice that tracks changes post inlining. For that reason, it only
@@ -105,7 +97,7 @@ class MLInlineAdvice : public InlineAdvice {
 public:
   MLInlineAdvice(MLInlineAdvisor *Advisor, CallBase &CB,
                  OptimizationRemarkEmitter &ORE, bool Recommendation);
-  ~MLInlineAdvice() override = default;
+  virtual ~MLInlineAdvice() = default;
 
   void recordInliningImpl() override;
   void recordInliningWithCalleeDeletedImpl() override;

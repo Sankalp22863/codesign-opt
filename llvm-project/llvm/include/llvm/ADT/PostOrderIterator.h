@@ -23,7 +23,6 @@
 #include <iterator>
 #include <optional>
 #include <set>
-#include <type_traits>
 #include <utility>
 
 namespace llvm {
@@ -96,10 +95,7 @@ template <class GraphT,
           bool ExtStorage = false, class GT = GraphTraits<GraphT>>
 class po_iterator : public po_iterator_storage<SetType, ExtStorage> {
 public:
-  // When External storage is used we are not multi-pass safe.
-  using iterator_category =
-      std::conditional_t<ExtStorage, std::input_iterator_tag,
-                         std::forward_iterator_tag>;
+  using iterator_category = std::forward_iterator_tag;
   using value_type = typename GT::NodeRef;
   using difference_type = std::ptrdiff_t;
   using pointer = value_type *;
@@ -200,7 +196,7 @@ template <class T> iterator_range<po_iterator<T>> post_order(const T &G) {
 
 // Provide global definitions of external postorder iterators...
 template <class T, class SetType = std::set<typename GraphTraits<T>::NodeRef>>
-struct po_ext_iterator : po_iterator<T, SetType, true> {
+struct po_ext_iterator : public po_iterator<T, SetType, true> {
   po_ext_iterator(const po_iterator<T, SetType, true> &V) :
   po_iterator<T, SetType, true>(V) {}
 };
@@ -223,7 +219,7 @@ iterator_range<po_ext_iterator<T, SetType>> post_order_ext(const T &G, SetType &
 // Provide global definitions of inverse post order iterators...
 template <class T, class SetType = std::set<typename GraphTraits<T>::NodeRef>,
           bool External = false>
-struct ipo_iterator : po_iterator<Inverse<T>, SetType, External> {
+struct ipo_iterator : public po_iterator<Inverse<T>, SetType, External> {
   ipo_iterator(const po_iterator<Inverse<T>, SetType, External> &V) :
      po_iterator<Inverse<T>, SetType, External> (V) {}
 };
@@ -245,7 +241,7 @@ iterator_range<ipo_iterator<T>> inverse_post_order(const T &G) {
 
 // Provide global definitions of external inverse postorder iterators...
 template <class T, class SetType = std::set<typename GraphTraits<T>::NodeRef>>
-struct ipo_ext_iterator : ipo_iterator<T, SetType, true> {
+struct ipo_ext_iterator : public ipo_iterator<T, SetType, true> {
   ipo_ext_iterator(const ipo_iterator<T, SetType, true> &V) :
     ipo_iterator<T, SetType, true>(V) {}
   ipo_ext_iterator(const po_iterator<Inverse<T>, SetType, true> &V) :

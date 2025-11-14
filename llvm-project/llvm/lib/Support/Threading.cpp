@@ -14,11 +14,12 @@
 #include "llvm/Support/Threading.h"
 #include "llvm/Config/config.h"
 #include "llvm/Config/llvm-config.h"
-#include "llvm/Support/Jobserver.h"
 
 #include <cassert>
+#include <errno.h>
 #include <optional>
 #include <stdlib.h>
+#include <string.h>
 
 using namespace llvm;
 
@@ -52,10 +53,6 @@ int llvm::get_physical_cores() { return -1; }
 static int computeHostNumHardwareThreads();
 
 unsigned llvm::ThreadPoolStrategy::compute_thread_count() const {
-  if (UseJobserver)
-    if (auto JS = JobserverClient::getInstance())
-      return JS->getNumJobs();
-
   int MaxThreadCount =
       UseHyperThreads ? computeHostNumHardwareThreads() : get_physical_cores();
   if (MaxThreadCount <= 0)

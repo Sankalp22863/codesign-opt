@@ -122,12 +122,9 @@ inline NORETURN void enableSystemMemoryTaggingTestOnly() {
 
 class ScopedDisableMemoryTagChecks {
   uptr PrevTCO;
-  bool active;
 
 public:
-  ScopedDisableMemoryTagChecks(bool cond = true) : active(cond) {
-    if (!active)
-      return;
+  ScopedDisableMemoryTagChecks() {
     __asm__ __volatile__(
         R"(
         .arch_extension memtag
@@ -138,8 +135,6 @@ public:
   }
 
   ~ScopedDisableMemoryTagChecks() {
-    if (!active)
-      return;
     __asm__ __volatile__(
         R"(
         .arch_extension memtag
@@ -274,7 +269,7 @@ inline NORETURN void enableSystemMemoryTaggingTestOnly() {
 }
 
 struct ScopedDisableMemoryTagChecks {
-  ScopedDisableMemoryTagChecks(UNUSED bool cond = true) {}
+  ScopedDisableMemoryTagChecks() {}
 };
 
 inline NORETURN uptr selectRandomTag(uptr Ptr, uptr ExcludeMask) {
@@ -331,7 +326,7 @@ inline void *addFixedTag(void *Ptr, uptr Tag) {
 
 template <typename Config>
 inline constexpr bool allocatorSupportsMemoryTagging() {
-  return archSupportsMemoryTagging() && Config::getMaySupportMemoryTagging() &&
+  return archSupportsMemoryTagging() && Config::MaySupportMemoryTagging &&
          (1 << SCUDO_MIN_ALIGNMENT_LOG) >= archMemoryTagGranuleSize();
 }
 

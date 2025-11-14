@@ -26,11 +26,9 @@ static_library("Host") {
     "common/HostNativeThreadBase.cpp",
     "common/HostProcess.cpp",
     "common/HostThread.cpp",
-    "common/JSONTransport.cpp",
     "common/LZMA.cpp",
     "common/LockFileBase.cpp",
     "common/MainLoopBase.cpp",
-    "common/MemoryMonitor.cpp",
     "common/MonitoringProcessLauncher.cpp",
     "common/NativeProcessProtocol.cpp",
     "common/NativeRegisterContext.cpp",
@@ -87,15 +85,6 @@ static_library("Host") {
       "posix/MainLoopPosix.cpp",
       "posix/PipePosix.cpp",
       "posix/ProcessLauncherPosixFork.cpp",
-      "posix/Support.cpp",
-    ]
-  }
-
-  if (current_os == "aix") {
-    sources += [
-      "aix/Host.cpp",
-      "aix/HostInfoAIX.cpp",
-      "aix/Support.cpp",
     ]
   }
 
@@ -123,7 +112,10 @@ static_library("Host") {
     ]
   }
   if (current_os == "android") {
-    sources += [ "android/HostInfoAndroid.cpp" ]
+    sources += [
+      "android/HostInfoAndroid.cpp",
+      "android/LibcGlue.cpp",
+    ]
   }
 
   if (current_os == "freebsd") {

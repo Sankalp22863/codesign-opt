@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file defines a set of enums which allow processing of intrinsic
-// functions. Values of these enum types are returned by
+// functions.  Values of these enum types are returned by
 // Function::getIntrinsicID.
 //
 //===----------------------------------------------------------------------===//
@@ -16,7 +16,6 @@
 #define LLVM_IR_INTRINSICS_H
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/TypeSize.h"
 #include <optional>
 #include <string>
@@ -29,7 +28,6 @@ class Function;
 class LLVMContext;
 class Module;
 class AttributeList;
-class AttributeSet;
 
 /// This namespace contains an enum with a value for every intrinsic/builtin
 /// function known by LLVM. The enum values are returned by
@@ -54,11 +52,11 @@ namespace Intrinsic {
   /// Return the LLVM name for an intrinsic, such as "llvm.ppc.altivec.lvx".
   /// Note, this version is for intrinsics with no overloads.  Use the other
   /// version of getName if overloads are required.
-  LLVM_ABI StringRef getName(ID id);
+  StringRef getName(ID id);
 
   /// Return the LLVM name for an intrinsic, without encoded types for
   /// overloading, such as "llvm.ssa.copy".
-  LLVM_ABI StringRef getBaseName(ID id);
+  StringRef getBaseName(ID id);
 
   /// Return the LLVM name for an intrinsic, such as "llvm.ppc.altivec.lvx" or
   /// "llvm.ssa.copy.p0s_s.1". Note, this version of getName supports overloads.
@@ -66,69 +64,46 @@ namespace Intrinsic {
   /// overloads are required, it is safe to use this version, but better to use
   /// the StringRef version. If one of the types is based on an unnamed type, a
   /// function type will be computed. Providing FT will avoid this computation.
-  LLVM_ABI std::string getName(ID Id, ArrayRef<Type *> Tys, Module *M,
-                               FunctionType *FT = nullptr);
+  std::string getName(ID Id, ArrayRef<Type *> Tys, Module *M,
+                      FunctionType *FT = nullptr);
 
   /// Return the LLVM name for an intrinsic. This is a special version only to
   /// be used by LLVMIntrinsicCopyOverloadedName. It only supports overloads
   /// based on named types.
-  LLVM_ABI std::string getNameNoUnnamedTypes(ID Id, ArrayRef<Type *> Tys);
+  std::string getNameNoUnnamedTypes(ID Id, ArrayRef<Type *> Tys);
 
   /// Return the function type for an intrinsic.
-  LLVM_ABI FunctionType *getType(LLVMContext &Context, ID id,
-                                 ArrayRef<Type *> Tys = {});
+  FunctionType *getType(LLVMContext &Context, ID id,
+                        ArrayRef<Type *> Tys = std::nullopt);
 
   /// Returns true if the intrinsic can be overloaded.
-  LLVM_ABI bool isOverloaded(ID id);
-
-  /// isTargetIntrinsic - Returns true if IID is an intrinsic specific to a
-  /// certain target. If it is a generic intrinsic false is returned.
-  LLVM_ABI bool isTargetIntrinsic(ID IID);
-
-  LLVM_ABI ID lookupIntrinsicID(StringRef Name);
+  bool isOverloaded(ID id);
 
   /// Return the attributes for an intrinsic.
-  LLVM_ABI AttributeList getAttributes(LLVMContext &C, ID id, FunctionType *FT);
+  AttributeList getAttributes(LLVMContext &C, ID id);
 
-  /// Return the function attributes for an intrinsic.
-  LLVM_ABI AttributeSet getFnAttributes(LLVMContext &C, ID id);
-
-  /// Look up the Function declaration of the intrinsic \p id in the Module
-  /// \p M. If it does not exist, add a declaration and return it. Otherwise,
-  /// return the existing declaration.
+  /// Create or insert an LLVM Function declaration for an intrinsic, and return
+  /// it.
   ///
-  /// The \p Tys parameter is for intrinsics with overloaded types (e.g., those
-  /// using iAny, fAny, vAny, or pAny).  For a declaration of an overloaded
+  /// The Tys parameter is for intrinsics with overloaded types (e.g., those
+  /// using iAny, fAny, vAny, or iPTRAny).  For a declaration of an overloaded
   /// intrinsic, Tys must provide exactly one type for each overloaded type in
   /// the intrinsic.
-  LLVM_ABI Function *getOrInsertDeclaration(Module *M, ID id,
-                                            ArrayRef<Type *> Tys = {});
+  Function *getDeclaration(Module *M, ID id,
+                           ArrayRef<Type *> Tys = std::nullopt);
 
-  /// Look up the Function declaration of the intrinsic \p id in the Module
-  /// \p M and return it if it exists. Otherwise, return nullptr. This version
-  /// supports non-overloaded intrinsics.
-  LLVM_ABI Function *getDeclarationIfExists(const Module *M, ID id);
-
-  /// This version supports overloaded intrinsics.
-  LLVM_ABI Function *getDeclarationIfExists(Module *M, ID id,
-                                            ArrayRef<Type *> Tys,
-                                            FunctionType *FT = nullptr);
+  /// Looks up Name in NameTable via binary search. NameTable must be sorted
+  /// and all entries must start with "llvm.".  If NameTable contains an exact
+  /// match for Name or a prefix of Name followed by a dot, its index in
+  /// NameTable is returned. Otherwise, -1 is returned.
+  int lookupLLVMIntrinsicByName(ArrayRef<const char *> NameTable,
+                                StringRef Name);
 
   /// Map a Clang builtin name to an intrinsic ID.
-  LLVM_ABI ID getIntrinsicForClangBuiltin(StringRef TargetPrefix,
-                                          StringRef BuiltinName);
+  ID getIntrinsicForClangBuiltin(const char *Prefix, StringRef BuiltinName);
 
   /// Map a MS builtin name to an intrinsic ID.
-  LLVM_ABI ID getIntrinsicForMSBuiltin(StringRef TargetPrefix,
-                                       StringRef BuiltinName);
-
-  /// Returns true if the intrinsic ID is for one of the "Constrained
-  /// Floating-Point Intrinsics".
-  LLVM_ABI bool isConstrainedFPIntrinsic(ID QID);
-
-  /// Returns true if the intrinsic ID is for one of the "Constrained
-  /// Floating-Point Intrinsics" that take rounding mode metadata.
-  LLVM_ABI bool hasConstrainedFPRoundingModeOperand(ID QID);
+  ID getIntrinsicForMSBuiltin(const char *Prefix, StringRef BuiltinName);
 
   /// This is a type descriptor which explains the type requirements of an
   /// intrinsic. This is returned by getIntrinsicInfoTableEntries.
@@ -151,7 +126,7 @@ namespace Intrinsic {
       Argument,
       ExtendArgument,
       TruncArgument,
-      OneNthEltsVecArgument,
+      HalfVecArgument,
       SameVecWidthArgument,
       VecOfAnyPtrsToElt,
       VecElementArgument,
@@ -181,14 +156,16 @@ namespace Intrinsic {
 
     unsigned getArgumentNumber() const {
       assert(Kind == Argument || Kind == ExtendArgument ||
-             Kind == TruncArgument || Kind == SameVecWidthArgument ||
-             Kind == VecElementArgument || Kind == Subdivide2Argument ||
-             Kind == Subdivide4Argument || Kind == VecOfBitcastsToInt);
+             Kind == TruncArgument || Kind == HalfVecArgument ||
+             Kind == SameVecWidthArgument || Kind == VecElementArgument ||
+             Kind == Subdivide2Argument || Kind == Subdivide4Argument ||
+             Kind == VecOfBitcastsToInt);
       return Argument_Info >> 3;
     }
     ArgKind getArgumentKind() const {
       assert(Kind == Argument || Kind == ExtendArgument ||
-             Kind == TruncArgument || Kind == SameVecWidthArgument ||
+             Kind == TruncArgument || Kind == HalfVecArgument ||
+             Kind == SameVecWidthArgument ||
              Kind == VecElementArgument || Kind == Subdivide2Argument ||
              Kind == Subdivide4Argument || Kind == VecOfBitcastsToInt);
       return (ArgKind)(Argument_Info & 7);
@@ -200,14 +177,8 @@ namespace Intrinsic {
       assert(Kind == VecOfAnyPtrsToElt);
       return Argument_Info >> 16;
     }
-    // OneNthEltsVecArguments uses both a divisor N and a reference argument for
-    // the full-width vector to match
-    unsigned getVectorDivisor() const {
-      assert(Kind == OneNthEltsVecArgument);
-      return Argument_Info >> 16;
-    }
     unsigned getRefArgNumber() const {
-      assert(Kind == VecOfAnyPtrsToElt || Kind == OneNthEltsVecArgument);
+      assert(Kind == VecOfAnyPtrsToElt);
       return Argument_Info & 0xFFFF;
     }
 
@@ -232,8 +203,7 @@ namespace Intrinsic {
 
   /// Return the IIT table descriptor for the specified intrinsic into an array
   /// of IITDescriptors.
-  LLVM_ABI void getIntrinsicInfoTableEntries(ID id,
-                                             SmallVectorImpl<IITDescriptor> &T);
+  void getIntrinsicInfoTableEntries(ID id, SmallVectorImpl<IITDescriptor> &T);
 
   enum MatchIntrinsicTypesResult {
     MatchIntrinsicTypes_Match = 0,
@@ -247,7 +217,7 @@ namespace Intrinsic {
   ///
   /// Returns false if the given type matches with the constraints, true
   /// otherwise.
-  LLVM_ABI MatchIntrinsicTypesResult
+  MatchIntrinsicTypesResult
   matchIntrinsicSignature(FunctionType *FTy, ArrayRef<IITDescriptor> &Infos,
                           SmallVectorImpl<Type *> &ArgTys);
 
@@ -255,37 +225,23 @@ namespace Intrinsic {
   /// be called after all the fixed arguments have been matched first.
   ///
   /// This method returns true on error.
-  LLVM_ABI bool matchIntrinsicVarArg(bool isVarArg,
-                                     ArrayRef<IITDescriptor> &Infos);
+  bool matchIntrinsicVarArg(bool isVarArg, ArrayRef<IITDescriptor> &Infos);
 
   /// Gets the type arguments of an intrinsic call by matching type contraints
   /// specified by the .td file. The overloaded types are pushed into the
   /// AgTys vector.
   ///
-  /// Returns false if the given ID and function type combination is not a
-  /// valid intrinsic call.
-  LLVM_ABI bool getIntrinsicSignature(Intrinsic::ID, FunctionType *FT,
-                                      SmallVectorImpl<Type *> &ArgTys);
-
-  /// Same as previous, but accepts a Function instead of ID and FunctionType.
-  LLVM_ABI bool getIntrinsicSignature(Function *F,
-                                      SmallVectorImpl<Type *> &ArgTys);
+  /// Returns false if the given function is not a valid intrinsic call.
+  bool getIntrinsicSignature(Function *F, SmallVectorImpl<Type *> &ArgTys);
 
   // Checks if the intrinsic name matches with its signature and if not
   // returns the declaration with the same signature and remangled name.
   // An existing GlobalValue with the wanted name but with a wrong prototype
   // or of the wrong kind will be renamed by adding ".renamed" to the name.
-  LLVM_ABI std::optional<Function *> remangleIntrinsicFunction(Function *F);
+  std::optional<Function *> remangleIntrinsicFunction(Function *F);
 
-  /// Returns the corresponding llvm.vector.interleaveN intrinsic for factor N.
-  LLVM_ABI Intrinsic::ID getInterleaveIntrinsicID(unsigned Factor);
+} // End Intrinsic namespace
 
-  /// Returns the corresponding llvm.vector.deinterleaveN intrinsic for factor
-  /// N.
-  LLVM_ABI Intrinsic::ID getDeinterleaveIntrinsicID(unsigned Factor);
-
-  } // namespace Intrinsic
-
-  } // namespace llvm
+} // End llvm namespace
 
 #endif

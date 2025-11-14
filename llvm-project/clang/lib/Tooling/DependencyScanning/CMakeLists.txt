@@ -1,4 +1,5 @@
 set(LLVM_LINK_COMPONENTS
+  ${LLVM_TARGETS_TO_BUILD}
   Core
   Option
   Support
@@ -10,8 +11,6 @@ add_clang_library(clangDependencyScanning
   DependencyScanningService.cpp
   DependencyScanningWorker.cpp
   DependencyScanningTool.cpp
-  DependencyScannerImpl.cpp
-  InProcessModuleCache.cpp
   ModuleDepCollector.cpp
 
   DEPENDS
@@ -20,9 +19,10 @@ add_clang_library(clangDependencyScanning
   LINK_LIBS
   clangAST
   clangBasic
+  clangCodeGen
   clangDriver
   clangFrontend
   clangLex
   clangSerialization
-  ${LLVM_PTHREAD_LIB}
+  clangTooling
   )

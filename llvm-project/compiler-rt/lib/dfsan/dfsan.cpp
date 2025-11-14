@@ -33,9 +33,6 @@
 #include "sanitizer_common/sanitizer_libc.h"
 #include "sanitizer_common/sanitizer_report_decorator.h"
 #include "sanitizer_common/sanitizer_stacktrace.h"
-#if SANITIZER_LINUX
-#  include <sys/personality.h>
-#endif
 
 using namespace __dfsan;
 
@@ -195,7 +192,7 @@ static dfsan_origin GetOriginIfTainted(uptr addr, uptr size) {
 // random freezes in forking applications as well as in signal handlers.
 // DFSan supports only Linux. So we do not restrict the store context size.
 #define GET_STORE_STACK_TRACE_PC_BP(pc, bp) \
-  UNINITIALIZED BufferedStackTrace stack;                 \
+  BufferedStackTrace stack;                 \
   stack.Unwind(pc, bp, nullptr, true, flags().store_context_size);
 
 #define PRINT_CALLER_STACK_TRACE        \
@@ -473,10 +470,12 @@ __dfsan_mem_shadow_origin_conditional_exchange(u8 condition, void *target,
   }
 }
 
-bool __dfsan::dfsan_inited;
-bool __dfsan::dfsan_init_is_running;
+namespace __dfsan {
 
-void __dfsan::dfsan_copy_memory(void *dst, const void *src, uptr size) {
+bool dfsan_inited = false;
+bool dfsan_init_is_running = false;
+
+void dfsan_copy_memory(void *dst, const void *src, uptr size) {
   internal_memcpy(dst, src, size);
   dfsan_mem_shadow_transfer(dst, src, size);
   if (dfsan_get_track_origins())
@@ -543,8 +542,7 @@ static void ReleaseOrClearShadows(void *addr, uptr size) {
   }
 }
 
-static void SetShadow(dfsan_label label, void *addr, uptr size,
-                      dfsan_origin origin) {
+void SetShadow(dfsan_label label, void *addr, uptr size, dfsan_origin origin) {
   if (0 != label) {
     const uptr beg_shadow_addr = (uptr)__dfsan::shadow_for(addr);
     internal_memset((void *)beg_shadow_addr, label, size);
@@ -558,6 +556,8 @@ static void SetShadow(dfsan_label label, void *addr, uptr size,
 
   ReleaseOrClearShadows(addr, size);
 }
+
+}  // namespace __dfsan
 
 // If the label s is tainted, set the size bytes from the address p to be a new
 // origin chain with the previous ID o and the current stack trace. This is
@@ -573,7 +573,7 @@ extern "C" SANITIZER_INTERFACE_ATTRIBUTE void __dfsan_maybe_store_origin(
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE void __dfsan_set_label(
     dfsan_label label, dfsan_origin origin, void *addr, uptr size) {
-  SetShadow(label, addr, size, origin);
+  __dfsan::SetShadow(label, addr, size, origin);
 }
 
 SANITIZER_INTERFACE_ATTRIBUTE
@@ -584,7 +584,7 @@ void dfsan_set_label(dfsan_label label, void *addr, uptr size) {
     GET_STORE_STACK_TRACE_PC_BP(pc, bp);
     init_origin = ChainOrigin(0, &stack, true);
   }
-  SetShadow(label, addr, size, init_origin);
+  __dfsan::SetShadow(label, addr, size, init_origin);
 }
 
 SANITIZER_INTERFACE_ATTRIBUTE
@@ -662,10 +662,9 @@ dfsan_has_label(dfsan_label label, dfsan_label elem) {
 }
 
 namespace __dfsan {
+
 typedef void (*dfsan_conditional_callback_t)(dfsan_label label,
                                              dfsan_origin origin);
-
-}  // namespace __dfsan
 static dfsan_conditional_callback_t conditional_callback = nullptr;
 static dfsan_label labels_in_signal_conditional = 0;
 
@@ -694,34 +693,35 @@ static void ConditionalCallback(dfsan_label label, dfsan_origin origin) {
   conditional_callback(label, origin);
 }
 
+}  // namespace __dfsan
+
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE void
 __dfsan_conditional_callback_origin(dfsan_label label, dfsan_origin origin) {
-  ConditionalCallback(label, origin);
+  __dfsan::ConditionalCallback(label, origin);
 }
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE void __dfsan_conditional_callback(
     dfsan_label label) {
-  ConditionalCallback(label, 0);
+  __dfsan::ConditionalCallback(label, 0);
 }
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE void dfsan_set_conditional_callback(
     __dfsan::dfsan_conditional_callback_t callback) {
-  conditional_callback = callback;
+  __dfsan::conditional_callback = callback;
 }
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE dfsan_label
 dfsan_get_labels_in_signal_conditional() {
-  return labels_in_signal_conditional;
+  return __dfsan::labels_in_signal_conditional;
 }
 
 namespace __dfsan {
+
 typedef void (*dfsan_reaches_function_callback_t)(dfsan_label label,
                                                   dfsan_origin origin,
                                                   const char *file,
                                                   unsigned int line,
                                                   const char *function);
-
-}  // namespace __dfsan
 static dfsan_reaches_function_callback_t reaches_function_callback = nullptr;
 static dfsan_label labels_in_signal_reaches_function = 0;
 
@@ -750,39 +750,41 @@ static void ReachesFunctionCallback(dfsan_label label, dfsan_origin origin,
   reaches_function_callback(label, origin, file, line, function);
 }
 
+}  // namespace __dfsan
+
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE void
 __dfsan_reaches_function_callback_origin(dfsan_label label, dfsan_origin origin,
                                          const char *file, unsigned int line,
                                          const char *function) {
-  ReachesFunctionCallback(label, origin, file, line, function);
+  __dfsan::ReachesFunctionCallback(label, origin, file, line, function);
 }
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE void
 __dfsan_reaches_function_callback(dfsan_label label, const char *file,
                                   unsigned int line, const char *function) {
-  ReachesFunctionCallback(label, 0, file, line, function);
+  __dfsan::ReachesFunctionCallback(label, 0, file, line, function);
 }
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE void
 dfsan_set_reaches_function_callback(
     __dfsan::dfsan_reaches_function_callback_t callback) {
-  reaches_function_callback = callback;
+  __dfsan::reaches_function_callback = callback;
 }
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE dfsan_label
 dfsan_get_labels_in_signal_reaches_function() {
-  return labels_in_signal_reaches_function;
+  return __dfsan::labels_in_signal_reaches_function;
 }
 
-namespace {
 class Decorator : public __sanitizer::SanitizerCommonDecorator {
  public:
   Decorator() : SanitizerCommonDecorator() {}
   const char *Origin() const { return Magenta(); }
 };
-}  // namespace
 
-static void PrintNoOriginTrackingWarning() {
+namespace {
+
+void PrintNoOriginTrackingWarning() {
   Decorator d;
   Printf(
       "  %sDFSan: origin tracking is not enabled. Did you specify the "
@@ -790,13 +792,13 @@ static void PrintNoOriginTrackingWarning() {
       d.Warning(), d.Default());
 }
 
-static void PrintNoTaintWarning(const void *address) {
+void PrintNoTaintWarning(const void *address) {
   Decorator d;
-  Printf("  %sDFSan: no tainted value at %zx%s\n", d.Warning(), (uptr)address,
+  Printf("  %sDFSan: no tainted value at %x%s\n", d.Warning(), address,
          d.Default());
 }
 
-static void PrintInvalidOriginWarning(dfsan_label label, const void *address) {
+void PrintInvalidOriginWarning(dfsan_label label, const void *address) {
   Decorator d;
   Printf(
       "  %sTaint value 0x%x (at %p) has invalid origin tracking. This can "
@@ -804,7 +806,7 @@ static void PrintInvalidOriginWarning(dfsan_label label, const void *address) {
       d.Warning(), label, address, d.Default());
 }
 
-static void PrintInvalidOriginIdWarning(dfsan_origin origin) {
+void PrintInvalidOriginIdWarning(dfsan_origin origin) {
   Decorator d;
   Printf(
       "  %sOrigin Id %d has invalid origin tracking. This can "
@@ -812,7 +814,7 @@ static void PrintInvalidOriginIdWarning(dfsan_origin origin) {
       d.Warning(), origin, d.Default());
 }
 
-static bool PrintOriginTraceFramesToStr(Origin o, InternalScopedString *out) {
+bool PrintOriginTraceFramesToStr(Origin o, InternalScopedString *out) {
   Decorator d;
   bool found = false;
 
@@ -836,8 +838,8 @@ static bool PrintOriginTraceFramesToStr(Origin o, InternalScopedString *out) {
   return found;
 }
 
-static bool PrintOriginTraceToStr(const void *addr, const char *description,
-                                  InternalScopedString *out) {
+bool PrintOriginTraceToStr(const void *addr, const char *description,
+                           InternalScopedString *out) {
   CHECK(out);
   CHECK(dfsan_get_track_origins());
   Decorator d;
@@ -854,6 +856,8 @@ static bool PrintOriginTraceToStr(const void *addr, const char *description,
   Origin o = Origin::FromRawId(origin);
   return PrintOriginTraceFramesToStr(o, out);
 }
+
+}  // namespace
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE void dfsan_print_origin_trace(
     const void *addr, const char *description) {
@@ -1084,8 +1088,8 @@ extern "C" void dfsan_flush() {
       Die();
     }
   }
-  labels_in_signal_conditional = 0;
-  labels_in_signal_reaches_function = 0;
+  __dfsan::labels_in_signal_conditional = 0;
+  __dfsan::labels_in_signal_reaches_function = 0;
 }
 
 // TODO: CheckMemoryLayoutSanity is based on msan.
@@ -1123,13 +1127,11 @@ static void CheckMemoryLayoutSanity() {
 
 // TODO: CheckMemoryRangeAvailability is based on msan.
 // Consider refactoring these into a shared implementation.
-static bool CheckMemoryRangeAvailability(uptr beg, uptr size, bool verbose) {
+static bool CheckMemoryRangeAvailability(uptr beg, uptr size) {
   if (size > 0) {
     uptr end = beg + size - 1;
     if (!MemoryRangeIsAvailable(beg, end)) {
-      if (verbose)
-        Printf("FATAL: Memory range %p - %p is not available.\n", (void*)beg,
-               (void*)end);
+      Printf("FATAL: Memory range %p - %p is not available.\n", beg, end);
       return false;
     }
   }
@@ -1151,8 +1153,8 @@ static bool ProtectMemoryRange(uptr beg, uptr size, const char *name) {
     }
     if ((uptr)addr != beg) {
       uptr end = beg + size - 1;
-      Printf("FATAL: Cannot protect memory range %p - %p (%s).\n", (void*)beg,
-             (void*)end, name);
+      Printf("FATAL: Cannot protect memory range %p - %p (%s).\n", beg, end,
+             name);
       return false;
     }
   }
@@ -1161,7 +1163,7 @@ static bool ProtectMemoryRange(uptr beg, uptr size, const char *name) {
 
 // TODO: InitShadow is based on msan.
 // Consider refactoring these into a shared implementation.
-static bool InitShadow(bool init_origins, bool dry_run) {
+bool InitShadow(bool init_origins) {
   // Let user know mapping parameters first.
   VPrintf(1, "dfsan_init %p\n", (void *)&__dfsan::dfsan_init);
   for (unsigned i = 0; i < kMemoryLayoutSize; ++i)
@@ -1171,9 +1173,8 @@ static bool InitShadow(bool init_origins, bool dry_run) {
   CheckMemoryLayoutSanity();
 
   if (!MEM_IS_APP(&__dfsan::dfsan_init)) {
-    if (!dry_run)
-      Printf("FATAL: Code %p is out of application range. Non-PIE build?\n",
-             (void*)&__dfsan::dfsan_init);
+    Printf("FATAL: Code %p is out of application range. Non-PIE build?\n",
+           (uptr)&__dfsan::dfsan_init);
     return false;
   }
 
@@ -1194,60 +1195,25 @@ static bool InitShadow(bool init_origins, bool dry_run) {
     bool protect = type == MappingDesc::INVALID ||
                    (!init_origins && type == MappingDesc::ORIGIN);
     CHECK(!(map && protect));
-    if (!map && !protect) {
-      CHECK(type == MappingDesc::APP || type == MappingDesc::ALLOCATOR);
-
-      if (dry_run && type == MappingDesc::ALLOCATOR &&
-          !CheckMemoryRangeAvailability(start, size, !dry_run))
-        return false;
-    }
+    if (!map && !protect)
+      CHECK(type == MappingDesc::APP);
     if (map) {
-      if (dry_run && !CheckMemoryRangeAvailability(start, size, !dry_run))
+      if (!CheckMemoryRangeAvailability(start, size))
         return false;
-      if (!dry_run &&
-          !MmapFixedSuperNoReserve(start, size, kMemoryLayout[i].name))
+      if (!MmapFixedSuperNoReserve(start, size, kMemoryLayout[i].name))
         return false;
-      if (!dry_run && common_flags()->use_madv_dontdump)
+      if (common_flags()->use_madv_dontdump)
         DontDumpShadowMemory(start, size);
     }
     if (protect) {
-      if (dry_run && !CheckMemoryRangeAvailability(start, size, !dry_run))
+      if (!CheckMemoryRangeAvailability(start, size))
         return false;
-      if (!dry_run && !ProtectMemoryRange(start, size, kMemoryLayout[i].name))
+      if (!ProtectMemoryRange(start, size, kMemoryLayout[i].name))
         return false;
     }
   }
 
   return true;
-}
-
-static bool InitShadowWithReExec(bool init_origins) {
-  // Start with dry run: check layout is ok, but don't print warnings because
-  // warning messages will cause tests to fail (even if we successfully re-exec
-  // after the warning).
-  bool success = InitShadow(init_origins, true);
-  if (!success) {
-#if SANITIZER_LINUX
-    // Perhaps ASLR entropy is too high. If ASLR is enabled, re-exec without it.
-    int old_personality = personality(0xffffffff);
-    bool aslr_on =
-        (old_personality != -1) && ((old_personality & ADDR_NO_RANDOMIZE) == 0);
-
-    if (aslr_on) {
-      VReport(1,
-              "WARNING: DataflowSanitizer: memory layout is incompatible, "
-              "possibly due to high-entropy ASLR.\n"
-              "Re-execing with fixed virtual address space.\n"
-              "N.B. reducing ASLR entropy is preferable.\n");
-      CHECK_NE(personality(old_personality | ADDR_NO_RANDOMIZE), -1);
-      ReExec();
-    }
-#endif
-  }
-
-  // The earlier dry run didn't actually map or protect anything. Run again in
-  // non-dry run mode.
-  return success && InitShadow(init_origins, false);
 }
 
 static void DFsanInit(int argc, char **argv, char **envp) {
@@ -1263,13 +1229,7 @@ static void DFsanInit(int argc, char **argv, char **envp) {
 
   CheckASLR();
 
-  InitializePlatformEarly();
-
-  if (!InitShadowWithReExec(dfsan_get_track_origins())) {
-    Printf("FATAL: DataflowSanitizer can not mmap the shadow memory.\n");
-    DumpProcessMap();
-    Die();
-  }
+  InitShadow(dfsan_get_track_origins());
 
   initialize_interceptors();
 
@@ -1286,7 +1246,11 @@ static void DFsanInit(int argc, char **argv, char **envp) {
   dfsan_inited = true;
 }
 
-void __dfsan::dfsan_init() { DFsanInit(0, nullptr, nullptr); }
+namespace __dfsan {
+
+void dfsan_init() { DFsanInit(0, nullptr, nullptr); }
+
+}  // namespace __dfsan
 
 #if SANITIZER_CAN_USE_PREINIT_ARRAY
 __attribute__((section(".preinit_array"),

@@ -175,8 +175,10 @@ public:
   constexpr bool empty() const { return none(); }
   void clear() { reset(); }
   void insert(enumerationType x) { set(x); }
-  void emplace(enumerationType x) { set(x); }
+  void insert(enumerationType &&x) { set(x); }
+  void emplace(enumerationType &&x) { set(x); }
   void erase(enumerationType x) { reset(x); }
+  void erase(enumerationType &&x) { reset(x); }
 
   constexpr std::optional<enumerationType> LeastElement() const {
     if (empty()) {

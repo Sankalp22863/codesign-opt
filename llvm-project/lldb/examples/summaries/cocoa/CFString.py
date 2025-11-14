@@ -11,6 +11,11 @@ import lldb
 import lldb.runtime.objc.objc_runtime
 import lldb.formatters.Logger
 
+try:
+    unichr
+except NameError:
+    unichr = chr
+
 
 def CFString_SummaryProvider(valobj, dict):
     logger = lldb.formatters.Logger.Logger()
@@ -102,7 +107,7 @@ class CFStringSynthProvider:
                 value = b1 * 256 + b0
             else:
                 value = b0 * 256 + b1
-            pystr = pystr + chr(value)
+            pystr = pystr + unichr(value)
             # read max_len unicode values, not max_len bytes
             max_len = max_len - 1
         return pystr
@@ -248,9 +253,9 @@ class CFStringSynthProvider:
             elif (
                 self.inline
                 and self.explicit
-                and not self.unicode
-                and not self.special
-                and not self.mutable
+                and self.unicode == False
+                and self.special == False
+                and self.mutable == False
             ):
                 return self.handle_inline_explicit()
             elif self.unicode:

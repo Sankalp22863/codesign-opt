@@ -103,8 +103,8 @@ void REPL::IOHandlerActivated(IOHandler &io_handler, bool interactive) {
   lldb::ProcessSP process_sp = m_target.GetProcessSP();
   if (process_sp && process_sp->IsAlive())
     return;
-  LockedStreamFile locked_stream = io_handler.GetErrorStreamFileSP()->Lock();
-  locked_stream.Printf("REPL requires a running target process.\n");
+  lldb::StreamFileSP error_sp(io_handler.GetErrorStreamFileSP());
+  error_sp->Printf("REPL requires a running target process.\n");
   io_handler.SetIsDone(true);
 }
 
@@ -219,10 +219,8 @@ static bool ReadCode(const std::string &path, std::string &code,
 }
 
 void REPL::IOHandlerInputComplete(IOHandler &io_handler, std::string &code) {
-  lldb::StreamFileSP output_sp = std::make_shared<StreamFile>(
-      io_handler.GetOutputStreamFileSP()->GetUnlockedFileSP());
-  lldb::StreamFileSP error_sp = std::make_shared<StreamFile>(
-      io_handler.GetErrorStreamFileSP()->GetUnlockedFileSP());
+  lldb::StreamFileSP output_sp(io_handler.GetOutputStreamFileSP());
+  lldb::StreamFileSP error_sp(io_handler.GetErrorStreamFileSP());
   bool extra_line = false;
   bool did_quit = false;
 
@@ -321,7 +319,7 @@ void REPL::IOHandlerInputComplete(IOHandler &io_handler, std::string &code) {
       const bool colorize_err = error_sp->GetFile().GetIsTerminalWithColors();
 
       EvaluateExpressionOptions expr_options = m_expr_options;
-      expr_options.SetCoerceToId(m_varobj_options.use_object_desc);
+      expr_options.SetCoerceToId(m_varobj_options.use_objc);
       expr_options.SetKeepInMemory(true);
       expr_options.SetUseDynamic(m_varobj_options.use_dynamic);
       expr_options.SetGenerateDebugInfo(true);
@@ -341,9 +339,12 @@ void REPL::IOHandlerInputComplete(IOHandler &io_handler, std::string &code) {
 
       const char *expr_prefix = nullptr;
       lldb::ValueObjectSP result_valobj_sp;
-      lldb::ExpressionResults execution_results = UserExpression::Evaluate(
-          exe_ctx, expr_options, code.c_str(), expr_prefix, result_valobj_sp);
       Status error;
+      lldb::ExpressionResults execution_results =
+          UserExpression::Evaluate(exe_ctx, expr_options, code.c_str(),
+                                   expr_prefix, result_valobj_sp, error,
+                                   nullptr); // fixed expression
+
       if (llvm::Error err = OnExpressionEvaluated(exe_ctx, code, expr_options,
                                                   execution_results,
                                                   result_valobj_sp, error)) {
@@ -472,8 +473,7 @@ void REPL::IOHandlerInputComplete(IOHandler &io_handler, std::string &code) {
 
             // Now set the default file and line to the REPL source file
             m_target.GetSourceManager().SetDefaultFileAndLine(
-                std::make_shared<SupportFile>(FileSpec(m_repl_source_path)),
-                new_default_line);
+                FileSpec(m_repl_source_path), new_default_line);
           }
           static_cast<IOHandlerEditline &>(io_handler)
               .SetBaseLineNumber(m_code.GetSize() + 1);
@@ -570,11 +570,13 @@ Status REPL::RunLoop() {
 
   lldb::IOHandlerSP io_handler_sp(GetIOHandler());
 
-  std::optional<SourceManager::SupportFileAndLine> default_file_line;
+  FileSpec save_default_file;
+  uint32_t save_default_line = 0;
 
   if (!m_repl_source_path.empty()) {
     // Save the current default file and line
-    default_file_line = m_target.GetSourceManager().GetDefaultFileAndLine();
+    m_target.GetSourceManager().GetDefaultFileAndLine(save_default_file,
+                                                      save_default_line);
   }
 
   debugger.RunIOHandlerAsync(io_handler_sp);
@@ -613,8 +615,8 @@ Status REPL::RunLoop() {
   }
 
   // Restore the default file and line
-  if (default_file_line)
-    m_target.GetSourceManager().SetDefaultFileAndLine(
-        default_file_line->support_file_sp, default_file_line->line);
+  if (save_default_file && save_default_line != 0)
+    m_target.GetSourceManager().SetDefaultFileAndLine(save_default_file,
+                                                      save_default_line);
   return error;
 }

@@ -29,10 +29,9 @@
 //   - value-initializes acc_.
 
 #include <array>
-#include <cassert>
 #include <concepts>
+#include <cassert>
 #include <mdspan>
-#include <span> // dynamic_extent
 #include <type_traits>
 
 #include "test_macros.h"
@@ -48,8 +47,9 @@ constexpr auto array_from_extents(const Extents& exts, std::index_sequence<Idxs.
 }
 
 template <class MDS, class Exts>
-concept check_mdspan_ctor_implicit =
-    requires(MDS m, typename MDS::data_handle_type h, const Exts& exts) { m = {h, exts}; };
+concept check_mdspan_ctor_implicit = requires(MDS m, typename MDS::data_handle_type h, const Exts& exts) {
+  m = {h, exts};
+};
 
 template <class H, class M, class A, size_t N>
 constexpr void

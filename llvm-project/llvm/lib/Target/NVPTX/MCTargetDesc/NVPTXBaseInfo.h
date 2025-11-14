@@ -16,22 +16,28 @@
 #ifndef LLVM_LIB_TARGET_NVPTX_MCTARGETDESC_NVPTXBASEINFO_H
 #define LLVM_LIB_TARGET_NVPTX_MCTARGETDESC_NVPTXBASEINFO_H
 
-#include "llvm/Support/NVPTXAddrSpace.h"
 namespace llvm {
 
-using namespace NVPTXAS;
+enum AddressSpace {
+  ADDRESS_SPACE_GENERIC = 0,
+  ADDRESS_SPACE_GLOBAL = 1,
+  ADDRESS_SPACE_SHARED = 3,
+  ADDRESS_SPACE_CONST = 4,
+  ADDRESS_SPACE_LOCAL = 5,
+
+  // NVVM Internal
+  ADDRESS_SPACE_PARAM = 101
+};
 
 namespace NVPTXII {
 enum {
   // These must be kept in sync with TSFlags in NVPTXInstrFormats.td
-  // clang-format off
-  IsTexFlag            =  0x40,
-  IsSuldMask           = 0x180,
-  IsSuldShift          =   0x7,
-  IsSustFlag           = 0x200,
-  IsSurfTexQueryFlag   = 0x400,
-  IsTexModeUnifiedFlag = 0x800,
-  // clang-format on
+  IsTexFlag = 0x80,
+  IsSuldMask = 0x300,
+  IsSuldShift = 8,
+  IsSustFlag = 0x400,
+  IsSurfTexQueryFlag = 0x800,
+  IsTexModeUnifiedFlag = 0x1000
 };
 } // namespace NVPTXII
 

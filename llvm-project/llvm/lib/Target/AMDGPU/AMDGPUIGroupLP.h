@@ -14,13 +14,7 @@
 
 namespace llvm {
 
-namespace AMDGPU {
-// The current phase of instruction scheduling
-enum class SchedulingPhase { Initial, PreRAReentry, PostRA };
-} // namespace AMDGPU
-
-std::unique_ptr<ScheduleDAGMutation>
-createIGroupLPDAGMutation(AMDGPU::SchedulingPhase Phase);
+std::unique_ptr<ScheduleDAGMutation> createIGroupLPDAGMutation(bool IsReentry);
 
 } // namespace llvm
 

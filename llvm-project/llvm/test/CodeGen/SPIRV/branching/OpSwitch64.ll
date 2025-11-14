@@ -19,11 +19,7 @@
 
 ; RUN: llc -O0 -mtriple=spirv64-unknown-unknown %s -o - | FileCheck %s --check-prefix=CHECK-SPIRV
 
-; RUN: %if spirv-tools %{ llc -O0 -mtriple=spirv64-unknown-unknown %s -o - -filetype=obj | spirv-val %}
-
-; RUN: %if spirv-tools %{ llc -O0 -mtriple=spirv64-unknown-unknown %s -o - -filetype=asm | spirv-as - -o /dev/null %}
-
-; CHECK-SPIRV: OpSwitch %[[#]] %[[#]] 0 %[[#]] 1 %[[#]] 21474836481 %[[#]]
+; CHECK-SPIRV: OpSwitch %[[#]] %[[#]] 0 0 %[[#]] 1 0 %[[#]] 1 5 %[[#]]
 
 define spir_kernel void @test_64(i32 addrspace(1)* %res) {
 entry:

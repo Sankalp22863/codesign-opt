@@ -10,17 +10,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "XCoreTargetMachine.h"
+#include "MCTargetDesc/XCoreMCTargetDesc.h"
 #include "TargetInfo/XCoreTargetInfo.h"
 #include "XCore.h"
 #include "XCoreMachineFunctionInfo.h"
 #include "XCoreTargetObjectFile.h"
 #include "XCoreTargetTransformInfo.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/CodeGen.h"
-#include "llvm/Support/Compiler.h"
 #include <optional>
 
 using namespace llvm;
@@ -47,7 +48,7 @@ XCoreTargetMachine::XCoreTargetMachine(const Target &T, const Triple &TT,
                                        std::optional<Reloc::Model> RM,
                                        std::optional<CodeModel::Model> CM,
                                        CodeGenOptLevel OL, bool JIT)
-    : CodeGenTargetMachineImpl(
+    : LLVMTargetMachine(
           T, "e-m:e-p:32:32-i1:8:32-i8:8:32-i16:16:32-i64:32-f64:32-a:0:32-n32",
           TT, CPU, FS, Options, getEffectiveRelocModel(RM),
           getEffectiveXCoreCodeModel(CM), OL),
@@ -83,7 +84,7 @@ TargetPassConfig *XCoreTargetMachine::createPassConfig(PassManagerBase &PM) {
 }
 
 void XCorePassConfig::addIRPasses() {
-  addPass(createAtomicExpandLegacyPass());
+  addPass(createAtomicExpandPass());
 
   TargetPassConfig::addIRPasses();
 }
@@ -103,17 +104,15 @@ void XCorePassConfig::addPreEmitPass() {
 }
 
 // Force static initialization.
-extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeXCoreTarget() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeXCoreTarget() {
   RegisterTargetMachine<XCoreTargetMachine> X(getTheXCoreTarget());
   PassRegistry &PR = *PassRegistry::getPassRegistry();
-  initializeXCoreAsmPrinterPass(PR);
-  initializeXCoreDAGToDAGISelLegacyPass(PR);
-  initializeXCoreLowerThreadLocalPass(PR);
+  initializeXCoreDAGToDAGISelPass(PR);
 }
 
 TargetTransformInfo
 XCoreTargetMachine::getTargetTransformInfo(const Function &F) const {
-  return TargetTransformInfo(std::make_unique<XCoreTTIImpl>(this, F));
+  return TargetTransformInfo(XCoreTTIImpl(this, F));
 }
 
 MachineFunctionInfo *XCoreTargetMachine::createMachineFunctionInfo(

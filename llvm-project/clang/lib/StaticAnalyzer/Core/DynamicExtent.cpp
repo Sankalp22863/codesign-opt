@@ -12,6 +12,7 @@
 
 #include "clang/StaticAnalyzer/Core/PathSensitive/DynamicExtent.h"
 #include "clang/AST/Expr.h"
+#include "clang/Basic/LLVM.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/MemRegion.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SValBuilder.h"
@@ -119,7 +120,7 @@ DefinedOrUnknownSVal getDynamicElementCountWithOffset(ProgramStateRef State,
 }
 
 ProgramStateRef setDynamicExtent(ProgramStateRef State, const MemRegion *MR,
-                                 DefinedOrUnknownSVal Size) {
+                                 DefinedOrUnknownSVal Size, SValBuilder &SVB) {
   MR = MR->StripCasts();
 
   if (Size.isUnknown())

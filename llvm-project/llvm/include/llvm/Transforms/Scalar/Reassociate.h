@@ -25,10 +25,8 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SetVector.h"
-#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/ValueHandle.h"
-#include "llvm/Support/Compiler.h"
 #include <deque>
 
 namespace llvm {
@@ -40,7 +38,6 @@ class Function;
 class Instruction;
 class IRBuilderBase;
 class Value;
-struct OverflowTracking;
 
 /// A private "module" namespace for types and utilities used by Reassociate.
 /// These are implementation details and should not be used by clients.
@@ -97,7 +94,7 @@ protected:
   bool MadeChange;
 
 public:
-  LLVM_ABI PreservedAnalyses run(Function &F, FunctionAnalysisManager &);
+  PreservedAnalyses run(Function &F, FunctionAnalysisManager &);
 
 private:
   void BuildRankMap(Function &F, ReversePostOrderTraversal<Function *> &RPOT);
@@ -106,23 +103,23 @@ private:
   void ReassociateExpression(BinaryOperator *I);
   void RewriteExprTree(BinaryOperator *I,
                        SmallVectorImpl<reassociate::ValueEntry> &Ops,
-                       OverflowTracking Flags);
+                       bool HasNUW);
   Value *OptimizeExpression(BinaryOperator *I,
                             SmallVectorImpl<reassociate::ValueEntry> &Ops);
   Value *OptimizeAdd(Instruction *I,
                      SmallVectorImpl<reassociate::ValueEntry> &Ops);
   Value *OptimizeXor(Instruction *I,
                      SmallVectorImpl<reassociate::ValueEntry> &Ops);
-  bool CombineXorOpnd(BasicBlock::iterator It, reassociate::XorOpnd *Opnd1,
+  bool CombineXorOpnd(Instruction *I, reassociate::XorOpnd *Opnd1,
                       APInt &ConstOpnd, Value *&Res);
-  bool CombineXorOpnd(BasicBlock::iterator It, reassociate::XorOpnd *Opnd1,
+  bool CombineXorOpnd(Instruction *I, reassociate::XorOpnd *Opnd1,
                       reassociate::XorOpnd *Opnd2, APInt &ConstOpnd,
                       Value *&Res);
   Value *buildMinimalMultiplyDAG(IRBuilderBase &Builder,
                                  SmallVectorImpl<reassociate::Factor> &Factors);
   Value *OptimizeMul(BinaryOperator *I,
                      SmallVectorImpl<reassociate::ValueEntry> &Ops);
-  Value *RemoveFactorFromExpression(Value *V, Value *Factor, DebugLoc DL);
+  Value *RemoveFactorFromExpression(Value *V, Value *Factor);
   void EraseInst(Instruction *I);
   void RecursivelyEraseDeadInsts(Instruction *I, OrderedSet &Insts);
   void OptimizeInst(Instruction *I);

@@ -164,17 +164,12 @@ void lldb_private::ParseLinuxSMapRegions(llvm::StringRef linux_smap,
     if (!name.contains(' ')) {
       if (region) {
         if (name == "VmFlags") {
-          region->SetMemoryTagged(MemoryRegionInfo::eNo);
-          region->SetIsShadowStack(MemoryRegionInfo::eNo);
-
-          llvm::SmallVector<llvm::StringRef> flags;
-          value.split(flags, ' ', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-          for (llvm::StringRef flag : flags)
-            if (flag == "mt")
-              region->SetMemoryTagged(MemoryRegionInfo::eYes);
-            else if (flag == "ss")
-              region->SetIsShadowStack(MemoryRegionInfo::eYes);
+          if (value.contains("mt"))
+            region->SetMemoryTagged(MemoryRegionInfo::eYes);
+          else
+            region->SetMemoryTagged(MemoryRegionInfo::eNo);
         }
+        // Ignore anything else
       } else {
         // Orphaned settings line
         callback(ProcMapError(

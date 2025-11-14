@@ -14,7 +14,6 @@
 
 #include <memory>
 #include <cassert>
-#include <cstddef>
 #include <new>
 
 #include "test_macros.h"
@@ -46,6 +45,7 @@ void test()
 int main(int, char**)
 {
     test<double>();
+    LIBCPP_ONLY(test<const double>());
 
   return 0;
 }

@@ -4,19 +4,21 @@
 define void @PR91005(ptr %0) minsize {
 ; CHECK-LABEL: PR91005:
 ; CHECK:       # %bb.0:
+; CHECK-NEXT:    xorl %eax, %eax
 ; CHECK-NEXT:    testb %al, %al
 ; CHECK-NEXT:    je .LBB0_2
 ; CHECK-NEXT:  # %bb.1:
-; CHECK-NEXT:    movl $31744, %eax # imm = 0x7C00
+; CHECK-NEXT:    vpcmpeqw {{\.?LCPI[0-9]+_[0-9]+}}(%rip), %xmm0, %xmm0
+; CHECK-NEXT:    vpand {{\.?LCPI[0-9]+_[0-9]+}}(%rip), %xmm0, %xmm0
+; CHECK-NEXT:    vpextrw $0, %xmm0, %eax
+; CHECK-NEXT:    movzwl %ax, %eax
 ; CHECK-NEXT:    vmovd %eax, %xmm0
-; CHECK-NEXT:    vpcmpeqw %xmm0, %xmm0, %xmm0
-; CHECK-NEXT:    vpinsrw $0, {{\.?LCPI[0-9]+_[0-9]+}}(%rip), %xmm0, %xmm1
-; CHECK-NEXT:    vpand %xmm1, %xmm0, %xmm0
 ; CHECK-NEXT:    vcvtph2ps %xmm0, %xmm0
-; CHECK-NEXT:    vpxor %xmm1, %xmm1, %xmm1
+; CHECK-NEXT:    vxorps %xmm1, %xmm1, %xmm1
 ; CHECK-NEXT:    vmulss %xmm1, %xmm0, %xmm0
 ; CHECK-NEXT:    vcvtps2ph $4, %xmm0, %xmm0
-; CHECK-NEXT:    vpextrw $0, %xmm0, (%rdi)
+; CHECK-NEXT:    vmovd %xmm0, %eax
+; CHECK-NEXT:    movw %ax, (%rdi)
 ; CHECK-NEXT:  .LBB0_2: # %common.ret
 ; CHECK-NEXT:    retq
   %2 = bitcast <2 x half> poison to <2 x i16>

@@ -10,12 +10,12 @@ jobs:
   automate-issues-labels:
     permissions:
       issues: write
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     if: github.repository == 'llvm/llvm-project'
     steps:
-      - uses: llvm/actions/issue-labeler@42d80571b13f4599bbefbc7189728b64723c7f78 # main
+      - uses: llvm/actions/issue-labeler@main
         with:
-          repo-token: ${{ secrets.ISSUE_SUBSCRIBER_TOKEN }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
           configuration-path: .github/new-issues-labeler.yml
           include-title: 1
           include-body: 0

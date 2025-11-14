@@ -17,12 +17,9 @@
 #define LLVM_ADT_STRINGMAPENTRY_H
 
 #include "llvm/ADT/StringRef.h"
-#include <utility>
+#include <optional>
 
 namespace llvm {
-
-/// The "value type" of StringSet represented as an empty struct.
-struct EmptyStringSetTag {};
 
 /// StringMapEntryBase - Shared base class of StringMapEntry instances.
 class StringMapEntryBase {
@@ -88,13 +85,14 @@ public:
 };
 
 template <>
-class StringMapEntryStorage<EmptyStringSetTag> : public StringMapEntryBase {
+class StringMapEntryStorage<std::nullopt_t> : public StringMapEntryBase {
 public:
-  explicit StringMapEntryStorage(size_t keyLength, EmptyStringSetTag = {})
+  explicit StringMapEntryStorage(size_t keyLength,
+                                 std::nullopt_t = std::nullopt)
       : StringMapEntryBase(keyLength) {}
   StringMapEntryStorage(StringMapEntryStorage &entry) = delete;
 
-  EmptyStringSetTag getValue() const { return {}; }
+  std::nullopt_t getValue() const { return std::nullopt; }
 };
 
 /// StringMapEntry - This is used to represent one value that is inserted into
@@ -112,13 +110,15 @@ public:
   }
 
   /// getKeyData - Return the start of the string data that is the key for this
-  /// value. The string data is always stored immediately after the
+  /// value.  The string data is always stored immediately after the
   /// StringMapEntry object.
   const char *getKeyData() const {
     return reinterpret_cast<const char *>(this + 1);
   }
 
-  StringRef first() const { return getKey(); }
+  StringRef first() const {
+    return StringRef(getKeyData(), this->getKeyLength());
+  }
 
   /// Create a StringMapEntry for the specified key construct the value using
   /// \p InitiVals.
@@ -149,33 +149,25 @@ public:
 };
 
 // Allow structured bindings on StringMapEntry.
-
-template <std::size_t Index, typename ValueTy>
-decltype(auto) get(StringMapEntry<ValueTy> &E) {
-  static_assert(Index < 2);
-  if constexpr (Index == 0)
-    return E.getKey();
-  else
-    return E.getValue();
-}
-
 template <std::size_t Index, typename ValueTy>
 decltype(auto) get(const StringMapEntry<ValueTy> &E) {
   static_assert(Index < 2);
   if constexpr (Index == 0)
-    return E.getKey();
+    return E.first();
   else
-    return E.getValue();
+    return E.second;
 }
 
 } // end namespace llvm
 
+namespace std {
 template <typename ValueTy>
-struct std::tuple_size<llvm::StringMapEntry<ValueTy>>
+struct tuple_size<llvm::StringMapEntry<ValueTy>>
     : std::integral_constant<std::size_t, 2> {};
 
-template <std::size_t Index, typename ValueTy>
-struct std::tuple_element<Index, llvm::StringMapEntry<ValueTy>>
-    : std::tuple_element<Index, std::pair<llvm::StringRef, ValueTy>> {};
+template <std::size_t I, typename ValueTy>
+struct tuple_element<I, llvm::StringMapEntry<ValueTy>>
+    : std::conditional<I == 0, llvm::StringRef, ValueTy> {};
+} // namespace std
 
 #endif // LLVM_ADT_STRINGMAPENTRY_H

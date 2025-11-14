@@ -13,7 +13,6 @@
 #include "ARCISelLowering.h"
 #include "ARC.h"
 #include "ARCMachineFunctionInfo.h"
-#include "ARCSelectionDAGInfo.h"
 #include "ARCSubtarget.h"
 #include "ARCTargetMachine.h"
 #include "MCTargetDesc/ARCInfo.h"
@@ -177,6 +176,24 @@ ARCTargetLowering::ARCTargetLowering(const TargetMachine &TM,
                      isTypeLegal(MVT::i64) ? Legal : Custom);
 
   setMaxAtomicSizeInBitsSupported(0);
+}
+
+const char *ARCTargetLowering::getTargetNodeName(unsigned Opcode) const {
+  switch (Opcode) {
+  case ARCISD::BL:
+    return "ARCISD::BL";
+  case ARCISD::CMOV:
+    return "ARCISD::CMOV";
+  case ARCISD::CMP:
+    return "ARCISD::CMP";
+  case ARCISD::BRcc:
+    return "ARCISD::BRcc";
+  case ARCISD::RET:
+    return "ARCISD::RET";
+  case ARCISD::GAWRAPPER:
+    return "ARCISD::GAWRAPPER";
+  }
+  return nullptr;
 }
 
 //===----------------------------------------------------------------------===//
@@ -591,7 +608,7 @@ SDValue ARCTargetLowering::LowerCallArguments(
       InVals.push_back(FIN);
       MemOps.push_back(DAG.getMemcpy(
           Chain, dl, FIN, ArgDI.SDV, DAG.getConstant(Size, dl, MVT::i32),
-          Alignment, false, false, /*CI=*/nullptr, false, MachinePointerInfo(),
+          Alignment, false, false, false, MachinePointerInfo(),
           MachinePointerInfo()));
     } else {
       InVals.push_back(ArgDI.SDV);
@@ -613,8 +630,7 @@ SDValue ARCTargetLowering::LowerCallArguments(
 
 bool ARCTargetLowering::CanLowerReturn(
     CallingConv::ID CallConv, MachineFunction &MF, bool IsVarArg,
-    const SmallVectorImpl<ISD::OutputArg> &Outs, LLVMContext &Context,
-    const Type *RetTy) const {
+    const SmallVectorImpl<ISD::OutputArg> &Outs, LLVMContext &Context) const {
   SmallVector<CCValAssign, 16> RVLocs;
   CCState CCInfo(CallConv, IsVarArg, MF, RVLocs, Context);
   if (!CCInfo.CheckReturn(Outs, RetCC_ARC))

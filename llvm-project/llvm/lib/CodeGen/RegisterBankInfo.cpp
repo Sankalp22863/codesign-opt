@@ -100,12 +100,15 @@ RegisterBankInfo::getRegBank(Register Reg, const MachineRegisterInfo &MRI,
 }
 
 const TargetRegisterClass *
-RegisterBankInfo::getMinimalPhysRegClass(MCRegister Reg,
+RegisterBankInfo::getMinimalPhysRegClass(Register Reg,
                                          const TargetRegisterInfo &TRI) const {
-  const auto [RegRCIt, Inserted] = PhysRegMinimalRCs.try_emplace(Reg);
-  if (Inserted)
-    RegRCIt->second = TRI.getMinimalPhysRegClassLLT(Reg, LLT());
-  return RegRCIt->second;
+  assert(Reg.isPhysical() && "Reg must be a physreg");
+  const auto &RegRCIt = PhysRegMinimalRCs.find(Reg);
+  if (RegRCIt != PhysRegMinimalRCs.end())
+    return RegRCIt->second;
+  const TargetRegisterClass *PhysRC = TRI.getMinimalPhysRegClassLLT(Reg, LLT());
+  PhysRegMinimalRCs[Reg] = PhysRC;
+  return PhysRC;
 }
 
 const RegisterBank *RegisterBankInfo::getRegBankFromConstraints(
@@ -212,9 +215,8 @@ RegisterBankInfo::getInstrMappingImpl(const MachineInstr &MI) const {
       }
     }
 
-    TypeSize Size = getSizeInBits(Reg, MRI, TRI);
-    const ValueMapping *ValMapping =
-        &getValueMapping(0, Size.getKnownMinValue(), *CurRegBank);
+    unsigned Size = getSizeInBits(Reg, MRI, TRI);
+    const ValueMapping *ValMapping = &getValueMapping(0, Size, *CurRegBank);
     if (IsCopyLike) {
       if (!OperandsMapping[0]) {
         if (MI.isRegSequence()) {
@@ -282,13 +284,13 @@ RegisterBankInfo::getPartialMapping(unsigned StartIdx, unsigned Length,
   ++NumPartialMappingsAccessed;
 
   hash_code Hash = hashPartialMapping(StartIdx, Length, &RegBank);
-  auto [It, Inserted] = MapOfPartialMappings.try_emplace(Hash);
-  if (!Inserted)
+  const auto &It = MapOfPartialMappings.find(Hash);
+  if (It != MapOfPartialMappings.end())
     return *It->second;
 
   ++NumPartialMappingsCreated;
 
-  auto &PartMapping = It->second;
+  auto &PartMapping = MapOfPartialMappings[Hash];
   PartMapping = std::make_unique<PartialMapping>(StartIdx, Length, RegBank);
   return *PartMapping;
 }
@@ -307,7 +309,7 @@ hashValueMapping(const RegisterBankInfo::PartialMapping *BreakDown,
   SmallVector<size_t, 8> Hashes(NumBreakDowns);
   for (unsigned Idx = 0; Idx != NumBreakDowns; ++Idx)
     Hashes.push_back(hash_value(BreakDown[Idx]));
-  return hash_combine_range(Hashes);
+  return hash_combine_range(Hashes.begin(), Hashes.end());
 }
 
 const RegisterBankInfo::ValueMapping &
@@ -316,13 +318,13 @@ RegisterBankInfo::getValueMapping(const PartialMapping *BreakDown,
   ++NumValueMappingsAccessed;
 
   hash_code Hash = hashValueMapping(BreakDown, NumBreakDowns);
-  auto [It, Inserted] = MapOfValueMappings.try_emplace(Hash);
-  if (!Inserted)
+  const auto &It = MapOfValueMappings.find(Hash);
+  if (It != MapOfValueMappings.end())
     return *It->second;
 
   ++NumValueMappingsCreated;
 
-  auto &ValMapping = It->second;
+  auto &ValMapping = MapOfValueMappings[Hash];
   ValMapping = std::make_unique<ValueMapping>(BreakDown, NumBreakDowns);
   return *ValMapping;
 }
@@ -390,13 +392,13 @@ RegisterBankInfo::getInstructionMappingImpl(
 
   hash_code Hash =
       hashInstructionMapping(ID, Cost, OperandsMapping, NumOperands);
-  auto [It, Inserted] = MapOfInstructionMappings.try_emplace(Hash);
-  if (!Inserted)
+  const auto &It = MapOfInstructionMappings.find(Hash);
+  if (It != MapOfInstructionMappings.end())
     return *It->second;
 
   ++NumInstructionMappingsCreated;
 
-  auto &InstrMapping = It->second;
+  auto &InstrMapping = MapOfInstructionMappings[Hash];
   InstrMapping = std::make_unique<InstructionMapping>(
       ID, Cost, OperandsMapping, NumOperands);
   return *InstrMapping;
@@ -482,10 +484,9 @@ void RegisterBankInfo::applyDefaultMapping(const OperandsMapper &OpdMapper) {
       // the storage. However, right now we don't necessarily bump all
       // the types to storage size. For instance, we can consider
       // s16 G_AND legal whereas the storage size is going to be 32.
-      assert(
-          TypeSize::isKnownLE(OrigTy.getSizeInBits(), NewTy.getSizeInBits()) &&
-          "Types with difference size cannot be handled by the default "
-          "mapping");
+      assert(OrigTy.getSizeInBits() <= NewTy.getSizeInBits() &&
+             "Types with difference size cannot be handled by the default "
+             "mapping");
       LLVM_DEBUG(dbgs() << "\nChange type of new opd from " << NewTy << " to "
                         << OrigTy);
       MRI.setType(NewReg, OrigTy);

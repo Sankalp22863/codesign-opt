@@ -13,29 +13,23 @@ using namespace Fortran::parser::literals;
 
 namespace Fortran::evaluate {
 
-void FoldingContext::RealFlagWarnings(
-    const RealFlags &flags, const char *operation) {
-  static constexpr auto warning{common::UsageWarning::FoldingException};
-  if (!realFlagWarningContext_.empty()) {
-    // Override 'operation' with a string like
-    // "compilation-time evaluation of a call to '...'"
-    operation = realFlagWarningContext_.c_str();
-  }
+void RealFlagWarnings(
+    FoldingContext &context, const RealFlags &flags, const char *operation) {
   if (flags.test(RealFlag::Overflow)) {
-    Warn(warning, "overflow on %s"_warn_en_US, operation);
+    context.messages().Say("overflow on %s"_warn_en_US, operation);
   }
   if (flags.test(RealFlag::DivideByZero)) {
     if (std::strcmp(operation, "division") == 0) {
-      Warn(warning, "division by zero"_warn_en_US);
+      context.messages().Say("division by zero"_warn_en_US);
     } else {
-      Warn(warning, "division by zero on %s"_warn_en_US, operation);
+      context.messages().Say("division by zero on %s"_warn_en_US, operation);
     }
   }
   if (flags.test(RealFlag::InvalidArgument)) {
-    Warn(warning, "invalid argument on %s"_warn_en_US, operation);
+    context.messages().Say("invalid argument on %s"_warn_en_US, operation);
   }
   if (flags.test(RealFlag::Underflow)) {
-    Warn(warning, "underflow on %s"_warn_en_US, operation);
+    context.messages().Say("underflow on %s"_warn_en_US, operation);
   }
 }
 

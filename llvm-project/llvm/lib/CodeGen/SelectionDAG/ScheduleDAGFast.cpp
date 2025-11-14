@@ -80,10 +80,16 @@ public:
   void Schedule() override;
 
   /// AddPred - adds a predecessor edge to SUnit SU.
-  void AddPred(SUnit *SU, const SDep &D) { SU->addPred(D); }
+  /// This returns true if this is a new predecessor.
+  void AddPred(SUnit *SU, const SDep &D) {
+    SU->addPred(D);
+  }
 
   /// RemovePred - removes a predecessor edge from SUnit SU.
-  void RemovePred(SUnit *SU, const SDep &D) { SU->removePred(D); }
+  /// This returns true if an edge was removed.
+  void RemovePred(SUnit *SU, const SDep &D) {
+    SU->removePred(D);
+  }
 
 private:
   void ReleasePred(SUnit *SU, SDep *PredEdge);
@@ -112,7 +118,7 @@ void ScheduleDAGFast::Schedule() {
   LiveRegCycles.resize(TRI->getNumRegs(), 0);
 
   // Build the scheduling graph.
-  BuildSchedGraph();
+  BuildSchedGraph(nullptr);
 
   LLVM_DEBUG(dump());
 
@@ -354,8 +360,8 @@ SUnit *ScheduleDAGFast::CopyAndMoveSuccessors(SUnit *SU) {
       DelDeps.push_back(std::make_pair(SuccSU, D));
     }
   }
-  for (const auto &[Del, Dep] : DelDeps)
-    RemovePred(Del, Dep);
+  for (unsigned i = 0, e = DelDeps.size(); i != e; ++i)
+    RemovePred(DelDeps[i].first, DelDeps[i].second);
 
   ++NumDups;
   return NewSU;
@@ -389,8 +395,9 @@ void ScheduleDAGFast::InsertCopiesAndMoveSuccs(SUnit *SU, unsigned Reg,
       DelDeps.push_back(std::make_pair(SuccSU, Succ));
     }
   }
-  for (const auto &[Del, Dep] : DelDeps)
-    RemovePred(Del, Dep);
+  for (unsigned i = 0, e = DelDeps.size(); i != e; ++i) {
+    RemovePred(DelDeps[i].first, DelDeps[i].second);
+  }
   SDep FromDep(SU, SDep::Data, Reg);
   FromDep.setLatency(SU->Latency);
   AddPred(CopyFromSU, FromDep);
@@ -429,7 +436,7 @@ static MVT getPhysicalRegisterVT(SDNode *N, unsigned Reg,
 
 /// CheckForLiveRegDef - Return true and update live register vector if the
 /// specified register def of the specified SUnit clobbers any "live" registers.
-static bool CheckForLiveRegDef(SUnit *SU, MCRegister Reg,
+static bool CheckForLiveRegDef(SUnit *SU, unsigned Reg,
                                std::vector<SUnit *> &LiveRegDefs,
                                SmallSet<unsigned, 4> &RegAdded,
                                SmallVectorImpl<unsigned> &LRegs,
@@ -494,8 +501,8 @@ bool ScheduleDAGFast::DelayForLiveRegsBottomUp(SUnit *SU,
             F.isClobberKind()) {
           // Check for def of register or earlyclobber register.
           for (; NumVals; --NumVals, ++i) {
-            Register Reg = cast<RegisterSDNode>(Node->getOperand(i))->getReg();
-            if (Reg.isPhysical())
+            unsigned Reg = cast<RegisterSDNode>(Node->getOperand(i))->getReg();
+            if (Register::isPhysicalRegister(Reg))
               CheckForLiveRegDef(SU, Reg, LiveRegDefs, RegAdded, LRegs, TRI);
           }
         } else
@@ -615,11 +622,11 @@ void ScheduleDAGFast::ListScheduleBottomUp() {
     }
 
     // Add the nodes that aren't ready back onto the available list.
-    for (SUnit *SU : NotReady) {
-      SU->isPending = false;
+    for (unsigned i = 0, e = NotReady.size(); i != e; ++i) {
+      NotReady[i]->isPending = false;
       // May no longer be available due to backtracking.
-      if (SU->isAvailable)
-        AvailableQueue.push(SU);
+      if (NotReady[i]->isAvailable)
+        AvailableQueue.push(NotReady[i]);
     }
     NotReady.clear();
 
@@ -741,7 +748,8 @@ void ScheduleDAGLinearize::Schedule() {
       ++DAGSize;
   }
 
-  for (SDNode *Glue : Glues) {
+  for (unsigned i = 0, e = Glues.size(); i != e; ++i) {
+    SDNode *Glue = Glues[i];
     SDNode *GUser = GluedMap[Glue];
     unsigned Degree = Glue->getNodeId();
     unsigned UDegree = GUser->getNodeId();
@@ -749,7 +757,7 @@ void ScheduleDAGLinearize::Schedule() {
     // Glue user must be scheduled together with the glue operand. So other
     // users of the glue operand must be treated as its users.
     SDNode *ImmGUser = Glue->getGluedUser();
-    for (const SDNode *U : Glue->users())
+    for (const SDNode *U : Glue->uses())
       if (U == ImmGUser)
         --Degree;
     GUser->setNodeId(UDegree + Degree);
@@ -763,7 +771,7 @@ void ScheduleDAGLinearize::Schedule() {
 MachineBasicBlock*
 ScheduleDAGLinearize::EmitSchedule(MachineBasicBlock::iterator &InsertPos) {
   InstrEmitter Emitter(DAG->getTarget(), BB, InsertPos);
-  InstrEmitter::VRBaseMapType VRBaseMap;
+  DenseMap<SDValue, Register> VRBaseMap;
 
   LLVM_DEBUG({ dbgs() << "\n*** Final schedule ***\n"; });
 

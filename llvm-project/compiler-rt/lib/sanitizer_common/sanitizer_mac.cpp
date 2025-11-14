@@ -22,11 +22,6 @@
 #  endif
 #  include <stdio.h>
 
-// Start searching for available memory region past PAGEZERO, which is
-// 4KB on 32-bit and 4GB on 64-bit.
-#  define GAP_SEARCH_START_ADDRESS \
-    ((SANITIZER_WORDSIZE == 32) ? 0x000000001000 : 0x000100000000)
-
 #  include "sanitizer_common.h"
 #  include "sanitizer_file.h"
 #  include "sanitizer_flags.h"
@@ -43,7 +38,14 @@
 extern char **environ;
 #  endif
 
-// Integrate with CrashReporter library if available
+#  if defined(__has_include) && __has_include(<os/trace.h>)
+#    define SANITIZER_OS_TRACE 1
+#    include <os/trace.h>
+#  else
+#    define SANITIZER_OS_TRACE 0
+#  endif
+
+// import new crash reporting api
 #  if defined(__has_include) && __has_include(<CrashReporterClient.h>)
 #    define HAVE_CRASHREPORTERCLIENT_H 1
 #    include <CrashReporterClient.h>
@@ -63,11 +65,9 @@ extern char ***_NSGetArgv(void);
 #  include <dlfcn.h>  // for dladdr()
 #  include <errno.h>
 #  include <fcntl.h>
-#  include <inttypes.h>
 #  include <libkern/OSAtomic.h>
 #  include <mach-o/dyld.h>
 #  include <mach/mach.h>
-#  include <mach/mach_error.h>
 #  include <mach/mach_time.h>
 #  include <mach/vm_statistics.h>
 #  include <malloc/malloc.h>
@@ -103,15 +103,7 @@ extern "C" {
     natural_t *nesting_depth,
     vm_region_recurse_info_t info,
     mach_msg_type_number_t *infoCnt);
-
-  extern const void* _dyld_get_shared_cache_range(size_t* length);
 }
-
-#  if !SANITIZER_GO
-// Weak symbol no-op when TSan is not linked
-SANITIZER_WEAK_ATTRIBUTE extern void __tsan_set_in_internal_write_call(
-    bool value) {}
-#  endif
 
 namespace __sanitizer {
 
@@ -183,15 +175,7 @@ uptr internal_read(fd_t fd, void *buf, uptr count) {
 }
 
 uptr internal_write(fd_t fd, const void *buf, uptr count) {
-#  if SANITIZER_GO
   return write(fd, buf, count);
-#  else
-  // We need to disable interceptors when writing in TSan
-  __tsan_set_in_internal_write_call(true);
-  uptr res = write(fd, buf, count);
-  __tsan_set_in_internal_write_call(false);
-  return res;
-#  endif
 }
 
 uptr internal_stat(const char *path, void *buf) {
@@ -417,8 +401,8 @@ bool DirExists(const char *path) {
   return S_ISDIR(st.st_mode);
 }
 
-ThreadID GetTid() {
-  ThreadID tid;
+tid_t GetTid() {
+  tid_t tid;
   pthread_threadid_np(nullptr, &tid);
   return tid;
 }
@@ -561,6 +545,9 @@ uptr GetTlsSize() {
   return 0;
 }
 
+void InitTlsSize() {
+}
+
 uptr TlsBaseAddr() {
   uptr segbase = 0;
 #if defined(__x86_64__)
@@ -585,18 +572,21 @@ uptr TlsSize() {
 #endif
 }
 
-void GetThreadStackAndTls(bool main, uptr *stk_begin, uptr *stk_end,
-                          uptr *tls_begin, uptr *tls_end) {
-#  if !SANITIZER_GO
-  GetThreadStackTopAndBottom(main, stk_end, stk_begin);
-  *tls_begin = TlsBaseAddr();
-  *tls_end = *tls_begin + TlsSize();
-#  else
-  *stk_begin = 0;
-  *stk_end = 0;
-  *tls_begin = 0;
-  *tls_end = 0;
-#  endif
+void GetThreadStackAndTls(bool main, uptr *stk_addr, uptr *stk_size,
+                          uptr *tls_addr, uptr *tls_size) {
+#if !SANITIZER_GO
+  uptr stack_top, stack_bottom;
+  GetThreadStackTopAndBottom(main, &stack_top, &stack_bottom);
+  *stk_addr = stack_bottom;
+  *stk_size = stack_top - stack_bottom;
+  *tls_addr = TlsBaseAddr();
+  *tls_size = TlsSize();
+#else
+  *stk_addr = 0;
+  *stk_size = 0;
+  *tls_addr = 0;
+  *tls_size = 0;
+#endif
 }
 
 void ListOfModules::init() {
@@ -792,23 +782,13 @@ void internal_join_thread(void *th) { pthread_join((pthread_t)th, 0); }
 static Mutex syslog_lock;
 #  endif
 
-#  if SANITIZER_DRIVERKIT
-#    define SANITIZER_OS_LOG os_log
-#  else
-#    define SANITIZER_OS_LOG os_log_error
-#  endif
-
 void WriteOneLineToSyslog(const char *s) {
 #if !SANITIZER_GO
   syslog_lock.CheckLocked();
   if (GetMacosAlignedVersion() >= MacosVersion(10, 12)) {
-    SANITIZER_OS_LOG(OS_LOG_DEFAULT, "%{public}s", s);
+    os_log_error(OS_LOG_DEFAULT, "%{public}s", s);
   } else {
-#pragma clang diagnostic push
-// as_log is deprecated.
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     asl_log(nullptr, nullptr, ASL_LEVEL_ERR, "%s", s);
-#pragma clang diagnostic pop
   }
 #endif
 }
@@ -818,13 +798,8 @@ static char crashreporter_info_buff[__sanitizer::kErrorMessageBufferSize] = {};
 static Mutex crashreporter_info_mutex;
 
 extern "C" {
-
+// Integrate with crash reporter libraries.
 #if HAVE_CRASHREPORTERCLIENT_H
-// Available in CRASHREPORTER_ANNOTATIONS_VERSION 5+
-#    ifdef CRASHREPORTER_ANNOTATIONS_INITIALIZER
-CRASHREPORTER_ANNOTATIONS_INITIALIZER()
-#    else
-// Support for older CrashRerporter annotiations
 CRASH_REPORTER_CLIENT_HIDDEN
 struct crashreporter_annotations_t gCRAnnotations
     __attribute__((section("__DATA," CRASHREPORTER_ANNOTATIONS_SECTION))) = {
@@ -835,17 +810,17 @@ struct crashreporter_annotations_t gCRAnnotations
         0,
         0,
         0,
-#      if CRASHREPORTER_ANNOTATIONS_VERSION > 4
+#if CRASHREPORTER_ANNOTATIONS_VERSION > 4
         0,
-#      endif
+#endif
 };
-#    endif
-#  else
-// Revert to previous crash reporter API if client header is not available
+
+#else
+// fall back to old crashreporter api
 static const char *__crashreporter_info__ __attribute__((__used__)) =
     &crashreporter_info_buff[0];
 asm(".desc ___crashreporter_info__, 0x10");
-#endif  // HAVE_CRASHREPORTERCLIENT_H
+#endif
 
 }  // extern "C"
 
@@ -865,23 +840,27 @@ void LogMessageOnPrintf(const char *str) {
 }
 
 void LogFullErrorReport(const char *buffer) {
-#  if !SANITIZER_GO
-  // When logging with os_log_error this will make it into the crash log.
-  if (internal_strncmp(SanitizerToolName, "AddressSanitizer",
-                       sizeof("AddressSanitizer") - 1) == 0)
-    SANITIZER_OS_LOG(OS_LOG_DEFAULT, "Address Sanitizer reported a failure.");
-  else if (internal_strncmp(SanitizerToolName, "UndefinedBehaviorSanitizer",
-                            sizeof("UndefinedBehaviorSanitizer") - 1) == 0)
-    SANITIZER_OS_LOG(OS_LOG_DEFAULT,
-                     "Undefined Behavior Sanitizer reported a failure.");
-  else if (internal_strncmp(SanitizerToolName, "ThreadSanitizer",
-                            sizeof("ThreadSanitizer") - 1) == 0)
-    SANITIZER_OS_LOG(OS_LOG_DEFAULT, "Thread Sanitizer reported a failure.");
-  else
-    SANITIZER_OS_LOG(OS_LOG_DEFAULT, "Sanitizer tool reported a failure.");
+#if !SANITIZER_GO
+  // Log with os_trace. This will make it into the crash log.
+#if SANITIZER_OS_TRACE
+  if (GetMacosAlignedVersion() >= MacosVersion(10, 10)) {
+    // os_trace requires the message (format parameter) to be a string literal.
+    if (internal_strncmp(SanitizerToolName, "AddressSanitizer",
+                         sizeof("AddressSanitizer") - 1) == 0)
+      os_trace("Address Sanitizer reported a failure.");
+    else if (internal_strncmp(SanitizerToolName, "UndefinedBehaviorSanitizer",
+                              sizeof("UndefinedBehaviorSanitizer") - 1) == 0)
+      os_trace("Undefined Behavior Sanitizer reported a failure.");
+    else if (internal_strncmp(SanitizerToolName, "ThreadSanitizer",
+                              sizeof("ThreadSanitizer") - 1) == 0)
+      os_trace("Thread Sanitizer reported a failure.");
+    else
+      os_trace("Sanitizer tool reported a failure.");
 
-  if (common_flags()->log_to_syslog)
-    SANITIZER_OS_LOG(OS_LOG_DEFAULT, "Consult syslog for more information.");
+    if (common_flags()->log_to_syslog)
+      os_trace("Consult syslog for more information.");
+  }
+#endif
 
   // Log to syslog.
   // The logging on OS X may call pthread_create so we need the threading
@@ -895,7 +874,7 @@ void LogFullErrorReport(const char *buffer) {
     WriteToSyslog(buffer);
 
   // The report is added to CrashLog as part of logging all of Printf output.
-#  endif  // !SANITIZER_GO
+#endif
 }
 
 SignalContext::WriteFlag SignalContext::GetWriteFlag() const {
@@ -962,17 +941,7 @@ static void DisableMmapExcGuardExceptions() {
       RTLD_DEFAULT, "task_set_exc_guard_behavior");
   if (set_behavior == nullptr) return;
   const task_exc_guard_behavior_t task_exc_guard_none = 0;
-  kern_return_t res = set_behavior(mach_task_self(), task_exc_guard_none);
-  if (res != KERN_SUCCESS) {
-    Report(
-        "WARN: task_set_exc_guard_behavior returned %d (%s), "
-        "mmap may fail unexpectedly.\n",
-        res, mach_error_string(res));
-    if (res == KERN_DENIED)
-      Report(
-          "HINT: Check that task_set_exc_guard_behavior is allowed by "
-          "sandbox.\n");
-  }
+  set_behavior(mach_task_self(), task_exc_guard_none);
 }
 
 static void VerifyInterceptorsWorking();
@@ -1001,9 +970,8 @@ static const char kDyldInsertLibraries[] = "DYLD_INSERT_LIBRARIES";
 LowLevelAllocator allocator_for_env;
 
 static bool ShouldCheckInterceptors() {
-  // Restrict "interceptors working?" check
-  const char *sanitizer_names[] = {"AddressSanitizer", "ThreadSanitizer",
-                                   "RealtimeSanitizer"};
+  // Restrict "interceptors working?" check to ASan and TSan.
+  const char *sanitizer_names[] = {"AddressSanitizer", "ThreadSanitizer"};
   size_t count = sizeof(sanitizer_names) / sizeof(sanitizer_names[0]);
   for (size_t i = 0; i < count; i++) {
     if (internal_strcmp(sanitizer_names[i], SanitizerToolName) == 0)
@@ -1139,67 +1107,6 @@ static void StripEnv() {
 }
 #endif  // SANITIZER_GO
 
-// Prints out a consolidated memory map: contiguous regions
-// are merged together.
-static void PrintVmmap() {
-  const mach_vm_address_t max_vm_address = GetMaxVirtualAddress() + 1;
-  mach_vm_address_t address = GAP_SEARCH_START_ADDRESS;
-  kern_return_t kr = KERN_SUCCESS;
-
-  Report("Memory map:\n");
-  mach_vm_address_t last = 0;
-  mach_vm_address_t lastsz = 0;
-
-  while (1) {
-    mach_vm_size_t vmsize = 0;
-    natural_t depth = 0;
-    vm_region_submap_short_info_data_64_t vminfo;
-    mach_msg_type_number_t count = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
-    kr = mach_vm_region_recurse(mach_task_self(), &address, &vmsize, &depth,
-                                (vm_region_info_t)&vminfo, &count);
-
-    if (kr == KERN_DENIED) {
-      Report(
-          "ERROR: mach_vm_region_recurse got KERN_DENIED when printing memory "
-          "map.\n");
-      Report(
-          "HINT: Check whether mach_vm_region_recurse is allowed by "
-          "sandbox.\n");
-    }
-
-    if (kr == KERN_SUCCESS && address < max_vm_address) {
-      if (last + lastsz == address) {
-        // This region is contiguous with the last; merge together.
-        lastsz += vmsize;
-      } else {
-        if (lastsz)
-          Printf("|| `[%p, %p]` || size=0x%016" PRIx64 " ||\n", (void*)last,
-                 (void*)(last + lastsz), lastsz);
-
-        last = address;
-        lastsz = vmsize;
-      }
-      address += vmsize;
-    } else {
-      // We've reached the end of the memory map. Print the last remaining
-      // region, if there is one.
-      if (lastsz)
-        Printf("|| `[%p, %p]` || size=0x%016" PRIx64 " ||\n", (void*)last,
-               (void*)(last + lastsz), lastsz);
-
-      break;
-    }
-  }
-}
-
-static void ReportShadowAllocFail(uptr shadow_size_bytes, uptr alignment) {
-  Report(
-      "FATAL: Failed to allocate shadow memory. Tried to allocate %p bytes "
-      "(alignment=%p).\n",
-      (void*)shadow_size_bytes, (void*)alignment);
-  PrintVmmap();
-}
-
 char **GetArgv() {
   return *_NSGetArgv();
 }
@@ -1281,21 +1188,20 @@ uptr GetMaxVirtualAddress() {
 }
 
 uptr MapDynamicShadow(uptr shadow_size_bytes, uptr shadow_scale,
-                      uptr min_shadow_base_alignment, uptr &high_mem_end,
-                      uptr granularity) {
+                      uptr min_shadow_base_alignment, uptr &high_mem_end) {
+  const uptr granularity = GetMmapGranularity();
   const uptr alignment =
       Max<uptr>(granularity << shadow_scale, 1ULL << min_shadow_base_alignment);
   const uptr left_padding =
       Max<uptr>(granularity, 1ULL << min_shadow_base_alignment);
 
-  uptr space_size = shadow_size_bytes;
+  uptr space_size = shadow_size_bytes + left_padding;
 
   uptr largest_gap_found = 0;
   uptr max_occupied_addr = 0;
-
   VReport(2, "FindDynamicShadowStart, space_size = %p\n", (void *)space_size);
   uptr shadow_start =
-      FindAvailableMemoryRange(space_size, alignment, left_padding,
+      FindAvailableMemoryRange(space_size, alignment, granularity,
                                &largest_gap_found, &max_occupied_addr);
   // If the shadow doesn't fit, restrict the address space to make it fit.
   if (shadow_start == 0) {
@@ -1307,22 +1213,20 @@ uptr MapDynamicShadow(uptr shadow_size_bytes, uptr shadow_scale,
     if (new_max_vm < max_occupied_addr) {
       Report("Unable to find a memory range for dynamic shadow.\n");
       Report(
-          "\tspace_size = %p\n\tlargest_gap_found = %p\n\tmax_occupied_addr "
-          "= %p\n\tnew_max_vm = %p\n",
-          (void*)space_size, (void*)largest_gap_found, (void*)max_occupied_addr,
-          (void*)new_max_vm);
-      ReportShadowAllocFail(shadow_size_bytes, alignment);
+          "space_size = %p, largest_gap_found = %p, max_occupied_addr = %p, "
+          "new_max_vm = %p\n",
+          (void *)space_size, (void *)largest_gap_found,
+          (void *)max_occupied_addr, (void *)new_max_vm);
       CHECK(0 && "cannot place shadow");
     }
     RestrictMemoryToMaxAddress(new_max_vm);
     high_mem_end = new_max_vm - 1;
-    space_size = (high_mem_end >> shadow_scale);
+    space_size = (high_mem_end >> shadow_scale) + left_padding;
     VReport(2, "FindDynamicShadowStart, space_size = %p\n", (void *)space_size);
-    shadow_start = FindAvailableMemoryRange(space_size, alignment, left_padding,
+    shadow_start = FindAvailableMemoryRange(space_size, alignment, granularity,
                                             nullptr, nullptr);
     if (shadow_start == 0) {
       Report("Unable to find a memory range after restricting VM.\n");
-      ReportShadowAllocFail(shadow_size_bytes, alignment);
       CHECK(0 && "cannot place shadow after restricting vm");
     }
   }
@@ -1338,51 +1242,35 @@ uptr MapDynamicShadowAndAliases(uptr shadow_size, uptr alias_size,
 }
 
 uptr FindAvailableMemoryRange(uptr size, uptr alignment, uptr left_padding,
-                              uptr* largest_gap_found,
-                              uptr* max_occupied_addr) {
+                              uptr *largest_gap_found,
+                              uptr *max_occupied_addr) {
+  typedef vm_region_submap_short_info_data_64_t RegionInfo;
+  enum { kRegionInfoSize = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64 };
+  // Start searching for available memory region past PAGEZERO, which is
+  // 4KB on 32-bit and 4GB on 64-bit.
+  mach_vm_address_t start_address =
+    (SANITIZER_WORDSIZE == 32) ? 0x000000001000 : 0x000100000000;
+
   const mach_vm_address_t max_vm_address = GetMaxVirtualAddress() + 1;
-  mach_vm_address_t address = GAP_SEARCH_START_ADDRESS;
-  mach_vm_address_t free_begin = GAP_SEARCH_START_ADDRESS;
+  mach_vm_address_t address = start_address;
+  mach_vm_address_t free_begin = start_address;
   kern_return_t kr = KERN_SUCCESS;
   if (largest_gap_found) *largest_gap_found = 0;
   if (max_occupied_addr) *max_occupied_addr = 0;
   while (kr == KERN_SUCCESS) {
     mach_vm_size_t vmsize = 0;
     natural_t depth = 0;
-    vm_region_submap_short_info_data_64_t vminfo;
-    mach_msg_type_number_t count = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
+    RegionInfo vminfo;
+    mach_msg_type_number_t count = kRegionInfoSize;
     kr = mach_vm_region_recurse(mach_task_self(), &address, &vmsize, &depth,
                                 (vm_region_info_t)&vminfo, &count);
-
-    if (kr == KERN_SUCCESS) {
-      // There are cases where going beyond the processes' max vm does
-      // not return KERN_INVALID_ADDRESS so we check for going beyond that
-      // max address as well.
-      if (address > max_vm_address) {
-        address = max_vm_address;
-        kr = -1;  // break after this iteration.
-      }
-
-      if (max_occupied_addr)
-        *max_occupied_addr = address + vmsize;
-    } else if (kr == KERN_INVALID_ADDRESS) {
+    if (kr == KERN_INVALID_ADDRESS) {
       // No more regions beyond "address", consider the gap at the end of VM.
       address = max_vm_address;
-
-      // We will break after this iteration anyway since kr != KERN_SUCCESS
-    } else if (kr == KERN_DENIED) {
-      Report("ERROR: Unable to find a memory range for dynamic shadow.\n");
-      Report("HINT: Ensure mach_vm_region_recurse is allowed under sandbox.\n");
-      Die();
+      vmsize = 0;
     } else {
-      Report(
-          "WARNING: mach_vm_region_recurse returned unexpected code %d (%s)\n",
-          kr, mach_error_string(kr));
-      DCHECK(false && "mach_vm_region_recurse returned unexpected code");
-      break;  // address is not valid unless KERN_SUCCESS, therefore we must not
-              // use it.
+      if (max_occupied_addr) *max_occupied_addr = address + vmsize;
     }
-
     if (free_begin != address) {
       // We found a free region [free_begin..address-1].
       uptr gap_start = RoundUpTo((uptr)free_begin + left_padding, alignment);
@@ -1403,58 +1291,6 @@ uptr FindAvailableMemoryRange(uptr size, uptr alignment, uptr left_padding,
 
   // We looked at all free regions and could not find one large enough.
   return 0;
-}
-
-// This function (when used during initialization when there is
-// only a single thread), can be used to verify that a range
-// of memory hasn't already been mapped, and won't be mapped
-// later in the shared cache.
-//
-// If the syscall mach_vm_region_recurse fails (due to sandbox),
-// we assume that the memory is not mapped so that execution can continue.
-//
-// NOTE: range_end is inclusive
-//
-// WARNING: This function must NOT allocate memory, since it is
-// used in InitializeShadowMemory between where we search for
-// space for shadow and where we actually allocate it.
-bool MemoryRangeIsAvailable(uptr range_start, uptr range_end) {
-  mach_vm_size_t vmsize = 0;
-  natural_t depth = 0;
-  vm_region_submap_short_info_data_64_t vminfo;
-  mach_msg_type_number_t count = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
-  mach_vm_address_t address = range_start;
-
-  // First, check if the range is already mapped.
-  kern_return_t kr =
-      mach_vm_region_recurse(mach_task_self(), &address, &vmsize, &depth,
-                             (vm_region_info_t)&vminfo, &count);
-
-  if (kr == KERN_DENIED) {
-    Report(
-        "WARN: mach_vm_region_recurse returned KERN_DENIED when checking "
-        "whether an address is mapped.\n");
-    Report("HINT: Is mach_vm_region_recurse allowed by sandbox?\n");
-  }
-
-  if (kr == KERN_SUCCESS && !IntervalsAreSeparate(address, address + vmsize - 1,
-                                                  range_start, range_end)) {
-    // Overlaps with already-mapped memory
-    return false;
-  }
-
-  size_t cacheLength;
-  uptr cacheStart = (uptr)_dyld_get_shared_cache_range(&cacheLength);
-
-  if (cacheStart &&
-      !IntervalsAreSeparate(cacheStart, cacheStart + cacheLength - 1,
-                            range_start, range_end)) {
-    // Overlaps with shared cache region
-    return false;
-  }
-
-  // We believe this address is available.
-  return true;
 }
 
 // FIXME implement on this platform.
@@ -1536,8 +1372,8 @@ void DumpProcessMap() {
   for (uptr i = 0; i < modules.size(); ++i) {
     char uuid_str[128];
     FormatUUID(uuid_str, sizeof(uuid_str), modules[i].uuid());
-    Printf("%p-%p %s (%s) %s\n", (void *)modules[i].base_address(),
-           (void *)modules[i].max_address(), modules[i].full_name(),
+    Printf("0x%zx-0x%zx %s (%s) %s\n", modules[i].base_address(),
+           modules[i].max_address(), modules[i].full_name(),
            ModuleArchToString(modules[i].arch()), uuid_str);
   }
   Printf("End of module map.\n");

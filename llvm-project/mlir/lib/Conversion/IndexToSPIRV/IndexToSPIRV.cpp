@@ -13,6 +13,7 @@
 #include "mlir/Dialect/SPIRV/IR/SPIRVDialect.h"
 #include "mlir/Dialect/SPIRV/IR/SPIRVOps.h"
 #include "mlir/Dialect/SPIRV/Transforms/SPIRVConversion.h"
+#include "mlir/Pass/Pass.h"
 
 using namespace mlir;
 using namespace index;
@@ -59,7 +60,7 @@ using ConvertIndexXor = spirv::ElementwiseOpPattern<XOrOp, spirv::BitwiseXorOp>;
 // Converts index.bool.constant operation to spirv.Constant.
 struct ConvertIndexConstantBoolOpPattern final
     : OpConversionPattern<BoolConstantOp> {
-  using Base::Base;
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(BoolConstantOp op, BoolConstantOpAdaptor adaptor,
@@ -77,7 +78,7 @@ struct ConvertIndexConstantBoolOpPattern final
 // Converts index.constant op to spirv.Constant. Will truncate from i64 to i32
 // when required.
 struct ConvertIndexConstantOpPattern final : OpConversionPattern<ConstantOp> {
-  using Base::Base;
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(ConstantOp op, ConstantOpAdaptor adaptor,
@@ -100,7 +101,7 @@ struct ConvertIndexConstantOpPattern final : OpConversionPattern<ConstantOp> {
 /// `n*m > 0 ? (n+x)/m + 1 : -(-n/m)`. Formula taken from the equivalent
 /// conversion in IndexToLLVM.
 struct ConvertIndexCeilDivSPattern final : OpConversionPattern<CeilDivSOp> {
-  using Base::Base;
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(CeilDivSOp op, CeilDivSOpAdaptor adaptor,
@@ -111,33 +112,33 @@ struct ConvertIndexCeilDivSPattern final : OpConversionPattern<CeilDivSOp> {
     Value m = adaptor.getRhs();
 
     // Define the constants
-    Value zero = spirv::ConstantOp::create(rewriter, loc, n_type,
-                                           IntegerAttr::get(n_type, 0));
-    Value posOne = spirv::ConstantOp::create(rewriter, loc, n_type,
-                                             IntegerAttr::get(n_type, 1));
-    Value negOne = spirv::ConstantOp::create(rewriter, loc, n_type,
-                                             IntegerAttr::get(n_type, -1));
+    Value zero = rewriter.create<spirv::ConstantOp>(
+        loc, n_type, IntegerAttr::get(n_type, 0));
+    Value posOne = rewriter.create<spirv::ConstantOp>(
+        loc, n_type, IntegerAttr::get(n_type, 1));
+    Value negOne = rewriter.create<spirv::ConstantOp>(
+        loc, n_type, IntegerAttr::get(n_type, -1));
 
     // Compute `x`.
-    Value mPos = spirv::SGreaterThanOp::create(rewriter, loc, m, zero);
-    Value x = spirv::SelectOp::create(rewriter, loc, mPos, negOne, posOne);
+    Value mPos = rewriter.create<spirv::SGreaterThanOp>(loc, m, zero);
+    Value x = rewriter.create<spirv::SelectOp>(loc, mPos, negOne, posOne);
 
     // Compute the positive result.
-    Value nPlusX = spirv::IAddOp::create(rewriter, loc, n, x);
-    Value nPlusXDivM = spirv::SDivOp::create(rewriter, loc, nPlusX, m);
-    Value posRes = spirv::IAddOp::create(rewriter, loc, nPlusXDivM, posOne);
+    Value nPlusX = rewriter.create<spirv::IAddOp>(loc, n, x);
+    Value nPlusXDivM = rewriter.create<spirv::SDivOp>(loc, nPlusX, m);
+    Value posRes = rewriter.create<spirv::IAddOp>(loc, nPlusXDivM, posOne);
 
     // Compute the negative result.
-    Value negN = spirv::ISubOp::create(rewriter, loc, zero, n);
-    Value negNDivM = spirv::SDivOp::create(rewriter, loc, negN, m);
-    Value negRes = spirv::ISubOp::create(rewriter, loc, zero, negNDivM);
+    Value negN = rewriter.create<spirv::ISubOp>(loc, zero, n);
+    Value negNDivM = rewriter.create<spirv::SDivOp>(loc, negN, m);
+    Value negRes = rewriter.create<spirv::ISubOp>(loc, zero, negNDivM);
 
     // Pick the positive result if `n` and `m` have the same sign and `n` is
     // non-zero, i.e. `(n > 0) == (m > 0) && n != 0`.
-    Value nPos = spirv::SGreaterThanOp::create(rewriter, loc, n, zero);
-    Value sameSign = spirv::LogicalEqualOp::create(rewriter, loc, nPos, mPos);
-    Value nNonZero = spirv::INotEqualOp::create(rewriter, loc, n, zero);
-    Value cmp = spirv::LogicalAndOp::create(rewriter, loc, sameSign, nNonZero);
+    Value nPos = rewriter.create<spirv::SGreaterThanOp>(loc, n, zero);
+    Value sameSign = rewriter.create<spirv::LogicalEqualOp>(loc, nPos, mPos);
+    Value nNonZero = rewriter.create<spirv::INotEqualOp>(loc, n, zero);
+    Value cmp = rewriter.create<spirv::LogicalAndOp>(loc, sameSign, nNonZero);
     rewriter.replaceOpWithNewOp<spirv::SelectOp>(op, cmp, posRes, negRes);
     return success();
   }
@@ -150,7 +151,7 @@ struct ConvertIndexCeilDivSPattern final : OpConversionPattern<CeilDivSOp> {
 /// Convert `ceildivu(n, m)` into `n == 0 ? 0 : (n-1)/m + 1`. Formula taken
 /// from the equivalent conversion in IndexToLLVM.
 struct ConvertIndexCeilDivUPattern final : OpConversionPattern<CeilDivUOp> {
-  using Base::Base;
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(CeilDivUOp op, CeilDivUOpAdaptor adaptor,
@@ -161,18 +162,18 @@ struct ConvertIndexCeilDivUPattern final : OpConversionPattern<CeilDivUOp> {
     Value m = adaptor.getRhs();
 
     // Define the constants
-    Value zero = spirv::ConstantOp::create(rewriter, loc, n_type,
-                                           IntegerAttr::get(n_type, 0));
-    Value one = spirv::ConstantOp::create(rewriter, loc, n_type,
-                                          IntegerAttr::get(n_type, 1));
+    Value zero = rewriter.create<spirv::ConstantOp>(
+        loc, n_type, IntegerAttr::get(n_type, 0));
+    Value one = rewriter.create<spirv::ConstantOp>(loc, n_type,
+                                                   IntegerAttr::get(n_type, 1));
 
     // Compute the non-zero result.
-    Value minusOne = spirv::ISubOp::create(rewriter, loc, n, one);
-    Value quotient = spirv::UDivOp::create(rewriter, loc, minusOne, m);
-    Value plusOne = spirv::IAddOp::create(rewriter, loc, quotient, one);
+    Value minusOne = rewriter.create<spirv::ISubOp>(loc, n, one);
+    Value quotient = rewriter.create<spirv::UDivOp>(loc, minusOne, m);
+    Value plusOne = rewriter.create<spirv::IAddOp>(loc, quotient, one);
 
     // Pick the result
-    Value cmp = spirv::IEqualOp::create(rewriter, loc, n, zero);
+    Value cmp = rewriter.create<spirv::IEqualOp>(loc, n, zero);
     rewriter.replaceOpWithNewOp<spirv::SelectOp>(op, cmp, zero, plusOne);
     return success();
   }
@@ -186,7 +187,7 @@ struct ConvertIndexCeilDivUPattern final : OpConversionPattern<CeilDivUOp> {
 /// `n*m < 0 ? -1 - (x-n)/m : n/m`. Formula taken from the equivalent conversion
 /// in IndexToLLVM.
 struct ConvertIndexFloorDivSPattern final : OpConversionPattern<FloorDivSOp> {
-  using Base::Base;
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(FloorDivSOp op, FloorDivSOpAdaptor adaptor,
@@ -197,33 +198,32 @@ struct ConvertIndexFloorDivSPattern final : OpConversionPattern<FloorDivSOp> {
     Value m = adaptor.getRhs();
 
     // Define the constants
-    Value zero = spirv::ConstantOp::create(rewriter, loc, n_type,
-                                           IntegerAttr::get(n_type, 0));
-    Value posOne = spirv::ConstantOp::create(rewriter, loc, n_type,
-                                             IntegerAttr::get(n_type, 1));
-    Value negOne = spirv::ConstantOp::create(rewriter, loc, n_type,
-                                             IntegerAttr::get(n_type, -1));
+    Value zero = rewriter.create<spirv::ConstantOp>(
+        loc, n_type, IntegerAttr::get(n_type, 0));
+    Value posOne = rewriter.create<spirv::ConstantOp>(
+        loc, n_type, IntegerAttr::get(n_type, 1));
+    Value negOne = rewriter.create<spirv::ConstantOp>(
+        loc, n_type, IntegerAttr::get(n_type, -1));
 
     // Compute `x`.
-    Value mNeg = spirv::SLessThanOp::create(rewriter, loc, m, zero);
-    Value x = spirv::SelectOp::create(rewriter, loc, mNeg, posOne, negOne);
+    Value mNeg = rewriter.create<spirv::SLessThanOp>(loc, m, zero);
+    Value x = rewriter.create<spirv::SelectOp>(loc, mNeg, posOne, negOne);
 
     // Compute the negative result
-    Value xMinusN = spirv::ISubOp::create(rewriter, loc, x, n);
-    Value xMinusNDivM = spirv::SDivOp::create(rewriter, loc, xMinusN, m);
-    Value negRes = spirv::ISubOp::create(rewriter, loc, negOne, xMinusNDivM);
+    Value xMinusN = rewriter.create<spirv::ISubOp>(loc, x, n);
+    Value xMinusNDivM = rewriter.create<spirv::SDivOp>(loc, xMinusN, m);
+    Value negRes = rewriter.create<spirv::ISubOp>(loc, negOne, xMinusNDivM);
 
     // Compute the positive result.
-    Value posRes = spirv::SDivOp::create(rewriter, loc, n, m);
+    Value posRes = rewriter.create<spirv::SDivOp>(loc, n, m);
 
     // Pick the negative result if `n` and `m` have different signs and `n` is
     // non-zero, i.e. `(n < 0) != (m < 0) && n != 0`.
-    Value nNeg = spirv::SLessThanOp::create(rewriter, loc, n, zero);
-    Value diffSign =
-        spirv::LogicalNotEqualOp::create(rewriter, loc, nNeg, mNeg);
-    Value nNonZero = spirv::INotEqualOp::create(rewriter, loc, n, zero);
+    Value nNeg = rewriter.create<spirv::SLessThanOp>(loc, n, zero);
+    Value diffSign = rewriter.create<spirv::LogicalNotEqualOp>(loc, nNeg, mNeg);
+    Value nNonZero = rewriter.create<spirv::INotEqualOp>(loc, n, zero);
 
-    Value cmp = spirv::LogicalAndOp::create(rewriter, loc, diffSign, nNonZero);
+    Value cmp = rewriter.create<spirv::LogicalAndOp>(loc, diffSign, nNonZero);
     rewriter.replaceOpWithNewOp<spirv::SelectOp>(op, cmp, posRes, negRes);
     return success();
   }
@@ -282,7 +282,7 @@ static LogicalResult rewriteCmpOp(CmpOp op, CmpOpAdaptor adaptor,
 }
 
 struct ConvertIndexCmpPattern final : OpConversionPattern<CmpOp> {
-  using Base::Base;
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(CmpOp op, CmpOpAdaptor adaptor,
@@ -310,7 +310,6 @@ struct ConvertIndexCmpPattern final : OpConversionPattern<CmpOp> {
     case IndexCmpPredicate::ULT:
       return rewriteCmpOp<spirv::ULessThanOp>(op, adaptor, rewriter);
     }
-    llvm_unreachable("Unknown predicate in ConvertIndexCmpPattern");
   }
 };
 
@@ -320,7 +319,7 @@ struct ConvertIndexCmpPattern final : OpConversionPattern<CmpOp> {
 
 /// Lower `index.sizeof` to a constant with the value of the index bitwidth.
 struct ConvertIndexSizeOf final : OpConversionPattern<SizeOfOp> {
-  using Base::Base;
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(SizeOfOp op, SizeOfOpAdaptor adaptor,
@@ -339,8 +338,8 @@ struct ConvertIndexSizeOf final : OpConversionPattern<SizeOfOp> {
 // Pattern Population
 //===----------------------------------------------------------------------===//
 
-void index::populateIndexToSPIRVPatterns(
-    const SPIRVTypeConverter &typeConverter, RewritePatternSet &patterns) {
+void index::populateIndexToSPIRVPatterns(SPIRVTypeConverter &typeConverter,
+                                         RewritePatternSet &patterns) {
   patterns.add<
       // clang-format off
     ConvertIndexAdd,

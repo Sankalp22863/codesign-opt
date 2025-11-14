@@ -194,7 +194,6 @@ inline int switch_test(int x) {
       return b + c++;
     }
   };
-  return 0;
 }
 
 int f();

@@ -9,11 +9,9 @@
 #ifndef LLVM_LIBC_SRC_STRING_MEMORY_UTILS_INLINE_STRCMP_H
 #define LLVM_LIBC_SRC_STRING_MEMORY_UTILS_INLINE_STRCMP_H
 
-#include "src/__support/macros/attributes.h" // LIBC_INLINE
-#include "src/__support/macros/config.h"     // LIBC_NAMESPACE_DECL
 #include <stddef.h>
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
 template <typename Comp>
 LIBC_INLINE constexpr int inline_strcmp(const char *left, const char *right,
@@ -41,6 +39,6 @@ LIBC_INLINE constexpr int inline_strncmp(const char *left, const char *right,
               *reinterpret_cast<const unsigned char *>(right));
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE
 
 #endif // LLVM_LIBC_SRC_STRING_MEMORY_UTILS_INLINE_STRCMP_H

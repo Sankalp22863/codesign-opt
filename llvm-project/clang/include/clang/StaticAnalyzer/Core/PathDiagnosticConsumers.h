@@ -1,4 +1,4 @@
-//===--- PathDiagnosticConsumers.h - Path Diagnostic Clients ----*- C++ -*-===//
+//===--- PathDiagnosticConsumers.h - Path Diagnostic Clients ------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -30,8 +30,7 @@ class CrossTranslationUnitContext;
 namespace ento {
 
 class PathDiagnosticConsumer;
-using PathDiagnosticConsumers =
-    std::vector<std::unique_ptr<PathDiagnosticConsumer>>;
+typedef std::vector<PathDiagnosticConsumer*> PathDiagnosticConsumers;
 
 #define ANALYSIS_DIAGNOSTICS(NAME, CMDFLAG, DESC, CREATEFN)                    \
   void CREATEFN(PathDiagnosticConsumerOptions Diagopts,                        \

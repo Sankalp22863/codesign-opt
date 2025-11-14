@@ -29,15 +29,19 @@ public:
   ~PipeWindows() override;
 
   // Create an unnamed pipe.
-  Status CreateNew() override;
+  Status CreateNew(bool child_process_inherit) override;
 
   // Create a named pipe.
-  Status CreateNew(llvm::StringRef name) override;
+  Status CreateNewNamed(bool child_process_inherit);
+  Status CreateNew(llvm::StringRef name, bool child_process_inherit) override;
   Status CreateWithUniqueName(llvm::StringRef prefix,
+                              bool child_process_inherit,
                               llvm::SmallVectorImpl<char> &name) override;
-  Status OpenAsReader(llvm::StringRef name) override;
-  llvm::Error OpenAsWriter(llvm::StringRef name,
-                           const Timeout<std::micro> &timeout) override;
+  Status OpenAsReader(llvm::StringRef name,
+                      bool child_process_inherit) override;
+  Status
+  OpenAsWriterWithTimeout(llvm::StringRef name, bool child_process_inherit,
+                          const std::chrono::microseconds &timeout) override;
 
   bool CanRead() const override;
   bool CanWrite() const override;
@@ -56,13 +60,10 @@ public:
 
   Status Delete(llvm::StringRef name) override;
 
-  llvm::Expected<size_t>
-  Write(const void *buf, size_t size,
-        const Timeout<std::micro> &timeout = std::nullopt) override;
-
-  llvm::Expected<size_t>
-  Read(void *buf, size_t size,
-       const Timeout<std::micro> &timeout = std::nullopt) override;
+  Status Write(const void *buf, size_t size, size_t &bytes_written) override;
+  Status ReadWithTimeout(void *buf, size_t size,
+                         const std::chrono::microseconds &timeout,
+                         size_t &bytes_read) override;
 
   // PipeWindows specific methods.  These allow access to the underlying OS
   // handle.
@@ -70,7 +71,8 @@ public:
   HANDLE GetWriteNativeHandle();
 
 private:
-  Status OpenNamedPipe(llvm::StringRef name, bool is_read);
+  Status OpenNamedPipe(llvm::StringRef name, bool child_process_inherit,
+                       bool is_read);
 
   HANDLE m_read;
   HANDLE m_write;

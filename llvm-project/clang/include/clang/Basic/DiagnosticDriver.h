@@ -10,6 +10,19 @@
 #define LLVM_CLANG_BASIC_DIAGNOSTICDRIVER_H
 
 #include "clang/Basic/Diagnostic.h"
-#include "clang/Basic/DiagnosticDriverInterface.inc"
+
+namespace clang {
+namespace diag {
+enum {
+#define DIAG(ENUM, FLAGS, DEFAULT_MAPPING, DESC, GROUP, SFINAE, NOWERROR,      \
+             SHOWINSYSHEADER, SHOWINSYSMACRO, DEFERRABLE, CATEGORY)            \
+  ENUM,
+#define DRIVERSTART
+#include "clang/Basic/DiagnosticDriverKinds.inc"
+#undef DIAG
+  NUM_BUILTIN_DRIVER_DIAGNOSTICS
+};
+} // end namespace diag
+} // end namespace clang
 
 #endif // LLVM_CLANG_BASIC_DIAGNOSTICDRIVER_H

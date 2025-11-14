@@ -142,10 +142,9 @@ bool A15SDOptimizer::usesRegClass(MachineOperand &MO,
 }
 
 unsigned A15SDOptimizer::getDPRLaneFromSPR(unsigned SReg) {
-  MCRegister DReg =
-      TRI->getMatchingSuperReg(SReg, ARM::ssub_1, &ARM::DPRRegClass);
-  if (DReg)
-    return ARM::ssub_1;
+  unsigned DReg = TRI->getMatchingSuperReg(SReg, ARM::ssub_1,
+                                           &ARM::DPRRegClass);
+  if (DReg != ARM::NoRegister) return ARM::ssub_1;
   return ARM::ssub_0;
 }
 
@@ -157,7 +156,7 @@ unsigned A15SDOptimizer::getPrefSPRLane(unsigned SReg) {
 
   MachineInstr *MI = MRI->getVRegDef(SReg);
   if (!MI) return ARM::ssub_0;
-  MachineOperand *MO = MI->findRegisterDefOperand(SReg, /*TRI=*/nullptr);
+  MachineOperand *MO = MI->findRegisterDefOperand(SReg);
   if (!MO) return ARM::ssub_0;
   assert(MO->isReg() && "Non-register operand found!");
 
@@ -193,7 +192,7 @@ void A15SDOptimizer::eraseInstrWithNoUses(MachineInstr *MI) {
       Register Reg = MO.getReg();
       if (!Reg.isVirtual())
         continue;
-      MachineOperand *Op = MI->findRegisterDefOperand(Reg, /*TRI=*/nullptr);
+      MachineOperand *Op = MI->findRegisterDefOperand(Reg);
 
       if (!Op)
         continue;
@@ -617,9 +616,10 @@ bool A15SDOptimizer::runOnInstruction(MachineInstr *MI) {
         continue;
 
       // Collect all the uses of this MI's DPR def for updating later.
+      SmallVector<MachineOperand*, 8> Uses;
       Register DPRDefReg = MI->getOperand(0).getReg();
-      SmallVector<MachineOperand *, 8> Uses(
-          llvm::make_pointer_range(MRI->use_operands(DPRDefReg)));
+      for (MachineOperand &MO : MRI->use_operands(DPRDefReg))
+        Uses.push_back(&MO);
 
       // We can optimize this.
       unsigned NewReg = optimizeSDPattern(MI);

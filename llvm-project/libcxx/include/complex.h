@@ -17,18 +17,14 @@
 
 */
 
-#if defined(__cplusplus) && __cplusplus < 201103L && defined(_LIBCPP_USE_FROZEN_CXX03_HEADERS)
-#  include <__cxx03/__config>
-#else
-#  include <__config>
-#endif
+#include <__config>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #  pragma GCC system_header
 #endif
 
 #ifdef __cplusplus
-#  include <complex>
+#  include <ccomplex>
 #elif __has_include_next(<complex.h>)
 #  include_next <complex.h>
 #endif

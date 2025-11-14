@@ -18,6 +18,7 @@
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/TypeID.h>
 
 using namespace mlir;
@@ -33,6 +34,7 @@ struct TestLivenessAnalysisPass
 
   void runOnOperation() override {
     auto &livenessAnalysis = getAnalysis<RunLivenessAnalysis>();
+
     Operation *op = getOperation();
 
     raw_ostream &os = llvm::outs();

@@ -31,10 +31,11 @@ static bool isMaterializing(Value val) {
 /// Sorts the dependent loops such that it is ordered in the same sequence in
 /// which loops will be generated.
 static void sortDependentLoops(std::vector<LoopCoeffPair> &target) {
-  llvm::sort(target, [](const LoopCoeffPair &l, const LoopCoeffPair &r) {
-    assert(std::addressof(l) == std::addressof(r) || l != r);
-    return l.first < r.first;
-  });
+  std::sort(target.begin(), target.end(),
+            [](const LoopCoeffPair &l, const LoopCoeffPair &r) {
+              assert(std::addressof(l) == std::addressof(r) || l != r);
+              return l.first < r.first;
+            });
 }
 //===----------------------------------------------------------------------===//
 // Code generation environment constructor and general methods
@@ -58,7 +59,7 @@ LogicalResult CodegenEnv::initTensorExp() {
   return success();
 }
 
-void CodegenEnv::startEmit(SparseEmitStrategy emitStrategy) {
+void CodegenEnv::startEmit() {
   assert(insChain == nullptr && "must only start emitting once");
   if (sparseOut) {
     insChain = sparseOut->get();
@@ -95,8 +96,7 @@ void CodegenEnv::startEmit(SparseEmitStrategy emitStrategy) {
       /*dependentLvlGetter=*/
       [this](TensorId t, Level lvl) -> std::vector<LoopCoeffPair> {
         return merger().getDependentLoops(t, lvl);
-      },
-      emitStrategy);
+      });
 }
 
 std::optional<Operation *> CodegenEnv::genLoopBoundary(

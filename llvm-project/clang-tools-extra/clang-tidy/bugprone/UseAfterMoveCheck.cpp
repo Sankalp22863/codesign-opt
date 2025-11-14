@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- UseAfterMoveCheck.cpp - clang-tidy -------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -11,11 +11,9 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
-#include "clang/Analysis/Analyses/CFGReachabilityAnalysis.h"
 #include "clang/Analysis/CFG.h"
 #include "clang/Lex/Lexer.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallPtrSet.h"
 
 #include "../utils/ExprSequence.h"
 #include "../utils/Matchers.h"
@@ -36,12 +34,7 @@ struct UseAfterMove {
   const DeclRefExpr *DeclRef;
 
   // Is the order in which the move and the use are evaluated undefined?
-  bool EvaluationOrderUndefined = false;
-
-  // Does the use happen in a later loop iteration than the move?
-  //
-  // We default to false and change it to true if required in find().
-  bool UseHappensInLaterLoopIteration = false;
+  bool EvaluationOrderUndefined;
 };
 
 /// Finds uses of a variable after a move (and maintains state required by the
@@ -54,13 +47,13 @@ public:
   // occurs after 'MovingCall' (the expression that performs the move). If a
   // use-after-move is found, writes information about it to 'TheUseAfterMove'.
   // Returns whether a use-after-move was found.
-  std::optional<UseAfterMove> find(Stmt *CodeBlock, const Expr *MovingCall,
-                                   const DeclRefExpr *MovedVariable);
+  bool find(Stmt *CodeBlock, const Expr *MovingCall,
+            const ValueDecl *MovedVariable, UseAfterMove *TheUseAfterMove);
 
 private:
-  std::optional<UseAfterMove> findInternal(const CFGBlock *Block,
-                                           const Expr *MovingCall,
-                                           const ValueDecl *MovedVariable);
+  bool findInternal(const CFGBlock *Block, const Expr *MovingCall,
+                    const ValueDecl *MovedVariable,
+                    UseAfterMove *TheUseAfterMove);
   void getUsesAndReinits(const CFGBlock *Block, const ValueDecl *MovedVariable,
                          llvm::SmallVectorImpl<const DeclRefExpr *> *Uses,
                          llvm::SmallPtrSetImpl<const Stmt *> *Reinits);
@@ -95,9 +88,9 @@ static StatementMatcher inDecltypeOrTemplateArg() {
 UseAfterMoveFinder::UseAfterMoveFinder(ASTContext *TheContext)
     : Context(TheContext) {}
 
-std::optional<UseAfterMove>
-UseAfterMoveFinder::find(Stmt *CodeBlock, const Expr *MovingCall,
-                         const DeclRefExpr *MovedVariable) {
+bool UseAfterMoveFinder::find(Stmt *CodeBlock, const Expr *MovingCall,
+                              const ValueDecl *MovedVariable,
+                              UseAfterMove *TheUseAfterMove) {
   // Generate the CFG manually instead of through an AnalysisDeclContext because
   // it seems the latter can't be used to generate a CFG for the body of a
   // lambda.
@@ -111,45 +104,29 @@ UseAfterMoveFinder::find(Stmt *CodeBlock, const Expr *MovingCall,
   std::unique_ptr<CFG> TheCFG =
       CFG::buildCFG(nullptr, CodeBlock, Context, Options);
   if (!TheCFG)
-    return std::nullopt;
+    return false;
 
   Sequence = std::make_unique<ExprSequence>(TheCFG.get(), CodeBlock, Context);
   BlockMap = std::make_unique<StmtToBlockMap>(TheCFG.get(), Context);
   Visited.clear();
 
-  const CFGBlock *MoveBlock = BlockMap->blockContainingStmt(MovingCall);
-  if (!MoveBlock) {
+  const CFGBlock *Block = BlockMap->blockContainingStmt(MovingCall);
+  if (!Block) {
     // This can happen if MovingCall is in a constructor initializer, which is
     // not included in the CFG because the CFG is built only from the function
     // body.
-    MoveBlock = &TheCFG->getEntry();
+    Block = &TheCFG->getEntry();
   }
 
-  auto TheUseAfterMove =
-      findInternal(MoveBlock, MovingCall, MovedVariable->getDecl());
-
-  if (TheUseAfterMove) {
-    if (const CFGBlock *UseBlock =
-            BlockMap->blockContainingStmt(TheUseAfterMove->DeclRef)) {
-      // Does the use happen in a later loop iteration than the move?
-      // - If they are in the same CFG block, we know the use happened in a
-      //   later iteration if we visited that block a second time.
-      // - Otherwise, we know the use happened in a later iteration if the
-      //   move is reachable from the use.
-      CFGReverseBlockReachabilityAnalysis CFA(*TheCFG);
-      TheUseAfterMove->UseHappensInLaterLoopIteration =
-          UseBlock == MoveBlock ? Visited.contains(UseBlock)
-                                : CFA.isReachable(UseBlock, MoveBlock);
-    }
-  }
-  return TheUseAfterMove;
+  return findInternal(Block, MovingCall, MovedVariable, TheUseAfterMove);
 }
 
-std::optional<UseAfterMove>
-UseAfterMoveFinder::findInternal(const CFGBlock *Block, const Expr *MovingCall,
-                                 const ValueDecl *MovedVariable) {
-  if (Visited.contains(Block))
-    return std::nullopt;
+bool UseAfterMoveFinder::findInternal(const CFGBlock *Block,
+                                      const Expr *MovingCall,
+                                      const ValueDecl *MovedVariable,
+                                      UseAfterMove *TheUseAfterMove) {
+  if (Visited.count(Block))
+    return false;
 
   // Mark the block as visited (except if this is the block containing the
   // std::move() and it's being visited the first time).
@@ -188,18 +165,17 @@ UseAfterMoveFinder::findInternal(const CFGBlock *Block, const Expr *MovingCall,
       }
 
       if (!HaveSavingReinit) {
-        UseAfterMove TheUseAfterMove;
-        TheUseAfterMove.DeclRef = Use;
+        TheUseAfterMove->DeclRef = Use;
 
         // Is this a use-after-move that depends on order of evaluation?
         // This is the case if the move potentially comes after the use (and we
         // already know that use potentially comes after the move, which taken
         // together tells us that the ordering is unclear).
-        TheUseAfterMove.EvaluationOrderUndefined =
+        TheUseAfterMove->EvaluationOrderUndefined =
             MovingCall != nullptr &&
             Sequence->potentiallyAfter(MovingCall, Use);
 
-        return TheUseAfterMove;
+        return true;
       }
     }
   }
@@ -208,15 +184,12 @@ UseAfterMoveFinder::findInternal(const CFGBlock *Block, const Expr *MovingCall,
   // successors.
   if (Reinits.empty()) {
     for (const auto &Succ : Block->succs()) {
-      if (Succ) {
-        if (auto Found = findInternal(Succ, nullptr, MovedVariable)) {
-          return Found;
-        }
-      }
+      if (Succ && findInternal(Succ, nullptr, MovedVariable, TheUseAfterMove))
+        return true;
     }
   }
 
-  return std::nullopt;
+  return false;
 }
 
 void UseAfterMoveFinder::getUsesAndReinits(
@@ -232,7 +205,7 @@ void UseAfterMoveFinder::getUsesAndReinits(
   // All references to the variable that aren't reinitializations are uses.
   Uses->clear();
   for (const DeclRefExpr *DeclRef : DeclRefs) {
-    if (!ReinitDeclRefs.contains(DeclRef))
+    if (!ReinitDeclRefs.count(DeclRef))
       Uses->push_back(DeclRef);
   }
 
@@ -242,7 +215,7 @@ void UseAfterMoveFinder::getUsesAndReinits(
   });
 }
 
-static bool isStandardSmartPointer(const ValueDecl *VD) {
+bool isStandardSmartPointer(const ValueDecl *VD) {
   const Type *TheType = VD->getType().getNonReferenceType().getTypePtrOrNull();
   if (!TheType)
     return false;
@@ -255,7 +228,7 @@ static bool isStandardSmartPointer(const ValueDecl *VD) {
   if (!ID)
     return false;
 
-  const StringRef Name = ID->getName();
+  StringRef Name = ID->getName();
   if (Name != "unique_ptr" && Name != "shared_ptr" && Name != "weak_ptr")
     return false;
 
@@ -315,10 +288,9 @@ void UseAfterMoveFinder::getReinits(
           "::std::unordered_map", "::std::unordered_multiset",
           "::std::unordered_multimap"))))));
 
-  auto StandardResettableOwnerTypeMatcher = hasType(
-      hasUnqualifiedDesugaredType(recordType(hasDeclaration(cxxRecordDecl(
-          hasAnyName("::std::unique_ptr", "::std::shared_ptr",
-                     "::std::weak_ptr", "::std::optional", "::std::any"))))));
+  auto StandardSmartPointerTypeMatcher = hasType(hasUnqualifiedDesugaredType(
+      recordType(hasDeclaration(cxxRecordDecl(hasAnyName(
+          "::std::unique_ptr", "::std::shared_ptr", "::std::weak_ptr"))))));
 
   // Matches different types of reinitialization.
   auto ReinitMatcher =
@@ -341,7 +313,7 @@ void UseAfterMoveFinder::getReinits(
                    callee(cxxMethodDecl(hasAnyName("clear", "assign")))),
                // reset() on standard smart pointers.
                cxxMemberCallExpr(
-                   on(expr(DeclRefMatcher, StandardResettableOwnerTypeMatcher)),
+                   on(expr(DeclRefMatcher, StandardSmartPointerTypeMatcher)),
                    callee(cxxMethodDecl(hasName("reset")))),
                // Methods that have the [[clang::reinitializes]] attribute.
                cxxMemberCallExpr(
@@ -358,8 +330,7 @@ void UseAfterMoveFinder::getReinits(
                             traverse(TK_AsIs, DeclRefMatcher),
                             unless(parmVarDecl(hasType(
                                 references(qualType(isConstQualified())))))),
-                        unless(callee(functionDecl(
-                            hasAnyName("::std::move", "::std::forward")))))))
+                        unless(callee(functionDecl(hasName("::std::move")))))))
           .bind("reinit");
 
   Stmts->clear();
@@ -369,7 +340,7 @@ void UseAfterMoveFinder::getReinits(
     if (!S)
       continue;
 
-    const SmallVector<BoundNodes, 1> Matches =
+    SmallVector<BoundNodes, 1> Matches =
         match(findAll(ReinitMatcher), *S->getStmt(), *Context);
 
     for (const auto &Match : Matches) {
@@ -388,46 +359,24 @@ void UseAfterMoveFinder::getReinits(
   }
 }
 
-enum class MoveType {
-  Move,    // std::move
-  Forward, // std::forward
-};
-
-static MoveType determineMoveType(const FunctionDecl *FuncDecl) {
-  if (FuncDecl->getName() == "move")
-    return MoveType::Move;
-  if (FuncDecl->getName() == "forward")
-    return MoveType::Forward;
-
-  llvm_unreachable("Invalid move type");
-}
-
 static void emitDiagnostic(const Expr *MovingCall, const DeclRefExpr *MoveArg,
                            const UseAfterMove &Use, ClangTidyCheck *Check,
-                           ASTContext *Context, MoveType Type) {
-  const SourceLocation UseLoc = Use.DeclRef->getExprLoc();
-  const SourceLocation MoveLoc = MovingCall->getExprLoc();
+                           ASTContext *Context) {
+  SourceLocation UseLoc = Use.DeclRef->getExprLoc();
+  SourceLocation MoveLoc = MovingCall->getExprLoc();
 
-  const bool IsMove = (Type == MoveType::Move);
-
-  Check->diag(UseLoc, "'%0' used after it was %select{forwarded|moved}1")
-      << MoveArg->getDecl()->getName() << IsMove;
-  Check->diag(MoveLoc, "%select{forward|move}0 occurred here",
-              DiagnosticIDs::Note)
-      << IsMove;
+  Check->diag(UseLoc, "'%0' used after it was moved")
+      << MoveArg->getDecl()->getName();
+  Check->diag(MoveLoc, "move occurred here", DiagnosticIDs::Note);
   if (Use.EvaluationOrderUndefined) {
-    Check->diag(
-        UseLoc,
-        "the use and %select{forward|move}0 are unsequenced, i.e. "
-        "there is no guarantee about the order in which they are evaluated",
-        DiagnosticIDs::Note)
-        << IsMove;
-  } else if (Use.UseHappensInLaterLoopIteration) {
     Check->diag(UseLoc,
-                "the use happens in a later loop iteration than the "
-                "%select{forward|move}0",
-                DiagnosticIDs::Note)
-        << IsMove;
+                "the use and move are unsequenced, i.e. there is no guarantee "
+                "about the order in which they are evaluated",
+                DiagnosticIDs::Note);
+  } else if (UseLoc < MoveLoc || Use.DeclRef == MoveArg) {
+    Check->diag(UseLoc,
+                "the use happens in a later loop iteration than the move",
+                DiagnosticIDs::Note);
   }
 }
 
@@ -439,9 +388,7 @@ void UseAfterMoveCheck::registerMatchers(MatchFinder *Finder) {
   auto TryEmplaceMatcher =
       cxxMemberCallExpr(callee(cxxMethodDecl(hasName("try_emplace"))));
   auto CallMoveMatcher =
-      callExpr(argumentCountIs(1),
-               callee(functionDecl(hasAnyName("::std::move", "::std::forward"))
-                          .bind("move-decl")),
+      callExpr(argumentCountIs(1), callee(functionDecl(hasName("::std::move"))),
                hasArgument(0, declRefExpr().bind("arg")),
                unless(inDecltypeOrTemplateArg()),
                unless(hasParent(TryEmplaceMatcher)), expr().bind("call-move"),
@@ -489,7 +436,6 @@ void UseAfterMoveCheck::check(const MatchFinder::MatchResult &Result) {
   const auto *CallMove = Result.Nodes.getNodeAs<CallExpr>("call-move");
   const auto *MovingCall = Result.Nodes.getNodeAs<Expr>("moving-call");
   const auto *Arg = Result.Nodes.getNodeAs<DeclRefExpr>("arg");
-  const auto *MoveDecl = Result.Nodes.getNodeAs<FunctionDecl>("move-decl");
 
   if (!MovingCall || !MovingCall->getExprLoc().isValid())
     MovingCall = CallMove;
@@ -506,7 +452,7 @@ void UseAfterMoveCheck::check(const MatchFinder::MatchResult &Result) {
     if (ContainingCtorInit) {
       // Collect the constructor initializer expressions.
       bool BeforeMove{true};
-      for (const CXXCtorInitializer *Init : ContainingCtor->inits()) {
+      for (CXXCtorInitializer *Init : ContainingCtor->inits()) {
         if (BeforeMove && Init->getInit()->IgnoreImplicit() ==
                               ContainingCtorInit->IgnoreImplicit())
           BeforeMove = false;
@@ -522,9 +468,9 @@ void UseAfterMoveCheck::check(const MatchFinder::MatchResult &Result) {
 
   for (Stmt *CodeBlock : CodeBlocks) {
     UseAfterMoveFinder Finder(Result.Context);
-    if (auto Use = Finder.find(CodeBlock, MovingCall, Arg))
-      emitDiagnostic(MovingCall, Arg, *Use, this, Result.Context,
-                     determineMoveType(MoveDecl));
+    UseAfterMove Use;
+    if (Finder.find(CodeBlock, MovingCall, Arg->getDecl(), &Use))
+      emitDiagnostic(MovingCall, Arg, Use, this, Result.Context);
   }
 }
 

@@ -22,7 +22,7 @@ class StringEntryToDwarfStringPoolEntryMap {
 public:
   StringEntryToDwarfStringPoolEntryMap(LinkingGlobalData &GlobalData)
       : GlobalData(GlobalData) {}
-  ~StringEntryToDwarfStringPoolEntryMap() = default;
+  ~StringEntryToDwarfStringPoolEntryMap() {}
 
   /// Create DwarfStringPoolEntry for specified StringEntry if necessary.
   /// Initialize DwarfStringPoolEntry with initial values.
@@ -33,7 +33,7 @@ public:
       DwarfStringPoolEntryWithExtString *DataPtr =
           GlobalData.getAllocator()
               .Allocate<DwarfStringPoolEntryWithExtString>();
-      DataPtr->String = String->getKey();
+      DataPtr->String = GlobalData.translateString(String->getKey());
       DataPtr->Index = DwarfStringPoolEntry::NotIndexed;
       DataPtr->Offset = 0;
       DataPtr->Symbol = nullptr;

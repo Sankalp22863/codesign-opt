@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-def AddrSpaces {
+class AddressSpacesImpl {
   int Flat = 0;
   int Global = 1;
   int Region = 2;
@@ -20,6 +20,8 @@ def AddrSpaces {
   int Private = 5;
   int Constant32Bit = 6;
 }
+
+def AddrSpaces : AddressSpacesImpl;
 
 
 class AMDGPUInst <dag outs, dag ins, string asm = "",
@@ -33,6 +35,12 @@ class AMDGPUInst <dag outs, dag ins, string asm = "",
   let AsmString = asm;
   let Pattern = pattern;
   let Itinerary = NullALU;
+
+  // SoftFail is a field the disassembler can use to provide a way for
+  // instructions to not match without killing the whole decode process. It is
+  // mainly used for ARM, but Tablegen expects this field to exist or it fails
+  // to build the decode table.
+  field bits<96> SoftFail = 0;
 
   let DecoderNamespace = Namespace;
 
@@ -68,9 +76,31 @@ class ILFormat<dag outs, dag ins, string asmstr, list<dag> pattern>
      let isCodeGenOnly = 1;
 }
 
+def TruePredicate : Predicate<"">;
+
+// FIXME: Tablegen should specially supports this
+def FalsePredicate : Predicate<"false">;
+
+// Add a predicate to the list if does not already exist to deduplicate it.
+class PredConcat<list<Predicate> lst, Predicate pred> {
+  list<Predicate> ret = !listconcat(lst, !listremove([pred], lst));
+}
+
 // Get the union of two Register lists
 class RegListUnion<list<Register> lstA, list<Register> lstB> {
   list<Register> ret = !listconcat(lstA, !listremove(lstB, lstA));
+}
+
+class PredicateControl {
+  Predicate SubtargetPredicate = TruePredicate;
+  Predicate AssemblerPredicate = TruePredicate;
+  Predicate WaveSizePredicate = TruePredicate;
+  list<Predicate> OtherPredicates = [];
+  list<Predicate> Predicates = PredConcat<
+                                 PredConcat<PredConcat<OtherPredicates,
+                                                       SubtargetPredicate>.ret,
+                                            AssemblerPredicate>.ret,
+                                 WaveSizePredicate>.ret;
 }
 
 class AMDGPUPat<dag pattern, dag result> : Pat<pattern, result>,
@@ -86,8 +116,7 @@ def FP64Denormals : Predicate<"MF->getInfo<SIMachineFunctionInfo>()->getMode().F
 def NoFP16Denormals : Predicate<"MF->getInfo<SIMachineFunctionInfo>()->getMode().FP64FP16Denormals == DenormalMode::getPreserveSign()">;
 def NoFP32Denormals : Predicate<"MF->getInfo<SIMachineFunctionInfo>()->getMode().FP32Denormals == DenormalMode::getPreserveSign()">;
 def NoFP64Denormals : Predicate<"MF->getInfo<SIMachineFunctionInfo>()->getMode().FP64FP16Denormals == DenormalMode::getPreserveSign()">;
-def IEEEModeEnabled : Predicate<"MF->getInfo<SIMachineFunctionInfo>()->getMode().IEEE">;
-def IEEEModeDisabled : Predicate<"!MF->getInfo<SIMachineFunctionInfo>()->getMode().IEEE">;
+def UnsafeFPMath : Predicate<"TM.Options.UnsafeFPMath">;
 }
 
 def FMA : Predicate<"Subtarget->hasFMA()">;
@@ -133,9 +162,7 @@ class ImmOperand<ValueType type, string name = NAME, bit optional = 0,
   let PrintMethod = printer;
 }
 
-class S16ImmOperand : ImmOperand<i16, "S16Imm", 0, "printU16ImmOperand">;
-
-def s16imm : S16ImmOperand;
+def s16imm : ImmOperand<i16, "S16Imm", 0, "printU16ImmOperand">;
 def u16imm : ImmOperand<i16, "U16Imm", 0, "printU16ImmOperand">;
 
 class ValuePredicatedOperand<CustomOperand op, string valuePredicate,
@@ -163,41 +190,33 @@ def brtarget   : Operand<OtherVT>;
 
 class HasOneUseUnaryOp<SDPatternOperator op> : PatFrag<
   (ops node:$src0),
-  (op $src0)> {
-  let HasOneUse = 1;
+  (op $src0),
+  [{ return N->hasOneUse(); }]> {
+
+  let GISelPredicateCode = [{
+    return MRI.hasOneNonDBGUse(MI.getOperand(0).getReg());
+  }];
 }
 
 class HasOneUseBinOp<SDPatternOperator op> : PatFrag<
   (ops node:$src0, node:$src1),
-  (op $src0, $src1)> {
-  let HasOneUse = 1;
+  (op $src0, $src1),
+  [{ return N->hasOneUse(); }]> {
+  let GISelPredicateCode = [{
+    return MRI.hasOneNonDBGUse(MI.getOperand(0).getReg());
+  }];
 }
 
 class HasOneUseTernaryOp<SDPatternOperator op> : PatFrag<
   (ops node:$src0, node:$src1, node:$src2),
-  (op $src0, $src1, $src2)> {
-  let HasOneUse = 1;
-}
-
-class is_canonicalized_1<SDPatternOperator op> : PatFrag<
-  (ops node:$src0),
-  (op $src0),
-  [{
-    const SITargetLowering &Lowering =
-              *static_cast<const SITargetLowering *>(getTargetLowering());
-
-    return Lowering.isCanonicalized(*CurDAG, N->getOperand(0));
-   }]> {
-
+  (op $src0, $src1, $src2),
+  [{ return N->hasOneUse(); }]> {
   let GISelPredicateCode = [{
-    const SITargetLowering *TLI = static_cast<const SITargetLowering *>(
-      MF.getSubtarget().getTargetLowering());
-
-    return TLI->isCanonicalized(MI.getOperand(1).getReg(), MF);
+    return MRI.hasOneNonDBGUse(MI.getOperand(0).getReg());
   }];
 }
 
-class is_canonicalized_2<SDPatternOperator op> : PatFrag<
+class is_canonicalized<SDPatternOperator op> : PatFrag<
   (ops node:$src0, node:$src1),
   (op $src0, $src1),
   [{
@@ -213,8 +232,8 @@ class is_canonicalized_2<SDPatternOperator op> : PatFrag<
     const SITargetLowering *TLI = static_cast<const SITargetLowering *>(
       MF.getSubtarget().getTargetLowering());
 
-    return TLI->isCanonicalized(MI.getOperand(1).getReg(), MF) &&
-      TLI->isCanonicalized(MI.getOperand(2).getReg(), MF);
+    return TLI->isCanonicalized(MI.getOperand(1).getReg(), const_cast<MachineFunction&>(MF)) &&
+      TLI->isCanonicalized(MI.getOperand(2).getReg(), const_cast<MachineFunction&>(MF));
   }];
 }
 
@@ -444,9 +463,7 @@ def LoadAddress_constant : AddressSpaceList<[ AddrSpaces.Constant,
 def LoadAddress_global : AddressSpaceList<[ AddrSpaces.Global,
                                             AddrSpaces.Constant,
                                             AddrSpaces.Constant32Bit ]>;
-def StoreAddress_global : AddressSpaceList<[ AddrSpaces.Global,
-                                             AddrSpaces.Constant,
-                                             AddrSpaces.Constant32Bit ]>;
+def StoreAddress_global : AddressSpaceList<[ AddrSpaces.Global ]>;
 
 def LoadAddress_flat : AddressSpaceList<[ AddrSpaces.Flat,
                                           AddrSpaces.Global,
@@ -497,46 +514,25 @@ def zextloadi16_#as : PatFrag<(ops node:$ptr), (zextloadi16 node:$ptr)> {
   let IsLoad = 1;
 }
 
-def atomic_load_nonext_16_#as : PatFrag<(ops node:$ptr), (atomic_load_nonext_16 node:$ptr)> {
+def atomic_load_8_#as : PatFrag<(ops node:$ptr), (atomic_load_8 node:$ptr)> {
   let IsAtomic = 1;
+  let MemoryVT = i8;
 }
 
-def atomic_load_nonext_32_#as : PatFrag<(ops node:$ptr), (atomic_load_nonext_32 node:$ptr)> {
+def atomic_load_16_#as : PatFrag<(ops node:$ptr), (atomic_load_16 node:$ptr)> {
   let IsAtomic = 1;
+  let MemoryVT = i16;
 }
 
-def atomic_load_nonext_64_#as : PatFrag<(ops node:$ptr), (atomic_load_nonext_64 node:$ptr)> {
+def atomic_load_32_#as : PatFrag<(ops node:$ptr), (atomic_load_32 node:$ptr)> {
   let IsAtomic = 1;
+  let MemoryVT = i32;
 }
 
-def atomic_load_nonext_128_#as : PatFrag<(ops node:$ptr), (atomic_load_nonext_128 node:$ptr)> {
+def atomic_load_64_#as : PatFrag<(ops node:$ptr), (atomic_load_64 node:$ptr)> {
   let IsAtomic = 1;
+  let MemoryVT = i64;
 }
-
-def atomic_load_zext_8_#as : PatFrag<(ops node:$ptr), (atomic_load_zext_8 node:$ptr)> {
-  let IsAtomic = 1;
-}
-
-def atomic_load_sext_8_#as : PatFrag<(ops node:$ptr), (atomic_load_sext_8 node:$ptr)> {
-  let IsAtomic = 1;
-}
-
-def atomic_load_aext_8_#as : PatFrag<(ops node:$ptr), (atomic_load_aext_8 node:$ptr)> {
-  let IsAtomic = 1;
-}
-
-def atomic_load_zext_16_#as : PatFrag<(ops node:$ptr), (atomic_load_zext_16 node:$ptr)> {
-  let IsAtomic = 1;
-}
-
-def atomic_load_sext_16_#as : PatFrag<(ops node:$ptr), (atomic_load_sext_16 node:$ptr)> {
-  let IsAtomic = 1;
-}
-
-def atomic_load_aext_16_#as : PatFrag<(ops node:$ptr), (atomic_load_aext_16 node:$ptr)> {
-  let IsAtomic = 1;
-}
-
 } // End let AddressSpaces
 } // End foreach as
 
@@ -577,8 +573,6 @@ def atomic_store_32_#as : PatFrag<(ops node:$val, node:$ptr),
                                   (atomic_store_32 node:$val, node:$ptr)>;
 def atomic_store_64_#as : PatFrag<(ops node:$val, node:$ptr),
                                   (atomic_store_64 node:$val, node:$ptr)>;
-def atomic_store_128_#as : PatFrag<(ops node:$val, node:$ptr),
-                                   (atomic_store_128 node:$val, node:$ptr)>;
 } // End let IsAtomic = 1, AddressSpaces = ...
 } // End foreach as
 
@@ -636,7 +630,18 @@ multiclass local_addr_space_atomic_op {
     }
 }
 
+defm int_amdgcn_flat_atomic_fadd : flat_addr_space_atomic_op;
+defm int_amdgcn_flat_atomic_fadd_v2bf16 : noret_op;
+defm int_amdgcn_flat_atomic_fmin : noret_op;
+defm int_amdgcn_flat_atomic_fmax : noret_op;
+defm int_amdgcn_global_atomic_fadd : global_addr_space_atomic_op;
+defm int_amdgcn_flat_atomic_fadd : global_addr_space_atomic_op;
+defm int_amdgcn_global_atomic_fadd_v2bf16 : noret_op;
+defm int_amdgcn_global_atomic_fmin : noret_op;
+defm int_amdgcn_global_atomic_fmax : noret_op;
 defm int_amdgcn_global_atomic_csub : noret_op;
+defm int_amdgcn_flat_atomic_fadd : local_addr_space_atomic_op;
+defm int_amdgcn_ds_fadd_v2bf16 : noret_op;
 defm int_amdgcn_global_atomic_ordered_add_b64 : noret_op;
 defm int_amdgcn_flat_atomic_fmin_num : noret_op;
 defm int_amdgcn_flat_atomic_fmax_num : noret_op;
@@ -646,14 +651,9 @@ defm int_amdgcn_atomic_cond_sub_u32 : local_addr_space_atomic_op;
 defm int_amdgcn_atomic_cond_sub_u32 : flat_addr_space_atomic_op;
 defm int_amdgcn_atomic_cond_sub_u32 : global_addr_space_atomic_op;
 
-multiclass noret_binary_atomic_op<SDNode atomic_op> {
+multiclass noret_binary_atomic_op<SDNode atomic_op, bit IsInt = 1> {
   let HasNoUse = true in
-  defm "_noret" : binary_atomic_op<atomic_op>;
-}
-
-multiclass noret_binary_atomic_op_fp<SDNode atomic_op> {
-  let HasNoUse = true in
-  defm "_noret" : binary_atomic_op_fp<atomic_op>;
+  defm "_noret" : binary_atomic_op<atomic_op, IsInt>;
 }
 
 multiclass noret_ternary_atomic_op<SDNode atomic_op> {
@@ -661,21 +661,11 @@ multiclass noret_ternary_atomic_op<SDNode atomic_op> {
   defm "_noret" : ternary_atomic_op<atomic_op>;
 }
 
-defvar atomic_addrspace_names = [ "global", "flat", "constant", "local", "private", "region" ];
-
-multiclass binary_atomic_op_all_as<SDNode atomic_op> {
-  foreach as = atomic_addrspace_names in {
+multiclass binary_atomic_op_all_as<SDNode atomic_op, bit IsInt = 1> {
+  foreach as = [ "global", "flat", "constant", "local", "private", "region" ] in {
     let AddressSpaces = !cast<AddressSpaceList>("LoadAddress_"#as).AddrSpaces in {
-      defm "_"#as : binary_atomic_op<atomic_op>;
-      defm "_"#as : noret_binary_atomic_op<atomic_op>;
-    }
-  }
-}
-multiclass binary_atomic_op_fp_all_as<SDNode atomic_op> {
-  foreach as = atomic_addrspace_names in {
-    let AddressSpaces = !cast<AddressSpaceList>("LoadAddress_"#as).AddrSpaces in {
-      defm "_"#as : binary_atomic_op_fp<atomic_op>;
-      defm "_"#as : noret_binary_atomic_op_fp<atomic_op>;
+      defm "_"#as : binary_atomic_op<atomic_op, IsInt>;
+      defm "_"#as : noret_binary_atomic_op<atomic_op, IsInt>;
     }
   }
 }
@@ -690,11 +680,11 @@ defm atomic_load_sub : binary_atomic_op_all_as<atomic_load_sub>;
 defm atomic_load_umax : binary_atomic_op_all_as<atomic_load_umax>;
 defm atomic_load_umin : binary_atomic_op_all_as<atomic_load_umin>;
 defm atomic_load_xor : binary_atomic_op_all_as<atomic_load_xor>;
-defm atomic_load_fadd : binary_atomic_op_fp_all_as<atomic_load_fadd>;
-defm atomic_load_fmin : binary_atomic_op_fp_all_as<atomic_load_fmin>;
-defm atomic_load_fmax : binary_atomic_op_fp_all_as<atomic_load_fmax>;
+defm atomic_load_fadd : binary_atomic_op_all_as<atomic_load_fadd, 0>;
 defm atomic_load_uinc_wrap : binary_atomic_op_all_as<atomic_load_uinc_wrap>;
 defm atomic_load_udec_wrap : binary_atomic_op_all_as<atomic_load_udec_wrap>;
+let MemoryVT = v2f16 in
+defm atomic_load_fadd_v2f16 : binary_atomic_op_all_as<atomic_load_fadd, 0>;
 defm AMDGPUatomic_cmp_swap : binary_atomic_op_all_as<AMDGPUatomic_cmp_swap>;
 
 def load_align8_local : PatFrag<(ops node:$ptr), (load_local node:$ptr)>,

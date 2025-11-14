@@ -1,4 +1,4 @@
-//===-- error_test.cpp ----------------------------------------------------===//
+//===-- error_test.cpp --sssssssss-----------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -10,14 +10,14 @@
 //
 // Note:
 //   This unit test was adapted from
-//   llvm/unittests/Support/ErrorTest.cpp
+//   llvm/unittests/Support/ExtensibleRTTITest.cpp
 //
 //===----------------------------------------------------------------------===//
 
 #include "error.h"
 #include "gtest/gtest.h"
 
-using namespace orc_rt;
+using namespace __orc_rt;
 
 namespace {
 

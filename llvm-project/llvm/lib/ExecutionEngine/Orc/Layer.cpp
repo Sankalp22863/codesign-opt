@@ -76,11 +76,10 @@ IRMaterializationUnit::IRMaterializationUnit(
 
       // Otherwise we just need a normal linker mangling.
       auto MangledName = Mangle(G.getName());
-      auto &Flags = SymbolFlags[MangledName];
-      Flags = JITSymbolFlags::fromGlobalValue(G);
+      SymbolFlags[MangledName] = JITSymbolFlags::fromGlobalValue(G);
       if (G.getComdat() &&
           G.getComdat()->getSelectionKind() != Comdat::NoDeduplicate)
-        Flags |= JITSymbolFlags::Weak;
+        SymbolFlags[MangledName] |= JITSymbolFlags::Weak;
       SymbolToDefinition[MangledName] = &G;
     }
 
@@ -201,8 +200,9 @@ BasicObjectLayerMaterializationUnit::Create(ObjectLayer &L,
   if (!ObjInterface)
     return ObjInterface.takeError();
 
-  return std::make_unique<BasicObjectLayerMaterializationUnit>(
-      L, std::move(O), std::move(*ObjInterface));
+  return std::unique_ptr<BasicObjectLayerMaterializationUnit>(
+      new BasicObjectLayerMaterializationUnit(L, std::move(O),
+                                              std::move(*ObjInterface)));
 }
 
 BasicObjectLayerMaterializationUnit::BasicObjectLayerMaterializationUnit(

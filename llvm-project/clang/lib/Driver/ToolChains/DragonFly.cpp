@@ -7,10 +7,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "DragonFly.h"
-#include "clang/Driver/CommonArgs.h"
+#include "CommonArgs.h"
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Driver.h"
-#include "clang/Options/Options.h"
+#include "clang/Driver/Options.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/Path.h"
 
@@ -122,7 +122,7 @@ void dragonfly::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   Args.addAllArgs(CmdArgs, {options::OPT_L, options::OPT_T_Group,
-                            options::OPT_s, options::OPT_t});
+                            options::OPT_s, options::OPT_t, options::OPT_r});
   ToolChain.AddFilePathLibArgs(Args, CmdArgs);
 
   AddLinkerInputs(ToolChain, Inputs, Args, CmdArgs, JA);
@@ -136,7 +136,7 @@ void dragonfly::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
     // Use the static OpenMP runtime with -static-openmp
     bool StaticOpenMP = Args.hasArg(options::OPT_static_openmp) && !Static;
-    addOpenMPRuntime(C, CmdArgs, ToolChain, Args, StaticOpenMP);
+    addOpenMPRuntime(CmdArgs, ToolChain, Args, StaticOpenMP);
 
     if (D.CCCIsCXX()) {
       if (ToolChain.ShouldLinkCXXStdlib(Args))
@@ -151,10 +151,9 @@ void dragonfly::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     // to generate executables. As Fortran runtime depends on the C runtime,
     // these dependencies need to be listed before the C runtime below (i.e.
     // AddRunTimeLibs).
-    if (D.IsFlangMode() &&
-        !Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs)) {
-      ToolChain.addFortranRuntimeLibraryPath(Args, CmdArgs);
-      ToolChain.addFortranRuntimeLibs(Args, CmdArgs);
+    if (D.IsFlangMode()) {
+      addFortranRuntimeLibraryPath(ToolChain, Args, CmdArgs);
+      addFortranRuntimeLibs(ToolChain, Args, CmdArgs);
       CmdArgs.push_back("-lm");
     }
 
@@ -206,8 +205,11 @@ void dragonfly::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 DragonFly::DragonFly(const Driver &D, const llvm::Triple &Triple,
                      const ArgList &Args)
     : Generic_ELF(D, Triple, Args) {
+
   // Path mangling to find libexec
-  getProgramPaths().push_back(getDriver().Dir);
+  getProgramPaths().push_back(getDriver().getInstalledDir());
+  if (getDriver().getInstalledDir() != getDriver().Dir)
+    getProgramPaths().push_back(getDriver().Dir);
 
   getFilePaths().push_back(getDriver().Dir + "/../lib");
   getFilePaths().push_back(concat(getDriver().SysRoot, "/usr/lib"));
@@ -219,7 +221,7 @@ void DragonFly::AddClangSystemIncludeArgs(
     llvm::opt::ArgStringList &CC1Args) const {
   const Driver &D = getDriver();
 
-  if (DriverArgs.hasArg(options::OPT_nostdinc))
+  if (DriverArgs.hasArg(clang::driver::options::OPT_nostdinc))
     return;
 
   if (!DriverArgs.hasArg(options::OPT_nobuiltininc)) {

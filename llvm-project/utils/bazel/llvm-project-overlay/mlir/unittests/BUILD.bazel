@@ -2,7 +2,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-load("@rules_cc//cc:defs.bzl", "cc_test")
 load("//mlir:tblgen.bzl", "gentbl_cc_library")
 
 package(
@@ -17,6 +16,7 @@ cc_test(
     size = "small",
     srcs = glob([
         "Debug/*.cpp",
+        "Debug/*.h",
     ]),
     deps = [
         "//llvm:Support",
@@ -35,18 +35,13 @@ cc_test(
     size = "small",
     srcs = glob([
         "IR/*.cpp",
+        "IR/*.h",
     ]),
     deps = [
-        "//llvm:Core",
-        "//llvm:Remarks",
         "//llvm:Support",
-        "//mlir:BytecodeReader",
-        "//mlir:CallOpInterfaces",
         "//mlir:FunctionInterfaces",
         "//mlir:IR",
-        "//mlir:MemRefDialect",
         "//mlir:Parser",
-        "//mlir:RemarkStreamer",
         "//mlir:Support",
         "//mlir/test:TestDialect",
         "//third-party/unittest:gmock",
@@ -60,12 +55,12 @@ cc_test(
     size = "small",
     srcs = glob([
         "Interfaces/*.cpp",
+        "Interfaces/*.h",
     ]),
     deps = [
         "//llvm:Support",
         "//llvm:TestingSupport",
         "//mlir:ArithDialect",
-        "//mlir:BytecodeReader",
         "//mlir:ControlFlowInterfaces",
         "//mlir:DLTIDialect",
         "//mlir:DataLayoutInterfaces",
@@ -84,6 +79,7 @@ cc_test(
     size = "small",
     srcs = glob([
         "Support/*.cpp",
+        "Support/*.h",
     ]),
     deps = [
         "//llvm:Support",
@@ -99,6 +95,7 @@ cc_test(
     size = "small",
     srcs = glob([
         "Pass/*.cpp",
+        "Pass/*.h",
     ]),
     deps = [
         "//llvm:Support",
@@ -118,11 +115,11 @@ cc_test(
     size = "small",
     srcs = glob([
         "Rewrite/*.cpp",
+        "Rewrite/*.h",
     ]),
     deps = [
         "//mlir:IR",
         "//mlir:Rewrite",
-        "//mlir:SideEffectInterfaces",
         "//third-party/unittest:gtest",
         "//third-party/unittest:gtest_main",
     ],
@@ -133,6 +130,7 @@ cc_test(
     size = "small",
     srcs = glob([
         "Dialect/*.cpp",
+        "Dialect/*.h",
     ]),
     deps = [
         "//llvm:Support",
@@ -143,30 +141,32 @@ cc_test(
 )
 
 cc_test(
-    name = "amdgpu_tests",
+    name = "memref_tests",
     size = "small",
     srcs = glob([
-        "Dialect/AMDGPU/*.cpp",
+        "Dialect/MemRef/*.cpp",
+        "Dialect/MemRef/*.h",
     ]),
     deps = [
-        "//mlir:AMDGPUUtils",
+        "//llvm:TestingSupport",
+        "//mlir:IR",
+        "//mlir:MemRefDialect",
         "//third-party/unittest:gtest",
         "//third-party/unittest:gtest_main",
     ],
 )
 
 cc_test(
-    name = "memref_tests",
+    name = "quantops_tests",
     size = "small",
     srcs = glob([
-        "Dialect/MemRef/*.cpp",
+        "Dialect/Quant/*.cpp",
+        "Dialect/Quant/*.h",
     ]),
     deps = [
         "//llvm:TestingSupport",
-        "//mlir:IR",
-        "//mlir:MemRefDialect",
-        "//mlir:SideEffectInterfaces",
-        "//third-party/unittest:gtest",
+        "//mlir:QuantOps",
+        "//mlir:Transforms",
         "//third-party/unittest:gtest_main",
     ],
 )
@@ -176,18 +176,14 @@ cc_test(
     size = "small",
     srcs = glob([
         "Dialect/SCF/*.cpp",
+        "Dialect/SCF/*.h",
     ]),
     deps = [
-        "//mlir:AffineDialect",
         "//mlir:ArithDialect",
-        "//mlir:DialectUtils",
         "//mlir:FuncDialect",
         "//mlir:IR",
-        "//mlir:LoopLikeInterface",
         "//mlir:Parser",
         "//mlir:SCFDialect",
-        "//mlir:SCFUtils",
-        "//mlir:SideEffectInterfaces",
         "//third-party/unittest:gtest",
         "//third-party/unittest:gtest_main",
     ],
@@ -198,11 +194,11 @@ cc_test(
     size = "small",
     srcs = glob([
         "Dialect/SparseTensor/*.cpp",
+        "Dialect/SparseTensor/*.h",
     ]),
     deps = [
         "//llvm:Support",
         "//llvm:TestingSupport",
-        "//mlir:SideEffectInterfaces",
         "//mlir:SparseTensorUtils",
         "//third-party/unittest:gmock",
         "//third-party/unittest:gtest",
@@ -215,6 +211,7 @@ cc_test(
     size = "small",
     srcs = glob([
         "Dialect/SPIRV/*.cpp",
+        "Dialect/SPIRV/*.h",
     ]),
     deps = [
         "//llvm:Support",
@@ -234,11 +231,11 @@ cc_test(
     size = "small",
     srcs = glob([
         "Dialect/Transform/*.cpp",
+        "Dialect/Transform/*.h",
     ]),
     deps = [
         "//llvm:Support",
         "//llvm:TestingSupport",
-        "//mlir:BytecodeReader",
         "//mlir:FuncDialect",
         "//mlir:IR",
         "//mlir:MlirOptLib",
@@ -259,6 +256,7 @@ cc_test(
     size = "small",
     srcs = glob([
         "Dialect/Utils/*.cpp",
+        "Dialect/Utils/*.h",
     ]),
     deps = [
         "//llvm:Support",
@@ -273,10 +271,16 @@ cc_test(
 
 gentbl_cc_library(
     name = "EnumsIncGen",
-    tbl_outs = {
-        "TableGen/EnumsGenTest.h.inc": ["-gen-enum-decls"],
-        "TableGen/EnumsGenTest.cpp.inc": ["-gen-enum-defs"],
-    },
+    tbl_outs = [
+        (
+            ["-gen-enum-decls"],
+            "TableGen/EnumsGenTest.h.inc",
+        ),
+        (
+            ["-gen-enum-defs"],
+            "TableGen/EnumsGenTest.cpp.inc",
+        ),
+    ],
     tblgen = "//mlir:mlir-tblgen",
     td_file = "TableGen/enums.td",
     deps = [
@@ -286,7 +290,12 @@ gentbl_cc_library(
 
 gentbl_cc_library(
     name = "PassIncGen",
-    tbl_outs = {"TableGen/PassGenTest.h.inc": ["-gen-pass-decls"]},
+    tbl_outs = [
+        (
+            ["-gen-pass-decls"],
+            "TableGen/PassGenTest.h.inc",
+        ),
+    ],
     tblgen = "//mlir:mlir-tblgen",
     td_file = "TableGen/passes.td",
     deps = [
@@ -300,6 +309,7 @@ cc_test(
     size = "small",
     srcs = glob([
         "TableGen/*.cpp",
+        "TableGen/*.h",
     ]) + [
         "TableGen/EnumsGenTest.cpp.inc",
         "TableGen/EnumsGenTest.h.inc",
@@ -325,14 +335,13 @@ cc_test(
     size = "small",
     srcs = glob([
         "Transforms/*.cpp",
+        "Transforms/*.h",
     ]),
     deps = [
         "//mlir:AffineAnalysis",
-        "//mlir:BytecodeReader",
         "//mlir:IR",
         "//mlir:Parser",
         "//mlir:Pass",
-        "//mlir:SideEffectInterfaces",
         "//mlir:TransformUtils",
         "//mlir:Transforms",
         "//third-party/unittest:gtest",
@@ -344,6 +353,8 @@ cc_test(
     name = "analysis_tests",
     size = "small",
     srcs = glob([
+        "Analysis/*.cpp",
+        "Analysis/*.h",
         "Analysis/*/*.cpp",
         "Analysis/*/*.h",
     ]),
@@ -366,6 +377,9 @@ cc_test(
     size = "small",
     srcs = glob([
         "Bytecode/*.cpp",
+        "Bytecode/*.h",
+        "Bytecode/*/*.cpp",
+        "Bytecode/*/*.h",
     ]),
     deps = [
         "//llvm:Support",
@@ -373,7 +387,6 @@ cc_test(
         "//mlir:BytecodeWriter",
         "//mlir:IR",
         "//mlir:Parser",
-        "//mlir:SideEffectInterfaces",
         "//third-party/unittest:gmock",
         "//third-party/unittest:gtest",
         "//third-party/unittest:gtest_main",
@@ -384,7 +397,10 @@ cc_test(
     name = "conversion_tests",
     size = "small",
     srcs = glob([
+        "Conversion/*.cpp",
+        "Conversion/*.h",
         "Conversion/*/*.cpp",
+        "Conversion/*/*.h",
     ]),
     deps = [
         "//mlir:ArithDialect",
@@ -412,7 +428,6 @@ cc_test(
         "//mlir:Analysis",
         "//mlir:ArithToLLVM",
         "//mlir:BuiltinToLLVMIRTranslation",
-        "//mlir:BytecodeReader",
         "//mlir:ExecutionEngine",
         "//mlir:FuncDialect",
         "//mlir:FuncToLLVM",
@@ -423,7 +438,6 @@ cc_test(
         "//mlir:Parser",
         "//mlir:Pass",
         "//mlir:ReconcileUnrealizedCasts",
-        "//mlir:RegisterAllDialects",
         "//mlir:ToLLVMIRTranslation",
         "//mlir:VectorToLLVM",
         "//mlir:VectorToSCF",

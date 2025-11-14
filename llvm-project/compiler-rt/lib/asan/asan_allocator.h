@@ -47,7 +47,6 @@ struct AllocatorOptions {
 void InitializeAllocator(const AllocatorOptions &options);
 void ReInitializeAllocator(const AllocatorOptions &options);
 void GetAllocatorOptions(AllocatorOptions *options);
-void ApplyAllocatorOptions(const AllocatorOptions &options);
 
 class AsanChunkView {
  public:
@@ -183,44 +182,42 @@ static_assert(SizeClassMap::kNumClassesRounded <= 32,
               "allocator size and SizeClassMap tunings that allows us to "
               "reliably run all bringup tests in a sanitized environment.");
 
-#    else   // SANITIZER_RISCV64
+#    else
 // These are the default allocator tunings for non-RISCV environments where the
 // VMA is usually 48 bits and we have lots of space.
 const uptr kAllocatorSize = 0x40000000000ULL;  // 4T.
 typedef DefaultSizeClassMap SizeClassMap;
-#    endif  // SANITIZER_RISCV64
-#  else     // SANITIZER_FUCHSIA
-
-#    if SANITIZER_APPLE
-const uptr kAllocatorSpace = 0x600000000000ULL;
-#    else   // SANITIZER_APPLE
+#    endif
+#  elif defined(__powerpc64__)
 const uptr kAllocatorSpace = ~(uptr)0;
-#    endif  // SANITIZER_APPLE
-
-#    if defined(__powerpc64__)
 const uptr kAllocatorSize  =  0x20000000000ULL;  // 2T.
 typedef DefaultSizeClassMap SizeClassMap;
-#    elif defined(__aarch64__) && SANITIZER_ANDROID
+#  elif defined(__aarch64__) && SANITIZER_ANDROID
 // Android needs to support 39, 42 and 48 bit VMA.
+const uptr kAllocatorSpace =  ~(uptr)0;
 const uptr kAllocatorSize  =  0x2000000000ULL;  // 128G.
 typedef VeryCompactSizeClassMap SizeClassMap;
-#    elif SANITIZER_RISCV64
+#  elif SANITIZER_RISCV64
+const uptr kAllocatorSpace = ~(uptr)0;
 const uptr kAllocatorSize = 0x2000000000ULL;  // 128G.
 typedef VeryDenseSizeClassMap SizeClassMap;
-#    elif defined(__sparc__)
+#  elif defined(__sparc__)
+const uptr kAllocatorSpace = ~(uptr)0;
 const uptr kAllocatorSize = 0x20000000000ULL;  // 2T.
 typedef DefaultSizeClassMap SizeClassMap;
-#    elif SANITIZER_WINDOWS
+#  elif SANITIZER_WINDOWS
+const uptr kAllocatorSpace = ~(uptr)0;
 const uptr kAllocatorSize  =  0x8000000000ULL;  // 500G
 typedef DefaultSizeClassMap SizeClassMap;
-#    elif SANITIZER_APPLE
+#  elif SANITIZER_APPLE
+const uptr kAllocatorSpace = 0x600000000000ULL;
 const uptr kAllocatorSize  =  0x40000000000ULL;  // 4T.
 typedef DefaultSizeClassMap SizeClassMap;
-#    else
+#  else
+const uptr kAllocatorSpace = 0x500000000000ULL;
 const uptr kAllocatorSize = 0x40000000000ULL;  // 4T.
 typedef DefaultSizeClassMap SizeClassMap;
-#    endif  // defined(__powerpc64__) etc.
-#  endif    // SANITIZER_FUCHSIA
+#  endif
 template <typename AddressSpaceViewTy>
 struct AP64 {  // Allocator64 parameters. Deliberately using a short name.
   static const uptr kSpaceBeg = kAllocatorSpace;
@@ -235,11 +232,11 @@ struct AP64 {  // Allocator64 parameters. Deliberately using a short name.
 template <typename AddressSpaceView>
 using PrimaryAllocatorASVT = SizeClassAllocator64<AP64<AddressSpaceView>>;
 using PrimaryAllocator = PrimaryAllocatorASVT<LocalAddressSpaceView>;
-#else   // SANITIZER_CAN_USE_ALLOCATOR64. Fallback to SizeClassAllocator32.
+#else  // Fallback to SizeClassAllocator32.
 typedef CompactSizeClassMap SizeClassMap;
 template <typename AddressSpaceViewTy>
 struct AP32 {
-  static const uptr kSpaceBeg = SANITIZER_MMAP_BEGIN;
+  static const uptr kSpaceBeg = 0;
   static const u64 kSpaceSize = SANITIZER_MMAP_RANGE_SIZE;
   static const uptr kMetadataSize = 0;
   typedef __asan::SizeClassMap SizeClassMap;
@@ -270,8 +267,11 @@ struct AsanThreadLocalMallocStorage {
   AsanThreadLocalMallocStorage() {}
 };
 
-void *asan_memalign(uptr alignment, uptr size, BufferedStackTrace *stack);
-void asan_free(void *ptr, BufferedStackTrace *stack);
+void *asan_memalign(uptr alignment, uptr size, BufferedStackTrace *stack,
+                    AllocType alloc_type);
+void asan_free(void *ptr, BufferedStackTrace *stack, AllocType alloc_type);
+void asan_delete(void *ptr, uptr size, uptr alignment,
+                 BufferedStackTrace *stack, AllocType alloc_type);
 
 void *asan_malloc(uptr size, BufferedStackTrace *stack);
 void *asan_calloc(uptr nmemb, uptr size, BufferedStackTrace *stack);
@@ -285,23 +285,6 @@ void *asan_aligned_alloc(uptr alignment, uptr size, BufferedStackTrace *stack);
 int asan_posix_memalign(void **memptr, uptr alignment, uptr size,
                         BufferedStackTrace *stack);
 uptr asan_malloc_usable_size(const void *ptr, uptr pc, uptr bp);
-
-void *asan_new(uptr size, BufferedStackTrace *stack);
-void *asan_new_aligned(uptr size, uptr alignment, BufferedStackTrace *stack);
-void *asan_new_array(uptr size, BufferedStackTrace *stack);
-void *asan_new_array_aligned(uptr size, uptr alignment,
-                             BufferedStackTrace *stack);
-void asan_delete(void *ptr, BufferedStackTrace *stack);
-void asan_delete_aligned(void *ptr, uptr alignment, BufferedStackTrace *stack);
-void asan_delete_sized(void *ptr, uptr size, BufferedStackTrace *stack);
-void asan_delete_sized_aligned(void *ptr, uptr size, uptr alignment,
-                               BufferedStackTrace *stack);
-void asan_delete_array(void *ptr, BufferedStackTrace *stack);
-void asan_delete_array_aligned(void *ptr, uptr alignment,
-                               BufferedStackTrace *stack);
-void asan_delete_array_sized(void *ptr, uptr size, BufferedStackTrace *stack);
-void asan_delete_array_sized_aligned(void *ptr, uptr size, uptr alignment,
-                                     BufferedStackTrace *stack);
 
 uptr asan_mz_size(const void *ptr);
 void asan_mz_force_lock();

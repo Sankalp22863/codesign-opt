@@ -1,8 +1,6 @@
 # REQUIRES: asserts
 # RUN: llvm-mc -filetype=obj -triple=x86_64-windows-msvc %s -o %t
-# RUN: llvm-jitlink -num-threads=0 -debug-only=jitlink -noexec \
-# RUN:              -abs var=0xcafef00d  %t 2>&1 \
-# RUN:              | FileCheck %s
+# RUN: llvm-jitlink -abs var=0xcafef00d --debug-only=jitlink -noexec %t 2>&1 | FileCheck %s
 #
 # Check a local symbol is created for a static variable.
 #

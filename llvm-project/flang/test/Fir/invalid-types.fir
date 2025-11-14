@@ -6,7 +6,8 @@ func.func private @box3() -> !fir.boxproc<>
 
 // -----
 
-// expected-error@+1 {{expected non-function type}}
+// expected-error@+2 {{expected non-function type}}
+// expected-error@+1 {{failed to parse fir_BoxType parameter 'eleTy' which is to be a `mlir::Type`}}
 func.func private @box1() -> !fir.box<>
 
 // -----
@@ -23,6 +24,11 @@ func.func private @it6() -> !fir.char<>
 
 // expected-error@+1 {{expected integer value}}
 func.func private @it6() -> !fir.char<2, >
+
+// -----
+
+// expected-error@+1 {{expected integer value}}
+func.func private @it3() -> !fir.complex<>
 
 // -----
 
@@ -43,6 +49,11 @@ func.func private @it1() -> !fir.logical<b>
 
 // expected-error@+1 {{expected non-function type}}
 func.func private @mem3() -> !fir.ptr<>
+
+// -----
+
+// expected-error@+1 {{expected integer value}}
+func.func private @mem3() -> !fir.real<>
 
 // -----
 
@@ -104,11 +115,6 @@ func.func private @mem3() -> !fir.ref<>
 
 // -----
 
-// expected-error@+1 {{expected non-function type}}
-func.func private @mem3() -> !fir.ref<, volatile>
-
-// -----
-
 // expected-error@+1 {{expected ':'}}
 func.func private @arr1() -> !fir.array<*>
 
@@ -166,24 +172,3 @@ func.func private @upe() -> !fir.class<!fir.box<i32>>
 
 // expected-error@+1 {{invalid element type}}
 func.func private @upe() -> !fir.box<!fir.class<none>>
-
-// -----
-
-// expected-error@+1 {{invalid element type}}
-func.func private @upe() -> !fir.box<!fir.class<none>, volatile>
-
-// -----
-
-// expected-error@+1 {{invalid element type}}
-func.func private @upe() -> !fir.class<!fir.box<i32>>
-
-// -----
-
-// expected-error@+1 {{invalid element type}}
-func.func private @upe() -> !fir.class<!fir.box<i32>, volatile>
-
-// -----
-
-// expected-error@+1 {{expected non-function type}}
-func.func private @upe() -> !fir.class<, volatile>
-

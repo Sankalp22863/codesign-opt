@@ -15,6 +15,8 @@
 
 #include "ObjCPropertyAttributeOrderFixer.h"
 
+#include <algorithm>
+
 namespace clang {
 namespace format {
 
@@ -61,12 +63,12 @@ void ObjCPropertyAttributeOrderFixer::sortPropertyAttributes(
     }
 
     // Most attributes look like identifiers, but `class` is a keyword.
-    if (Tok->isNoneOf(tok::identifier, tok::kw_class)) {
+    if (!Tok->isOneOf(tok::identifier, tok::kw_class)) {
       // If we hit any other kind of token, just bail.
       return;
     }
 
-    const StringRef Attribute(Tok->TokenText);
+    const StringRef Attribute{Tok->TokenText};
     StringRef Value;
 
     // Also handle `getter=getFoo` attributes.
@@ -84,9 +86,12 @@ void ObjCPropertyAttributeOrderFixer::sortPropertyAttributes(
       Value = Tok->TokenText;
     }
 
+    auto It = SortOrderMap.find(Attribute);
+    if (It == SortOrderMap.end())
+      It = SortOrderMap.insert({Attribute, SortOrderMap.size()}).first;
+
     // Sort the indices based on the priority stored in `SortOrderMap`.
-    const auto Ordinal =
-        SortOrderMap.try_emplace(Attribute, SortOrderMap.size()).first->second;
+    const auto Ordinal = It->second;
     if (!Ordinals.insert(Ordinal).second) {
       HasDuplicates = true;
       continue;

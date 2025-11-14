@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- UpgradeGoogletestCaseCheck.cpp - clang-tidy ----------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -64,7 +64,7 @@ public:
       // We check if the newly defined macro is one of the target replacements.
       // This ensures that the check creates warnings only if it is including a
       // recent enough version of Google Test.
-      const llvm::StringRef FileName = PP->getSourceManager().getFilename(
+      llvm::StringRef FileName = PP->getSourceManager().getFilename(
           MD->getMacroInfo()->getDefinitionLoc());
       ReplacementFound = FileName.ends_with("gtest/gtest-typed-test.h") &&
                          PP->getSpelling(MacroNameTok) == "TYPED_TEST_SUITE";
@@ -94,18 +94,18 @@ private:
     if (!ReplacementFound)
       return;
 
-    const std::string Name = PP->getSpelling(MacroNameTok);
+    std::string Name = PP->getSpelling(MacroNameTok);
 
     std::optional<llvm::StringRef> Replacement = getNewMacroName(Name);
     if (!Replacement)
       return;
 
-    const llvm::StringRef FileName = PP->getSourceManager().getFilename(
+    llvm::StringRef FileName = PP->getSourceManager().getFilename(
         MD.getMacroInfo()->getDefinitionLoc());
     if (!FileName.ends_with("gtest/gtest-typed-test.h"))
       return;
 
-    const DiagnosticBuilder Diag = Check->diag(Loc, RenameCaseToSuiteMessage);
+    DiagnosticBuilder Diag = Check->diag(Loc, RenameCaseToSuiteMessage);
 
     if (Action == CheckAction::Rename)
       Diag << FixItHint::CreateReplacement(
@@ -234,7 +234,7 @@ static bool isInInstantiation(const NodeType &Node,
 template <typename NodeType>
 static bool isInTemplate(const NodeType &Node,
                          const MatchFinder::MatchResult &Result) {
-  const internal::Matcher<NodeType> IsInsideTemplate =
+  internal::Matcher<NodeType> IsInsideTemplate =
       hasAncestor(decl(anyOf(classTemplateDecl(), functionTemplateDecl())));
   return !match(IsInsideTemplate, Node, *Result.Context).empty();
 }
@@ -257,13 +257,8 @@ getAliasNameRange(const MatchFinder::MatchResult &Result) {
     return CharSourceRange::getTokenRange(
         Using->getNameInfo().getSourceRange());
   }
-  TypeLoc TL = *Result.Nodes.getNodeAs<TypeLoc>("typeloc");
-  if (auto QTL = TL.getAs<QualifiedTypeLoc>())
-    TL = QTL.getUnqualifiedLoc();
-
-  if (auto TTL = TL.getAs<TypedefTypeLoc>())
-    return CharSourceRange::getTokenRange(TTL.getNameLoc());
-  return CharSourceRange::getTokenRange(TL.castAs<UsingTypeLoc>().getNameLoc());
+  return CharSourceRange::getTokenRange(
+      Result.Nodes.getNodeAs<TypeLoc>("typeloc")->getSourceRange());
 }
 
 void UpgradeGoogletestCaseCheck::check(const MatchFinder::MatchResult &Result) {
@@ -308,7 +303,7 @@ void UpgradeGoogletestCaseCheck::check(const MatchFinder::MatchResult &Result) {
     }
 
     if (IsInInstantiation) {
-      if (!MatchedTemplateLocations.contains(ReplacementRange.getBegin())) {
+      if (MatchedTemplateLocations.count(ReplacementRange.getBegin()) == 0) {
         // For each location matched in a template instantiation, we check if
         // the location can also be found in `MatchedTemplateLocations`. If it
         // is not found, that means the expression did not create a match
@@ -340,7 +335,7 @@ void UpgradeGoogletestCaseCheck::check(const MatchFinder::MatchResult &Result) {
     // will only be instantiated with the true type name, `TestSuite`.
   }
 
-  const DiagnosticBuilder Diag =
+  DiagnosticBuilder Diag =
       diag(ReplacementRange.getBegin(), RenameCaseToSuiteMessage);
 
   ReplacementRange = Lexer::makeFileCharRange(

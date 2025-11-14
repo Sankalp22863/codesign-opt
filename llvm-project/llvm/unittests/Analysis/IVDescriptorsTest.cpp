@@ -13,7 +13,6 @@
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/Dominators.h"
-#include "llvm/IR/Module.h"
 #include "llvm/Support/SourceMgr.h"
 #include "gtest/gtest.h"
 
@@ -26,7 +25,7 @@ static void runWithLoopInfoAndSE(
   auto *F = M.getFunction(FuncName);
   ASSERT_NE(F, nullptr) << "Could not find " << FuncName;
 
-  TargetLibraryInfoImpl TLII(M.getTargetTriple());
+  TargetLibraryInfoImpl TLII;
   TargetLibraryInfo TLI(TLII);
   AssumptionCache AC(*F);
   DominatorTree DT(*F);
@@ -209,6 +208,10 @@ for.end:
         EXPECT_TRUE(IsRdxPhi);
         RecurKind Kind = Rdx.getRecurrenceKind();
         EXPECT_EQ(Kind, RecurKind::FMin);
+        Type *Ty = Phi->getType();
+        Value *Id = Rdx.getRecurrenceIdentity(Kind, Ty, Rdx.getFastMathFlags());
+        // Identity value for FP min reduction is +Inf.
+        EXPECT_EQ(Id, ConstantFP::getInfinity(Ty, false /*Negative*/));
       });
 }
 
@@ -257,5 +260,9 @@ for.end:
         EXPECT_TRUE(IsRdxPhi);
         RecurKind Kind = Rdx.getRecurrenceKind();
         EXPECT_EQ(Kind, RecurKind::FMax);
+        Type *Ty = Phi->getType();
+        Value *Id = Rdx.getRecurrenceIdentity(Kind, Ty, Rdx.getFastMathFlags());
+        // Identity value for FP max reduction is -Inf.
+        EXPECT_EQ(Id, ConstantFP::getInfinity(Ty, true /*Negative*/));
       });
 }

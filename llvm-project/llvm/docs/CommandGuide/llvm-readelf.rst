@@ -143,10 +143,6 @@ OPTIONS
 
  Display all notes.
 
-.. option:: --offloading
-
- Display list of HIP offload bundles.
-
 .. option:: --pretty-print
 
  When used with :option:`--elf-output-style`, JSON output will be formatted in
@@ -155,6 +151,10 @@ OPTIONS
 .. option:: --program-headers, --segments, -l
 
  Display the program headers.
+
+.. option:: --raw-relr
+
+ Do not decode relocations in RELR relocation sections when displaying them.
 
 .. option:: --relocations, --relocs, -r
 

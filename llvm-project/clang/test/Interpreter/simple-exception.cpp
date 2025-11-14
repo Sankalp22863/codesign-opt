@@ -1,6 +1,7 @@
 // clang-format off
-// XFAIL for arm, or running on Windows.
-// XFAIL: target=arm-{{.*}}, target=armv{{.*}}, system-windows, system-cygwin
+// UNSUPPORTED: system-aix
+// XFAIL for arm and arm64, or running on Windows.
+// XFAIL: target=arm{{.*}}, system-windows
 // RUN: cat %s | clang-repl | FileCheck %s
 
 // Incompatible with msan. It passes with -O3 but fail -Oz. Interpreter

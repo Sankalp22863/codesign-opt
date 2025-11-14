@@ -18,42 +18,21 @@
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/Analysis/LazyCallGraph.h"
 #include "llvm/IR/PassManager.h"
-#include "llvm/Support/Compiler.h"
-#include "llvm/Transforms/Coroutines/ABI.h"
 
 namespace llvm {
 
-namespace coro {
-class BaseABI;
-struct Shape;
-} // namespace coro
-
 struct CoroSplitPass : PassInfoMixin<CoroSplitPass> {
-  using BaseABITy =
-      std::function<std::unique_ptr<coro::BaseABI>(Function &, coro::Shape &)>;
+  const std::function<bool(Instruction &)> MaterializableCallback;
 
-  LLVM_ABI CoroSplitPass(bool OptimizeFrame = false);
-
-  LLVM_ABI CoroSplitPass(SmallVector<BaseABITy> GenCustomABIs,
-                         bool OptimizeFrame = false);
-
-  LLVM_ABI
+  CoroSplitPass(bool OptimizeFrame = false);
   CoroSplitPass(std::function<bool(Instruction &)> MaterializableCallback,
-                bool OptimizeFrame = false);
+                bool OptimizeFrame = false)
+      : MaterializableCallback(MaterializableCallback),
+        OptimizeFrame(OptimizeFrame) {}
 
-  LLVM_ABI
-  CoroSplitPass(std::function<bool(Instruction &)> MaterializableCallback,
-                SmallVector<BaseABITy> GenCustomABIs,
-                bool OptimizeFrame = false);
-
-  LLVM_ABI PreservedAnalyses run(LazyCallGraph::SCC &C,
-                                 CGSCCAnalysisManager &AM, LazyCallGraph &CG,
-                                 CGSCCUpdateResult &UR);
-
+  PreservedAnalyses run(LazyCallGraph::SCC &C, CGSCCAnalysisManager &AM,
+                        LazyCallGraph &CG, CGSCCUpdateResult &UR);
   static bool isRequired() { return true; }
-
-  // Generator for an ABI transformer
-  BaseABITy CreateAndInitABI;
 
   // Would be true if the Optimization level isn't O0.
   bool OptimizeFrame;

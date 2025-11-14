@@ -1,59 +1,59 @@
-! RUN: %flang_fc1 -fdebug-dump-parse-tree -fopenmp -fopenmp-version=52 %s | FileCheck %s
+! RUN: %flang_fc1 -fdebug-dump-parse-tree -fopenmp %s | FileCheck %s
 
 program openmp_parse_if
   logical :: cond
   integer :: i
 
-  ! CHECK: OmpDirectiveName -> llvm::omp::Directive = target update
+  ! CHECK: OmpSimpleStandaloneDirective -> llvm::omp::Directive = target update
   ! CHECK-NEXT: OmpClause -> If -> OmpIfClause
-  ! CHECK-NOT: OmpDirectiveName
+  ! CHECK-NOT: DirectiveNameModifier
   !$omp target update if(cond) to(i)
 
-  ! CHECK: OmpDirectiveName -> llvm::omp::Directive = target update
+  ! CHECK: OmpSimpleStandaloneDirective -> llvm::omp::Directive = target update
   ! CHECK-NEXT: OmpClause -> If -> OmpIfClause
-  ! CHECK-NEXT: OmpDirectiveName -> llvm::omp::Directive = target update
+  ! CHECK-NEXT: DirectiveNameModifier = TargetUpdate
   !$omp target update if(target update: cond) to(i)
 
-  ! CHECK: OmpDirectiveName -> llvm::omp::Directive = target enter data
+  ! CHECK: OmpSimpleStandaloneDirective -> llvm::omp::Directive = target enter data
   ! CHECK: OmpClause -> If -> OmpIfClause
-  ! CHECK-NEXT: OmpDirectiveName -> llvm::omp::Directive = target enter data
+  ! CHECK-NEXT: DirectiveNameModifier = TargetEnterData
   !$omp target enter data map(to: i) if(target enter data: cond)
 
-  ! CHECK: OmpDirectiveName -> llvm::omp::Directive = target exit data
+  ! CHECK: OmpSimpleStandaloneDirective -> llvm::omp::Directive = target exit data
   ! CHECK: OmpClause -> If -> OmpIfClause
-  ! CHECK-NEXT: OmpDirectiveName -> llvm::omp::Directive = target exit data
+  ! CHECK-NEXT: DirectiveNameModifier = TargetExitData
   !$omp target exit data map(from: i) if(target exit data: cond)
 
-  ! CHECK: OmpDirectiveName -> llvm::omp::Directive = target data
+  ! CHECK: OmpBlockDirective -> llvm::omp::Directive = target data
   ! CHECK: OmpClause -> If -> OmpIfClause
-  ! CHECK-NEXT: OmpDirectiveName -> llvm::omp::Directive = target data
+  ! CHECK-NEXT: DirectiveNameModifier = TargetData
   !$omp target data map(tofrom: i) if(target data: cond)
   !$omp end target data
 
-  ! CHECK: OmpDirectiveName -> llvm::omp::Directive = target teams distribute parallel do simd
+  ! CHECK: OmpLoopDirective -> llvm::omp::Directive = target teams distribute parallel do simd
   ! CHECK: OmpClause -> If -> OmpIfClause
-  ! CHECK-NEXT: OmpDirectiveName -> llvm::omp::Directive = target
+  ! CHECK-NEXT: DirectiveNameModifier = Target
   ! CHECK: OmpClause -> If -> OmpIfClause
-  ! CHECK-NEXT: OmpDirectiveName -> llvm::omp::Directive = teams
+  ! CHECK-NEXT: DirectiveNameModifier = Teams
   ! CHECK: OmpClause -> If -> OmpIfClause
-  ! CHECK-NEXT: OmpDirectiveName -> llvm::omp::Directive = parallel
+  ! CHECK-NEXT: DirectiveNameModifier = Parallel
   ! CHECK: OmpClause -> If -> OmpIfClause
-  ! CHECK-NEXT: OmpDirectiveName -> llvm::omp::Directive = simd
+  ! CHECK-NEXT: DirectiveNameModifier = Simd
   !$omp target teams distribute parallel do simd if(target: cond) &
   !$omp&    if(teams: cond) if(parallel: cond) if(simd: cond)
   do i = 1, 10
   end do
   !$omp end target teams distribute parallel do simd
 
-  ! CHECK: OmpDirectiveName -> llvm::omp::Directive = task
+  ! CHECK: OmpBlockDirective -> llvm::omp::Directive = task
   ! CHECK-NEXT: OmpClause -> If -> OmpIfClause
-  ! CHECK-NEXT: OmpDirectiveName -> llvm::omp::Directive = task
+  ! CHECK-NEXT: DirectiveNameModifier = Task
   !$omp task if(task: cond)
   !$omp end task
 
-  ! CHECK: OmpDirectiveName -> llvm::omp::Directive = taskloop
+  ! CHECK: OmpLoopDirective -> llvm::omp::Directive = taskloop
   ! CHECK-NEXT: OmpClause -> If -> OmpIfClause
-  ! CHECK-NEXT: OmpDirectiveName -> llvm::omp::Directive = taskloop
+  ! CHECK-NEXT: DirectiveNameModifier = Taskloop
   !$omp taskloop if(taskloop: cond)
   do i = 1, 10
   end do

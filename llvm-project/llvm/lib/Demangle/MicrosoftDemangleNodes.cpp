@@ -149,8 +149,6 @@ void PrimitiveTypeNode::outputPre(OutputBuffer &OB, OutputFlags Flags) const {
     OUTPUT_ENUM_CLASS_VALUE(PrimitiveKind, Double, "double");
     OUTPUT_ENUM_CLASS_VALUE(PrimitiveKind, Ldouble, "long double");
     OUTPUT_ENUM_CLASS_VALUE(PrimitiveKind, Nullptr, "std::nullptr_t");
-    OUTPUT_ENUM_CLASS_VALUE(PrimitiveKind, Auto, "auto");
-    OUTPUT_ENUM_CLASS_VALUE(PrimitiveKind, DecltypeAuto, "decltype(auto)");
   }
   outputQualifiers(OB, Quals, true, false);
 }
@@ -521,9 +519,6 @@ void PointerTypeNode::outputPre(OutputBuffer &OB, OutputFlags Flags) const {
     assert(false);
   }
   outputQualifiers(OB, Quals, false, false);
-
-  if (PointerAuthQualifier)
-    PointerAuthQualifier->output(OB, Flags);
 }
 
 void PointerTypeNode::outputPost(OutputBuffer &OB, OutputFlags Flags) const {
@@ -594,13 +589,6 @@ void FunctionSymbolNode::output(OutputBuffer &OB, OutputFlags Flags) const {
   Signature->outputPost(OB, Flags);
 }
 
-void PointerAuthQualifierNode::output(OutputBuffer &OB,
-                                      OutputFlags Flags) const {
-  OB << "__ptrauth(";
-  Components->output(OB, Flags);
-  OB << ")";
-}
-
 void VariableSymbolNode::output(OutputBuffer &OB, OutputFlags Flags) const {
   const char *AccessSpec = nullptr;
   bool IsStatic = true;
@@ -662,9 +650,9 @@ void VcallThunkIdentifierNode::output(OutputBuffer &OB,
 void SpecialTableSymbolNode::output(OutputBuffer &OB, OutputFlags Flags) const {
   outputQualifiers(OB, Quals, false, true);
   Name->output(OB, Flags);
-  if (TargetNames) {
+  if (TargetName) {
     OB << "{for `";
-    TargetNames->output(OB, Flags, "'s `");
+    TargetName->output(OB, Flags);
     OB << "'}";
   }
 }

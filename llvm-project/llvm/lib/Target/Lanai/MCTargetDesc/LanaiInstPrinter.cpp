@@ -11,14 +11,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "LanaiInstPrinter.h"
+#include "LanaiMCExpr.h"
 #include "LanaiAluCode.h"
 #include "LanaiCondCode.h"
 #include "MCTargetDesc/LanaiMCTargetDesc.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormattedStream.h"
 
 using namespace llvm;
 
@@ -28,7 +31,7 @@ using namespace llvm;
 #define PRINT_ALIAS_INSTR
 #include "LanaiGenAsmWriter.inc"
 
-void LanaiInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) {
+void LanaiInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) const {
   OS << StringRef(getRegisterName(Reg)).lower();
 }
 
@@ -144,7 +147,8 @@ void LanaiInstPrinter::printInst(const MCInst *MI, uint64_t Address,
 }
 
 void LanaiInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
-                                    raw_ostream &OS) {
+                                    raw_ostream &OS, const char *Modifier) {
+  assert((Modifier == nullptr || Modifier[0] == 0) && "No modifiers supported");
   const MCOperand &Op = MI->getOperand(OpNo);
   if (Op.isReg())
     OS << "%" << getRegisterName(Op.getReg());
@@ -152,7 +156,7 @@ void LanaiInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
     OS << formatHex(Op.getImm());
   else {
     assert(Op.isExpr() && "Expected an expression");
-    MAI.printExpr(OS, *Op.getExpr());
+    Op.getExpr()->print(OS, &MAI);
   }
 }
 
@@ -165,7 +169,7 @@ void LanaiInstPrinter::printMemImmOperand(const MCInst *MI, unsigned OpNo,
     // Symbolic operand will be lowered to immediate value by linker
     assert(Op.isExpr() && "Expected an expression");
     OS << '[';
-    MAI.printExpr(OS, *Op.getExpr());
+    Op.getExpr()->print(OS, &MAI);
     OS << ']';
   }
 }
@@ -178,7 +182,7 @@ void LanaiInstPrinter::printHi16ImmOperand(const MCInst *MI, unsigned OpNo,
   } else {
     // Symbolic operand will be lowered to immediate value by linker
     assert(Op.isExpr() && "Expected an expression");
-    MAI.printExpr(OS, *Op.getExpr());
+    Op.getExpr()->print(OS, &MAI);
   }
 }
 
@@ -190,7 +194,7 @@ void LanaiInstPrinter::printHi16AndImmOperand(const MCInst *MI, unsigned OpNo,
   } else {
     // Symbolic operand will be lowered to immediate value by linker
     assert(Op.isExpr() && "Expected an expression");
-    MAI.printExpr(OS, *Op.getExpr());
+    Op.getExpr()->print(OS, &MAI);
   }
 }
 
@@ -202,7 +206,7 @@ void LanaiInstPrinter::printLo16AndImmOperand(const MCInst *MI, unsigned OpNo,
   } else {
     // Symbolic operand will be lowered to immediate value by linker
     assert(Op.isExpr() && "Expected an expression");
-    MAI.printExpr(OS, *Op.getExpr());
+    Op.getExpr()->print(OS, &MAI);
   }
 }
 
@@ -227,11 +231,12 @@ static void printMemoryImmediateOffset(const MCAsmInfo &MAI,
     assert(isInt<SizeInBits>(OffsetOp.getImm()) && "Constant value truncated");
     OS << OffsetOp.getImm();
   } else
-    MAI.printExpr(OS, *OffsetOp.getExpr());
+    OffsetOp.getExpr()->print(OS, &MAI);
 }
 
 void LanaiInstPrinter::printMemRiOperand(const MCInst *MI, int OpNo,
-                                         raw_ostream &OS) {
+                                         raw_ostream &OS,
+                                         const char * /*Modifier*/) {
   const MCOperand &RegOp = MI->getOperand(OpNo);
   const MCOperand &OffsetOp = MI->getOperand(OpNo + 1);
   const MCOperand &AluOp = MI->getOperand(OpNo + 2);
@@ -245,7 +250,8 @@ void LanaiInstPrinter::printMemRiOperand(const MCInst *MI, int OpNo,
 }
 
 void LanaiInstPrinter::printMemRrOperand(const MCInst *MI, int OpNo,
-                                         raw_ostream &OS) {
+                                         raw_ostream &OS,
+                                         const char * /*Modifier*/) {
   const MCOperand &RegOp = MI->getOperand(OpNo);
   const MCOperand &OffsetOp = MI->getOperand(OpNo + 1);
   const MCOperand &AluOp = MI->getOperand(OpNo + 2);
@@ -265,7 +271,8 @@ void LanaiInstPrinter::printMemRrOperand(const MCInst *MI, int OpNo,
 }
 
 void LanaiInstPrinter::printMemSplsOperand(const MCInst *MI, int OpNo,
-                                           raw_ostream &OS) {
+                                           raw_ostream &OS,
+                                           const char * /*Modifier*/) {
   const MCOperand &RegOp = MI->getOperand(OpNo);
   const MCOperand &OffsetOp = MI->getOperand(OpNo + 1);
   const MCOperand &AluOp = MI->getOperand(OpNo + 2);

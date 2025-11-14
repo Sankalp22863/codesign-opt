@@ -7,8 +7,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/__support/common.h"
-#include "src/__support/macros/config.h"
 #include "src/setjmp/setjmp_impl.h"
+
+#include <setjmp.h>
 
 #if !defined(LIBC_TARGET_ARCH_IS_ANY_RISCV)
 #error "Invalid file include"
@@ -25,9 +26,9 @@
 #define STORE_FP(reg, val) STORE_IMPL(fsd, reg, val)
 #endif
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
-LLVM_LIBC_FUNCTION(int, setjmp, (jmp_buf buf)) {
+LLVM_LIBC_FUNCTION(int, setjmp, (__jmp_buf * buf)) {
   STORE(ra, buf->__pc);
   STORE(s0, buf->__regs[0]);
   STORE(s1, buf->__regs[1]);
@@ -63,4 +64,4 @@ LLVM_LIBC_FUNCTION(int, setjmp, (jmp_buf buf)) {
   return 0;
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

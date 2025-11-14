@@ -24,7 +24,6 @@
 #include "llvm/IR/CallingConv.h"
 #include "llvm/MC/LaneBitmask.h"
 #include "llvm/MC/MCRegisterInfo.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Printable.h"
@@ -42,10 +41,12 @@ class RegScavenger;
 class VirtRegMap;
 class LiveIntervals;
 class LiveInterval;
+
 class TargetRegisterClass {
 public:
   using iterator = const MCPhysReg *;
   using const_iterator = const MCPhysReg *;
+  using sc_iterator = const TargetRegisterClass* const *;
 
   // Instance variables filled by tablegen, do not use!
   const MCRegisterClass *MC;
@@ -66,9 +67,8 @@ public:
   /// Whether a combination of subregisters can cover every register in the
   /// class. See also the CoveredBySubRegs description in Target.td.
   const bool CoveredBySubRegs;
-  const unsigned *SuperClasses;
-  const uint16_t SuperClassesSize;
-  ArrayRef<MCPhysReg> (*OrderFunc)(const MachineFunction &, bool Rev);
+  const sc_iterator SuperClasses;
+  ArrayRef<MCPhysReg> (*OrderFunc)(const MachineFunction&);
 
   /// Return the register class ID number.
   unsigned getID() const { return MC->getID(); }
@@ -81,8 +81,9 @@ public:
   /// Return the number of registers in this class.
   unsigned getNumRegs() const { return MC->getNumRegs(); }
 
-  ArrayRef<MCPhysReg> getRegisters() const {
-    return ArrayRef(begin(), getNumRegs());
+  iterator_range<SmallVectorImpl<MCPhysReg>::const_iterator>
+  getRegisters() const {
+    return make_range(MC->begin(), MC->end());
   }
 
   /// Return the specified register in the class.
@@ -109,22 +110,14 @@ public:
     return MC->contains(Reg1.asMCReg(), Reg2.asMCReg());
   }
 
-  /// Return the cost of copying a value between two registers in this class. If
-  /// this is the maximum value, the register may be impossible to copy.
-  uint8_t getCopyCost() const { return MC->getCopyCost(); }
-
-  /// \return true if register class is very expensive to copy e.g. status flag
-  /// register classes.
-  bool expensiveOrImpossibleToCopy() const {
-    return MC->getCopyCost() == std::numeric_limits<uint8_t>::max();
-  }
+  /// Return the cost of copying a value between two registers in this class.
+  /// A negative number means the register class is very expensive
+  /// to copy e.g. status flag register classes.
+  int getCopyCost() const { return MC->getCopyCost(); }
 
   /// Return true if this register class may be used to create virtual
   /// registers.
   bool isAllocatable() const { return MC->isAllocatable(); }
-
-  /// Return true if this register class has a defined BaseClassOrder.
-  bool isBaseClass() const { return MC->isBaseClass(); }
 
   /// Return true if the specified TargetRegisterClass
   /// is a proper sub-class of this TargetRegisterClass.
@@ -180,16 +173,18 @@ public:
     return SuperRegIndices;
   }
 
-  /// Returns a list of super-classes.  The
+  /// Returns a NULL-terminated list of super-classes.  The
   /// classes are ordered by ID which is also a topological ordering from large
   /// to small classes.  The list does NOT include the current class.
-  ArrayRef<unsigned> superclasses() const {
-    return ArrayRef(SuperClasses, SuperClassesSize);
+  sc_iterator getSuperClasses() const {
+    return SuperClasses;
   }
 
   /// Return true if this TargetRegisterClass is a subset
   /// class of at least one other TargetRegisterClass.
-  bool isASubClass() const { return SuperClasses != nullptr; }
+  bool isASubClass() const {
+    return SuperClasses[0] != nullptr;
+  }
 
   /// Returns the preferred order for allocating registers from this register
   /// class in MF. The raw order comes directly from the .td file and may
@@ -204,9 +199,8 @@ public:
   /// other criteria.
   ///
   /// By default, this method returns all registers in the class.
-  ArrayRef<MCPhysReg> getRawAllocationOrder(const MachineFunction &MF,
-                                            bool Rev = false) const {
-    return OrderFunc ? OrderFunc(MF, Rev) : getRegisters();
+  ArrayRef<MCPhysReg> getRawAllocationOrder(const MachineFunction &MF) const {
+    return OrderFunc ? OrderFunc(MF) : ArrayRef(begin(), getNumRegs());
   }
 
   /// Returns the combination of all lane masks of register in this class.
@@ -239,7 +233,7 @@ struct RegClassWeight {
 /// to this array so that we can turn register number into a register
 /// descriptor.
 ///
-class LLVM_ABI TargetRegisterInfo : public MCRegisterInfo {
+class TargetRegisterInfo : public MCRegisterInfo {
 public:
   using regclass_iterator = const TargetRegisterClass * const *;
   using vt_iterator = const MVT::SimpleValueType *;
@@ -247,20 +241,9 @@ public:
     unsigned RegSize, SpillSize, SpillAlignment;
     unsigned VTListOffset;
   };
-
-  /// SubRegCoveredBits - Emitted by tablegen: bit range covered by a subreg
-  /// index, -1 in any being invalid.
-  struct SubRegCoveredBits {
-    uint16_t Offset;
-    uint16_t Size;
-  };
-
 private:
   const TargetRegisterInfoDesc *InfoDesc;     // Extra desc array for codegen
   const char *const *SubRegIndexNames;        // Names of subreg indexes.
-  const SubRegCoveredBits *SubRegIdxRanges;   // Pointer to the subreg covered
-                                              // bit ranges array.
-
   // Pointer to array of lane masks, one per sub-reg index.
   const LaneBitmask *SubRegIndexLaneMasks;
 
@@ -271,17 +254,18 @@ private:
   unsigned HwMode;
 
 protected:
-  TargetRegisterInfo(const TargetRegisterInfoDesc *ID, regclass_iterator RCB,
-                     regclass_iterator RCE, const char *const *SRINames,
-                     const SubRegCoveredBits *SubIdxRanges,
-                     const LaneBitmask *SRILaneMasks, LaneBitmask CoveringLanes,
+  TargetRegisterInfo(const TargetRegisterInfoDesc *ID,
+                     regclass_iterator RCB,
+                     regclass_iterator RCE,
+                     const char *const *SRINames,
+                     const LaneBitmask *SRILaneMasks,
+                     LaneBitmask CoveringLanes,
                      const RegClassInfo *const RCIs,
                      const MVT::SimpleValueType *const RCVTLists,
                      unsigned Mode = 0);
+  virtual ~TargetRegisterInfo();
 
 public:
-  ~TargetRegisterInfo() override;
-
   /// Return the number of registers for the function. (may overestimate)
   virtual unsigned getNumSupportedRegs(const MachineFunction &) const {
     return getNumRegs();
@@ -355,27 +339,12 @@ public:
   const TargetRegisterClass *getMinimalPhysRegClass(MCRegister Reg,
                                                     MVT VT = MVT::Other) const;
 
-  /// Returns the common Register Class of two physical registers of the given
-  /// type, picking the most sub register class of the right type that contains
-  /// these two physregs.
-  const TargetRegisterClass *
-  getCommonMinimalPhysRegClass(MCRegister Reg1, MCRegister Reg2,
-                               MVT VT = MVT::Other) const;
-
   /// Returns the Register Class of a physical register of the given type,
   /// picking the most sub register class of the right type that contains this
   /// physreg. If there is no register class compatible with the given type,
   /// returns nullptr.
   const TargetRegisterClass *getMinimalPhysRegClassLLT(MCRegister Reg,
                                                        LLT Ty = LLT()) const;
-
-  /// Returns the common Register Class of two physical registers of the given
-  /// type, picking the most sub register class of the right type that contains
-  /// these two physregs. If there is no register class compatible with the
-  /// given type, returns nullptr.
-  const TargetRegisterClass *
-  getCommonMinimalPhysRegClassLLT(MCRegister Reg1, MCRegister Reg2,
-                                  LLT Ty = LLT()) const;
 
   /// Return the maximal subclass of the given register class that is
   /// allocatable or NULL.
@@ -411,16 +380,6 @@ public:
     return SubRegIndexNames[SubIdx-1];
   }
 
-  /// Get the size of the bit range covered by a sub-register index.
-  /// If the index isn't continuous, return the sum of the sizes of its parts.
-  /// If the index is used to access subregisters of different sizes, return -1.
-  unsigned getSubRegIdxSize(unsigned Idx) const;
-
-  /// Get the offset of the bit range covered by a sub-register index.
-  /// If an Offset doesn't make sense (the index isn't continuous, or is used to
-  /// access sub-registers at different offsets), return -1.
-  unsigned getSubRegIdxOffset(unsigned Idx) const;
-
   /// Return a bitmask representing the parts of a register that are covered by
   /// SubIdx \see LaneBitmask.
   ///
@@ -434,7 +393,8 @@ public:
   ///
   /// If this is possible, returns true and appends the best matching set of
   /// indexes to \p Indexes. If this is not possible, returns false.
-  bool getCoveringSubRegIndexes(const TargetRegisterClass *RC,
+  bool getCoveringSubRegIndexes(const MachineRegisterInfo &MRI,
+                                const TargetRegisterClass *RC,
                                 LaneBitmask LaneMask,
                                 SmallVectorImpl<unsigned> &Indexes) const;
 
@@ -474,8 +434,11 @@ public:
   }
 
   /// Returns true if Reg contains RegUnit.
-  bool hasRegUnit(MCRegister Reg, MCRegUnit RegUnit) const {
-    return llvm::is_contained(regunits(Reg), RegUnit);
+  bool hasRegUnit(MCRegister Reg, Register RegUnit) const {
+    for (MCRegUnit Unit : regunits(Reg))
+      if (Register(Unit) == RegUnit)
+        return true;
+    return false;
   }
 
   /// Returns the original SrcReg unless it is the target of a copy-like
@@ -504,16 +467,6 @@ public:
   ///         getCalleeSavedRegs that is implemented in MachineRegisterInfo.
   virtual const MCPhysReg*
   getCalleeSavedRegs(const MachineFunction *MF) const = 0;
-
-  /// Return a null-terminated list of all of the callee-saved registers on
-  /// this target when IPRA is on. The list should include any non-allocatable
-  /// registers that the backend uses and assumes will be saved by all calling
-  /// conventions. This is typically the ISA-standard frame pointer, but could
-  /// include the thread pointer, TOC pointer, or base pointer for different
-  /// targets.
-  virtual const MCPhysReg *getIPRACSRegs(const MachineFunction *MF) const {
-    return nullptr;
-  }
 
   /// Return a mask of call-preserved registers for the given calling convention
   /// on the current function. The mask should include all call-preserved
@@ -598,7 +551,7 @@ public:
 
   /// Returns true if PhysReg cannot be written to in inline asm statements.
   virtual bool isInlineAsmReadOnlyReg(const MachineFunction &MF,
-                                      MCRegister PhysReg) const {
+                                      unsigned PhysReg) const {
     return false;
   }
 
@@ -614,12 +567,6 @@ public:
   /// Returns true if the register is considered uniform.
   virtual bool isUniformReg(const MachineRegisterInfo &MRI,
                             const RegisterBankInfo &RBI, Register Reg) const {
-    return false;
-  }
-
-  /// Returns true if MachineLoopInfo should analyze the given physreg
-  /// for loop invariance.
-  virtual bool shouldAnalyzePhysregInMachineLoopInfo(MCRegister R) const {
     return false;
   }
 
@@ -656,12 +603,6 @@ public:
     return false;
   }
 
-  /// Returns true if RC is a class/subclass of general purpose register.
-  virtual bool
-  isGeneralPurposeRegisterClass(const TargetRegisterClass *RC) const {
-    return false;
-  }
-
   /// Prior to adding the live-out mask to a stackmap or patchpoint
   /// instruction, provide the target the opportunity to adjust it (mainly to
   /// remove pseudo-registers that should be ignored).
@@ -683,20 +624,6 @@ public:
   getMatchingSuperRegClass(const TargetRegisterClass *A,
                            const TargetRegisterClass *B, unsigned Idx) const;
 
-  /// Find a common register class that can accomodate both the source and
-  /// destination operands of a copy-like instruction:
-  ///
-  /// DefRC:DefSubReg = COPY SrcRC:SrcSubReg
-  ///
-  /// This is a generalized form of getMatchingSuperRegClass,
-  /// getCommonSuperRegClass, and getCommonSubClass which handles 0, 1, or 2
-  /// subregister indexes. Those utilities should be preferred if the number of
-  /// non-0 subregister indexes is known.
-  const TargetRegisterClass *
-  findCommonRegClass(const TargetRegisterClass *DefRC, unsigned DefSubReg,
-                     const TargetRegisterClass *SrcRC,
-                     unsigned SrcSubReg) const;
-
   // For a copy-like instruction that defines a register of class DefRC with
   // subreg index DefSubReg, reading from another source with class SrcRC and
   // subregister SrcSubReg return true if this is a preferable copy
@@ -704,10 +631,7 @@ public:
   virtual bool shouldRewriteCopySrc(const TargetRegisterClass *DefRC,
                                     unsigned DefSubReg,
                                     const TargetRegisterClass *SrcRC,
-                                    unsigned SrcSubReg) const {
-    // If this source does not incur a cross register bank copy, use it.
-    return findCommonRegClass(DefRC, DefSubReg, SrcRC, SrcSubReg) != nullptr;
-  }
+                                    unsigned SrcSubReg) const;
 
   /// Returns the largest legal sub-class of RC that
   /// supports the sub-register index Idx.
@@ -754,22 +678,6 @@ public:
     return composeSubRegIndicesImpl(a, b);
   }
 
-  /// Return a subregister index that will compose to give you the subregister
-  /// index.
-  ///
-  /// Finds a subregister index x such that composeSubRegIndices(a, x) ==
-  /// b. Note that this relationship does not hold if
-  /// reverseComposeSubRegIndices returns the null subregister.
-  ///
-  /// The special null sub-register index composes as the identity.
-  unsigned reverseComposeSubRegIndices(unsigned a, unsigned b) const {
-    if (!a)
-      return b;
-    if (!b)
-      return a;
-    return reverseComposeSubRegIndicesImpl(a, b);
-  }
-
   /// Transforms a LaneMask computed for one subregister to the lanemask that
   /// would have been computed when composing the subsubregisters with IdxA
   /// first. @sa composeSubRegIndices()
@@ -809,11 +717,6 @@ public:
 protected:
   /// Overridden by TableGen in targets that have sub-registers.
   virtual unsigned composeSubRegIndicesImpl(unsigned, unsigned) const {
-    llvm_unreachable("Target has no sub-registers");
-  }
-
-  /// Overridden by TableGen in targets that have sub-registers.
-  virtual unsigned reverseComposeSubRegIndicesImpl(unsigned, unsigned) const {
     llvm_unreachable("Target has no sub-registers");
   }
 
@@ -905,7 +808,7 @@ public:
   /// If a target supports multiple different pointer register classes,
   /// kind specifies which one is indicated.
   virtual const TargetRegisterClass *
-  getPointerRegClass(unsigned Kind = 0) const {
+  getPointerRegClass(const MachineFunction &MF, unsigned Kind=0) const {
     llvm_unreachable("Target didn't implement getPointerRegClass!");
   }
 
@@ -958,7 +861,7 @@ public:
   TypeSize getRegSizeInBits(Register Reg, const MachineRegisterInfo &MRI) const;
 
   /// Get the weight in units of pressure for this register unit.
-  virtual unsigned getRegUnitWeight(MCRegUnit RegUnit) const = 0;
+  virtual unsigned getRegUnitWeight(unsigned RegUnit) const = 0;
 
   /// Get the number of dimensions of register pressure.
   virtual unsigned getNumRegPressureSets() const = 0;
@@ -978,10 +881,7 @@ public:
 
   /// Get the dimensions of register pressure impacted by this register unit.
   /// Returns a -1 terminated array of pressure set IDs.
-  virtual const int *getRegUnitPressureSets(MCRegUnit RegUnit) const = 0;
-
-  /// Get the scale factor of spill weight for this register class.
-  virtual float getSpillWeightScaleFactor(const TargetRegisterClass *RC) const;
+  virtual const int *getRegUnitPressureSets(unsigned RegUnit) const = 0;
 
   /// Get a list of 'hint' registers that the register allocator should try
   /// first when allocating a physical register for the virtual register
@@ -1136,10 +1036,6 @@ public:
   prependOffsetExpression(const DIExpression *Expr, unsigned PrependFlags,
                           const StackOffset &Offset) const;
 
-  virtual int64_t getDwarfRegNumForVirtReg(Register RegNum, bool isEH) const {
-    llvm_unreachable("getDwarfRegNumForVirtReg does not exist on this target");
-  }
-
   /// Spill the register so it can be used by the register scavenger.
   /// Return true if the register was spilled, false otherwise.
   /// If this function does not spill the register, the scavenger
@@ -1217,6 +1113,21 @@ public:
     return true;
   }
 
+  /// Deferred spilling delays the spill insertion of a virtual register
+  /// after every other allocation. By deferring the spilling, it is
+  /// sometimes possible to eliminate that spilling altogether because
+  /// something else could have been eliminated, thus leaving some space
+  /// for the virtual register.
+  /// However, this comes with a compile time impact because it adds one
+  /// more stage to the greedy register allocator.
+  /// This method is used to decide whether \p VirtReg should use the deferred
+  /// spilling stage instead of being spilled right away.
+  virtual bool
+  shouldUseDeferredSpillingForVirtReg(const MachineFunction &MF,
+                                      const LiveInterval &VirtReg) const {
+    return false;
+  }
+
   /// When prioritizing live ranges in register allocation, if this hook returns
   /// true then the AllocationPriority of the register class will be treated as
   /// more important than whether the range is local to a basic block or global.
@@ -1246,30 +1157,19 @@ public:
     return nullptr;
   }
 
+  /// Returns the physical register number of sub-register "Index"
+  /// for physical register RegNo. Return zero if the sub-register does not
+  /// exist.
+  inline MCRegister getSubReg(MCRegister Reg, unsigned Idx) const {
+    return static_cast<const MCRegisterInfo *>(this)->getSubReg(Reg, Idx);
+  }
+
   /// Some targets have non-allocatable registers that aren't technically part
   /// of the explicit callee saved register list, but should be handled as such
   /// in certain cases.
   virtual bool isNonallocatableRegisterCalleeSave(MCRegister Reg) const {
     return false;
   }
-
-  /// Some targets delay assigning the frame until late and use a placeholder
-  /// to represent it earlier. This method can be used to identify the frame
-  /// register placeholder.
-  virtual bool isVirtualFrameRegister(MCRegister Reg) const { return false; }
-
-  virtual std::optional<uint8_t> getVRegFlagValue(StringRef Name) const {
-    return {};
-  }
-
-  virtual SmallVector<StringLiteral>
-  getVRegFlagsOfReg(Register Reg, const MachineFunction &MF) const {
-    return {};
-  }
-
-  // Whether this register should be ignored when generating CodeView debug
-  // info, because it's a known there is no mapping available.
-  virtual bool isIgnoredCVReg(MCRegister LLVMReg) const { return false; }
 };
 
 //===----------------------------------------------------------------------===//
@@ -1420,7 +1320,9 @@ public:
 // This is useful when building IndexedMaps keyed on virtual registers
 struct VirtReg2IndexFunctor {
   using argument_type = Register;
-  unsigned operator()(Register Reg) const { return Reg.virtRegIndex(); }
+  unsigned operator()(Register Reg) const {
+    return Register::virtReg2Index(Reg);
+  }
 };
 
 /// Prints virtual and physical registers with or without a TRI instance.
@@ -1433,10 +1335,9 @@ struct VirtReg2IndexFunctor {
 ///   %physreg17      - a physical register when no TRI instance given.
 ///
 /// Usage: OS << printReg(Reg, TRI, SubRegIdx) << '\n';
-LLVM_ABI Printable printReg(Register Reg,
-                            const TargetRegisterInfo *TRI = nullptr,
-                            unsigned SubIdx = 0,
-                            const MachineRegisterInfo *MRI = nullptr);
+Printable printReg(Register Reg, const TargetRegisterInfo *TRI = nullptr,
+                   unsigned SubIdx = 0,
+                   const MachineRegisterInfo *MRI = nullptr);
 
 /// Create Printable object to print register units on a \ref raw_ostream.
 ///
@@ -1446,18 +1347,16 @@ LLVM_ABI Printable printReg(Register Reg,
 ///   fp0~st7 - Dual roots.
 ///
 /// Usage: OS << printRegUnit(Unit, TRI) << '\n';
-LLVM_ABI Printable printRegUnit(MCRegUnit Unit, const TargetRegisterInfo *TRI);
+Printable printRegUnit(unsigned Unit, const TargetRegisterInfo *TRI);
 
 /// Create Printable object to print virtual registers and physical
 /// registers on a \ref raw_ostream.
-LLVM_ABI Printable printVRegOrUnit(VirtRegOrUnit VRegOrUnit,
-                                   const TargetRegisterInfo *TRI);
+Printable printVRegOrUnit(unsigned VRegOrUnit, const TargetRegisterInfo *TRI);
 
 /// Create Printable object to print register classes or register banks
 /// on a \ref raw_ostream.
-LLVM_ABI Printable printRegClassOrBank(Register Reg,
-                                       const MachineRegisterInfo &RegInfo,
-                                       const TargetRegisterInfo *TRI);
+Printable printRegClassOrBank(Register Reg, const MachineRegisterInfo &RegInfo,
+                              const TargetRegisterInfo *TRI);
 
 } // end namespace llvm
 

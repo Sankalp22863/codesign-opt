@@ -50,24 +50,16 @@
 #define LLVM_IR_PASSINSTRUMENTATION_H
 
 #include "llvm/ADT/Any.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/IR/PassManager.h"
-#include "llvm/Support/Compiler.h"
+#include "llvm/ADT/StringMap.h"
+#include <type_traits>
 #include <vector>
 
 namespace llvm {
 
 class PreservedAnalyses;
 class StringRef;
-class Module;
-class Loop;
-class Function;
-
-extern template struct LLVM_TEMPLATE_ABI Any::TypeId<const Module *>;
-extern template struct LLVM_TEMPLATE_ABI Any::TypeId<const Function *>;
-extern template struct LLVM_TEMPLATE_ABI Any::TypeId<const Loop *>;
 
 /// This class manages callbacks registration, as well as provides a way for
 /// PassInstrumentation to pass control to the registered callbacks.
@@ -156,15 +148,10 @@ public:
     AnalysesClearedCallbacks.emplace_back(std::move(C));
   }
 
-  template <typename CallableT>
-  void registerClassToPassNameCallback(CallableT C) {
-    ClassToPassNameCallbacks.emplace_back(std::move(C));
-  }
-
   /// Add a class name to pass name mapping for use by pass instrumentation.
-  LLVM_ABI void addClassToPassName(StringRef ClassName, StringRef PassName);
-  /// Get the pass name for a given pass class name. Empty if no match found.
-  LLVM_ABI StringRef getPassNameForClassName(StringRef ClassName);
+  void addClassToPassName(StringRef ClassName, StringRef PassName);
+  /// Get the pass name for a given pass class name.
+  StringRef getPassNameForClassName(StringRef ClassName);
 
 private:
   friend class PassInstrumentation;
@@ -181,7 +168,7 @@ private:
       BeforeNonSkippedPassCallbacks;
   /// These are run on passes that have just run.
   SmallVector<llvm::unique_function<AfterPassFunc>, 4> AfterPassCallbacks;
-  /// These are run on passes that have just run on invalidated IR.
+  /// These are run passes that have just run on invalidated IR.
   SmallVector<llvm::unique_function<AfterPassInvalidatedFunc>, 4>
       AfterPassInvalidatedCallbacks;
   /// These are run on analyses that are about to be run.
@@ -197,8 +184,7 @@ private:
   SmallVector<llvm::unique_function<AnalysesClearedFunc>, 4>
       AnalysesClearedCallbacks;
 
-  SmallVector<llvm::unique_function<void ()>, 4> ClassToPassNameCallbacks;
-  DenseMap<StringRef, std::string> ClassToPassName;
+  StringMap<std::string> ClassToPassName;
 };
 
 /// This class provides instrumentation entry points for the Pass Manager,
@@ -215,9 +201,14 @@ class PassInstrumentation {
   template <typename PassT>
   using has_required_t = decltype(std::declval<PassT &>().isRequired());
 
-  template <typename PassT> static bool isRequired(const PassT &Pass) {
-    if constexpr (is_detected<has_required_t, PassT>::value)
-      return Pass.isRequired();
+  template <typename PassT>
+  static std::enable_if_t<is_detected<has_required_t, PassT>::value, bool>
+  isRequired(const PassT &Pass) {
+    return Pass.isRequired();
+  }
+  template <typename PassT>
+  static std::enable_if_t<!is_detected<has_required_t, PassT>::value, bool>
+  isRequired(const PassT &Pass) {
     return false;
   }
 
@@ -334,41 +325,9 @@ public:
     if (Callbacks)
       Callbacks->BeforeNonSkippedPassCallbacks.pop_back();
   }
-
-  /// Get the pass name for a given pass class name.
-  StringRef getPassNameForClassName(StringRef ClassName) const {
-    if (Callbacks)
-      return Callbacks->getPassNameForClassName(ClassName);
-    return {};
-  }
 };
 
-LLVM_ABI bool isSpecialPass(StringRef PassID,
-                            const std::vector<StringRef> &Specials);
-
-/// Pseudo-analysis pass that exposes the \c PassInstrumentation to pass
-/// managers.
-class PassInstrumentationAnalysis
-    : public AnalysisInfoMixin<PassInstrumentationAnalysis> {
-  friend AnalysisInfoMixin<PassInstrumentationAnalysis>;
-  LLVM_ABI static AnalysisKey Key;
-
-  PassInstrumentationCallbacks *Callbacks;
-
-public:
-  /// PassInstrumentationCallbacks object is shared, owned by something else,
-  /// not this analysis.
-  PassInstrumentationAnalysis(PassInstrumentationCallbacks *Callbacks = nullptr)
-      : Callbacks(Callbacks) {}
-
-  using Result = PassInstrumentation;
-
-  template <typename IRUnitT, typename AnalysisManagerT, typename... ExtraArgTs>
-  Result run(IRUnitT &, AnalysisManagerT &, ExtraArgTs &&...) {
-    return PassInstrumentation(Callbacks);
-  }
-};
-
+bool isSpecialPass(StringRef PassID, const std::vector<StringRef> &Specials);
 
 } // namespace llvm
 

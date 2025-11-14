@@ -1,5 +1,3 @@
-import("//lldb/utils/TableGen/lldb_tablegen.gni")
-
 static_library("MacOSX-DYLD") {
   output_name = "lldbPluginDynamicLoaderMacOSXDYLD"
   configs += [

@@ -6,6 +6,9 @@
 // FIXME: It probably hangs on this platform.
 // UNSUPPORTED: ppc
 
+// FIXME: TSAN does not lock allocator.
+// UNSUPPORTED: tsan
+
 // FIXME: False stack overflow report
 // UNSUPPORTED: android && asan
 
@@ -20,9 +23,6 @@
 //  1. Internal mutexes used by `inparent` thread do not deadlock `inchild`
 //     thread.
 //  2. Stack poisoned by `inparent` is not poisoned in `inchild` thread.
-
-// Stack tagging is unsupported.
-// UNSUPPORTED: hwasan-aliasing
 
 #include <assert.h>
 #include <pthread.h>

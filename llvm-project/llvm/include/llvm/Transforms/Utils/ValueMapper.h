@@ -15,17 +15,14 @@
 #define LLVM_TRANSFORMS_UTILS_VALUEMAPPER_H
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/simple_ilist.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/IR/ValueMap.h"
-#include "llvm/Support/Compiler.h"
 
 namespace llvm {
 
 class Constant;
-class DIBuilder;
-class DbgRecord;
+class DPValue;
 class Function;
 class GlobalVariable;
 class Instruction;
@@ -36,13 +33,11 @@ class Type;
 class Value;
 
 using ValueToValueMapTy = ValueMap<const Value *, WeakTrackingVH>;
-using DbgRecordIterator = simple_ilist<DbgRecord>::iterator;
-using MetadataSetTy = SmallPtrSet<const Metadata *, 16>;
-using MetadataPredicate = std::function<bool(const Metadata *)>;
+using DPValueIterator = simple_ilist<DPValue>::iterator;
 
 /// This is a class that can be implemented by clients to remap types when
 /// cloning constants and instructions.
-class LLVM_ABI ValueMapTypeRemapper {
+class ValueMapTypeRemapper {
   virtual void anchor(); // Out of line method.
 
 public:
@@ -55,7 +50,7 @@ public:
 
 /// This is a class that can be implemented by clients to materialize Values on
 /// demand.
-class LLVM_ABI ValueMaterializer {
+class ValueMaterializer {
   virtual void anchor(); // Out of line method.
 
 protected:
@@ -106,13 +101,6 @@ enum RemapFlags {
   /// Any global values not in value map are mapped to null instead of mapping
   /// to self.  Illegal if RF_IgnoreMissingLocals is also set.
   RF_NullMapMissingGlobalValues = 8,
-
-  /// Do not remap source location atoms. Only safe if to do this if the cloned
-  /// instructions being remapped are inserted into a new function, or an
-  /// existing function where the inlined-at fields are updated. If in doubt,
-  /// don't use this flag. It's used when remapping is known to be un-necessary
-  /// to save some compile-time.
-  RF_DoNotRemapAtoms = 16,
 };
 
 inline RemapFlags operator|(RemapFlags LHS, RemapFlags RHS) {
@@ -123,7 +111,7 @@ inline RemapFlags operator|(RemapFlags LHS, RemapFlags RHS) {
 ///
 /// A shared context used for mapping and remapping of Value and Metadata
 /// instances using \a ValueToValueMapTy, \a RemapFlags, \a
-/// ValueMapTypeRemapper, \a ValueMaterializer, and \a IdentityMD.
+/// ValueMapTypeRemapper, and \a ValueMaterializer.
 ///
 /// There are a number of top-level entry points:
 /// - \a mapValue() (and \a mapConstant());
@@ -147,9 +135,6 @@ inline RemapFlags operator|(RemapFlags LHS, RemapFlags RHS) {
 /// alternate \a ValueToValueMapTy and \a ValueMaterializer and returns a ID to
 /// pass into the schedule*() functions.
 ///
-/// If an \a IdentityMD predicate is optionally provided, \a Metadata for which
-/// the predicate returns true will be mapped onto itself in \a VM on first use.
-///
 /// TODO: lib/Linker really doesn't need the \a ValueHandle in the \a
 /// ValueToValueMapTy.  We should template \a ValueMapper (and its
 /// implementation classes), and explicitly instantiate on two concrete
@@ -164,21 +149,20 @@ class ValueMapper {
   void *pImpl;
 
 public:
-  LLVM_ABI ValueMapper(ValueToValueMapTy &VM, RemapFlags Flags = RF_None,
-                       ValueMapTypeRemapper *TypeMapper = nullptr,
-                       ValueMaterializer *Materializer = nullptr,
-                       const MetadataPredicate *IdentityMD = nullptr);
+  ValueMapper(ValueToValueMapTy &VM, RemapFlags Flags = RF_None,
+              ValueMapTypeRemapper *TypeMapper = nullptr,
+              ValueMaterializer *Materializer = nullptr);
   ValueMapper(ValueMapper &&) = delete;
   ValueMapper(const ValueMapper &) = delete;
   ValueMapper &operator=(ValueMapper &&) = delete;
   ValueMapper &operator=(const ValueMapper &) = delete;
-  LLVM_ABI ~ValueMapper();
+  ~ValueMapper();
 
   /// Register an alternate mapping context.
   ///
   /// Returns a MappingContextID that can be used with the various schedule*()
   /// API to switch in a different value map on-the-fly.
-  LLVM_ABI unsigned
+  unsigned
   registerAlternateMappingContext(ValueToValueMapTy &VM,
                                   ValueMaterializer *Materializer = nullptr);
 
@@ -186,34 +170,31 @@ public:
   ///
   /// \note Like the top-level mapping functions, \a addFlags() must be called
   /// at the top level, not during a callback in a \a ValueMaterializer.
-  LLVM_ABI void addFlags(RemapFlags Flags);
+  void addFlags(RemapFlags Flags);
 
-  LLVM_ABI Metadata *mapMetadata(const Metadata &MD);
-  LLVM_ABI MDNode *mapMDNode(const MDNode &N);
+  Metadata *mapMetadata(const Metadata &MD);
+  MDNode *mapMDNode(const MDNode &N);
 
-  LLVM_ABI Value *mapValue(const Value &V);
-  LLVM_ABI Constant *mapConstant(const Constant &C);
+  Value *mapValue(const Value &V);
+  Constant *mapConstant(const Constant &C);
 
-  LLVM_ABI void remapInstruction(Instruction &I);
-  LLVM_ABI void remapDbgRecord(Module *M, DbgRecord &V);
-  LLVM_ABI void remapDbgRecordRange(Module *M,
-                                    iterator_range<DbgRecordIterator> Range);
-  LLVM_ABI void remapFunction(Function &F);
-  LLVM_ABI void remapGlobalObjectMetadata(GlobalObject &GO);
+  void remapInstruction(Instruction &I);
+  void remapDPValue(Module *M, DPValue &V);
+  void remapDPValueRange(Module *M, iterator_range<DPValueIterator> Range);
+  void remapFunction(Function &F);
+  void remapGlobalObjectMetadata(GlobalObject &GO);
 
-  LLVM_ABI void scheduleMapGlobalInitializer(GlobalVariable &GV, Constant &Init,
-                                             unsigned MappingContextID = 0);
-  LLVM_ABI void scheduleMapAppendingVariable(GlobalVariable &GV,
-                                             GlobalVariable *OldGV,
-                                             bool IsOldCtorDtor,
-                                             ArrayRef<Constant *> NewMembers,
-                                             unsigned MappingContextID = 0);
-  LLVM_ABI void scheduleMapGlobalAlias(GlobalAlias &GA, Constant &Aliasee,
-                                       unsigned MappingContextID = 0);
-  LLVM_ABI void scheduleMapGlobalIFunc(GlobalIFunc &GI, Constant &Resolver,
-                                       unsigned MappingContextID = 0);
-  LLVM_ABI void scheduleRemapFunction(Function &F,
-                                      unsigned MappingContextID = 0);
+  void scheduleMapGlobalInitializer(GlobalVariable &GV, Constant &Init,
+                                    unsigned MappingContextID = 0);
+  void scheduleMapAppendingVariable(GlobalVariable &GV, Constant *InitPrefix,
+                                    bool IsOldCtorDtor,
+                                    ArrayRef<Constant *> NewMembers,
+                                    unsigned MappingContextID = 0);
+  void scheduleMapGlobalAlias(GlobalAlias &GA, Constant &Aliasee,
+                              unsigned MappingContextID = 0);
+  void scheduleMapGlobalIFunc(GlobalIFunc &GI, Constant &Resolver,
+                              unsigned MappingContextID = 0);
+  void scheduleRemapFunction(Function &F, unsigned MappingContextID = 0);
 };
 
 /// Look up or compute a value in the value map.
@@ -236,10 +217,8 @@ public:
 inline Value *MapValue(const Value *V, ValueToValueMapTy &VM,
                        RemapFlags Flags = RF_None,
                        ValueMapTypeRemapper *TypeMapper = nullptr,
-                       ValueMaterializer *Materializer = nullptr,
-                       const MetadataPredicate *IdentityMD = nullptr) {
-  return ValueMapper(VM, Flags, TypeMapper, Materializer, IdentityMD)
-      .mapValue(*V);
+                       ValueMaterializer *Materializer = nullptr) {
+  return ValueMapper(VM, Flags, TypeMapper, Materializer).mapValue(*V);
 }
 
 /// Lookup or compute a mapping for a piece of metadata.
@@ -251,9 +230,7 @@ inline Value *MapValue(const Value *V, ValueToValueMapTy &VM,
 ///     \c MD.
 ///  3. Else if \c MD is a \a ConstantAsMetadata, call \a MapValue() and
 ///     re-wrap its return (returning nullptr on nullptr).
-///  4. Else if \c IdentityMD predicate returns true for \c MD then add an
-///     identity mapping for it and return it.
-///  5. Else, \c MD is an \a MDNode.  These are remapped, along with their
+///  4. Else, \c MD is an \a MDNode.  These are remapped, along with their
 ///     transitive operands.  Distinct nodes are duplicated or moved depending
 ///     on \a RF_MoveDistinctNodes.  Uniqued nodes are remapped like constants.
 ///
@@ -262,20 +239,16 @@ inline Value *MapValue(const Value *V, ValueToValueMapTy &VM,
 inline Metadata *MapMetadata(const Metadata *MD, ValueToValueMapTy &VM,
                              RemapFlags Flags = RF_None,
                              ValueMapTypeRemapper *TypeMapper = nullptr,
-                             ValueMaterializer *Materializer = nullptr,
-                             const MetadataPredicate *IdentityMD = nullptr) {
-  return ValueMapper(VM, Flags, TypeMapper, Materializer, IdentityMD)
-      .mapMetadata(*MD);
+                             ValueMaterializer *Materializer = nullptr) {
+  return ValueMapper(VM, Flags, TypeMapper, Materializer).mapMetadata(*MD);
 }
 
 /// Version of MapMetadata with type safety for MDNode.
 inline MDNode *MapMetadata(const MDNode *MD, ValueToValueMapTy &VM,
                            RemapFlags Flags = RF_None,
                            ValueMapTypeRemapper *TypeMapper = nullptr,
-                           ValueMaterializer *Materializer = nullptr,
-                           const MetadataPredicate *IdentityMD = nullptr) {
-  return ValueMapper(VM, Flags, TypeMapper, Materializer, IdentityMD)
-      .mapMDNode(*MD);
+                           ValueMaterializer *Materializer = nullptr) {
+  return ValueMapper(VM, Flags, TypeMapper, Materializer).mapMDNode(*MD);
 }
 
 /// Convert the instruction operands from referencing the current values into
@@ -289,40 +262,24 @@ inline MDNode *MapMetadata(const MDNode *MD, ValueToValueMapTy &VM,
 inline void RemapInstruction(Instruction *I, ValueToValueMapTy &VM,
                              RemapFlags Flags = RF_None,
                              ValueMapTypeRemapper *TypeMapper = nullptr,
-                             ValueMaterializer *Materializer = nullptr,
-                             const MetadataPredicate *IdentityMD = nullptr) {
-  ValueMapper(VM, Flags, TypeMapper, Materializer, IdentityMD)
-      .remapInstruction(*I);
+                             ValueMaterializer *Materializer = nullptr) {
+  ValueMapper(VM, Flags, TypeMapper, Materializer).remapInstruction(*I);
 }
 
-/// Remap source location atom. Called by RemapInstruction. This updates the
-/// instruction's atom group number if it has been mapped (e.g. with
-/// llvm::mapAtomInstance), which is necessary to distinguish source code
-/// atoms on duplicated code paths.
-LLVM_ABI void RemapSourceAtom(Instruction *I, ValueToValueMapTy &VM);
-
-/// Remap the Values used in the DbgRecord \a DR using the value map \a
-/// VM.
-inline void RemapDbgRecord(Module *M, DbgRecord *DR, ValueToValueMapTy &VM,
-                           RemapFlags Flags = RF_None,
-                           ValueMapTypeRemapper *TypeMapper = nullptr,
-                           ValueMaterializer *Materializer = nullptr,
-                           const MetadataPredicate *IdentityMD = nullptr) {
-  ValueMapper(VM, Flags, TypeMapper, Materializer, IdentityMD)
-      .remapDbgRecord(M, *DR);
+/// Remap the Values used in the DPValue \a V using the value map \a VM.
+inline void RemapDPValue(Module *M, DPValue *V, ValueToValueMapTy &VM,
+                         RemapFlags Flags = RF_None,
+                         ValueMapTypeRemapper *TypeMapper = nullptr,
+                         ValueMaterializer *Materializer = nullptr) {
+  ValueMapper(VM, Flags, TypeMapper, Materializer).remapDPValue(M, *V);
 }
 
-/// Remap the Values used in the DbgRecords \a Range using the value map \a
-/// VM.
-inline void RemapDbgRecordRange(Module *M,
-                                iterator_range<DbgRecordIterator> Range,
-                                ValueToValueMapTy &VM,
-                                RemapFlags Flags = RF_None,
-                                ValueMapTypeRemapper *TypeMapper = nullptr,
-                                ValueMaterializer *Materializer = nullptr,
-                                const MetadataPredicate *IdentityMD = nullptr) {
-  ValueMapper(VM, Flags, TypeMapper, Materializer, IdentityMD)
-      .remapDbgRecordRange(M, Range);
+/// Remap the Values used in the DPValue \a V using the value map \a VM.
+inline void RemapDPValueRange(Module *M, iterator_range<DPValueIterator> Range,
+                              ValueToValueMapTy &VM, RemapFlags Flags = RF_None,
+                              ValueMapTypeRemapper *TypeMapper = nullptr,
+                              ValueMaterializer *Materializer = nullptr) {
+  ValueMapper(VM, Flags, TypeMapper, Materializer).remapDPValueRange(M, Range);
 }
 
 /// Remap the operands, metadata, arguments, and instructions of a function.
@@ -334,19 +291,16 @@ inline void RemapDbgRecordRange(Module *M,
 inline void RemapFunction(Function &F, ValueToValueMapTy &VM,
                           RemapFlags Flags = RF_None,
                           ValueMapTypeRemapper *TypeMapper = nullptr,
-                          ValueMaterializer *Materializer = nullptr,
-                          const MetadataPredicate *IdentityMD = nullptr) {
-  ValueMapper(VM, Flags, TypeMapper, Materializer, IdentityMD).remapFunction(F);
+                          ValueMaterializer *Materializer = nullptr) {
+  ValueMapper(VM, Flags, TypeMapper, Materializer).remapFunction(F);
 }
 
 /// Version of MapValue with type safety for Constant.
 inline Constant *MapValue(const Constant *V, ValueToValueMapTy &VM,
                           RemapFlags Flags = RF_None,
                           ValueMapTypeRemapper *TypeMapper = nullptr,
-                          ValueMaterializer *Materializer = nullptr,
-                          const MetadataPredicate *IdentityMD = nullptr) {
-  return ValueMapper(VM, Flags, TypeMapper, Materializer, IdentityMD)
-      .mapConstant(*V);
+                          ValueMaterializer *Materializer = nullptr) {
+  return ValueMapper(VM, Flags, TypeMapper, Materializer).mapConstant(*V);
 }
 
 } // end namespace llvm

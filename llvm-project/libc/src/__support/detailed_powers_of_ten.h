@@ -9,11 +9,11 @@
 #ifndef LLVM_LIBC_SRC___SUPPORT_DETAILED_POWERS_OF_TEN_H
 #define LLVM_LIBC_SRC___SUPPORT_DETAILED_POWERS_OF_TEN_H
 
-#include "hdr/stdint_proxy.h"
 #include "src/__support/common.h"
-#include "src/__support/macros/config.h"
 
-namespace LIBC_NAMESPACE_DECL {
+#include <stdint.h>
+
+namespace LIBC_NAMESPACE {
 namespace internal {
 
 // TODO(michaelrj): write a script that will generate this table.
@@ -734,6 +734,6 @@ static constexpr uint64_t DETAILED_POWERS_OF_TEN[696][2] = {
 };
 
 } // namespace internal
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE
 
 #endif // LLVM_LIBC_SRC___SUPPORT_DETAILED_POWERS_OF_TEN_H

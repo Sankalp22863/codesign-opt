@@ -13,18 +13,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "AArch64.h"
+#include "Utils/AArch64BaseInfo.h"
 #include "Utils/AArch64SMEAttributes.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/CodeGen/TargetLowering.h"
-#include "llvm/CodeGen/TargetPassConfig.h"
-#include "llvm/CodeGen/TargetSubtargetInfo.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/IntrinsicsAArch64.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/RuntimeLibcalls.h"
-#include "llvm/Target/TargetMachine.h"
+#include "llvm/InitializePasses.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
 using namespace llvm;
@@ -34,23 +33,22 @@ using namespace llvm;
 namespace {
 struct SMEABI : public FunctionPass {
   static char ID; // Pass identification, replacement for typeid
-  SMEABI() : FunctionPass(ID) {}
+  SMEABI() : FunctionPass(ID) {
+    initializeSMEABIPass(*PassRegistry::getPassRegistry());
+  }
 
   bool runOnFunction(Function &F) override;
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
-    AU.addRequired<TargetPassConfig>();
-  }
-
 private:
   bool updateNewStateFunctions(Module *M, Function *F, IRBuilder<> &Builder,
-                               SMEAttrs FnAttrs, const TargetLowering &TLI);
+                               SMEAttrs FnAttrs);
 };
 } // end anonymous namespace
 
 char SMEABI::ID = 0;
 static const char *name = "SME ABI Pass";
-INITIALIZE_PASS(SMEABI, DEBUG_TYPE, name, false, false)
+INITIALIZE_PASS_BEGIN(SMEABI, DEBUG_TYPE, name, false, false)
+INITIALIZE_PASS_END(SMEABI, DEBUG_TYPE, name, false, false)
 
 FunctionPass *llvm::createSMEABIPass() { return new SMEABI(); }
 
@@ -59,35 +57,28 @@ FunctionPass *llvm::createSMEABIPass() { return new SMEABI(); }
 //===----------------------------------------------------------------------===//
 
 // Utility function to emit a call to __arm_tpidr2_save and clear TPIDR2_EL0.
-void emitTPIDR2Save(Module *M, IRBuilder<> &Builder, const TargetLowering &TLI,
-                    bool ZT0IsUndef = false) {
-  auto &Ctx = M->getContext();
+void emitTPIDR2Save(Module *M, IRBuilder<> &Builder) {
   auto *TPIDR2SaveTy =
       FunctionType::get(Builder.getVoidTy(), {}, /*IsVarArgs=*/false);
   auto Attrs =
-      AttributeList().addFnAttribute(Ctx, "aarch64_pstate_sm_compatible");
-  RTLIB::Libcall LC = RTLIB::SMEABI_TPIDR2_SAVE;
+      AttributeList()
+          .addFnAttribute(M->getContext(), "aarch64_pstate_sm_compatible")
+          .addFnAttribute(M->getContext(), "aarch64_pstate_za_preserved");
   FunctionCallee Callee =
-      M->getOrInsertFunction(TLI.getLibcallName(LC), TPIDR2SaveTy, Attrs);
+      M->getOrInsertFunction("__arm_tpidr2_save", TPIDR2SaveTy, Attrs);
   CallInst *Call = Builder.CreateCall(Callee);
-
-  // If ZT0 is undefined (i.e. we're at the entry of a "new_zt0" function), mark
-  // that on the __arm_tpidr2_save call. This prevents an unnecessary spill of
-  // ZT0 that can occur before ZA is enabled.
-  if (ZT0IsUndef)
-    Call->addFnAttr(Attribute::get(Ctx, "aarch64_zt0_undef"));
-
-  Call->setCallingConv(TLI.getLibcallCallingConv(LC));
+  Call->setCallingConv(
+      CallingConv::AArch64_SME_ABI_Support_Routines_PreserveMost_From_X0);
 
   // A save to TPIDR2 should be followed by clearing TPIDR2_EL0.
   Function *WriteIntr =
-      Intrinsic::getOrInsertDeclaration(M, Intrinsic::aarch64_sme_set_tpidr2);
+      Intrinsic::getDeclaration(M, Intrinsic::aarch64_sme_set_tpidr2);
   Builder.CreateCall(WriteIntr->getFunctionType(), WriteIntr,
                      Builder.getInt64(0));
 }
 
 /// This function generates code at the beginning and end of a function marked
-/// with either `aarch64_new_za` or `aarch64_new_zt0`.
+/// with either `aarch64_pstate_za_new` or `aarch64_new_zt0`.
 /// At the beginning of the function, the following code is generated:
 ///  - Commit lazy-save if active   [Private-ZA Interface*]
 ///  - Enable PSTATE.ZA             [Private-ZA Interface]
@@ -107,8 +98,7 @@ void emitTPIDR2Save(Module *M, IRBuilder<> &Builder, const TargetLowering &TLI,
 /// interface if it does not share ZA or ZT0.
 ///
 bool SMEABI::updateNewStateFunctions(Module *M, Function *F,
-                                     IRBuilder<> &Builder, SMEAttrs FnAttrs,
-                                     const TargetLowering &TLI) {
+                                     IRBuilder<> &Builder, SMEAttrs FnAttrs) {
   LLVMContext &Context = F->getContext();
   BasicBlock *OrigBB = &F->getEntryBlock();
   Builder.SetInsertPoint(&OrigBB->front());
@@ -125,7 +115,7 @@ bool SMEABI::updateNewStateFunctions(Module *M, Function *F,
     // Read TPIDR2_EL0 in PreludeBB & branch to SaveBB if not 0.
     Builder.SetInsertPoint(PreludeBB);
     Function *TPIDR2Intr =
-        Intrinsic::getOrInsertDeclaration(M, Intrinsic::aarch64_sme_get_tpidr2);
+        Intrinsic::getDeclaration(M, Intrinsic::aarch64_sme_get_tpidr2);
     auto *TPIDR2 = Builder.CreateCall(TPIDR2Intr->getFunctionType(), TPIDR2Intr,
                                       {}, "tpidr2");
     auto *Cmp = Builder.CreateCmp(ICmpInst::ICMP_NE, TPIDR2,
@@ -134,25 +124,25 @@ bool SMEABI::updateNewStateFunctions(Module *M, Function *F,
 
     // Create a call __arm_tpidr2_save, which commits the lazy save.
     Builder.SetInsertPoint(&SaveBB->back());
-    emitTPIDR2Save(M, Builder, TLI, /*ZT0IsUndef=*/FnAttrs.isNewZT0());
+    emitTPIDR2Save(M, Builder);
 
     // Enable pstate.za at the start of the function.
     Builder.SetInsertPoint(&OrigBB->front());
     Function *EnableZAIntr =
-        Intrinsic::getOrInsertDeclaration(M, Intrinsic::aarch64_sme_za_enable);
+        Intrinsic::getDeclaration(M, Intrinsic::aarch64_sme_za_enable);
     Builder.CreateCall(EnableZAIntr->getFunctionType(), EnableZAIntr);
   }
 
-  if (FnAttrs.isNewZA()) {
+  if (FnAttrs.hasNewZABody()) {
     Function *ZeroIntr =
-        Intrinsic::getOrInsertDeclaration(M, Intrinsic::aarch64_sme_zero);
+        Intrinsic::getDeclaration(M, Intrinsic::aarch64_sme_zero);
     Builder.CreateCall(ZeroIntr->getFunctionType(), ZeroIntr,
                        Builder.getInt32(0xff));
   }
 
   if (FnAttrs.isNewZT0()) {
     Function *ClearZT0Intr =
-        Intrinsic::getOrInsertDeclaration(M, Intrinsic::aarch64_sme_zero_zt);
+        Intrinsic::getDeclaration(M, Intrinsic::aarch64_sme_zero_zt);
     Builder.CreateCall(ClearZT0Intr->getFunctionType(), ClearZT0Intr,
                        {Builder.getInt32(0)});
   }
@@ -164,8 +154,8 @@ bool SMEABI::updateNewStateFunctions(Module *M, Function *F,
       if (!T || !isa<ReturnInst>(T))
         continue;
       Builder.SetInsertPoint(T);
-      Function *DisableZAIntr = Intrinsic::getOrInsertDeclaration(
-          M, Intrinsic::aarch64_sme_za_disable);
+      Function *DisableZAIntr =
+          Intrinsic::getDeclaration(M, Intrinsic::aarch64_sme_za_disable);
       Builder.CreateCall(DisableZAIntr->getFunctionType(), DisableZAIntr);
     }
   }
@@ -182,14 +172,10 @@ bool SMEABI::runOnFunction(Function &F) {
   if (F.isDeclaration() || F.hasFnAttribute("aarch64_expanded_pstate_za"))
     return false;
 
-  const TargetMachine &TM =
-      getAnalysis<TargetPassConfig>().getTM<TargetMachine>();
-  const TargetLowering &TLI = *TM.getSubtargetImpl(F)->getTargetLowering();
-
   bool Changed = false;
   SMEAttrs FnAttrs(F);
-  if (FnAttrs.isNewZA() || FnAttrs.isNewZT0())
-    Changed |= updateNewStateFunctions(M, &F, Builder, FnAttrs, TLI);
+  if (FnAttrs.hasNewZABody() || FnAttrs.isNewZT0())
+    Changed |= updateNewStateFunctions(M, &F, Builder, FnAttrs);
 
   return Changed;
 }

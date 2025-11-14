@@ -54,15 +54,13 @@
 
 namespace __tsan {
 
-extern bool ready_to_symbolize;
-
 #if !SANITIZER_GO
 struct MapUnmapCallback;
 #  if defined(__mips64) || defined(__aarch64__) || defined(__loongarch__) || \
       defined(__powerpc__) || SANITIZER_RISCV64
 
 struct AP32 {
-  static const uptr kSpaceBeg = SANITIZER_MMAP_BEGIN;
+  static const uptr kSpaceBeg = 0;
   static const u64 kSpaceSize = SANITIZER_MMAP_RANGE_SIZE;
   static const uptr kMetadataSize = 0;
   typedef __sanitizer::CompactSizeClassMap SizeClassMap;
@@ -100,7 +98,6 @@ struct JmpBuf {
   uptr sp;
   int int_signal_send;
   bool in_blocking_func;
-  uptr oldset_stack_size;
   uptr in_signal_handler;
   uptr *shadow_stack_pos;
 };
@@ -139,7 +136,7 @@ struct TidEpoch {
   Epoch epoch;
 };
 
-struct alignas(SANITIZER_CACHE_LINE_SIZE) TidSlot {
+struct TidSlot {
   Mutex mtx;
   Sid sid;
   atomic_uint32_t raw_epoch;
@@ -156,10 +153,10 @@ struct alignas(SANITIZER_CACHE_LINE_SIZE) TidSlot {
   }
 
   TidSlot();
-};
+} ALIGNED(SANITIZER_CACHE_LINE_SIZE);
 
 // This struct is stored in TLS.
-struct alignas(SANITIZER_CACHE_LINE_SIZE) ThreadState {
+struct ThreadState {
   FastState fast_state;
   int ignore_sync;
 #if !SANITIZER_GO
@@ -236,12 +233,8 @@ struct alignas(SANITIZER_CACHE_LINE_SIZE) ThreadState {
 
   const ReportDesc *current_report;
 
-#if SANITIZER_APPLE && !SANITIZER_GO
-  bool in_internal_write_call;
-#endif
-
   explicit ThreadState(Tid tid);
-};
+} ALIGNED(SANITIZER_CACHE_LINE_SIZE);
 
 #if !SANITIZER_GO
 #if SANITIZER_APPLE || SANITIZER_ANDROID
@@ -424,7 +417,6 @@ class ScopedReportBase {
   void AddSleep(StackID stack_id);
   void SetCount(int count);
   void SetSigNum(int sig);
-  void SymbolizeStackElems(void);
 
   const ReportDesc *GetReport() const;
 
@@ -503,7 +495,7 @@ void ForkChildAfter(ThreadState *thr, uptr pc, bool start_thread);
 
 void ReportRace(ThreadState *thr, RawShadow *shadow_mem, Shadow cur, Shadow old,
                 AccessType typ);
-bool OutputReport(ThreadState *thr, ScopedReport &srep);
+bool OutputReport(ThreadState *thr, const ScopedReport &srep);
 bool IsFiredSuppression(Context *ctx, ReportType type, StackTrace trace);
 bool IsExpectedReport(uptr addr, uptr size);
 
@@ -522,7 +514,7 @@ bool IsExpectedReport(uptr addr, uptr size);
 StackID CurrentStackId(ThreadState *thr, uptr pc);
 ReportStack *SymbolizeStackId(StackID stack_id);
 void PrintCurrentStack(ThreadState *thr, uptr pc);
-void PrintCurrentStack(uptr pc, bool fast);  // may uses libunwind
+void PrintCurrentStackSlow(uptr pc);  // uses libunwind
 MBlock *JavaHeapBlock(uptr addr, uptr *start);
 
 void Initialize(ThreadState *thr);
@@ -564,7 +556,7 @@ void ThreadIgnoreSyncBegin(ThreadState *thr, uptr pc);
 void ThreadIgnoreSyncEnd(ThreadState *thr);
 
 Tid ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached);
-void ThreadStart(ThreadState *thr, Tid tid, ThreadID os_id,
+void ThreadStart(ThreadState *thr, Tid tid, tid_t os_id,
                  ThreadType thread_type);
 void ThreadFinish(ThreadState *thr);
 Tid ThreadConsumeTid(ThreadState *thr, uptr pc, uptr uid);

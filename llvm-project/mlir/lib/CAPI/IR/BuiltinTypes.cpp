@@ -9,15 +9,12 @@
 #include "mlir-c/BuiltinTypes.h"
 #include "mlir-c/AffineMap.h"
 #include "mlir-c/IR.h"
-#include "mlir-c/Support.h"
 #include "mlir/CAPI/AffineMap.h"
 #include "mlir/CAPI/IR.h"
 #include "mlir/CAPI/Support.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Types.h"
-
-#include <algorithm>
 
 using namespace mlir;
 
@@ -77,72 +74,16 @@ MlirType mlirIndexTypeGet(MlirContext ctx) {
 // Floating-point types.
 //===----------------------------------------------------------------------===//
 
-bool mlirTypeIsAFloat(MlirType type) {
-  return llvm::isa<FloatType>(unwrap(type));
-}
-
-unsigned mlirFloatTypeGetWidth(MlirType type) {
-  return llvm::cast<FloatType>(unwrap(type)).getWidth();
-}
-
-MlirTypeID mlirFloat4E2M1FNTypeGetTypeID() {
-  return wrap(Float4E2M1FNType::getTypeID());
-}
-
-bool mlirTypeIsAFloat4E2M1FN(MlirType type) {
-  return llvm::isa<Float4E2M1FNType>(unwrap(type));
-}
-
-MlirType mlirFloat4E2M1FNTypeGet(MlirContext ctx) {
-  return wrap(Float4E2M1FNType::get(unwrap(ctx)));
-}
-
-MlirTypeID mlirFloat6E2M3FNTypeGetTypeID() {
-  return wrap(Float6E2M3FNType::getTypeID());
-}
-
-bool mlirTypeIsAFloat6E2M3FN(MlirType type) {
-  return llvm::isa<Float6E2M3FNType>(unwrap(type));
-}
-
-MlirType mlirFloat6E2M3FNTypeGet(MlirContext ctx) {
-  return wrap(Float6E2M3FNType::get(unwrap(ctx)));
-}
-
-MlirTypeID mlirFloat6E3M2FNTypeGetTypeID() {
-  return wrap(Float6E3M2FNType::getTypeID());
-}
-
-bool mlirTypeIsAFloat6E3M2FN(MlirType type) {
-  return llvm::isa<Float6E3M2FNType>(unwrap(type));
-}
-
-MlirType mlirFloat6E3M2FNTypeGet(MlirContext ctx) {
-  return wrap(Float6E3M2FNType::get(unwrap(ctx)));
-}
-
 MlirTypeID mlirFloat8E5M2TypeGetTypeID() {
   return wrap(Float8E5M2Type::getTypeID());
 }
 
 bool mlirTypeIsAFloat8E5M2(MlirType type) {
-  return llvm::isa<Float8E5M2Type>(unwrap(type));
+  return unwrap(type).isFloat8E5M2();
 }
 
 MlirType mlirFloat8E5M2TypeGet(MlirContext ctx) {
-  return wrap(Float8E5M2Type::get(unwrap(ctx)));
-}
-
-MlirTypeID mlirFloat8E4M3TypeGetTypeID() {
-  return wrap(Float8E4M3Type::getTypeID());
-}
-
-bool mlirTypeIsAFloat8E4M3(MlirType type) {
-  return llvm::isa<Float8E4M3Type>(unwrap(type));
-}
-
-MlirType mlirFloat8E4M3TypeGet(MlirContext ctx) {
-  return wrap(Float8E4M3Type::get(unwrap(ctx)));
+  return wrap(FloatType::getFloat8E5M2(unwrap(ctx)));
 }
 
 MlirTypeID mlirFloat8E4M3FNTypeGetTypeID() {
@@ -150,11 +91,11 @@ MlirTypeID mlirFloat8E4M3FNTypeGetTypeID() {
 }
 
 bool mlirTypeIsAFloat8E4M3FN(MlirType type) {
-  return llvm::isa<Float8E4M3FNType>(unwrap(type));
+  return unwrap(type).isFloat8E4M3FN();
 }
 
 MlirType mlirFloat8E4M3FNTypeGet(MlirContext ctx) {
-  return wrap(Float8E4M3FNType::get(unwrap(ctx)));
+  return wrap(FloatType::getFloat8E4M3FN(unwrap(ctx)));
 }
 
 MlirTypeID mlirFloat8E5M2FNUZTypeGetTypeID() {
@@ -162,11 +103,11 @@ MlirTypeID mlirFloat8E5M2FNUZTypeGetTypeID() {
 }
 
 bool mlirTypeIsAFloat8E5M2FNUZ(MlirType type) {
-  return llvm::isa<Float8E5M2FNUZType>(unwrap(type));
+  return unwrap(type).isFloat8E5M2FNUZ();
 }
 
 MlirType mlirFloat8E5M2FNUZTypeGet(MlirContext ctx) {
-  return wrap(Float8E5M2FNUZType::get(unwrap(ctx)));
+  return wrap(FloatType::getFloat8E5M2FNUZ(unwrap(ctx)));
 }
 
 MlirTypeID mlirFloat8E4M3FNUZTypeGetTypeID() {
@@ -174,11 +115,11 @@ MlirTypeID mlirFloat8E4M3FNUZTypeGetTypeID() {
 }
 
 bool mlirTypeIsAFloat8E4M3FNUZ(MlirType type) {
-  return llvm::isa<Float8E4M3FNUZType>(unwrap(type));
+  return unwrap(type).isFloat8E4M3FNUZ();
 }
 
 MlirType mlirFloat8E4M3FNUZTypeGet(MlirContext ctx) {
-  return wrap(Float8E4M3FNUZType::get(unwrap(ctx)));
+  return wrap(FloatType::getFloat8E4M3FNUZ(unwrap(ctx)));
 }
 
 MlirTypeID mlirFloat8E4M3B11FNUZTypeGetTypeID() {
@@ -186,89 +127,55 @@ MlirTypeID mlirFloat8E4M3B11FNUZTypeGetTypeID() {
 }
 
 bool mlirTypeIsAFloat8E4M3B11FNUZ(MlirType type) {
-  return llvm::isa<Float8E4M3B11FNUZType>(unwrap(type));
+  return unwrap(type).isFloat8E4M3B11FNUZ();
 }
 
 MlirType mlirFloat8E4M3B11FNUZTypeGet(MlirContext ctx) {
-  return wrap(Float8E4M3B11FNUZType::get(unwrap(ctx)));
-}
-
-MlirTypeID mlirFloat8E3M4TypeGetTypeID() {
-  return wrap(Float8E3M4Type::getTypeID());
-}
-
-bool mlirTypeIsAFloat8E3M4(MlirType type) {
-  return llvm::isa<Float8E3M4Type>(unwrap(type));
-}
-
-MlirType mlirFloat8E3M4TypeGet(MlirContext ctx) {
-  return wrap(Float8E3M4Type::get(unwrap(ctx)));
-}
-
-MlirTypeID mlirFloat8E8M0FNUTypeGetTypeID() {
-  return wrap(Float8E8M0FNUType::getTypeID());
-}
-
-bool mlirTypeIsAFloat8E8M0FNU(MlirType type) {
-  return llvm::isa<Float8E8M0FNUType>(unwrap(type));
-}
-
-MlirType mlirFloat8E8M0FNUTypeGet(MlirContext ctx) {
-  return wrap(Float8E8M0FNUType::get(unwrap(ctx)));
+  return wrap(FloatType::getFloat8E4M3B11FNUZ(unwrap(ctx)));
 }
 
 MlirTypeID mlirBFloat16TypeGetTypeID() {
   return wrap(BFloat16Type::getTypeID());
 }
 
-bool mlirTypeIsABF16(MlirType type) {
-  return llvm::isa<BFloat16Type>(unwrap(type));
-}
+bool mlirTypeIsABF16(MlirType type) { return unwrap(type).isBF16(); }
 
 MlirType mlirBF16TypeGet(MlirContext ctx) {
-  return wrap(BFloat16Type::get(unwrap(ctx)));
+  return wrap(FloatType::getBF16(unwrap(ctx)));
 }
 
 MlirTypeID mlirFloat16TypeGetTypeID() { return wrap(Float16Type::getTypeID()); }
 
-bool mlirTypeIsAF16(MlirType type) {
-  return llvm::isa<Float16Type>(unwrap(type));
-}
+bool mlirTypeIsAF16(MlirType type) { return unwrap(type).isF16(); }
 
 MlirType mlirF16TypeGet(MlirContext ctx) {
-  return wrap(Float16Type::get(unwrap(ctx)));
+  return wrap(FloatType::getF16(unwrap(ctx)));
 }
 
 MlirTypeID mlirFloatTF32TypeGetTypeID() {
   return wrap(FloatTF32Type::getTypeID());
 }
 
-bool mlirTypeIsATF32(MlirType type) {
-  return llvm::isa<FloatTF32Type>(unwrap(type));
-}
+bool mlirTypeIsATF32(MlirType type) { return unwrap(type).isTF32(); }
 
 MlirType mlirTF32TypeGet(MlirContext ctx) {
-  return wrap(FloatTF32Type::get(unwrap(ctx)));
+  return wrap(FloatType::getTF32(unwrap(ctx)));
 }
 
 MlirTypeID mlirFloat32TypeGetTypeID() { return wrap(Float32Type::getTypeID()); }
 
-bool mlirTypeIsAF32(MlirType type) {
-  return llvm::isa<Float32Type>(unwrap(type));
-}
+bool mlirTypeIsAF32(MlirType type) { return unwrap(type).isF32(); }
 
 MlirType mlirF32TypeGet(MlirContext ctx) {
-  return wrap(Float32Type::get(unwrap(ctx)));
+  return wrap(FloatType::getF32(unwrap(ctx)));
 }
 
 MlirTypeID mlirFloat64TypeGetTypeID() { return wrap(Float64Type::getTypeID()); }
 
-bool mlirTypeIsAF64(MlirType type) {
-  return llvm::isa<Float64Type>(unwrap(type));
-}
+bool mlirTypeIsAF64(MlirType type) { return unwrap(type).isF64(); }
 
 MlirType mlirF64TypeGet(MlirContext ctx) {
-  return wrap(Float64Type::get(unwrap(ctx)));
+  return wrap(FloatType::getF64(unwrap(ctx)));
 }
 
 //===----------------------------------------------------------------------===//
@@ -332,11 +239,6 @@ bool mlirShapedTypeIsDynamicDim(MlirType type, intptr_t dim) {
       .isDynamicDim(static_cast<unsigned>(dim));
 }
 
-bool mlirShapedTypeIsStaticDim(MlirType type, intptr_t dim) {
-  return llvm::cast<ShapedType>(unwrap(type))
-      .isStaticDim(static_cast<unsigned>(dim));
-}
-
 int64_t mlirShapedTypeGetDimSize(MlirType type, intptr_t dim) {
   return llvm::cast<ShapedType>(unwrap(type))
       .getDimSize(static_cast<unsigned>(dim));
@@ -348,16 +250,8 @@ bool mlirShapedTypeIsDynamicSize(int64_t size) {
   return ShapedType::isDynamic(size);
 }
 
-bool mlirShapedTypeIsStaticSize(int64_t size) {
-  return ShapedType::isStatic(size);
-}
-
 bool mlirShapedTypeIsDynamicStrideOrOffset(int64_t val) {
   return ShapedType::isDynamic(val);
-}
-
-bool mlirShapedTypeIsStaticStrideOrOffset(int64_t val) {
-  return ShapedType::isStatic(val);
 }
 
 int64_t mlirShapedTypeGetDynamicStrideOrOffset() {
@@ -405,11 +299,11 @@ MlirType mlirVectorTypeGetScalableChecked(MlirLocation loc, intptr_t rank,
 }
 
 bool mlirVectorTypeIsScalable(MlirType type) {
-  return cast<VectorType>(unwrap(type)).isScalable();
+  return unwrap(type).cast<VectorType>().isScalable();
 }
 
 bool mlirVectorTypeIsDimScalable(MlirType type, intptr_t dim) {
-  return cast<VectorType>(unwrap(type)).getScalableDims()[dim];
+  return unwrap(type).cast<VectorType>().getScalableDims()[dim];
 }
 
 //===----------------------------------------------------------------------===//
@@ -463,6 +357,10 @@ MlirType mlirUnrankedTensorTypeGet(MlirType elementType) {
 MlirType mlirUnrankedTensorTypeGetChecked(MlirLocation loc,
                                           MlirType elementType) {
   return wrap(UnrankedTensorType::getChecked(unwrap(loc), unwrap(elementType)));
+}
+
+MlirType mlirUnrankedTensorTypeGetElementType(MlirType type) {
+  return wrap(llvm::cast<UnrankedTensorType>(unwrap(type)).getElementType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -526,18 +424,6 @@ MlirAffineMap mlirMemRefTypeGetAffineMap(MlirType type) {
 
 MlirAttribute mlirMemRefTypeGetMemorySpace(MlirType type) {
   return wrap(llvm::cast<MemRefType>(unwrap(type)).getMemorySpace());
-}
-
-MlirLogicalResult mlirMemRefTypeGetStridesAndOffset(MlirType type,
-                                                    int64_t *strides,
-                                                    int64_t *offset) {
-  MemRefType memrefType = llvm::cast<MemRefType>(unwrap(type));
-  SmallVector<int64_t> strides_;
-  if (failed(memrefType.getStridesAndOffset(strides_, *offset)))
-    return mlirLogicalResultFailure();
-
-  (void)std::copy(strides_.begin(), strides_.end(), strides);
-  return mlirLogicalResultSuccess();
 }
 
 MlirTypeID mlirUnrankedMemRefTypeGetTypeID() {

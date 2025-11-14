@@ -179,8 +179,7 @@
 ;;     dst[8] = sub_group_scan_exclusive_max(v);
 ;; }
 
-; RUN: llc -verify-machineinstrs -O0 -mtriple=spirv64-unknown-unknown %s -o - | FileCheck %s --check-prefix=CHECK-SPIRV
-; RUN: %if spirv-tools %{ llc -O0 -mtriple=spirv64-unknown-unknown %s -o - -filetype=obj | spirv-val %}
+; RUN: llc -O0 -mtriple=spirv64-unknown-unknown %s -o - | FileCheck %s --check-prefix=CHECK-SPIRV
 
 ; CHECK-SPIRV-DAG: %[[#char:]] = OpTypeInt 8 0
 ; CHECK-SPIRV-DAG: %[[#short:]] = OpTypeInt 16 0
@@ -233,13 +232,13 @@
 ; CHECK-SPIRV-DAG: %[[#double16:]] = OpTypeVector %[[#double]] 16
 
 ; CHECK-SPIRV-DAG: %[[#ScopeSubgroup:]] = OpConstant %[[#int]] 3
-; CHECK-SPIRV-DAG: %[[#char_0:]] = OpConstantNull %[[#char]]
-; CHECK-SPIRV-DAG: %[[#short_0:]] = OpConstantNull %[[#short]]
-; CHECK-SPIRV-DAG: %[[#int_0:]] = OpConstantNull %[[#int]]
+; CHECK-SPIRV-DAG: %[[#char_0:]] = OpConstant %[[#char]] 0
+; CHECK-SPIRV-DAG: %[[#short_0:]] = OpConstant %[[#short]] 0
+; CHECK-SPIRV-DAG: %[[#int_0:]] = OpConstant %[[#int]] 0
 ; CHECK-SPIRV-DAG: %[[#long_0:]] = OpConstantNull %[[#long]]
-; CHECK-SPIRV-DAG: %[[#half_0:]] = OpConstantNull %[[#half]]
-; CHECK-SPIRV-DAG: %[[#float_0:]] = OpConstantNull %[[#float]]
-; CHECK-SPIRV-DAG: %[[#double_0:]] = OpConstantNull %[[#double]]
+; CHECK-SPIRV-DAG: %[[#half_0:]] = OpConstant %[[#half]] 0
+; CHECK-SPIRV-DAG: %[[#float_0:]] = OpConstant %[[#float]] 0
+; CHECK-SPIRV-DAG: %[[#double_0:]] = OpConstant %[[#double]] 0
 
 ; CHECK-SPIRV: OpFunction
 ; CHECK-SPIRV: %[[#]] = OpGroupBroadcast %[[#char]] %[[#ScopeSubgroup]] %[[#char_0]] %[[#int_0]]

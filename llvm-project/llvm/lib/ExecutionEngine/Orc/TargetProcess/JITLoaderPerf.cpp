@@ -27,6 +27,7 @@
 
 #include <sys/mman.h> // mmap()
 #include <time.h>     // clock_gettime(), time(), localtime_r() */
+#include <unistd.h>   // for read(), close()
 
 #define DEBUG_TYPE "orc"
 
@@ -55,7 +56,7 @@ struct PerfState {
   std::unique_ptr<raw_fd_ostream> Dumpstream;
 
   // perf mmap marker
-  void *MarkerAddr = nullptr;
+  void *MarkerAddr = NULL;
 };
 
 // prevent concurrent dumps from messing up the output file
@@ -345,11 +346,11 @@ static Error registerJITLoaderPerfStartImpl() {
   // Need to open ourselves, because we need to hand the FD to OpenMarker() and
   // raw_fd_ostream doesn't expose the FD.
   using sys::fs::openFileForWrite;
-  if (auto EC = openFileForReadWrite(Filename, Tentative.DumpFd,
+  if (auto EC = openFileForReadWrite(FilenameBuf.str(), Tentative.DumpFd,
                                      sys::fs::CD_CreateNew, sys::fs::OF_None)) {
     std::string ErrStr;
     raw_string_ostream ErrStream(ErrStr);
-    ErrStream << "could not open JIT dump file " << Filename << ": "
+    ErrStream << "could not open JIT dump file " << FilenameBuf.str() << ": "
               << EC.message() << "\n";
     return make_error<StringError>(std::move(ErrStr), inconvertibleErrorCode());
   }
@@ -396,25 +397,25 @@ static Error registerJITLoaderPerfEndImpl() {
 }
 
 extern "C" llvm::orc::shared::CWrapperFunctionResult
-llvm_orc_registerJITLoaderPerfImpl(const char *ArgData, size_t ArgSize) {
+llvm_orc_registerJITLoaderPerfImpl(const char *Data, uint64_t Size) {
   using namespace orc::shared;
   return WrapperFunction<SPSError(SPSPerfJITRecordBatch)>::handle(
-             ArgData, ArgSize, registerJITLoaderPerfImpl)
+             Data, Size, registerJITLoaderPerfImpl)
       .release();
 }
 
 extern "C" llvm::orc::shared::CWrapperFunctionResult
-llvm_orc_registerJITLoaderPerfStart(const char *ArgData, size_t ArgSize) {
+llvm_orc_registerJITLoaderPerfStart(const char *Data, uint64_t Size) {
   using namespace orc::shared;
-  return WrapperFunction<SPSError()>::handle(ArgData, ArgSize,
+  return WrapperFunction<SPSError()>::handle(Data, Size,
                                              registerJITLoaderPerfStartImpl)
       .release();
 }
 
 extern "C" llvm::orc::shared::CWrapperFunctionResult
-llvm_orc_registerJITLoaderPerfEnd(const char *ArgData, size_t ArgSize) {
+llvm_orc_registerJITLoaderPerfEnd(const char *Data, uint64_t Size) {
   using namespace orc::shared;
-  return WrapperFunction<SPSError()>::handle(ArgData, ArgSize,
+  return WrapperFunction<SPSError()>::handle(Data, Size,
                                              registerJITLoaderPerfEndImpl)
       .release();
 }
@@ -434,23 +435,23 @@ static Error badOS() {
 static Error badOSBatch(PerfJITRecordBatch &Batch) { return badOS(); }
 
 extern "C" llvm::orc::shared::CWrapperFunctionResult
-llvm_orc_registerJITLoaderPerfImpl(const char *ArgData, size_t ArgSize) {
+llvm_orc_registerJITLoaderPerfImpl(const char *Data, uint64_t Size) {
   using namespace shared;
-  return WrapperFunction<SPSError(SPSPerfJITRecordBatch)>::handle(
-             ArgData, ArgSize, badOSBatch)
+  return WrapperFunction<SPSError(SPSPerfJITRecordBatch)>::handle(Data, Size,
+                                                                  badOSBatch)
       .release();
 }
 
 extern "C" llvm::orc::shared::CWrapperFunctionResult
-llvm_orc_registerJITLoaderPerfStart(const char *ArgData, size_t ArgSize) {
+llvm_orc_registerJITLoaderPerfStart(const char *Data, uint64_t Size) {
   using namespace shared;
-  return WrapperFunction<SPSError()>::handle(ArgData, ArgSize, badOS).release();
+  return WrapperFunction<SPSError()>::handle(Data, Size, badOS).release();
 }
 
 extern "C" llvm::orc::shared::CWrapperFunctionResult
-llvm_orc_registerJITLoaderPerfEnd(const char *ArgData, size_t ArgSize) {
+llvm_orc_registerJITLoaderPerfEnd(const char *Data, uint64_t Size) {
   using namespace shared;
-  return WrapperFunction<SPSError()>::handle(ArgData, ArgSize, badOS).release();
+  return WrapperFunction<SPSError()>::handle(Data, Size, badOS).release();
 }
 
 #endif

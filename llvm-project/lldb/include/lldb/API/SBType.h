@@ -107,35 +107,6 @@ protected:
   lldb::TypeMemberFunctionImplSP m_opaque_sp;
 };
 
-class LLDB_API SBTypeStaticField {
-public:
-  SBTypeStaticField();
-
-  SBTypeStaticField(const lldb::SBTypeStaticField &rhs);
-  lldb::SBTypeStaticField &operator=(const lldb::SBTypeStaticField &rhs);
-
-  ~SBTypeStaticField();
-
-  explicit operator bool() const;
-
-  bool IsValid() const;
-
-  const char *GetName();
-
-  const char *GetMangledName();
-
-  lldb::SBType GetType();
-
-  lldb::SBValue GetConstantValue(lldb::SBTarget target);
-
-protected:
-  friend class SBType;
-
-  explicit SBTypeStaticField(lldb_private::CompilerDecl decl);
-
-  std::unique_ptr<lldb_private::CompilerDecl> m_opaque_up;
-};
-
 class SBType {
 public:
   SBType();
@@ -149,8 +120,6 @@ public:
   bool IsValid() const;
 
   uint64_t GetByteSize();
-
-  uint64_t GetByteAlign();
 
   bool IsPointerType();
 
@@ -213,20 +182,11 @@ public:
 
   lldb::SBTypeMember GetVirtualBaseClassAtIndex(uint32_t idx);
 
-  lldb::SBTypeStaticField GetStaticFieldWithName(const char *name);
-
   lldb::SBTypeEnumMemberList GetEnumMembers();
 
   uint32_t GetNumberOfTemplateArguments();
 
   lldb::SBType GetTemplateArgumentType(uint32_t idx);
-
-  /// Returns the value of the non-type template parameter at index \c idx.
-  /// If \c idx is out-of-bounds or the template parameter doesn't have
-  /// a value, returns an empty SBValue.
-  ///
-  /// This function will expand parameter packs.
-  lldb::SBValue GetTemplateArgumentValue(lldb::SBTarget target, uint32_t idx);
 
   /// Return the TemplateArgumentKind of the template argument at index idx.
   /// Variadic argument packs are automatically expanded.
@@ -282,7 +242,6 @@ protected:
   friend class SBTypeNameSpecifier;
   friend class SBTypeMember;
   friend class SBTypeMemberFunction;
-  friend class SBTypeStaticField;
   friend class SBTypeList;
   friend class SBValue;
   friend class SBWatchpoint;

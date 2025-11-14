@@ -76,7 +76,8 @@ lldb::addr_t ArchitectureMips::GetBreakableLoadAddress(lldb::addr_t addr,
 
   Address resolved_addr;
 
-  if (!target.HasLoadedSections())
+  SectionLoadList &section_load_list = target.GetSectionLoadList();
+  if (section_load_list.IsEmpty())
     // No sections are loaded, so we must assume we are not running yet and
     // need to operate only on file address.
     target.ResolveFileAddress(addr, resolved_addr);
@@ -96,7 +97,7 @@ lldb::addr_t ArchitectureMips::GetBreakableLoadAddress(lldb::addr_t addr,
       resolve_scope, sc);
     Address sym_addr;
     if (sc.function)
-      sym_addr = sc.function->GetAddress();
+      sym_addr = sc.function->GetAddressRange().GetBaseAddress();
     else if (sc.symbol)
       sym_addr = sc.symbol->GetAddress();
 
@@ -149,7 +150,7 @@ Instruction *ArchitectureMips::GetInstructionAtAddress(
 
   // Create Disassembler Instance
   lldb::DisassemblerSP disasm_sp(
-      Disassembler::FindPlugin(m_arch, nullptr, nullptr, nullptr, nullptr));
+    Disassembler::FindPlugin(m_arch, nullptr, nullptr));
 
   InstructionList instruction_list;
   InstructionSP prev_insn;

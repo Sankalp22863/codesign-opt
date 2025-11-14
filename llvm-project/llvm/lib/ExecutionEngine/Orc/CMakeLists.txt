@@ -7,8 +7,6 @@ if( CMAKE_HOST_UNIX AND HAVE_LIBRT )
 endif()
 
 add_llvm_component_library(LLVMOrcJIT
-  AbsoluteSymbols.cpp
-  COFF.cpp
   COFFVCRuntimeSupport.cpp
   COFFPlatform.cpp
   CompileOnDemandLayer.cpp
@@ -16,33 +14,23 @@ add_llvm_component_library(LLVMOrcJIT
   Core.cpp
   DebugObjectManagerPlugin.cpp
   DebugUtils.cpp
-  EHFrameRegistrationPlugin.cpp
   EPCDynamicLibrarySearchGenerator.cpp
   EPCDebugObjectRegistrar.cpp
+  EPCEHFrameRegistrar.cpp
   EPCGenericDylibManager.cpp
   EPCGenericJITLinkMemoryManager.cpp
   EPCGenericRTDyldMemoryManager.cpp
   EPCIndirectionUtils.cpp
   ExecutionUtils.cpp
-  ExecutorResolutionGenerator.cpp
   ObjectFileInterface.cpp
-  GetDylibInterface.cpp
   IndirectionUtils.cpp
-  InProcessMemoryAccess.cpp
   IRCompileLayer.cpp
   IRTransformLayer.cpp
-  IRPartitionLayer.cpp
   JITTargetMachineBuilder.cpp
-  JITLinkReentryTrampolines.cpp
-  LazyObjectLinkingLayer.cpp
   LazyReexports.cpp
   Layer.cpp
-  LinkGraphLayer.cpp
-  LinkGraphLinkingLayer.cpp
-  LoadLinkableFile.cpp
   LookupAndRecordAddrs.cpp
   LLJIT.cpp
-  MachO.cpp
   MachOPlatform.cpp
   MapperJITLinkMemoryManager.cpp
   MemoryMapper.cpp
@@ -53,19 +41,12 @@ add_llvm_component_library(LLVMOrcJIT
   OrcABISupport.cpp
   OrcV2CBindings.cpp
   RTDyldObjectLinkingLayer.cpp
-  SectCreate.cpp
-  SelfExecutorProcessControl.cpp
   SimpleRemoteEPC.cpp
-  SimpleRemoteMemoryMapper.cpp
   Speculation.cpp
   SpeculateAnalyses.cpp
   ExecutorProcessControl.cpp
   TaskDispatch.cpp
   ThreadSafeModule.cpp
-  UnwindInfoRegistrationPlugin.cpp
-  RedirectionManager.cpp
-  JITLinkRedirectableSymbolManager.cpp
-  ReOptimizeLayer.cpp
   ADDITIONAL_HEADER_DIRS
   ${LLVM_MAIN_INCLUDE_DIR}/llvm/ExecutionEngine/Orc
 
@@ -78,7 +59,6 @@ add_llvm_component_library(LLVMOrcJIT
   ${atomic_lib}
 
   LINK_COMPONENTS
-  BinaryFormat
   Core
   ExecutionEngine
   JITLink
@@ -92,7 +72,6 @@ add_llvm_component_library(LLVMOrcJIT
   Support
   Target
   TargetParser
-  TextAPI
   TransformUtils
   )
 

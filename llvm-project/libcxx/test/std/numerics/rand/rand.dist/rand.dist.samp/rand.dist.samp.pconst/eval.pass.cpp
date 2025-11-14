@@ -16,12 +16,11 @@
 // template<class _URNG> result_type operator()(_URNG& g);
 
 #include <random>
-#include <algorithm>   // for sort
-#include <cassert>
-#include <cmath>
+#include <vector>
 #include <iterator>
 #include <numeric>
-#include <vector>
+#include <algorithm>   // for sort
+#include <cassert>
 
 #include "test_macros.h"
 
@@ -530,8 +529,8 @@ test8()
             double x_skew = 0;
             double x_kurtosis = -6./5;
             assert(std::abs((mean - x_mean) / x_mean) < 0.01);
-            assert(std::abs((var - x_var) / x_var) < 0.02);
-            assert(std::abs(skew - x_skew) < 0.02);
+            assert(std::abs((var - x_var) / x_var) < 0.01);
+            assert(std::abs(skew - x_skew) < 0.01);
             assert(std::abs((kurtosis - x_kurtosis) / x_kurtosis) < 0.01);
         }
     }

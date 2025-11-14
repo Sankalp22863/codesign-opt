@@ -52,7 +52,6 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
@@ -1364,7 +1363,11 @@ public:
   }
 
   /// Return the list of basic blocks that this terminator can branch to.
-  ArrayRef<BasicBlock *> successors() const;
+  ArrayRef<BasicBlock *> successors();
+
+  ArrayRef<BasicBlock *> successors() const {
+    return const_cast<Terminator*>(this)->successors();
+  }
 };
 
 /// Jump to another basic block.
@@ -1388,7 +1391,7 @@ public:
   unsigned index() const { return Index; }
 
   /// Return the list of basic blocks that this terminator can branch to.
-  ArrayRef<BasicBlock *> successors() const { return TargetBlock; }
+  ArrayRef<BasicBlock *> successors() { return TargetBlock; }
 
   template <class V>
   typename V::R_SExpr traverse(V &Vs, typename V::R_Ctx Ctx) {
@@ -1436,7 +1439,7 @@ public:
   BasicBlock *elseBlock() { return Branches[1]; }
 
   /// Return the list of basic blocks that this terminator can branch to.
-  ArrayRef<BasicBlock *> successors() const { return llvm::ArrayRef(Branches); }
+  ArrayRef<BasicBlock *> successors() { return llvm::ArrayRef(Branches); }
 
   template <class V>
   typename V::R_SExpr traverse(V &Vs, typename V::R_Ctx Ctx) {
@@ -1467,7 +1470,7 @@ public:
   static bool classof(const SExpr *E) { return E->opcode() == COP_Return; }
 
   /// Return an empty list.
-  ArrayRef<BasicBlock *> successors() const { return {}; }
+  ArrayRef<BasicBlock *> successors() { return std::nullopt; }
 
   SExpr *returnValue() { return Retval; }
   const SExpr *returnValue() const { return Retval; }
@@ -1487,13 +1490,13 @@ private:
   SExpr* Retval;
 };
 
-inline ArrayRef<BasicBlock *> Terminator::successors() const {
+inline ArrayRef<BasicBlock*> Terminator::successors() {
   switch (opcode()) {
     case COP_Goto:   return cast<Goto>(this)->successors();
     case COP_Branch: return cast<Branch>(this)->successors();
     case COP_Return: return cast<Return>(this)->successors();
     default:
-      return {};
+      return std::nullopt;
   }
 }
 
@@ -1665,8 +1668,7 @@ private:
   unsigned BlockID : 31;
 
   // Bit to determine if a block has been visited during a traversal.
-  LLVM_PREFERRED_TYPE(bool)
-  unsigned Visited : 1;
+  bool Visited : 1;
 
   // Predecessor blocks in the CFG.
   BlockArray Predecessors;

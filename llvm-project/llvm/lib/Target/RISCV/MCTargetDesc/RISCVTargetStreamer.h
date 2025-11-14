@@ -41,24 +41,21 @@ public:
   void finish() override;
   virtual void reset();
 
-  virtual void emitDirectiveOptionArch(ArrayRef<RISCVOptionArchArg> Args);
-  virtual void emitDirectiveOptionExact();
-  virtual void emitDirectiveOptionNoExact();
+  virtual void emitDirectiveOptionPush();
+  virtual void emitDirectiveOptionPop();
   virtual void emitDirectiveOptionPIC();
   virtual void emitDirectiveOptionNoPIC();
-  virtual void emitDirectiveOptionPop();
-  virtual void emitDirectiveOptionPush();
-  virtual void emitDirectiveOptionRelax();
-  virtual void emitDirectiveOptionNoRelax();
   virtual void emitDirectiveOptionRVC();
   virtual void emitDirectiveOptionNoRVC();
+  virtual void emitDirectiveOptionRelax();
+  virtual void emitDirectiveOptionNoRelax();
+  virtual void emitDirectiveOptionArch(ArrayRef<RISCVOptionArchArg> Args);
   virtual void emitDirectiveVariantCC(MCSymbol &Symbol);
   virtual void emitAttribute(unsigned Attribute, unsigned Value);
   virtual void finishAttributeSection();
   virtual void emitTextAttribute(unsigned Attribute, StringRef String);
   virtual void emitIntTextAttribute(unsigned Attribute, unsigned IntValue,
                                     StringRef StringValue);
-  void emitNoteGnuPropertySection(const uint32_t Feature1And);
 
   void emitTargetAttributes(const MCSubtargetInfo &STI, bool EmitStackAlign);
   void setTargetABI(RISCVABI::ABI ABI);
@@ -81,17 +78,15 @@ class RISCVTargetAsmStreamer : public RISCVTargetStreamer {
 public:
   RISCVTargetAsmStreamer(MCStreamer &S, formatted_raw_ostream &OS);
 
-  void emitDirectiveOptionArch(ArrayRef<RISCVOptionArchArg> Args) override;
-  void emitDirectiveOptionExact() override;
-  void emitDirectiveOptionNoExact() override;
+  void emitDirectiveOptionPush() override;
+  void emitDirectiveOptionPop() override;
   void emitDirectiveOptionPIC() override;
   void emitDirectiveOptionNoPIC() override;
-  void emitDirectiveOptionPop() override;
-  void emitDirectiveOptionPush() override;
-  void emitDirectiveOptionRelax() override;
-  void emitDirectiveOptionNoRelax() override;
   void emitDirectiveOptionRVC() override;
   void emitDirectiveOptionNoRVC() override;
+  void emitDirectiveOptionRelax() override;
+  void emitDirectiveOptionNoRelax() override;
+  void emitDirectiveOptionArch(ArrayRef<RISCVOptionArchArg> Args) override;
   void emitDirectiveVariantCC(MCSymbol &Symbol) override;
 };
 

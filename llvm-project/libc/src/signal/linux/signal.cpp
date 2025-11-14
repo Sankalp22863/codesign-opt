@@ -7,18 +7,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/signal/signal.h"
-#include "hdr/signal_macros.h"
-#include "src/__support/common.h"
-#include "src/__support/macros/config.h"
 #include "src/signal/sigaction.h"
 
-namespace LIBC_NAMESPACE_DECL {
+#include "src/__support/common.h"
 
-// Our LLVM_LIBC_FUNCTION macro doesn't handle function pointer return types.
-using signal_handler = void (*)(int);
+#include <signal.h>
 
-LLVM_LIBC_FUNCTION(signal_handler, signal,
-                   (int signum, signal_handler handler)) {
+namespace LIBC_NAMESPACE {
+
+LLVM_LIBC_FUNCTION(sighandler_t, signal, (int signum, sighandler_t handler)) {
   struct sigaction action, old;
   action.sa_handler = handler;
   action.sa_flags = SA_RESTART;
@@ -28,4 +25,4 @@ LLVM_LIBC_FUNCTION(signal_handler, signal,
              : old.sa_handler;
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

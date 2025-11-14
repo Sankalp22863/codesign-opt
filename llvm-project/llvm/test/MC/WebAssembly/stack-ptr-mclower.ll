@@ -15,7 +15,8 @@ entry:
   ret void
 }
 
-; CHECK:              .file   "stack-ptr-mclower.ll"
+; CHECK:              .text
+; CHECK-NEXT:         .file   "stack-ptr-mclower.ll"
 ; CHECK-NEXT:         .globaltype     __stack_pointer, [[PTR]]
 ; CHECK-NEXT:         .functype bar () -> ()
 ; CHECK-NEXT:         .functype foo () -> ()

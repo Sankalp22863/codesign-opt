@@ -11,16 +11,6 @@ llvm_canonicalize_cmake_booleans(
 
 set(FLANG_TOOLS_DIR ${FLANG_BINARY_DIR}/bin)
 
-# Check if 128-bit float computations can be done via long double
-check_cxx_source_compiles(
-  "#include <cfloat>
-   #if LDBL_MANT_DIG != 113
-   #error LDBL_MANT_DIG != 113
-   #endif
-   int main() { return 0; }
-  "
-  HAVE_LDBL_MANT_DIG_113)
-
 # FIXME In out-of-tree builds, "SHLIBDIR" is undefined and passing it to
 # `configure_lit_site_cfg` leads to a configuration error. This is currently
 # only required by plugins/examples, which are not supported in out-of-tree
@@ -58,32 +48,24 @@ set(FLANG_TEST_PARAMS
   flang_site_config=${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py)
 
 set(FLANG_TEST_DEPENDS
-  flang
+  flang-new
+  llvm-config
+  FileCheck
+  count
+  not
   module_files
   fir-opt
   tco
   bbc
+  llvm-dis
+  llvm-objdump
+  llvm-readobj
+  split-file
+  FortranRuntime
+  Fortran_main
   FortranDecimal
 )
-
-if (NOT FLANG_STANDALONE_BUILD)
-  list(APPEND FLANG_TEST_DEPENDS
-    llvm-config
-    FileCheck
-    count
-    not
-    llvm-bcanalyzer
-    llvm-dis
-    llvm-objcopy
-    llvm-objdump
-    llvm-profdata
-    llvm-readelf
-    llvm-readobj
-    split-file
-  )
-endif ()
-
-if (LLVM_BUILD_EXAMPLES AND LLVM_ENABLE_PLUGINS AND NOT (WIN32 OR CYGWIN) AND NOT FLANG_STANDALONE_BUILD)
+if (LLVM_ENABLE_PLUGINS AND NOT WIN32)
   list(APPEND FLANG_TEST_DEPENDS Bye)
 endif()
 
@@ -101,19 +83,14 @@ if (LLVM_BUILD_EXAMPLES)
     )
 endif ()
 
-if ("openmp" IN_LIST LLVM_ENABLE_RUNTIMES AND NOT FLANG_STANDALONE_BUILD)
-  list(APPEND FLANG_TEST_DEPENDS "libomp-mod")
-endif ()
-
 add_custom_target(flang-test-depends DEPENDS ${FLANG_TEST_DEPENDS})
-set_target_properties(flang-test-depends PROPERTIES FOLDER "Flang/Meta")
 
 add_lit_testsuite(check-flang "Running the Flang regression tests"
   ${CMAKE_CURRENT_BINARY_DIR}
   PARAMS ${FLANG_TEST_PARAMS}
   DEPENDS ${FLANG_TEST_DEPENDS}
 )
-set_target_properties(check-flang PROPERTIES FOLDER "Flang/Meta")
+set_target_properties(check-flang PROPERTIES FOLDER "Tests")
 
 # In case of standalone builds.
 if (FLANG_STANDALONE_BUILD)

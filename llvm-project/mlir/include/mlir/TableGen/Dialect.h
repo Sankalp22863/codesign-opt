@@ -14,8 +14,6 @@
 #define MLIR_TABLEGEN_DIALECT_H_
 
 #include "mlir/Support/LLVM.h"
-#include "llvm/TableGen/Record.h"
-
 #include <string>
 #include <vector>
 
@@ -92,10 +90,6 @@ public:
   /// dialect.
   bool usePropertiesForAttributes() const;
 
-  const llvm::DagInit *getDiscardableAttributes() const;
-
-  const llvm::Record *getDef() const { return def; }
-
   // Returns whether two dialects are equal by checking the equality of the
   // underlying record.
   bool operator==(const Dialect &other) const;
@@ -107,7 +101,6 @@ public:
 
   // Returns whether the dialect is defined.
   explicit operator bool() const { return def != nullptr; }
-  bool isDefined() const { return def != nullptr; }
 
 private:
   const llvm::Record *def;

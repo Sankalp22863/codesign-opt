@@ -8,5 +8,10 @@
 
 #include "mlir/Interfaces/RuntimeVerifiableOpInterface.h"
 
+namespace mlir {
+class Location;
+class OpBuilder;
+} // namespace mlir
+
 /// Include the definitions of the interface.
 #include "mlir/Interfaces/RuntimeVerifiableOpInterface.cpp.inc"

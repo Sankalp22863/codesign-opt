@@ -14,9 +14,3 @@ c.beqz a0, NEAR
 # INSTR:           c.j    0x0 <NEAR>
 # RELAX-INSTR:     jal    zero, 0x0 <NEAR>
 c.j NEAR
-
-bnez s0, .foo
-j    .foo
-beqz s0, .foo
-.foo:
-ret

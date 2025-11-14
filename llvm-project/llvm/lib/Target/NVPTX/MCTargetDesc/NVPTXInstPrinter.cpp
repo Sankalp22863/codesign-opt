@@ -11,18 +11,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/NVPTXInstPrinter.h"
+#include "MCTargetDesc/NVPTXBaseInfo.h"
 #include "NVPTX.h"
-#include "NVPTXUtilities.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/IR/NVVMIntrinsicUtils.h"
-#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/FormattedStream.h"
 #include <cctype>
 using namespace llvm;
 
@@ -34,7 +31,7 @@ NVPTXInstPrinter::NVPTXInstPrinter(const MCAsmInfo &MAI, const MCInstrInfo &MII,
                                    const MCRegisterInfo &MRI)
     : MCInstPrinter(MAI, MII, MRI) {}
 
-void NVPTXInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) {
+void NVPTXInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) const {
   // Decode the virtual register
   // Must be kept in sync with NVPTXAsmPrinter::encodeVirtualRegister
   unsigned RCId = (Reg.id() >> 28);
@@ -63,9 +60,6 @@ void NVPTXInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) {
   case 6:
     OS << "%fd";
     break;
-  case 7:
-    OS << "%rq";
-    break;
   }
 
   unsigned VReg = Reg.id() & 0x0FFFFFFF;
@@ -85,305 +79,217 @@ void NVPTXInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
                                     raw_ostream &O) {
   const MCOperand &Op = MI->getOperand(OpNo);
   if (Op.isReg()) {
-    MCRegister Reg = Op.getReg();
+    unsigned Reg = Op.getReg();
     printRegName(O, Reg);
   } else if (Op.isImm()) {
     markup(O, Markup::Immediate) << formatImm(Op.getImm());
   } else {
     assert(Op.isExpr() && "Unknown operand kind in printOperand");
-    MAI.printExpr(O, *Op.getExpr());
+    Op.getExpr()->print(O, &MAI);
   }
 }
 
 void NVPTXInstPrinter::printCvtMode(const MCInst *MI, int OpNum, raw_ostream &O,
-                                    StringRef Modifier) {
+                                    const char *Modifier) {
   const MCOperand &MO = MI->getOperand(OpNum);
   int64_t Imm = MO.getImm();
 
-  if (Modifier == "ftz") {
+  if (strcmp(Modifier, "ftz") == 0) {
     // FTZ flag
     if (Imm & NVPTX::PTXCvtMode::FTZ_FLAG)
       O << ".ftz";
-    return;
-  } else if (Modifier == "sat") {
+  } else if (strcmp(Modifier, "sat") == 0) {
     // SAT flag
     if (Imm & NVPTX::PTXCvtMode::SAT_FLAG)
       O << ".sat";
-    return;
-  } else if (Modifier == "relu") {
+  } else if (strcmp(Modifier, "relu") == 0) {
     // RELU flag
     if (Imm & NVPTX::PTXCvtMode::RELU_FLAG)
       O << ".relu";
-    return;
-  } else if (Modifier == "base") {
+  } else if (strcmp(Modifier, "base") == 0) {
     // Default operand
     switch (Imm & NVPTX::PTXCvtMode::BASE_MASK) {
     default:
       return;
     case NVPTX::PTXCvtMode::NONE:
-      return;
+      break;
     case NVPTX::PTXCvtMode::RNI:
       O << ".rni";
-      return;
+      break;
     case NVPTX::PTXCvtMode::RZI:
       O << ".rzi";
-      return;
+      break;
     case NVPTX::PTXCvtMode::RMI:
       O << ".rmi";
-      return;
+      break;
     case NVPTX::PTXCvtMode::RPI:
       O << ".rpi";
-      return;
+      break;
     case NVPTX::PTXCvtMode::RN:
       O << ".rn";
-      return;
+      break;
     case NVPTX::PTXCvtMode::RZ:
       O << ".rz";
-      return;
+      break;
     case NVPTX::PTXCvtMode::RM:
       O << ".rm";
-      return;
+      break;
     case NVPTX::PTXCvtMode::RP:
       O << ".rp";
-      return;
+      break;
     case NVPTX::PTXCvtMode::RNA:
       O << ".rna";
-      return;
-    case NVPTX::PTXCvtMode::RS:
-      O << ".rs";
-      return;
+      break;
     }
+  } else {
+    llvm_unreachable("Invalid conversion modifier");
   }
-  llvm_unreachable("Invalid conversion modifier");
-}
-
-void NVPTXInstPrinter::printFTZFlag(const MCInst *MI, int OpNum,
-                                    raw_ostream &O) {
-  const MCOperand &MO = MI->getOperand(OpNum);
-  const int Imm = MO.getImm();
-  if (Imm)
-    O << ".ftz";
 }
 
 void NVPTXInstPrinter::printCmpMode(const MCInst *MI, int OpNum, raw_ostream &O,
-                                    StringRef Modifier) {
+                                    const char *Modifier) {
   const MCOperand &MO = MI->getOperand(OpNum);
   int64_t Imm = MO.getImm();
 
-  if (Modifier == "FCmp") {
-    switch (Imm) {
+  if (strcmp(Modifier, "ftz") == 0) {
+    // FTZ flag
+    if (Imm & NVPTX::PTXCmpMode::FTZ_FLAG)
+      O << ".ftz";
+  } else if (strcmp(Modifier, "base") == 0) {
+    switch (Imm & NVPTX::PTXCmpMode::BASE_MASK) {
     default:
       return;
     case NVPTX::PTXCmpMode::EQ:
-      O << "eq";
-      return;
+      O << ".eq";
+      break;
     case NVPTX::PTXCmpMode::NE:
-      O << "ne";
-      return;
+      O << ".ne";
+      break;
     case NVPTX::PTXCmpMode::LT:
-      O << "lt";
-      return;
+      O << ".lt";
+      break;
     case NVPTX::PTXCmpMode::LE:
-      O << "le";
-      return;
+      O << ".le";
+      break;
     case NVPTX::PTXCmpMode::GT:
-      O << "gt";
-      return;
+      O << ".gt";
+      break;
     case NVPTX::PTXCmpMode::GE:
-      O << "ge";
-      return;
+      O << ".ge";
+      break;
+    case NVPTX::PTXCmpMode::LO:
+      O << ".lo";
+      break;
+    case NVPTX::PTXCmpMode::LS:
+      O << ".ls";
+      break;
+    case NVPTX::PTXCmpMode::HI:
+      O << ".hi";
+      break;
+    case NVPTX::PTXCmpMode::HS:
+      O << ".hs";
+      break;
     case NVPTX::PTXCmpMode::EQU:
-      O << "equ";
-      return;
+      O << ".equ";
+      break;
     case NVPTX::PTXCmpMode::NEU:
-      O << "neu";
-      return;
+      O << ".neu";
+      break;
     case NVPTX::PTXCmpMode::LTU:
-      O << "ltu";
-      return;
+      O << ".ltu";
+      break;
     case NVPTX::PTXCmpMode::LEU:
-      O << "leu";
-      return;
+      O << ".leu";
+      break;
     case NVPTX::PTXCmpMode::GTU:
-      O << "gtu";
-      return;
+      O << ".gtu";
+      break;
     case NVPTX::PTXCmpMode::GEU:
-      O << "geu";
-      return;
+      O << ".geu";
+      break;
     case NVPTX::PTXCmpMode::NUM:
-      O << "num";
-      return;
+      O << ".num";
+      break;
     case NVPTX::PTXCmpMode::NotANumber:
-      O << "nan";
-      return;
+      O << ".nan";
+      break;
     }
+  } else {
+    llvm_unreachable("Empty Modifier");
   }
-  if (Modifier == "ICmp") {
-    switch (Imm) {
-    default:
-      llvm_unreachable("Invalid ICmp mode");
-    case NVPTX::PTXCmpMode::EQ:
-      O << "eq";
-      return;
-    case NVPTX::PTXCmpMode::NE:
-      O << "ne";
-      return;
-    case NVPTX::PTXCmpMode::LT:
-    case NVPTX::PTXCmpMode::LTU:
-      O << "lt";
-      return;
-    case NVPTX::PTXCmpMode::LE:
-    case NVPTX::PTXCmpMode::LEU:
-      O << "le";
-      return;
-    case NVPTX::PTXCmpMode::GT:
-    case NVPTX::PTXCmpMode::GTU:
-      O << "gt";
-      return;
-    case NVPTX::PTXCmpMode::GE:
-    case NVPTX::PTXCmpMode::GEU:
-      O << "ge";
-      return;
-    }
-  }
-  if (Modifier == "IType") {
-    switch (Imm) {
-    default:
-      llvm_unreachable("Invalid IType");
-    case NVPTX::PTXCmpMode::EQ:
-    case NVPTX::PTXCmpMode::NE:
-      O << "b";
-      return;
-    case NVPTX::PTXCmpMode::LT:
-    case NVPTX::PTXCmpMode::LE:
-    case NVPTX::PTXCmpMode::GT:
-    case NVPTX::PTXCmpMode::GE:
-      O << "s";
-      return;
-    case NVPTX::PTXCmpMode::LTU:
-    case NVPTX::PTXCmpMode::LEU:
-    case NVPTX::PTXCmpMode::GTU:
-    case NVPTX::PTXCmpMode::GEU:
-      O << "u";
-      return;
-    }
-  }
-  llvm_unreachable("Empty Modifier");
 }
 
-void NVPTXInstPrinter::printAtomicCode(const MCInst *MI, int OpNum,
-                                       raw_ostream &O, StringRef Modifier) {
-  const MCOperand &MO = MI->getOperand(OpNum);
-  int Imm = (int)MO.getImm();
-  if (Modifier == "sem") {
-    auto Ordering = NVPTX::Ordering(Imm);
-    switch (Ordering) {
-    case NVPTX::Ordering::NotAtomic:
-      return;
-    case NVPTX::Ordering::Relaxed:
-      O << ".relaxed";
-      return;
-    case NVPTX::Ordering::Acquire:
-      O << ".acquire";
-      return;
-    case NVPTX::Ordering::Release:
-      O << ".release";
-      return;
-    case NVPTX::Ordering::AcquireRelease:
-      O << ".acq_rel";
-      return;
-    case NVPTX::Ordering::SequentiallyConsistent:
-      report_fatal_error(
-          "NVPTX AtomicCode Printer does not support \"seq_cst\" ordering.");
-      return;
-    case NVPTX::Ordering::Volatile:
-      O << ".volatile";
-      return;
-    case NVPTX::Ordering::RelaxedMMIO:
-      O << ".mmio.relaxed";
-      return;
-    }
-  } else if (Modifier == "scope") {
-    auto S = NVPTX::Scope(Imm);
-    switch (S) {
-    case NVPTX::Scope::Thread:
-    case NVPTX::Scope::DefaultDevice:
-      return;
-    case NVPTX::Scope::System:
-      O << ".sys";
-      return;
-    case NVPTX::Scope::Block:
-      O << ".cta";
-      return;
-    case NVPTX::Scope::Cluster:
-      O << ".cluster";
-      return;
-    case NVPTX::Scope::Device:
-      O << ".gpu";
-      return;
-    }
-    report_fatal_error(formatv(
-        "NVPTX AtomicCode Printer does not support \"{}\" scope modifier.",
-        ScopeToString(S)));
-  } else if (Modifier == "addsp") {
-    auto A = NVPTX::AddressSpace(Imm);
-    switch (A) {
-    case NVPTX::AddressSpace::Generic:
-      return;
-    case NVPTX::AddressSpace::Global:
-    case NVPTX::AddressSpace::Const:
-    case NVPTX::AddressSpace::Shared:
-    case NVPTX::AddressSpace::SharedCluster:
-    case NVPTX::AddressSpace::Param:
-    case NVPTX::AddressSpace::Local:
-      O << "." << A;
-      return;
-    }
-    report_fatal_error(formatv(
-        "NVPTX AtomicCode Printer does not support \"{}\" addsp modifier.",
-        AddressSpaceToString(A)));
-  } else if (Modifier == "sign") {
-    switch (Imm) {
-    case NVPTX::PTXLdStInstCode::Signed:
-      O << "s";
-      return;
-    case NVPTX::PTXLdStInstCode::Unsigned:
-      O << "u";
-      return;
-    case NVPTX::PTXLdStInstCode::Untyped:
-      O << "b";
-      return;
-    case NVPTX::PTXLdStInstCode::Float:
-      O << "f";
-      return;
-    default:
-      llvm_unreachable("Unknown register type");
-    }
-  }
-  llvm_unreachable(formatv("Unknown Modifier: {}", Modifier).str().c_str());
+void NVPTXInstPrinter::printLdStCode(const MCInst *MI, int OpNum,
+                                     raw_ostream &O, const char *Modifier) {
+  if (Modifier) {
+    const MCOperand &MO = MI->getOperand(OpNum);
+    int Imm = (int) MO.getImm();
+    if (!strcmp(Modifier, "volatile")) {
+      if (Imm)
+        O << ".volatile";
+    } else if (!strcmp(Modifier, "addsp")) {
+      switch (Imm) {
+      case NVPTX::PTXLdStInstCode::GLOBAL:
+        O << ".global";
+        break;
+      case NVPTX::PTXLdStInstCode::SHARED:
+        O << ".shared";
+        break;
+      case NVPTX::PTXLdStInstCode::LOCAL:
+        O << ".local";
+        break;
+      case NVPTX::PTXLdStInstCode::PARAM:
+        O << ".param";
+        break;
+      case NVPTX::PTXLdStInstCode::CONSTANT:
+        O << ".const";
+        break;
+      case NVPTX::PTXLdStInstCode::GENERIC:
+        break;
+      default:
+        llvm_unreachable("Wrong Address Space");
+      }
+    } else if (!strcmp(Modifier, "sign")) {
+      if (Imm == NVPTX::PTXLdStInstCode::Signed)
+        O << "s";
+      else if (Imm == NVPTX::PTXLdStInstCode::Unsigned)
+        O << "u";
+      else if (Imm == NVPTX::PTXLdStInstCode::Untyped)
+        O << "b";
+      else if (Imm == NVPTX::PTXLdStInstCode::Float)
+        O << "f";
+      else
+        llvm_unreachable("Unknown register type");
+    } else if (!strcmp(Modifier, "vec")) {
+      if (Imm == NVPTX::PTXLdStInstCode::V2)
+        O << ".v2";
+      else if (Imm == NVPTX::PTXLdStInstCode::V4)
+        O << ".v4";
+    } else
+      llvm_unreachable("Unknown Modifier");
+  } else
+    llvm_unreachable("Empty Modifier");
 }
 
 void NVPTXInstPrinter::printMmaCode(const MCInst *MI, int OpNum, raw_ostream &O,
-                                    StringRef Modifier) {
+                                    const char *Modifier) {
   const MCOperand &MO = MI->getOperand(OpNum);
   int Imm = (int)MO.getImm();
-  if (Modifier.empty() || Modifier == "version") {
+  if (Modifier == nullptr || strcmp(Modifier, "version") == 0) {
     O << Imm; // Just print out PTX version
-    return;
-  } else if (Modifier == "aligned") {
+  } else if (strcmp(Modifier, "aligned") == 0) {
     // PTX63 requires '.aligned' in the name of the instruction.
     if (Imm >= 63)
       O << ".aligned";
-    return;
-  }
-  llvm_unreachable("Unknown Modifier");
+  } else
+    llvm_unreachable("Unknown Modifier");
 }
 
 void NVPTXInstPrinter::printMemOperand(const MCInst *MI, int OpNum,
-                                       raw_ostream &O, StringRef Modifier) {
+                                       raw_ostream &O, const char *Modifier) {
   printOperand(MI, OpNum, O);
 
-  if (Modifier == "add") {
+  if (Modifier && !strcmp(Modifier, "add")) {
     O << ", ";
     printOperand(MI, OpNum + 1, O);
   } else {
@@ -395,14 +301,8 @@ void NVPTXInstPrinter::printMemOperand(const MCInst *MI, int OpNum,
   }
 }
 
-void NVPTXInstPrinter::printHexu32imm(const MCInst *MI, int OpNum,
-                                      raw_ostream &O) {
-  int64_t Imm = MI->getOperand(OpNum).getImm();
-  O << formatHex(Imm) << "U";
-}
-
 void NVPTXInstPrinter::printProtoIdent(const MCInst *MI, int OpNum,
-                                       raw_ostream &O) {
+                                       raw_ostream &O, const char *Modifier) {
   const MCOperand &Op = MI->getOperand(OpNum);
   assert(Op.isExpr() && "Call prototype is not an MCExpr?");
   const MCExpr *Expr = Op.getExpr();
@@ -411,7 +311,7 @@ void NVPTXInstPrinter::printProtoIdent(const MCInst *MI, int OpNum,
 }
 
 void NVPTXInstPrinter::printPrmtMode(const MCInst *MI, int OpNum,
-                                     raw_ostream &O) {
+                                     raw_ostream &O, const char *Modifier) {
   const MCOperand &MO = MI->getOperand(OpNum);
   int64_t Imm = MO.getImm();
 
@@ -419,100 +319,24 @@ void NVPTXInstPrinter::printPrmtMode(const MCInst *MI, int OpNum,
   default:
     return;
   case NVPTX::PTXPrmtMode::NONE:
-    return;
+    break;
   case NVPTX::PTXPrmtMode::F4E:
     O << ".f4e";
-    return;
+    break;
   case NVPTX::PTXPrmtMode::B4E:
     O << ".b4e";
-    return;
+    break;
   case NVPTX::PTXPrmtMode::RC8:
     O << ".rc8";
-    return;
+    break;
   case NVPTX::PTXPrmtMode::ECL:
     O << ".ecl";
-    return;
+    break;
   case NVPTX::PTXPrmtMode::ECR:
     O << ".ecr";
-    return;
+    break;
   case NVPTX::PTXPrmtMode::RC16:
     O << ".rc16";
-    return;
+    break;
   }
-}
-
-void NVPTXInstPrinter::printTmaReductionMode(const MCInst *MI, int OpNum,
-                                             raw_ostream &O) {
-  const MCOperand &MO = MI->getOperand(OpNum);
-  using RedTy = nvvm::TMAReductionOp;
-
-  switch (static_cast<RedTy>(MO.getImm())) {
-  case RedTy::ADD:
-    O << ".add";
-    return;
-  case RedTy::MIN:
-    O << ".min";
-    return;
-  case RedTy::MAX:
-    O << ".max";
-    return;
-  case RedTy::INC:
-    O << ".inc";
-    return;
-  case RedTy::DEC:
-    O << ".dec";
-    return;
-  case RedTy::AND:
-    O << ".and";
-    return;
-  case RedTy::OR:
-    O << ".or";
-    return;
-  case RedTy::XOR:
-    O << ".xor";
-    return;
-  }
-  llvm_unreachable(
-      "Invalid Reduction Op in printCpAsyncBulkTensorReductionMode");
-}
-
-void NVPTXInstPrinter::printCTAGroup(const MCInst *MI, int OpNum,
-                                     raw_ostream &O) {
-  const MCOperand &MO = MI->getOperand(OpNum);
-  using CGTy = nvvm::CTAGroupKind;
-
-  switch (static_cast<CGTy>(MO.getImm())) {
-  case CGTy::CG_NONE:
-    O << "";
-    return;
-  case CGTy::CG_1:
-    O << ".cta_group::1";
-    return;
-  case CGTy::CG_2:
-    O << ".cta_group::2";
-    return;
-  }
-  llvm_unreachable("Invalid cta_group in printCTAGroup");
-}
-
-void NVPTXInstPrinter::printCallOperand(const MCInst *MI, int OpNum,
-                                        raw_ostream &O, StringRef Modifier) {
-  const MCOperand &MO = MI->getOperand(OpNum);
-  assert(MO.isImm() && "Invalid operand");
-  const auto Imm = MO.getImm();
-
-  if (Modifier == "RetList") {
-    assert((Imm == 1 || Imm == 0) && "Invalid return list");
-    if (Imm)
-      O << " (retval0),";
-    return;
-  }
-
-  if (Modifier == "ParamList") {
-    assert(Imm >= 0 && "Invalid parameter list");
-    interleaveComma(llvm::seq(Imm), O,
-                    [&](const auto &I) { O << "param" << I; });
-    return;
-  }
-  llvm_unreachable("Invalid modifier");
 }

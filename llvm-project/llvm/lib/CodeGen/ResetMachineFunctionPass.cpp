@@ -60,7 +60,8 @@ namespace {
       auto ClearVRegTypesOnReturn =
           make_scope_exit([&MF]() { MF.getRegInfo().clearVirtRegTypes(); });
 
-      if (MF.getProperties().hasFailedISel()) {
+      if (MF.getProperties().hasProperty(
+              MachineFunctionProperties::Property::FailedISel)) {
         if (AbortOnFailedISel)
           report_fatal_error("Instruction selection failed");
         LLVM_DEBUG(dbgs() << "Resetting: " << MF.getName() << '\n');
@@ -68,7 +69,7 @@ namespace {
         MF.reset();
         MF.initTargetMachineFunctionInfo(MF.getSubtarget());
 
-        const TargetMachine &TM = MF.getTarget();
+        const LLVMTargetMachine &TM = MF.getTarget();
         // MRI callback for target specific initializations.
         TM.registerMachineRegisterInfoCallback(MF);
 

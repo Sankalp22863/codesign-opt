@@ -13,8 +13,13 @@ import subprocess
 import json
 import datetime
 import argparse
-from urllib.parse import urlencode
-from urllib.request import urlopen, Request
+
+try:
+    from urllib.parse import urlencode
+    from urllib.request import urlopen, Request
+except ImportError:
+    from urllib import urlencode
+    from urllib2 import urlopen, Request
 
 
 parser = argparse.ArgumentParser()
@@ -46,7 +51,7 @@ class Bench:
 def getBenchmarks():
     ret = []
     for i in glob.glob("*/response*.txt"):
-        m = re.match(r"response-(.*)\.txt", os.path.basename(i))
+        m = re.match("response-(.*)\.txt", os.path.basename(i))
         variant = m.groups()[0] if m else None
         ret.append(Bench(os.path.dirname(i), variant))
     return ret

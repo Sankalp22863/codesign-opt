@@ -12,10 +12,11 @@
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassRegistry.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace mlir {
-#define GEN_PASS_DEF_CONVERTARMNEON2DTOINTRPASS
+#define GEN_PASS_DEF_CONVERTARMNEON2DTOINTR
 #include "mlir/Conversion/Passes.h.inc"
 } // namespace mlir
 
@@ -40,25 +41,26 @@ public:
     Value c2d = op.getC();
     Location loc = op.getLoc();
     Value b1d =
-        vector::ShapeCastOp::create(rewriter, loc, flattenedVectorType, b2d);
+        rewriter.create<vector::ShapeCastOp>(loc, flattenedVectorType, b2d);
     Value c1d =
-        vector::ShapeCastOp::create(rewriter, loc, flattenedVectorType, c2d);
-    Value newOp = SdotOp::create(rewriter, loc, op.getRes().getType(),
-                                 op.getA(), b1d, c1d);
+        rewriter.create<vector::ShapeCastOp>(loc, flattenedVectorType, c2d);
+    Value newOp = rewriter.create<SdotOp>(loc, op.getRes().getType(), op.getA(),
+                                          b1d, c1d);
     rewriter.replaceOp(op, {newOp});
     return success();
   }
 };
 
 class ConvertArmNeon2dToIntr
-    : public impl::ConvertArmNeon2dToIntrPassBase<ConvertArmNeon2dToIntr> {
+    : public impl::ConvertArmNeon2dToIntrBase<ConvertArmNeon2dToIntr> {
   void runOnOperation() override {
     auto *context = &getContext();
 
     RewritePatternSet patterns(context);
     populateConvertArmNeon2dToIntrPatterns(patterns);
 
-    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns))))
+    if (failed(
+            applyPatternsAndFoldGreedily(getOperation(), std::move(patterns))))
       return signalPassFailure();
   }
 };
@@ -67,4 +69,8 @@ class ConvertArmNeon2dToIntr
 
 void mlir::populateConvertArmNeon2dToIntrPatterns(RewritePatternSet &patterns) {
   patterns.add<Sdot2dLoweringPattern>(patterns.getContext());
+}
+
+std::unique_ptr<Pass> mlir::createConvertArmNeon2dToIntrPass() {
+  return std::make_unique<ConvertArmNeon2dToIntr>();
 }

@@ -9,7 +9,8 @@
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
-#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
@@ -24,9 +25,7 @@ using namespace mlir::LLVM;
 /// prints it as usual.
 static void dispatchPrint(AsmPrinter &printer, Type type) {
   if (isCompatibleType(type) &&
-      !(llvm::isa<IntegerType, FloatType, VectorType>(type) ||
-        (llvm::isa<PtrLikeTypeInterface>(type) &&
-         !llvm::isa<LLVMPointerType>(type))))
+      !llvm::isa<IntegerType, FloatType, VectorType>(type))
     return mlir::LLVM::detail::printType(type, printer);
   printer.printType(type);
 }
@@ -36,30 +35,32 @@ static StringRef getTypeKeyword(Type type) {
   return TypeSwitch<Type, StringRef>(type)
       .Case<LLVMVoidType>([&](Type) { return "void"; })
       .Case<LLVMPPCFP128Type>([&](Type) { return "ppc_fp128"; })
+      .Case<LLVMX86MMXType>([&](Type) { return "x86_mmx"; })
       .Case<LLVMTokenType>([&](Type) { return "token"; })
       .Case<LLVMLabelType>([&](Type) { return "label"; })
       .Case<LLVMMetadataType>([&](Type) { return "metadata"; })
       .Case<LLVMFunctionType>([&](Type) { return "func"; })
       .Case<LLVMPointerType>([&](Type) { return "ptr"; })
+      .Case<LLVMFixedVectorType, LLVMScalableVectorType>(
+          [&](Type) { return "vec"; })
       .Case<LLVMArrayType>([&](Type) { return "array"; })
       .Case<LLVMStructType>([&](Type) { return "struct"; })
       .Case<LLVMTargetExtType>([&](Type) { return "target"; })
-      .Case<LLVMX86AMXType>([&](Type) { return "x86_amx"; })
-      .DefaultUnreachable("unexpected 'llvm' type kind");
+      .Default([](Type) -> StringRef {
+        llvm_unreachable("unexpected 'llvm' type kind");
+      });
 }
 
 /// Prints a structure type. Keeps track of known struct names to handle self-
 /// or mutually-referring structs without falling into infinite recursion.
-void LLVMStructType::print(AsmPrinter &printer) const {
+static void printStructType(AsmPrinter &printer, LLVMStructType type) {
   FailureOr<AsmPrinter::CyclicPrintReset> cyclicPrint;
 
   printer << "<";
-  if (isIdentified()) {
-    cyclicPrint = printer.tryStartCyclicPrint(*this);
+  if (type.isIdentified()) {
+    cyclicPrint = printer.tryStartCyclicPrint(type);
 
-    printer << '"';
-    llvm::printEscapedString(getName(), printer.getStream());
-    printer << '"';
+    printer << '"' << type.getName() << '"';
     // If we are printing a reference to one of the enclosing structs, just
     // print the name and stop to avoid infinitely long output.
     if (failed(cyclicPrint)) {
@@ -69,17 +70,17 @@ void LLVMStructType::print(AsmPrinter &printer) const {
     printer << ", ";
   }
 
-  if (isIdentified() && isOpaque()) {
+  if (type.isIdentified() && type.isOpaque()) {
     printer << "opaque>";
     return;
   }
 
-  if (isPacked())
+  if (type.isPacked())
     printer << "packed ";
 
   // Put the current type on stack to avoid infinite recursion.
   printer << '(';
-  llvm::interleaveComma(getBody(), printer.getStream(),
+  llvm::interleaveComma(type.getBody(), printer.getStream(),
                         [&](Type subtype) { dispatchPrint(printer, subtype); });
   printer << ')';
   printer << '>';
@@ -103,8 +104,12 @@ void mlir::LLVM::detail::printType(Type type, AsmPrinter &printer) {
   printer << getTypeKeyword(type);
 
   llvm::TypeSwitch<Type>(type)
-      .Case<LLVMPointerType, LLVMArrayType, LLVMFunctionType, LLVMTargetExtType,
-            LLVMStructType>([&](auto type) { type.print(printer); });
+      .Case<LLVMPointerType, LLVMArrayType, LLVMFixedVectorType,
+            LLVMScalableVectorType, LLVMFunctionType, LLVMTargetExtType>(
+          [&](auto type) { type.print(printer); })
+      .Case([&](LLVMStructType structType) {
+        printStructType(printer, structType);
+      });
 }
 
 //===----------------------------------------------------------------------===//
@@ -112,6 +117,44 @@ void mlir::LLVM::detail::printType(Type type, AsmPrinter &printer) {
 //===----------------------------------------------------------------------===//
 
 static ParseResult dispatchParse(AsmParser &parser, Type &type);
+
+/// Parses an LLVM dialect vector type.
+///   llvm-type ::= `vec<` `? x`? integer `x` llvm-type `>`
+/// Supports both fixed and scalable vectors.
+static Type parseVectorType(AsmParser &parser) {
+  SmallVector<int64_t, 2> dims;
+  SMLoc dimPos, typePos;
+  Type elementType;
+  SMLoc loc = parser.getCurrentLocation();
+  if (parser.parseLess() || parser.getCurrentLocation(&dimPos) ||
+      parser.parseDimensionList(dims, /*allowDynamic=*/true) ||
+      parser.getCurrentLocation(&typePos) ||
+      dispatchParse(parser, elementType) || parser.parseGreater())
+    return Type();
+
+  // We parsed a generic dimension list, but vectors only support two forms:
+  //  - single non-dynamic entry in the list (fixed vector);
+  //  - two elements, the first dynamic (indicated by ShapedType::kDynamic)
+  //  and the second
+  //    non-dynamic (scalable vector).
+  if (dims.empty() || dims.size() > 2 ||
+      ((dims.size() == 2) ^ (ShapedType::isDynamic(dims[0]))) ||
+      (dims.size() == 2 && ShapedType::isDynamic(dims[1]))) {
+    parser.emitError(dimPos)
+        << "expected '? x <integer> x <type>' or '<integer> x <type>'";
+    return Type();
+  }
+
+  bool isScalable = dims.size() == 2;
+  if (isScalable)
+    return parser.getChecked<LLVMScalableVectorType>(loc, elementType, dims[1]);
+  if (elementType.isSignlessIntOrFloat()) {
+    parser.emitError(typePos)
+        << "cannot use !llvm.vec for built-in primitives, use 'vector' instead";
+    return Type();
+  }
+  return parser.getChecked<LLVMFixedVectorType>(loc, elementType, dims[0]);
+}
 
 /// Attempts to set the body of an identified structure type. Reports a parsing
 /// error at `subtypesLoc` in case of failure.
@@ -139,7 +182,7 @@ static LLVMStructType trySetStructBody(LLVMStructType type,
 ///                 `(` llvm-type-list `)` `>`
 ///               | `struct<` string-literal `>`
 ///               | `struct<` string-literal `, opaque>`
-Type LLVMStructType::parse(AsmParser &parser) {
+static LLVMStructType parseStructType(AsmParser &parser) {
   Location loc = parser.getEncodedSourceLoc(parser.getCurrentLocation());
 
   if (failed(parser.parseLess()))
@@ -266,15 +309,16 @@ static Type dispatchParse(AsmParser &parser, bool allowAny = true) {
   return StringSwitch<function_ref<Type()>>(key)
       .Case("void", [&] { return LLVMVoidType::get(ctx); })
       .Case("ppc_fp128", [&] { return LLVMPPCFP128Type::get(ctx); })
+      .Case("x86_mmx", [&] { return LLVMX86MMXType::get(ctx); })
       .Case("token", [&] { return LLVMTokenType::get(ctx); })
       .Case("label", [&] { return LLVMLabelType::get(ctx); })
       .Case("metadata", [&] { return LLVMMetadataType::get(ctx); })
       .Case("func", [&] { return LLVMFunctionType::parse(parser); })
       .Case("ptr", [&] { return LLVMPointerType::parse(parser); })
+      .Case("vec", [&] { return parseVectorType(parser); })
       .Case("array", [&] { return LLVMArrayType::parse(parser); })
-      .Case("struct", [&] { return LLVMStructType::parse(parser); })
+      .Case("struct", [&] { return parseStructType(parser); })
       .Case("target", [&] { return LLVMTargetExtType::parse(parser); })
-      .Case("x86_amx", [&] { return LLVMX86AMXType::get(ctx); })
       .Default([&] {
         parser.emitError(keyLoc) << "unknown LLVM type: " << key;
         return Type();

@@ -15,6 +15,7 @@
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Value.h"
+#include "mlir/Support/LogicalResult.h"
 #include "toy/AST.h"
 #include "toy/Dialect.h"
 
@@ -104,7 +105,7 @@ private:
 
   /// Declare a variable in the current scope, return success if the variable
   /// wasn't declared yet.
-  llvm::LogicalResult declare(llvm::StringRef var, mlir::Value value) {
+  mlir::LogicalResult declare(llvm::StringRef var, mlir::Value value) {
     if (symbolTable.count(var))
       return mlir::failure();
     symbolTable.insert(var, value);
@@ -120,9 +121,9 @@ private:
     // Arguments type are uniformly unranked tensors.
     llvm::SmallVector<mlir::Type, 4> argTypes(proto.getArgs().size(),
                                               getType(VarType{}));
-    auto funcType = builder.getFunctionType(argTypes, /*results=*/{});
-    return mlir::toy::FuncOp::create(builder, location, proto.getName(),
-                                     funcType);
+    auto funcType = builder.getFunctionType(argTypes, std::nullopt);
+    return builder.create<mlir::toy::FuncOp>(location, proto.getName(),
+                                             funcType);
   }
 
   /// Emit a new function and add it to the MLIR module.
@@ -166,7 +167,7 @@ private:
     if (!entryBlock.empty())
       returnOp = dyn_cast<ReturnOp>(entryBlock.back());
     if (!returnOp) {
-      ReturnOp::create(builder, loc(funcAST.getProto()->loc()));
+      builder.create<ReturnOp>(loc(funcAST.getProto()->loc()));
     } else if (returnOp.hasOperand()) {
       // Otherwise, if this return operation has an operand then add a result to
       // the function.
@@ -202,9 +203,9 @@ private:
     // support '+' and '*'.
     switch (binop.getOp()) {
     case '+':
-      return AddOp::create(builder, location, lhs, rhs);
+      return builder.create<AddOp>(location, lhs, rhs);
     case '*':
-      return MulOp::create(builder, location, lhs, rhs);
+      return builder.create<MulOp>(location, lhs, rhs);
     }
 
     emitError(location, "invalid binary operator '") << binop.getOp() << "'";
@@ -224,7 +225,7 @@ private:
   }
 
   /// Emit a return operation. This will return failure if any generation fails.
-  llvm::LogicalResult mlirGen(ReturnExprAST &ret) {
+  mlir::LogicalResult mlirGen(ReturnExprAST &ret) {
     auto location = loc(ret.loc());
 
     // 'return' takes an optional expression, handle that case here.
@@ -235,8 +236,8 @@ private:
     }
 
     // Otherwise, this return operation has zero operands.
-    ReturnOp::create(builder, location,
-                     expr ? ArrayRef(expr) : ArrayRef<mlir::Value>());
+    builder.create<ReturnOp>(location,
+                             expr ? ArrayRef(expr) : ArrayRef<mlir::Value>());
     return mlir::success();
   }
 
@@ -264,7 +265,8 @@ private:
     // The attribute is a vector with a floating point value per element
     // (number) in the array, see `collectData()` below for more details.
     std::vector<double> data;
-    data.reserve(llvm::product_of(lit.getDims()));
+    data.reserve(std::accumulate(lit.getDims().begin(), lit.getDims().end(), 1,
+                                 std::multiplies<int>()));
     collectData(lit, data);
 
     // The type of this attribute is tensor of 64-bit floating-point with the
@@ -279,7 +281,7 @@ private:
 
     // Build the MLIR op `toy.constant`. This invokes the `ConstantOp::build`
     // method.
-    return ConstantOp::create(builder, loc(lit.loc()), type, dataAttribute);
+    return builder.create<ConstantOp>(loc(lit.loc()), type, dataAttribute);
   }
 
   /// Recursive helper function to accumulate the data that compose an array
@@ -324,29 +326,29 @@ private:
                             "does not accept multiple arguments");
         return nullptr;
       }
-      return TransposeOp::create(builder, location, operands[0]);
+      return builder.create<TransposeOp>(location, operands[0]);
     }
 
     // Otherwise this is a call to a user-defined function. Calls to
     // user-defined functions are mapped to a custom call that takes the callee
     // name as an attribute.
-    return GenericCallOp::create(builder, location, callee, operands);
+    return builder.create<GenericCallOp>(location, callee, operands);
   }
 
   /// Emit a print expression. It emits specific operations for two builtins:
   /// transpose(x) and print(x).
-  llvm::LogicalResult mlirGen(PrintExprAST &call) {
+  mlir::LogicalResult mlirGen(PrintExprAST &call) {
     auto arg = mlirGen(*call.getArg());
     if (!arg)
       return mlir::failure();
 
-    PrintOp::create(builder, loc(call.loc()), arg);
+    builder.create<PrintOp>(loc(call.loc()), arg);
     return mlir::success();
   }
 
   /// Emit a constant for a single number (FIXME: semantic? broadcast?)
   mlir::Value mlirGen(NumberExprAST &num) {
-    return ConstantOp::create(builder, loc(num.loc()), num.getValue());
+    return builder.create<ConstantOp>(loc(num.loc()), num.getValue());
   }
 
   /// Dispatch codegen for the right expression subclass using RTTI.
@@ -390,8 +392,8 @@ private:
     // with specific shape, we emit a "reshape" operation. It will get
     // optimized out later as needed.
     if (!vardecl.getType().shape.empty()) {
-      value = ReshapeOp::create(builder, loc(vardecl.loc()),
-                                getType(vardecl.getType()), value);
+      value = builder.create<ReshapeOp>(loc(vardecl.loc()),
+                                        getType(vardecl.getType()), value);
     }
 
     // Register the value in the symbol table.
@@ -401,7 +403,7 @@ private:
   }
 
   /// Codegen a list of expression, return failure if one of them hit an error.
-  llvm::LogicalResult mlirGen(ExprASTList &blockAST) {
+  mlir::LogicalResult mlirGen(ExprASTList &blockAST) {
     ScopedHashTableScope<StringRef, mlir::Value> varScope(symbolTable);
     for (auto &expr : blockAST) {
       // Specific handling for variable declarations, return statement, and

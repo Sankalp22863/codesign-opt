@@ -28,6 +28,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
+#include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -48,6 +49,7 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <iterator>
@@ -115,7 +117,7 @@ class CSKYConstantIslands : public MachineFunctionPass {
 
   /// NewWaterList - The subset of WaterList that was created since the
   /// previous iteration by inserting unconditional branches.
-  SmallPtrSet<MachineBasicBlock *, 4> NewWaterList;
+  SmallSet<MachineBasicBlock *, 4> NewWaterList;
 
   using water_iterator = std::vector<MachineBasicBlock *>::iterator;
 
@@ -183,8 +185,7 @@ class CSKYConstantIslands : public MachineFunctionPass {
   struct ImmBranch {
     MachineInstr *MI;
     unsigned MaxDisp : 31;
-    LLVM_PREFERRED_TYPE(bool)
-    unsigned IsCond : 1;
+    bool IsCond : 1;
     int UncondBr;
 
     ImmBranch(MachineInstr *Mi, unsigned Maxdisp, bool Cond, int Ubr)
@@ -216,8 +217,14 @@ public:
 
   bool runOnMachineFunction(MachineFunction &F) override;
 
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.addRequired<MachineDominatorTree>();
+    MachineFunctionPass::getAnalysisUsage(AU);
+  }
+
   MachineFunctionProperties getRequiredProperties() const override {
-    return MachineFunctionProperties().setNoVRegs();
+    return MachineFunctionProperties().set(
+        MachineFunctionProperties::Property::NoVRegs);
   }
 
   void doInitialPlacement(std::vector<MachineInstr *> &CPEMIs);

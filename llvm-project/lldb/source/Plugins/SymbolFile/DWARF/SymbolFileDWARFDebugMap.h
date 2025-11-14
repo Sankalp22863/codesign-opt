@@ -20,7 +20,6 @@
 
 #include "UniqueDWARFASTType.h"
 #include "lldb/Utility/StructuredData.h"
-#include "lldb/lldb-private-enumerations.h"
 
 class DWARFASTParserClang;
 
@@ -129,12 +128,11 @@ public:
   std::vector<std::unique_ptr<CallEdge>>
   ParseCallEdgesInFunction(UserID func_id) override;
 
-  void DumpClangAST(Stream &s, llvm::StringRef filter,
-                    bool show_color) override;
+  void DumpClangAST(Stream &s) override;
 
   /// List separate oso files.
-  bool GetSeparateDebugInfo(StructuredData::Dictionary &d, bool errors_only,
-                            bool load_all_debug_info = false) override;
+  bool GetSeparateDebugInfo(StructuredData::Dictionary &d,
+                            bool errors_only) override;
 
   // PluginInterface protocol
   llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
@@ -144,9 +142,6 @@ public:
 
   void
   GetCompileOptions(std::unordered_map<lldb::CompUnitSP, Args> &args) override;
-
-  llvm::Expected<SymbolContext>
-  ResolveFunctionCallLabel(FunctionCallLabel &label) override;
 
 protected:
   enum { kHaveInitializedOSOs = (1 << 0), kNumFlags };
@@ -238,11 +233,17 @@ protected:
 
   SymbolFileDWARF *GetSymbolFileByOSOIndex(uint32_t oso_idx);
 
-  /// If closure returns \ref IterationAction::Continue, iteration
-  /// continues. Otherwise, iteration terminates.
-  void
-  ForEachSymbolFile(std::string description,
-                    std::function<IterationAction(SymbolFileDWARF &)> closure);
+  // If closure returns "false", iteration continues.  If it returns
+  // "true", iteration terminates.
+  void ForEachSymbolFile(std::function<bool(SymbolFileDWARF *)> closure) {
+    for (uint32_t oso_idx = 0, num_oso_idxs = m_compile_unit_infos.size();
+         oso_idx < num_oso_idxs; ++oso_idx) {
+      if (SymbolFileDWARF *oso_dwarf = GetSymbolFileByOSOIndex(oso_idx)) {
+        if (closure(oso_dwarf))
+          return;
+      }
+    }
+  }
 
   CompileUnitInfo *GetCompileUnitInfoForSymbolWithIndex(uint32_t symbol_idx,
                                                         uint32_t *oso_idx_ptr);
@@ -274,22 +275,15 @@ protected:
 
   CompileUnitInfo *GetCompileUnitInfo(SymbolFileDWARF *oso_dwarf);
 
-  DWARFDIE FindDefinitionDIE(const DWARFDIE &die);
+  lldb::TypeSP FindDefinitionTypeForDWARFDeclContext(const DWARFDIE &die);
+
+  bool Supports_DW_AT_APPLE_objc_complete_type(SymbolFileDWARF *skip_dwarf_oso);
 
   lldb::TypeSP FindCompleteObjCDefinitionTypeForDIE(
       const DWARFDIE &die, ConstString type_name, bool must_be_implementation);
 
-  llvm::DenseMap<lldb::opaque_compiler_type_t, DIERef> &
-  GetForwardDeclCompilerTypeToDIE() {
-    return m_forward_decl_compiler_type_to_die;
-  }
-
   UniqueDWARFASTTypeMap &GetUniqueDWARFASTTypeMap() {
     return m_unique_ast_type_map;
-  }
-
-  llvm::DenseMap<const DWARFDebugInfoEntry *, Type *> &GetDIEToType() {
-    return m_die_to_type;
   }
 
   // OSOEntry
@@ -325,13 +319,8 @@ protected:
   std::vector<uint32_t> m_func_indexes; // Sorted by address
   std::vector<uint32_t> m_glob_indexes;
   std::map<std::pair<ConstString, llvm::sys::TimePoint<>>, OSOInfoSP> m_oso_map;
-  // A map from CompilerType to the struct/class/union/enum DIE (might be a
-  // declaration or a definition) that is used to construct it.
-  llvm::DenseMap<lldb::opaque_compiler_type_t, DIERef>
-      m_forward_decl_compiler_type_to_die;
   UniqueDWARFASTTypeMap m_unique_ast_type_map;
-  llvm::DenseMap<const DWARFDebugInfoEntry *, Type *> m_die_to_type;
-
+  LazyBool m_supports_DW_AT_APPLE_objc_complete_type;
   DebugMap m_debug_map;
 
   // When an object file from the debug map gets parsed in

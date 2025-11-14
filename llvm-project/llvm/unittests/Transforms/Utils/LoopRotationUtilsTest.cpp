@@ -16,7 +16,6 @@
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
 #include "llvm/Support/SourceMgr.h"
 #include "gtest/gtest.h"
 
@@ -79,7 +78,7 @@ deopt.exit:
   LoopInfo LI(DT);
   AssumptionCache AC(*F);
   TargetTransformInfo TTI(M->getDataLayout());
-  TargetLibraryInfoImpl TLII(M->getTargetTriple());
+  TargetLibraryInfoImpl TLII;
   TargetLibraryInfo TLI(TLII);
   ScalarEvolution SE(*F, TLI, AC, DT, LI);
   SimplifyQuery SQ(M->getDataLayout());
@@ -150,7 +149,7 @@ deopt.exit:
   LoopInfo LI(DT);
   AssumptionCache AC(*F);
   TargetTransformInfo TTI(M->getDataLayout());
-  TargetLibraryInfoImpl TLII(M->getTargetTriple());
+  TargetLibraryInfoImpl TLII;
   TargetLibraryInfo TLI(TLII);
   ScalarEvolution SE(*F, TLI, AC, DT, LI);
   SimplifyQuery SQ(M->getDataLayout());

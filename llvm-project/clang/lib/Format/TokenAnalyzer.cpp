@@ -22,10 +22,13 @@
 #include "UnwrappedLineParser.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticOptions.h"
+#include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Format/Format.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Debug.h"
+#include <type_traits>
 
 #define DEBUG_TYPE "format-formatter"
 
@@ -81,7 +84,7 @@ Environment::Environment(StringRef Code, StringRef FileName,
       NextStartColumn(NextStartColumn), LastStartColumn(LastStartColumn) {}
 
 TokenAnalyzer::TokenAnalyzer(const Environment &Env, const FormatStyle &Style)
-    : Style(Style), LangOpts(getFormattingLangOpts(Style)), Env(Env),
+    : Style(Style), Env(Env),
       AffectedRangeMgr(Env.getSourceManager(), Env.getCharRanges()),
       UnwrappedLines(1),
       Encoding(encoding::detectEncoding(
@@ -98,12 +101,12 @@ std::pair<tooling::Replacements, unsigned>
 TokenAnalyzer::process(bool SkipAnnotation) {
   tooling::Replacements Result;
   llvm::SpecificBumpPtrAllocator<FormatToken> Allocator;
-  IdentifierTable IdentTable(LangOpts);
+  IdentifierTable IdentTable(getFormattingLangOpts(Style));
   FormatTokenLexer Lex(Env.getSourceManager(), Env.getFileID(),
                        Env.getFirstStartColumn(), Style, Encoding, Allocator,
                        IdentTable);
   ArrayRef<FormatToken *> Toks(Lex.lex());
-  SmallVector<FormatToken *, 10> Tokens(Toks);
+  SmallVector<FormatToken *, 10> Tokens(Toks.begin(), Toks.end());
   UnwrappedLineParser Parser(Env.getSourceManager(), Style, Lex.getKeywords(),
                              Env.getFirstStartColumn(), Tokens, *this,
                              Allocator, IdentTable);

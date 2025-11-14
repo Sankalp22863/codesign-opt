@@ -40,29 +40,34 @@ class MCSectionWasm final : public MCSection {
   // For data sections, whether to use a passive segment
   bool IsPassive = false;
 
-  bool IsWasmData;
-
-  bool IsMetadata;
-
   // For data sections, bitfield of WasmSegmentFlag
   unsigned SegmentFlags;
 
   // The storage of Name is owned by MCContext's WasmUniquingMap.
   friend class MCContext;
-  friend class MCAsmInfoWasm;
   MCSectionWasm(StringRef Name, SectionKind K, unsigned SegmentFlags,
                 const MCSymbolWasm *Group, unsigned UniqueID, MCSymbol *Begin)
-      : MCSection(Name, K.isText(), /*IsVirtual=*/false, Begin),
-        UniqueID(UniqueID), Group(Group),
-        IsWasmData(K.isReadOnly() || K.isWriteable()),
-        IsMetadata(K.isMetadata()), SegmentFlags(SegmentFlags) {}
+      : MCSection(SV_Wasm, Name, K, Begin), UniqueID(UniqueID), Group(Group),
+        SegmentFlags(SegmentFlags) {}
 
 public:
+  /// Decides whether a '.section' directive should be printed before the
+  /// section name
+  bool shouldOmitSectionDirective(StringRef Name, const MCAsmInfo &MAI) const;
+
   const MCSymbolWasm *getGroup() const { return Group; }
   unsigned getSegmentFlags() const { return SegmentFlags; }
 
-  bool isWasmData() const { return IsWasmData; }
-  bool isMetadata() const { return IsMetadata; }
+  void printSwitchToSection(const MCAsmInfo &MAI, const Triple &T,
+                            raw_ostream &OS,
+                            const MCExpr *Subsection) const override;
+  bool useCodeAlign() const override;
+  bool isVirtualSection() const override;
+
+  bool isWasmData() const {
+    return Kind.isGlobalWriteableData() || Kind.isReadOnly() ||
+           Kind.isThreadLocal();
+  }
 
   bool isUnique() const { return UniqueID != ~0U; }
   unsigned getUniqueID() const { return UniqueID; }
@@ -81,6 +86,7 @@ public:
     assert(isWasmData());
     IsPassive = V;
   }
+  static bool classof(const MCSection *S) { return S->getVariant() == SV_Wasm; }
 };
 
 } // end namespace llvm

@@ -6,15 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "include/llvm-libc-macros/stdfix-macros.h"
 #include "src/__support/CPP/type_traits.h"
-#include "src/__support/macros/config.h"
 #include "test/UnitTest/Test.h"
 
 // TODO: Split this file if it becomes too big.
 
-namespace LIBC_NAMESPACE_DECL {
-namespace cpp {
+namespace LIBC_NAMESPACE::cpp {
 
 class Class {};
 union Union {};
@@ -113,15 +110,6 @@ TEST(LlvmLibcTypeTraitsTest, add_rvalue_reference_void) {
       (is_same_v<add_rvalue_reference_t<volatile void>, volatile void>));
   EXPECT_TRUE((is_same_v<add_rvalue_reference_t<const volatile void>,
                          const volatile void>));
-}
-
-TEST(LlvmLibcTypeTraitsTest, aligned_storage) {
-  struct S {
-    int a, b;
-  };
-  aligned_storage_t<sizeof(S), alignof(S)> buf;
-  EXPECT_EQ(alignof(decltype(buf)), alignof(S));
-  EXPECT_EQ(sizeof(buf), sizeof(S));
 }
 
 TEST(LlvmLibcTypeTraitsTest, bool_constant) {
@@ -410,37 +398,7 @@ TEST(LlvmLibcTypeTraitsTest, is_object) {
 
 // TODO is_scalar
 
-TEST(LlvmLibcTypeTraitsTest, is_signed) {
-  EXPECT_TRUE((is_signed_v<int>));
-  EXPECT_TRUE((is_signed_v<long>));
-  EXPECT_TRUE((is_signed_v<long long>));
-  EXPECT_FALSE((is_signed_v<unsigned int>));
-  EXPECT_FALSE((is_signed_v<unsigned long>));
-  EXPECT_FALSE((is_signed_v<unsigned long long>));
-  EXPECT_TRUE((is_signed_v<float>));
-  EXPECT_TRUE((is_signed_v<double>));
-  EXPECT_TRUE((is_signed_v<long double>));
-
-#ifdef LIBC_COMPILER_HAS_FIXED_POINT
-  // for fixed point types
-  EXPECT_TRUE((is_signed_v<fract>));
-  EXPECT_FALSE((is_signed_v<unsigned fract>));
-  EXPECT_TRUE((is_signed_v<accum>));
-  EXPECT_FALSE((is_signed_v<unsigned accum>));
-  EXPECT_TRUE((is_signed_v<sat fract>));
-  EXPECT_FALSE((is_signed_v<unsigned sat fract>));
-  EXPECT_TRUE((is_signed_v<sat accum>));
-  EXPECT_FALSE((is_signed_v<unsigned sat accum>));
-  EXPECT_TRUE((is_signed_v<short fract>));
-  EXPECT_FALSE((is_signed_v<unsigned short fract>));
-  EXPECT_TRUE((is_signed_v<short accum>));
-  EXPECT_FALSE((is_signed_v<unsigned short accum>));
-  EXPECT_TRUE((is_signed_v<long fract>));
-  EXPECT_FALSE((is_signed_v<unsigned long fract>));
-  EXPECT_TRUE((is_signed_v<long accum>));
-  EXPECT_FALSE((is_signed_v<unsigned long accum>));
-#endif
-}
+// TODO is_signed
 
 // TODO is_trivially_constructible
 
@@ -450,37 +408,7 @@ TEST(LlvmLibcTypeTraitsTest, is_signed) {
 
 // TODO is_union
 
-TEST(LlvmLibcTypeTraitsTest, is_unsigned) {
-  EXPECT_FALSE((is_unsigned_v<int>));
-  EXPECT_FALSE((is_unsigned_v<long>));
-  EXPECT_FALSE((is_unsigned_v<long long>));
-  EXPECT_TRUE((is_unsigned_v<unsigned int>));
-  EXPECT_TRUE((is_unsigned_v<unsigned long>));
-  EXPECT_TRUE((is_unsigned_v<unsigned long long>));
-  EXPECT_FALSE((is_unsigned_v<float>));
-  EXPECT_FALSE((is_unsigned_v<double>));
-  EXPECT_FALSE((is_unsigned_v<long double>));
-
-#ifdef LIBC_COMPILER_HAS_FIXED_POINT
-  // for fixed point types
-  EXPECT_FALSE((is_unsigned_v<fract>));
-  EXPECT_TRUE((is_unsigned_v<unsigned fract>));
-  EXPECT_FALSE((is_unsigned_v<accum>));
-  EXPECT_TRUE((is_unsigned_v<unsigned accum>));
-  EXPECT_FALSE((is_unsigned_v<sat fract>));
-  EXPECT_TRUE((is_unsigned_v<unsigned sat fract>));
-  EXPECT_FALSE((is_unsigned_v<sat accum>));
-  EXPECT_TRUE((is_unsigned_v<unsigned sat accum>));
-  EXPECT_FALSE((is_unsigned_v<short fract>));
-  EXPECT_TRUE((is_unsigned_v<unsigned short fract>));
-  EXPECT_FALSE((is_unsigned_v<short accum>));
-  EXPECT_TRUE((is_unsigned_v<unsigned short accum>));
-  EXPECT_FALSE((is_unsigned_v<long fract>));
-  EXPECT_TRUE((is_unsigned_v<unsigned long fract>));
-  EXPECT_FALSE((is_unsigned_v<long accum>));
-  EXPECT_TRUE((is_unsigned_v<unsigned long accum>));
-#endif
-}
+// TODO is_unsigned
 
 // TODO is_void
 
@@ -500,31 +428,8 @@ TEST(LlvmLibcTypeTraitsTest, is_unsigned) {
 
 TEST(LlvmLibcTypeTraitsTest, true_type) { EXPECT_TRUE((true_type::value)); }
 
-struct CompilerLeadingPadded {
-  char b;
-  int a;
-};
-
-struct CompilerTrailingPadded {
-  int a;
-  char b;
-};
-
-struct alignas(long long) ManuallyPadded {
-  int b;
-  char padding[sizeof(long long) - sizeof(int)];
-};
-
-TEST(LlvmLibcTypeTraitsTest, has_unique_object_representations) {
-  EXPECT_TRUE(has_unique_object_representations<int>::value);
-  EXPECT_FALSE(has_unique_object_representations_v<CompilerLeadingPadded>);
-  EXPECT_FALSE(has_unique_object_representations_v<CompilerTrailingPadded>);
-  EXPECT_TRUE(has_unique_object_representations_v<ManuallyPadded>);
-}
-
 // TODO type_identity
 
 // TODO void_t
 
-} // namespace cpp
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE::cpp

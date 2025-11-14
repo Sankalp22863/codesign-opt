@@ -57,13 +57,12 @@ enum ID {
 };
 
 namespace rc_opt {
-#define OPTTABLE_STR_TABLE_CODE
+#define PREFIX(NAME, VALUE)                                                    \
+  static constexpr StringLiteral NAME##_init[] = VALUE;                        \
+  static constexpr ArrayRef<StringLiteral> NAME(NAME##_init,                   \
+                                                std::size(NAME##_init) - 1);
 #include "Opts.inc"
-#undef OPTTABLE_STR_TABLE_CODE
-
-#define OPTTABLE_PREFIXES_TABLE_CODE
-#include "Opts.inc"
-#undef OPTTABLE_PREFIXES_TABLE_CODE
+#undef PREFIX
 
 static constexpr opt::OptTable::Info InfoTable[] = {
 #define OPTION(...) LLVM_CONSTRUCT_OPT_INFO(__VA_ARGS__),
@@ -74,10 +73,7 @@ static constexpr opt::OptTable::Info InfoTable[] = {
 
 class RcOptTable : public opt::GenericOptTable {
 public:
-  RcOptTable()
-      : GenericOptTable(rc_opt::OptionStrTable, rc_opt::OptionPrefixesTable,
-                        rc_opt::InfoTable,
-                        /* IgnoreCase = */ true) {}
+  RcOptTable() : GenericOptTable(rc_opt::InfoTable, /* IgnoreCase = */ true) {}
 };
 
 enum Windres_ID {
@@ -88,13 +84,12 @@ enum Windres_ID {
 };
 
 namespace windres_opt {
-#define OPTTABLE_STR_TABLE_CODE
+#define PREFIX(NAME, VALUE)                                                    \
+  static constexpr StringLiteral NAME##_init[] = VALUE;                        \
+  static constexpr ArrayRef<StringLiteral> NAME(NAME##_init,                   \
+                                                std::size(NAME##_init) - 1);
 #include "WindresOpts.inc"
-#undef OPTTABLE_STR_TABLE_CODE
-
-#define OPTTABLE_PREFIXES_TABLE_CODE
-#include "WindresOpts.inc"
-#undef OPTTABLE_PREFIXES_TABLE_CODE
+#undef PREFIX
 
 static constexpr opt::OptTable::Info InfoTable[] = {
 #define OPTION(...)                                                            \
@@ -107,10 +102,7 @@ static constexpr opt::OptTable::Info InfoTable[] = {
 class WindresOptTable : public opt::GenericOptTable {
 public:
   WindresOptTable()
-      : GenericOptTable(windres_opt::OptionStrTable,
-                        windres_opt::OptionPrefixesTable,
-                        windres_opt::InfoTable,
-                        /* IgnoreCase = */ false) {}
+      : GenericOptTable(windres_opt::InfoTable, /* IgnoreCase = */ false) {}
 };
 
 static ExitOnError ExitOnErr;
@@ -201,7 +193,7 @@ std::string getMingwTriple() {
   Triple T(sys::getDefaultTargetTriple());
   if (!isUsableArch(T.getArch()))
     T.setArch(getDefaultFallbackArch());
-  if (T.isOSCygMing())
+  if (T.isWindowsGNUEnvironment())
     return T.str();
   // Write out the literal form of the vendor/env here, instead of
   // constructing them with enum values (which end up with them in
@@ -266,7 +258,8 @@ void preprocess(StringRef Src, StringRef Dst, const RcOptions &Opts,
       }
     }
   }
-  llvm::append_range(Args, Opts.PreprocessArgs);
+  for (const auto &S : Opts.PreprocessArgs)
+    Args.push_back(S);
   Args.push_back(Src);
   Args.push_back("-o");
   Args.push_back(Dst);
@@ -371,7 +364,7 @@ RcOptions parseWindresOptions(ArrayRef<const char *> ArgsArr,
   }
 
   std::vector<std::string> FileArgs = InputArgs.getAllArgValues(WINDRES_INPUT);
-  llvm::append_range(FileArgs, InputArgsArray);
+  FileArgs.insert(FileArgs.end(), InputArgsArray.begin(), InputArgsArray.end());
 
   if (InputArgs.hasArg(WINDRES_input)) {
     Opts.InputFile = InputArgs.getLastArgValue(WINDRES_input).str();
@@ -519,7 +512,8 @@ RcOptions parseRcOptions(ArrayRef<const char *> ArgsArr,
   }
 
   std::vector<std::string> InArgsInfo = InputArgs.getAllArgValues(OPT_INPUT);
-  llvm::append_range(InArgsInfo, InputArgsArray);
+  InArgsInfo.insert(InArgsInfo.end(), InputArgsArray.begin(),
+                    InputArgsArray.end());
   if (InArgsInfo.size() != 1) {
     fatalError("Exactly one input file should be provided.");
   }
@@ -609,7 +603,7 @@ void doRc(std::string Src, std::string Dest, RcOptions &Opts,
 
   // Read and tokenize the input file.
   ErrorOr<std::unique_ptr<MemoryBuffer>> File =
-      MemoryBuffer::getFile(PreprocessedFile, /*IsText=*/true);
+      MemoryBuffer::getFile(PreprocessedFile);
   if (!File) {
     fatalError("Error opening file '" + Twine(PreprocessedFile) +
                "': " + File.getError().message());
@@ -619,8 +613,7 @@ void doRc(std::string Src, std::string Dest, RcOptions &Opts,
   StringRef Contents = FileContents->getBuffer();
 
   std::string FilteredContents = filterCppOutput(Contents);
-  std::vector<RCToken> Tokens =
-      ExitOnErr(tokenizeRC(FilteredContents, Opts.IsWindres));
+  std::vector<RCToken> Tokens = ExitOnErr(tokenizeRC(FilteredContents));
 
   if (Opts.BeVerbose) {
     const Twine TokenNames[] = {
@@ -689,7 +682,7 @@ void doCvtres(std::string Src, std::string Dest, std::string TargetTriple) {
   object::WindowsResourceParser Parser;
 
   ErrorOr<std::unique_ptr<MemoryBuffer>> BufferOrErr =
-      MemoryBuffer::getFile(Src, /*IsText=*/true);
+      MemoryBuffer::getFile(Src);
   if (!BufferOrErr)
     fatalError("Error opening file '" + Twine(Src) +
                "': " + BufferOrErr.getError().message());
@@ -717,10 +710,7 @@ void doCvtres(std::string Src, std::string Dest, std::string TargetTriple) {
     MachineType = COFF::IMAGE_FILE_MACHINE_ARMNT;
     break;
   case Triple::aarch64:
-    if (T.isWindowsArm64EC())
-      MachineType = COFF::IMAGE_FILE_MACHINE_ARM64EC;
-    else
-      MachineType = COFF::IMAGE_FILE_MACHINE_ARM64;
+    MachineType = COFF::IMAGE_FILE_MACHINE_ARM64;
     break;
   default:
     fatalError("Unsupported architecture in target '" + Twine(TargetTriple) +

@@ -130,9 +130,9 @@ class GdbRemoteTestCaseBase(Base, metaclass=GdbRemoteTestCaseFactory):
         self.stub_sends_two_stop_notifications_on_kill = False
         if configuration.lldb_platform_url:
             if configuration.lldb_platform_url.startswith("unix-"):
-                url_pattern = r"(.+)://\[?(.+?)\]?/.*"
+                url_pattern = "(.+)://\[?(.+?)\]?/.*"
             else:
-                url_pattern = r"(.+)://(.+):\d+"
+                url_pattern = "(.+)://(.+):\d+"
             scheme, host = re.match(
                 url_pattern, configuration.lldb_platform_url
             ).groups()
@@ -185,9 +185,7 @@ class GdbRemoteTestCaseBase(Base, metaclass=GdbRemoteTestCaseFactory):
             ]
 
     def get_next_port(self):
-        if available_ports := self.getPlatformAvailablePorts():
-            return random.choice(available_ports)
-        return 12000 + random.randint(0, 7999)
+        return 12000 + random.randint(0, 3999)
 
     def reset_test_sequence(self):
         self.test_sequence = GdbRemoteTestSequence(self.logger)
@@ -251,11 +249,14 @@ class GdbRemoteTestCaseBase(Base, metaclass=GdbRemoteTestCaseFactory):
 
     def _verify_socket(self, sock):
         # Normally, when the remote stub is not ready, we will get ECONNREFUSED during the
-        # connect() attempt. However, due to the way how port forwarding can work, on some targets
+        # connect() attempt. However, due to the way how ADB forwarding works, on android targets
         # the connect() will always be successful, but the connection will be immediately dropped
-        # if we could not connect on the remote side. This function tries to detect this
+        # if ADB could not connect on the remote side. This function tries to detect this
         # situation, and report it as "connection refused" so that the upper layers attempt the
         # connection again.
+        triple = self.dbg.GetSelectedPlatform().GetTriple()
+        if not re.match(".*-.*-.*-android", triple):
+            return  # Not android.
         can_read, _, _ = select.select([sock], [], [], 0.1)
         if sock not in can_read:
             return  # Data is not available, but the connection is alive.
@@ -387,8 +388,7 @@ class GdbRemoteTestCaseBase(Base, metaclass=GdbRemoteTestCaseFactory):
         # We're using a random port algorithm to try not to collide with other ports,
         # and retry a max # times.
         attempts = 0
-        MAX_ATTEMPTS = 10
-        attempt_wait = 3
+        MAX_ATTEMPTS = 20
 
         while attempts < MAX_ATTEMPTS:
             server = self.launch_debug_monitor(attach_pid=attach_pid)
@@ -396,13 +396,13 @@ class GdbRemoteTestCaseBase(Base, metaclass=GdbRemoteTestCaseFactory):
             # Schedule debug monitor to be shut down during teardown.
             logger = self.logger
 
-            connect_attempts = 0
+            connect_attemps = 0
             MAX_CONNECT_ATTEMPTS = 10
 
-            while connect_attempts < MAX_CONNECT_ATTEMPTS:
+            while connect_attemps < MAX_CONNECT_ATTEMPTS:
                 # Create a socket to talk to the server
                 try:
-                    logger.info("Connect attempt %d", connect_attempts + 1)
+                    logger.info("Connect attempt %d", connect_attemps + 1)
                     self.sock = self.create_socket()
                     self._server = Server(self.sock, server)
                     return server
@@ -410,7 +410,7 @@ class GdbRemoteTestCaseBase(Base, metaclass=GdbRemoteTestCaseFactory):
                     # Ignore, and try again.
                     pass
                 time.sleep(0.5)
-                connect_attempts += 1
+                connect_attemps += 1
 
             # We should close the server here to be safe.
             server.terminate()
@@ -424,8 +424,7 @@ class GdbRemoteTestCaseBase(Base, metaclass=GdbRemoteTestCaseFactory):
 
             # And wait a random length of time before next attempt, to avoid
             # collisions.
-            time.sleep(attempt_wait)
-            attempt_wait *= 1.2
+            time.sleep(random.randint(1, 5))
 
             # Now grab a new port number.
             self.port = self.get_next_port()
@@ -444,20 +443,13 @@ class GdbRemoteTestCaseBase(Base, metaclass=GdbRemoteTestCaseFactory):
         if not exe_path:
             exe_path = self.getBuildArtifact("a.out")
 
-        # This file will be created once the inferior has enabled attaching.
-        sync_file_path = lldbutil.append_to_process_working_directory(
-            self, "process_ready"
-        )
-        args = [f"syncfile:{sync_file_path}"]
+        args = []
         if inferior_args:
             args.extend(inferior_args)
         if sleep_seconds:
             args.append("sleep:%d" % sleep_seconds)
 
-        inferior = self.spawnSubprocess(exe_path, args)
-        lldbutil.wait_for_file_on_target(self, sync_file_path)
-
-        return inferior
+        return self.spawnSubprocess(exe_path, args)
 
     def prep_debug_monitor_and_inferior(
         self,
@@ -691,7 +683,7 @@ class GdbRemoteTestCaseBase(Base, metaclass=GdbRemoteTestCaseFactory):
         self.assertTrue("name" in reg_info)
         self.assertTrue("bitsize" in reg_info)
 
-        if not (self.getArchitecture() == "aarch64" or self.isRISCV()):
+        if not self.getArchitecture() == "aarch64":
             self.assertTrue("offset" in reg_info)
 
         self.assertTrue("encoding" in reg_info)
@@ -929,9 +921,6 @@ class GdbRemoteTestCaseBase(Base, metaclass=GdbRemoteTestCaseFactory):
         "qSaveCore",
         "native-signals",
         "QNonStop",
-        "SupportedWatchpointTypes",
-        "SupportedCompressions",
-        "MultiMemRead",
     ]
 
     def parse_qSupported_response(self, context):
@@ -1417,17 +1406,7 @@ class GdbRemoteTestCaseBase(Base, metaclass=GdbRemoteTestCaseFactory):
             p_response = context.get("p_response")
             self.assertIsNotNone(p_response)
             self.assertTrue(len(p_response) > 0)
-
-            # on x86 Darwin, 4 GPR registers are often
-            # unavailable, this is expected and correct.
-            if (
-                self.getArchitecture() == "x86_64"
-                and self.platformIsDarwin()
-                and p_response[0] == "E"
-            ):
-                values[reg_index] = 0
-            else:
-                self.assertFalse(p_response[0] == "E")
+            self.assertFalse(p_response[0] == "E")
 
             values[reg_index] = unpack_register_hex_unsigned(endian, p_response)
 

@@ -125,9 +125,6 @@ bool SUnit::addPred(const SDep &D, bool Required) {
           }
         }
         PredDep.setLatency(D.getLatency());
-        // Changing latency, dirty the involved SUnits.
-        this->setDepthDirty();
-        D.getSUnit()->setHeightDirty();
       }
       return false;
     }
@@ -167,8 +164,10 @@ bool SUnit::addPred(const SDep &D, bool Required) {
   }
   Preds.push_back(D);
   N->Succs.push_back(P);
-  this->setDepthDirty();
-  N->setHeightDirty();
+  if (P.getLatency() != 0) {
+    this->setDepthDirty();
+    N->setHeightDirty();
+  }
   return true;
 }
 
@@ -210,8 +209,10 @@ void SUnit::removePred(const SDep &D) {
   }
   N->Succs.erase(Succ);
   Preds.erase(I);
-  this->setDepthDirty();
-  N->setHeightDirty();
+  if (P.getLatency() != 0) {
+    this->setDepthDirty();
+    N->setHeightDirty();
+  }
 }
 
 void SUnit::setDepthDirty() {
@@ -330,10 +331,8 @@ void SUnit::biasCriticalPath() {
   unsigned MaxDepth = BestI->getSUnit()->getDepth();
   for (SUnit::pred_iterator I = std::next(BestI), E = Preds.end(); I != E;
        ++I) {
-    if (I->getKind() == SDep::Data && I->getSUnit()->getDepth() > MaxDepth) {
-      MaxDepth = I->getSUnit()->getDepth();
+    if (I->getKind() == SDep::Data && I->getSUnit()->getDepth() > MaxDepth)
       BestI = I;
-    }
   }
   if (BestI != Preds.begin())
     std::swap(*Preds.begin(), *BestI);
@@ -365,9 +364,6 @@ LLVM_DUMP_METHOD void ScheduleDAG::dumpNodeName(const SUnit &SU) const {
 LLVM_DUMP_METHOD void ScheduleDAG::dumpNodeAll(const SUnit &SU) const {
   dumpNode(SU);
   SU.dumpAttributes();
-  if (SU.ParentClusterIdx != InvalidClusterId)
-    dbgs() << "  Parent Cluster Index: " << SU.ParentClusterIdx << '\n';
-
   if (SU.Preds.size() > 0) {
     dbgs() << "  Predecessors:\n";
     for (const SDep &Dep : SU.Preds) {

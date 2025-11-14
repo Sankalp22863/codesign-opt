@@ -32,7 +32,6 @@
 #include <semaphore.h>
 #include <signal.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <sys/ethernet.h>
 #include <sys/filio.h>
 #include <sys/ipc.h>
@@ -135,8 +134,6 @@ namespace __sanitizer {
 
   unsigned struct_sioc_sg_req_sz = sizeof(struct sioc_sg_req);
   unsigned struct_sioc_vif_req_sz = sizeof(struct sioc_vif_req);
-
-  unsigned fpos_t_sz = sizeof(fpos_t);
 
   const unsigned IOCTL_NOT_PRESENT = 0;
 

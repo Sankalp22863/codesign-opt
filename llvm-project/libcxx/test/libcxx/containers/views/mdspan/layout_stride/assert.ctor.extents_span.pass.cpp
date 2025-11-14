@@ -30,9 +30,8 @@
 //
 // Effects: Direct-non-list-initializes extents_ with e, and for all d in the range [0, rank_), direct-non-list-initializes strides_[d] with as_const(s[d]).
 
-#include <cassert>
 #include <mdspan>
-#include <span>
+#include <cassert>
 
 #include "check_assertion.h"
 
@@ -45,8 +44,7 @@ int main(int, char**) {
     TEST_LIBCPP_ASSERT_FAILURE(
         ([=] {
           std::array<int, 2> strides{20, 1};
-          std::layout_stride::mapping<std::extents<signed char, D, 5>> m(
-              std::extents<signed char, D, 5>(20), std::span(strides));
+          std::layout_stride::mapping<std::extents<char, D, 5>> m(std::extents<char, D, 5>(20), std::span(strides));
         }()),
         "layout_stride::mapping ctor: required span size is not representable as index_type.");
 

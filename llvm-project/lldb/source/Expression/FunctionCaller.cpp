@@ -6,9 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+
 #include "lldb/Expression/FunctionCaller.h"
 #include "lldb/Core/Module.h"
-#include "lldb/Core/Progress.h"
+#include "lldb/Core/ValueObject.h"
+#include "lldb/Core/ValueObjectList.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/IRExecutionUnit.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
@@ -22,12 +24,9 @@
 #include "lldb/Target/ThreadPlan.h"
 #include "lldb/Target/ThreadPlanCallFunction.h"
 #include "lldb/Utility/DataExtractor.h"
-#include "lldb/Utility/ErrorMessages.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/State.h"
-#include "lldb/ValueObject/ValueObject.h"
-#include "lldb/ValueObject/ValueObjectList.h"
 
 using namespace lldb_private;
 
@@ -68,25 +67,27 @@ bool FunctionCaller::WriteFunctionWrapper(
   Process *process = exe_ctx.GetProcessPtr();
 
   if (!process) {
-    diagnostic_manager.Printf(lldb::eSeverityError, "no process.");
+    diagnostic_manager.Printf(eDiagnosticSeverityError, "no process.");
     return false;
   }
   
   lldb::ProcessSP jit_process_sp(m_jit_process_wp.lock());
 
   if (process != jit_process_sp.get()) {
-    diagnostic_manager.Printf(lldb::eSeverityError,
-                              "process does not match the stored process.");
+    diagnostic_manager.Printf(eDiagnosticSeverityError,
+                             "process does not match the stored process.");
     return false;
   }
     
   if (process->GetState() != lldb::eStateStopped) {
-    diagnostic_manager.Printf(lldb::eSeverityError, "process is not stopped");
+    diagnostic_manager.Printf(eDiagnosticSeverityError, 
+                              "process is not stopped");
     return false;
   }
 
   if (!m_compiled) {
-    diagnostic_manager.Printf(lldb::eSeverityError, "function not compiled");
+    diagnostic_manager.Printf(eDiagnosticSeverityError, 
+                              "function not compiled");
     return false;
   }
   
@@ -100,7 +101,7 @@ bool FunctionCaller::WriteFunctionWrapper(
       can_interpret, eExecutionPolicyAlways));
 
   if (!jit_error.Success()) {
-    diagnostic_manager.Printf(lldb::eSeverityError,
+    diagnostic_manager.Printf(eDiagnosticSeverityError,
                               "Error in PrepareForExecution: %s.",
                               jit_error.AsCString());
     return false;
@@ -143,7 +144,7 @@ bool FunctionCaller::WriteFunctionArguments(
   // All the information to reconstruct the struct is provided by the
   // StructExtractor.
   if (!m_struct_valid) {
-    diagnostic_manager.PutString(lldb::eSeverityError,
+    diagnostic_manager.PutString(eDiagnosticSeverityError,
                                  "Argument information was not correctly "
                                  "parsed, so the function cannot be called.");
     return false;
@@ -171,8 +172,10 @@ bool FunctionCaller::WriteFunctionArguments(
     m_wrapper_args_addrs.push_back(args_addr_ref);
   } else {
     // Make sure this is an address that we've already handed out.
-    if (!llvm::is_contained(m_wrapper_args_addrs, args_addr_ref))
+    if (find(m_wrapper_args_addrs.begin(), m_wrapper_args_addrs.end(),
+             args_addr_ref) == m_wrapper_args_addrs.end()) {
       return false;
+    }
   }
 
   // TODO: verify fun_addr needs to be a callable address
@@ -189,7 +192,7 @@ bool FunctionCaller::WriteFunctionArguments(
   size_t num_args = arg_values.GetSize();
   if (num_args != m_arg_values.GetSize()) {
     diagnostic_manager.Printf(
-        lldb::eSeverityError,
+        eDiagnosticSeverityError,
         "Wrong number of arguments - was: %" PRIu64 " should be: %" PRIu64 "",
         (uint64_t)num_args, (uint64_t)m_arg_values.GetSize());
     return false;
@@ -228,11 +231,11 @@ bool FunctionCaller::InsertFunction(ExecutionContext &exe_ctx,
   // the caller, we need to be stopped.
   Process *process = exe_ctx.GetProcessPtr();
   if (!process) {
-    diagnostic_manager.PutString(lldb::eSeverityError, "no process");
+    diagnostic_manager.PutString(eDiagnosticSeverityError, "no process");
     return false;
   }
   if (process->GetState() != lldb::eStateStopped) {
-    diagnostic_manager.PutString(lldb::eSeverityError, "process running");
+    diagnostic_manager.PutString(eDiagnosticSeverityError, "process running");
     return false;
   }
   if (CompileFunction(exe_ctx.GetThreadSP(), diagnostic_manager) != 0)
@@ -264,7 +267,8 @@ lldb::ThreadPlanSP FunctionCaller::GetThreadPlanToCallFunction(
   Thread *thread = exe_ctx.GetThreadPtr();
   if (thread == nullptr) {
     diagnostic_manager.PutString(
-        lldb::eSeverityError, "Can't call a function without a valid thread.");
+        eDiagnosticSeverityError,
+        "Can't call a function without a valid thread.");
     return nullptr;
   }
 
@@ -323,7 +327,8 @@ bool FunctionCaller::FetchFunctionResults(ExecutionContext &exe_ctx,
 void FunctionCaller::DeallocateFunctionResults(ExecutionContext &exe_ctx,
                                                lldb::addr_t args_addr) {
   std::list<lldb::addr_t>::iterator pos;
-  pos = llvm::find(m_wrapper_args_addrs, args_addr);
+  pos = std::find(m_wrapper_args_addrs.begin(), m_wrapper_args_addrs.end(),
+                  args_addr);
   if (pos != m_wrapper_args_addrs.end())
     m_wrapper_args_addrs.erase(pos);
 
@@ -335,10 +340,6 @@ lldb::ExpressionResults FunctionCaller::ExecuteFunction(
     const EvaluateExpressionOptions &options,
     DiagnosticManager &diagnostic_manager, Value &results) {
   lldb::ExpressionResults return_value = lldb::eExpressionSetupError;
-
-  Debugger *debugger =
-      exe_ctx.GetTargetPtr() ? &exe_ctx.GetTargetPtr()->GetDebugger() : nullptr;
-  Progress progress("Calling function", FunctionName(), {}, debugger);
 
   // FunctionCaller::ExecuteFunction execution is always just to get the
   // result. Unless explicitly asked for, ignore breakpoints and unwind on
@@ -392,7 +393,8 @@ lldb::ExpressionResults FunctionCaller::ExecuteFunction(
       LLDB_LOGF(log,
                 "== [FunctionCaller::ExecuteFunction] Execution of \"%s\" "
                 "completed abnormally: %s ==",
-                m_name.c_str(), toString(return_value).c_str());
+                m_name.c_str(),
+                Process::ExecutionResultAsCString(return_value));
     } else {
       LLDB_LOGF(log,
                 "== [FunctionCaller::ExecuteFunction] Execution of \"%s\" "

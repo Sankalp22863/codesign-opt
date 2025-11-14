@@ -16,14 +16,13 @@
 #include "HexagonInstrInfo.h"
 #include "HexagonSubtarget.h"
 #include "HexagonTargetObjectFile.h"
-#include "llvm/CodeGen/CodeGenTargetMachineImpl.h"
+#include "llvm/Target/TargetMachine.h"
 #include <optional>
 
 namespace llvm {
 
-class HexagonTargetMachine : public CodeGenTargetMachineImpl {
+class HexagonTargetMachine : public LLVMTargetMachine {
   std::unique_ptr<TargetLoweringObjectFile> TLOF;
-  HexagonSubtarget Subtarget;
   mutable StringMap<std::unique_ptr<HexagonSubtarget>> SubtargetMap;
 
 public:
@@ -35,7 +34,8 @@ public:
   ~HexagonTargetMachine() override;
   const HexagonSubtarget *getSubtargetImpl(const Function &F) const override;
 
-  void registerPassBuilderCallbacks(PassBuilder &PB) override;
+  void registerPassBuilderCallbacks(PassBuilder &PB,
+                                    bool PopulateClassToPassNames) override;
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
   TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
 
@@ -46,12 +46,6 @@ public:
   MachineFunctionInfo *
   createMachineFunctionInfo(BumpPtrAllocator &Allocator, const Function &F,
                             const TargetSubtargetInfo *STI) const override;
-
-  bool isNoopAddrSpaceCast(unsigned SrcAS, unsigned DestAS) const override {
-    return true;
-  }
-  ScheduleDAGInstrs *
-  createMachineScheduler(MachineSchedContext *C) const override;
 };
 
 } // end namespace llvm

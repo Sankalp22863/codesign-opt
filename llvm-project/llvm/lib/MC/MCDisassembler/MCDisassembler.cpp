@@ -13,11 +13,11 @@ using namespace llvm;
 
 MCDisassembler::~MCDisassembler() = default;
 
-Expected<bool> MCDisassembler::onSymbolStart(SymbolInfoTy &Symbol,
-                                             uint64_t &Size,
-                                             ArrayRef<uint8_t> Bytes,
-                                             uint64_t Address) const {
-  return false;
+std::optional<MCDisassembler::DecodeStatus>
+MCDisassembler::onSymbolStart(SymbolInfoTy &Symbol, uint64_t &Size,
+                              ArrayRef<uint8_t> Bytes, uint64_t Address,
+                              raw_ostream &CStream) const {
+  return std::nullopt;
 }
 
 uint64_t MCDisassembler::suggestBytesToSkip(ArrayRef<uint8_t> Bytes,
@@ -29,21 +29,17 @@ bool MCDisassembler::tryAddingSymbolicOperand(MCInst &Inst, int64_t Value,
                                               uint64_t Address, bool IsBranch,
                                               uint64_t Offset, uint64_t OpSize,
                                               uint64_t InstSize) const {
-  if (Symbolizer) {
-    assert(CommentStream && "CommentStream is not set.");
+  if (Symbolizer)
     return Symbolizer->tryAddingSymbolicOperand(Inst, *CommentStream, Value,
                                                 Address, IsBranch, Offset,
                                                 OpSize, InstSize);
-  }
   return false;
 }
 
 void MCDisassembler::tryAddingPcLoadReferenceComment(int64_t Value,
                                                      uint64_t Address) const {
-  if (Symbolizer) {
-    assert(CommentStream && "CommentStream is not set.");
+  if (Symbolizer)
     Symbolizer->tryAddingPcLoadReferenceComment(*CommentStream, Value, Address);
-  }
 }
 
 void MCDisassembler::setSymbolizer(std::unique_ptr<MCSymbolizer> Symzer) {

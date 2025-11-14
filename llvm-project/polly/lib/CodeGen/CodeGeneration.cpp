@@ -41,14 +41,12 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/Utils/LoopUtils.h"
 #include "isl/ast.h"
 #include <cassert>
 
 using namespace llvm;
 using namespace polly;
 
-#include "polly/Support/PollyDebug.h"
 #define DEBUG_TYPE "polly-codegen"
 
 static cl::opt<bool> Verify("polly-codegen-verify",
@@ -77,8 +75,8 @@ namespace polly {
 /// Marks the basic block @p Block unreachable by equipping it with an
 /// UnreachableInst.
 void markBlockUnreachable(BasicBlock &Block, PollyIRBuilder &Builder) {
-  auto OrigTerminator = Block.getTerminator()->getIterator();
-  Builder.SetInsertPoint(&Block, OrigTerminator);
+  auto *OrigTerminator = Block.getTerminator();
+  Builder.SetInsertPoint(OrigTerminator);
   Builder.CreateUnreachable();
   OrigTerminator->eraseFromParent();
 }
@@ -88,7 +86,7 @@ static void verifyGeneratedFunction(Scop &S, Function &F, IslAstInfo &AI) {
   if (!Verify || !verifyFunction(F, &errs()))
     return;
 
-  POLLY_DEBUG({
+  LLVM_DEBUG({
     errs() << "== ISL Codegen created an invalid function ==\n\n== The "
               "SCoP ==\n";
     errs() << S;
@@ -185,7 +183,7 @@ static bool generateCode(Scop &S, IslAstInfo &AI, LoopInfo &LI,
   // DependenceInfo or IslAstInfo around.
   IslAst &Ast = AI.getIslAst();
   if (Ast.getSharedIslCtx() != S.getSharedIslCtx()) {
-    POLLY_DEBUG(dbgs() << "Got an IstAst for a different Scop/isl_ctx\n");
+    LLVM_DEBUG(dbgs() << "Got an IstAst for a different Scop/isl_ctx\n");
     return false;
   }
 
@@ -199,7 +197,7 @@ static bool generateCode(Scop &S, IslAstInfo &AI, LoopInfo &LI,
   auto ScopStats = S.getStatistics();
   ScopsProcessed++;
 
-  auto &DL = S.getFunction().getDataLayout();
+  auto &DL = S.getFunction().getParent()->getDataLayout();
   Region *R = &S.getRegion();
   assert(!R->isTopLevelRegion() && "Top level regions are not supported");
 
@@ -211,8 +209,7 @@ static bool generateCode(Scop &S, IslAstInfo &AI, LoopInfo &LI,
   assert(EnteringBB);
   PollyIRBuilder Builder(EnteringBB->getContext(), ConstantFolder(),
                          IRInserter(Annotator));
-  Builder.SetInsertPoint(EnteringBB,
-                         EnteringBB->getTerminator()->getIterator());
+  Builder.SetInsertPoint(EnteringBB->getTerminator());
 
   // Only build the run-time condition and parameters _after_ having
   // introduced the conditional branch. This is important as the conditional
@@ -249,8 +246,7 @@ static bool generateCode(Scop &S, IslAstInfo &AI, LoopInfo &LI,
   // might reference the hoisted loads. Finally, build the runtime check
   // that might reference both hoisted loads as well as parameters.
   // If the hoisting fails we have to bail and execute the original code.
-  Builder.SetInsertPoint(SplitBlock,
-                         SplitBlock->getTerminator()->getIterator());
+  Builder.SetInsertPoint(SplitBlock->getTerminator());
   if (!NodeBuilder.preloadInvariantLoads()) {
     // Patch the introduced branch condition to ensure that we always execute
     // the original SCoP.
@@ -276,29 +272,13 @@ static bool generateCode(Scop &S, IslAstInfo &AI, LoopInfo &LI,
 
     Builder.GetInsertBlock()->getTerminator()->setOperand(0, RTC);
 
-    auto *CI = dyn_cast<ConstantInt>(RTC);
-    // The code below annotates the "llvm.loop.vectorize.enable" to false
-    // for the code flow taken when RTCs fail. Because we don't want the
-    // Loop Vectorizer to come in later and vectorize the original fall back
-    // loop when Polly is enabled. This avoids loop versioning on fallback
-    // loop by Loop Vectorizer. Don't do this when Polly's RTC value is
-    // false (due to code generation failure), as we are left with only one
-    // version of Loop.
-    if (!(CI && CI->isZero())) {
-      for (Loop *L : LI.getLoopsInPreorder()) {
-        if (S.contains(L))
-          addStringMetadataToLoop(L, "llvm.loop.vectorize.enable", 0);
-      }
-    }
-
     // Explicitly set the insert point to the end of the block to avoid that a
     // split at the builder's current
     // insert position would move the malloc calls to the wrong BasicBlock.
     // Ideally we would just split the block during allocation of the new
     // arrays, but this would break the assumption that there are no blocks
     // between polly.start and polly.exiting (at this point).
-    Builder.SetInsertPoint(StartBlock,
-                           StartBlock->getTerminator()->getIterator());
+    Builder.SetInsertPoint(StartBlock->getTerminator());
 
     NodeBuilder.create(AstRoot.release());
     NodeBuilder.finalize();
@@ -347,7 +327,7 @@ public:
     LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
     DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
     SE = &getAnalysis<ScalarEvolutionWrapperPass>().getSE();
-    DL = &S.getFunction().getDataLayout();
+    DL = &S.getFunction().getParent()->getDataLayout();
     RI = &getAnalysis<RegionInfoPass>().getRegionInfo();
     return generateCode(S, *AI, *LI, *DT, *SE, *RI);
   }

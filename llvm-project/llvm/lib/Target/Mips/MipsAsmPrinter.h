@@ -69,7 +69,8 @@ private:
   void EmitSled(const MachineInstr &MI, SledKind Kind);
 
   // tblgen'erated function.
-  bool lowerPseudoInstExpansion(const MachineInstr *MI, MCInst &Inst);
+  bool emitPseudoExpansionLowering(MCStreamer &OutStreamer,
+                                   const MachineInstr *MI);
 
   // Emit PseudoReturn, PseudoReturn64, PseudoIndirectBranch,
   // and PseudoIndirectBranch64 as a JR, JR_MM, JALR, or JALR64 as appropriate
@@ -84,10 +85,6 @@ private:
 
   void emitInlineAsmEnd(const MCSubtargetInfo &StartInfo,
                         const MCSubtargetInfo *EndInfo) const override;
-
-  void emitJumpTableEntry(const MachineJumpTableInfo &MJTI,
-                          const MachineBasicBlock *MBB,
-                          unsigned uid) const override;
 
   void EmitJal(const MCSubtargetInfo &STI, MCSymbol *Symbol);
 
@@ -112,18 +109,18 @@ private:
 
   void EmitFPCallStub(const char *, const Mips16HardFloatInfo::FuncSignature *);
 
+  void NaClAlignIndirectJumpTargets(MachineFunction &MF);
+
   bool isLongBranchPseudo(int Opcode) const;
 
 public:
-  static char ID;
-
   const MipsSubtarget *Subtarget;
   const MipsFunctionInfo *MipsFI;
   MipsMCInstLower MCInstLowering;
 
   explicit MipsAsmPrinter(TargetMachine &TM,
                           std::unique_ptr<MCStreamer> Streamer)
-      : AsmPrinter(TM, std::move(Streamer), ID), MCInstLowering(*this) {}
+      : AsmPrinter(TM, std::move(Streamer)), MCInstLowering(*this) {}
 
   StringRef getPassName() const override { return "Mips Assembly Printer"; }
 
@@ -152,7 +149,8 @@ public:
   void printOperand(const MachineInstr *MI, int opNum, raw_ostream &O);
   void printMemOperand(const MachineInstr *MI, int opNum, raw_ostream &O);
   void printMemOperandEA(const MachineInstr *MI, int opNum, raw_ostream &O);
-  void printFCCOperand(const MachineInstr *MI, int opNum, raw_ostream &O);
+  void printFCCOperand(const MachineInstr *MI, int opNum, raw_ostream &O,
+                       const char *Modifier = nullptr);
   void printRegisterList(const MachineInstr *MI, int opNum, raw_ostream &O);
   void emitStartOfAsmFile(Module &M) override;
   void emitEndOfAsmFile(Module &M) override;

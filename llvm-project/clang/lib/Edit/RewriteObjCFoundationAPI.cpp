@@ -697,7 +697,11 @@ static bool getLiteralInfo(SourceRange literalRange,
 
   struct Suff {
     static bool has(StringRef suff, StringRef &text) {
-      return text.consume_back(suff);
+      if (text.ends_with(suff)) {
+        text = text.substr(0, text.size()-suff.size());
+        return true;
+      }
+      return false;
     }
   };
 
@@ -1000,7 +1004,6 @@ static bool rewriteToNumericBoxedExpression(const ObjCMessageExpr *Msg,
     case CK_LValueToRValue:
     case CK_NoOp:
     case CK_UserDefinedConversion:
-    case CK_HLSLArrayRValue:
       break;
 
     case CK_IntegralCast: {
@@ -1011,7 +1014,7 @@ static bool rewriteToNumericBoxedExpression(const ObjCMessageExpr *Msg,
       if ((MK == NSAPI::NSNumberWithInteger ||
            MK == NSAPI::NSNumberWithUnsignedInteger) &&
           !isTruncated) {
-        if (OrigTy->isEnumeralType() || isEnumConstant(OrigArg))
+        if (OrigTy->getAs<EnumType>() || isEnumConstant(OrigArg))
           break;
         if ((MK==NSAPI::NSNumberWithInteger) == OrigTy->isSignedIntegerType() &&
             OrigTySize >= Ctx.getTypeSize(Ctx.IntTy))
@@ -1083,12 +1086,6 @@ static bool rewriteToNumericBoxedExpression(const ObjCMessageExpr *Msg,
 
     case CK_BooleanToSignedIntegral:
       llvm_unreachable("OpenCL-specific cast in Objective-C?");
-
-    case CK_HLSLVectorTruncation:
-    case CK_HLSLElementwiseCast:
-    case CK_HLSLAggregateSplatCast:
-      llvm_unreachable("HLSL-specific cast in Objective-C?");
-      break;
 
     case CK_FloatingToFixedPoint:
     case CK_FixedPointToFloating:

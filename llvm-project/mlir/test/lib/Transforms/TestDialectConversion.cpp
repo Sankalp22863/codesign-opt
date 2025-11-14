@@ -28,13 +28,14 @@ namespace {
 struct PDLLTypeConverter : public TypeConverter {
   PDLLTypeConverter() {
     addConversion(convertType);
+    addArgumentMaterialization(materializeCast);
     addSourceMaterialization(materializeCast);
   }
 
   static LogicalResult convertType(Type t, SmallVectorImpl<Type> &results) {
     // Convert I64 to F64.
     if (t.isSignlessInteger(64)) {
-      results.push_back(Float64Type::get(t.getContext()));
+      results.push_back(FloatType::getF64(t.getContext()));
       return success();
     }
 
@@ -43,9 +44,10 @@ struct PDLLTypeConverter : public TypeConverter {
     return success();
   }
   /// Hook for materializing a conversion.
-  static Value materializeCast(OpBuilder &builder, Type resultType,
-                               ValueRange inputs, Location loc) {
-    return UnrealizedConversionCastOp::create(builder, loc, resultType, inputs)
+  static std::optional<Value> materializeCast(OpBuilder &builder,
+                                              Type resultType,
+                                              ValueRange inputs, Location loc) {
+    return builder.create<UnrealizedConversionCastOp>(loc, resultType, inputs)
         .getResult(0);
   }
 };

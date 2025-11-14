@@ -9,7 +9,7 @@
 #include "flang/Optimizer/Builder/Runtime/ArrayConstructor.h"
 #include "flang/Optimizer/Builder/FIRBuilder.h"
 #include "flang/Optimizer/Builder/Runtime/RTBuilder.h"
-#include "flang/Runtime/array-constructor-consts.h"
+#include "flang/Runtime/array-constructor.h"
 
 using namespace Fortran::runtime;
 
@@ -25,13 +25,12 @@ mlir::Value fir::runtime::genInitArrayConstructorVector(
     mlir::Location loc, fir::FirOpBuilder &builder, mlir::Value toBox,
     mlir::Value useValueLengthParameters) {
   // Allocate storage for the runtime cookie for the array constructor vector.
-  // Use pessimistic values for size and alignment that are valid for all
-  // supported targets. Whether the actual ArrayConstructorVector object fits
-  // into the available MaxArrayConstructorVectorSizeInBytes is verified when
-  // building clang-rt.
+  // Use the "host" size and alignment, but double them to be safe regardless of
+  // the target. The "cookieSize" argument is used to validate this wild
+  // assumption until runtime interfaces are improved.
   std::size_t arrayVectorStructBitSize =
-      MaxArrayConstructorVectorSizeInBytes * 8;
-  std::size_t alignLike = MaxArrayConstructorVectorAlignInBytes * 8;
+      2 * sizeof(Fortran::runtime::ArrayConstructorVector) * 8;
+  std::size_t alignLike = alignof(Fortran::runtime::ArrayConstructorVector) * 8;
   fir::SequenceType::Extent numElem =
       (arrayVectorStructBitSize + alignLike - 1) / alignLike;
   mlir::Type intType = builder.getIntegerType(alignLike);
@@ -44,13 +43,15 @@ mlir::Value fir::runtime::genInitArrayConstructorVector(
           loc, builder);
   mlir::FunctionType funcType = func.getFunctionType();
   cookie = builder.createConvert(loc, funcType.getInput(0), cookie);
+  mlir::Value cookieSize = builder.createIntegerConstant(
+      loc, funcType.getInput(3), numElem * alignLike / 8);
   mlir::Value sourceFile = fir::factory::locationToFilename(builder, loc);
   mlir::Value sourceLine =
-      fir::factory::locationToLineNo(builder, loc, funcType.getInput(4));
+      fir::factory::locationToLineNo(builder, loc, funcType.getInput(5));
   auto args = fir::runtime::createArguments(builder, loc, funcType, cookie,
                                             toBox, useValueLengthParameters,
-                                            sourceFile, sourceLine);
-  fir::CallOp::create(builder, loc, func, args);
+                                            cookieSize, sourceFile, sourceLine);
+  builder.create<fir::CallOp>(loc, func, args);
   return cookie;
 }
 
@@ -63,7 +64,7 @@ void fir::runtime::genPushArrayConstructorValue(
   mlir::FunctionType funcType = func.getFunctionType();
   auto args = fir::runtime::createArguments(builder, loc, funcType,
                                             arrayConstructorVector, fromBox);
-  fir::CallOp::create(builder, loc, func, args);
+  builder.create<fir::CallOp>(loc, func, args);
 }
 
 void fir::runtime::genPushArrayConstructorSimpleScalar(
@@ -75,5 +76,5 @@ void fir::runtime::genPushArrayConstructorSimpleScalar(
   mlir::FunctionType funcType = func.getFunctionType();
   auto args = fir::runtime::createArguments(
       builder, loc, funcType, arrayConstructorVector, fromAddress);
-  fir::CallOp::create(builder, loc, func, args);
+  builder.create<fir::CallOp>(loc, func, args);
 }

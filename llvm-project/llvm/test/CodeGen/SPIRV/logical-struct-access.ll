@@ -1,5 +1,4 @@
-; RUN: llc -O0 -mtriple=spirv-unknown-vulkan1.3-compute %s -o - -print-after-all | FileCheck %s
-; RUN: %if spirv-tools %{ llc -O0 -mtriple=spirv-unknown-vulkan1.3-compute %s -o - -filetype=obj | spirv-val %}
+; RUN: llc -O0 -mtriple=spirv-unknown-unknown %s -o - | FileCheck %s
 
 ; CHECK-DAG: [[uint:%[0-9]+]] = OpTypeInt 32 0
 

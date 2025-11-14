@@ -6,7 +6,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Hexagon.h"
 #include "HexagonInstrInfo.h"
 #include "HexagonRegisterInfo.h"
 #include "HexagonSubtarget.h"
@@ -45,6 +44,13 @@
 
 using namespace llvm;
 
+namespace llvm {
+
+  FunctionPass *createHexagonSplitDoubleRegs();
+  void initializeHexagonSplitDoubleRegsPass(PassRegistry&);
+
+} // end namespace llvm
+
 static cl::opt<int> MaxHSDR("max-hsdr", cl::Hidden, cl::init(-1),
     cl::desc("Maximum number of split partitions"));
 static cl::opt<bool> MemRefsFixed("hsdr-no-mem", cl::Hidden, cl::init(true),
@@ -65,8 +71,8 @@ namespace {
     }
 
     void getAnalysisUsage(AnalysisUsage &AU) const override {
-      AU.addRequired<MachineLoopInfoWrapperPass>();
-      AU.addPreserved<MachineLoopInfoWrapperPass>();
+      AU.addRequired<MachineLoopInfo>();
+      AU.addPreserved<MachineLoopInfo>();
       MachineFunctionPass::getAnalysisUsage(AU);
     }
 
@@ -258,7 +264,7 @@ void HexagonSplitDoubleRegs::partitionRegisters(UUSetMap &P2Rs) {
         }
         if (MRI->getRegClass(T) != DoubleRC)
           continue;
-        unsigned u = T.virtRegIndex();
+        unsigned u = Register::virtReg2Index(T);
         if (FixedRegs[u])
           continue;
         LLVM_DEBUG(dbgs() << ' ' << printReg(T, TRI));
@@ -1185,7 +1191,7 @@ bool HexagonSplitDoubleRegs::runOnMachineFunction(MachineFunction &MF) {
   TRI = ST.getRegisterInfo();
   TII = ST.getInstrInfo();
   MRI = &MF.getRegInfo();
-  MLI = &getAnalysis<MachineLoopInfoWrapperPass>().getLI();
+  MLI = &getAnalysis<MachineLoopInfo>();
 
   UUSetMap P2Rs;
   LoopRegMap IRM;

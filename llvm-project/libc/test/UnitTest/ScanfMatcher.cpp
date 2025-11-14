@@ -8,15 +8,15 @@
 
 #include "ScanfMatcher.h"
 
-#include "hdr/stdint_proxy.h"
 #include "src/__support/FPUtil/FPBits.h"
-#include "src/__support/macros/config.h"
 #include "src/stdio/scanf_core/core_structs.h"
 
 #include "test/UnitTest/StringUtils.h"
 #include "test/UnitTest/Test.h"
 
-namespace LIBC_NAMESPACE_DECL {
+#include <stdint.h>
+
+namespace LIBC_NAMESPACE {
 namespace testing {
 
 using scanf_core::FormatFlags;
@@ -99,4 +99,4 @@ void FormatSectionMatcher::explainError() {
 }
 
 } // namespace testing
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

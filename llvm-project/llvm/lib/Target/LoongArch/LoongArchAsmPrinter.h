@@ -15,23 +15,18 @@
 
 #include "LoongArchSubtarget.h"
 #include "llvm/CodeGen/AsmPrinter.h"
-#include "llvm/CodeGen/StackMaps.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/Support/Compiler.h"
 
 namespace llvm {
 
 class LLVM_LIBRARY_VISIBILITY LoongArchAsmPrinter : public AsmPrinter {
-public:
-  static char ID;
-
-private:
   const MCSubtargetInfo *STI;
 
 public:
   explicit LoongArchAsmPrinter(TargetMachine &TM,
                                std::unique_ptr<MCStreamer> Streamer)
-      : AsmPrinter(TM, std::move(Streamer), ID), STI(TM.getMCSubtargetInfo()) {}
+      : AsmPrinter(TM, std::move(Streamer)), STI(TM.getMCSubtargetInfo()) {}
 
   StringRef getPassName() const override {
     return "LoongArch Assembly Printer";
@@ -46,20 +41,18 @@ public:
   bool PrintAsmMemoryOperand(const MachineInstr *MI, unsigned OpNo,
                              const char *ExtraCode, raw_ostream &OS) override;
 
-  void LowerSTATEPOINT(const MachineInstr &MI);
   void LowerPATCHABLE_FUNCTION_ENTER(const MachineInstr &MI);
   void LowerPATCHABLE_FUNCTION_EXIT(const MachineInstr &MI);
   void LowerPATCHABLE_TAIL_CALL(const MachineInstr &MI);
   void emitSled(const MachineInstr &MI, SledKind Kind);
 
   // tblgen'erated function.
-  bool lowerPseudoInstExpansion(const MachineInstr *MI, MCInst &Inst);
-
+  bool emitPseudoExpansionLowering(MCStreamer &OutStreamer,
+                                   const MachineInstr *MI);
   // Wrapper needed for tblgenned pseudo lowering.
   bool lowerOperand(const MachineOperand &MO, MCOperand &MCOp) const {
     return lowerLoongArchMachineOperandToMCOperand(MO, MCOp, *this);
   }
-  void emitJumpTableInfo() override;
 };
 
 } // end namespace llvm

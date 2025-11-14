@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- MultiLevelImplicitPointerConversionCheck.cpp - clang-tidy --------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -48,32 +48,12 @@ AST_MATCHER(ImplicitCastExpr, isMultiLevelPointerConversion) {
   return SourcePtrLevel != TargetPtrLevel;
 }
 
-AST_MATCHER(QualType, isPointerType) {
-  const QualType Type =
-      Node.getCanonicalType().getNonReferenceType().getUnqualifiedType();
-
-  return !Type.isNull() && Type->isPointerType();
-}
-
 } // namespace
-
-MultiLevelImplicitPointerConversionCheck::
-    MultiLevelImplicitPointerConversionCheck(StringRef Name,
-                                             ClangTidyContext *Context)
-    : ClangTidyCheck(Name, Context), EnableInC(Options.get("EnableInC", true)) {
-}
-
-void MultiLevelImplicitPointerConversionCheck::storeOptions(
-    ClangTidyOptions::OptionMap &Opts) {
-  Options.store(Opts, "EnableInC", EnableInC);
-}
 
 void MultiLevelImplicitPointerConversionCheck::registerMatchers(
     MatchFinder *Finder) {
   Finder->addMatcher(
-      implicitCastExpr(hasCastKind(CK_BitCast), isMultiLevelPointerConversion(),
-                       unless(hasParent(explicitCastExpr(
-                           hasDestinationType(isPointerType())))))
+      implicitCastExpr(hasCastKind(CK_BitCast), isMultiLevelPointerConversion())
           .bind("expr"),
       this);
 }
@@ -86,9 +66,8 @@ MultiLevelImplicitPointerConversionCheck::getCheckTraversalKind() const {
 void MultiLevelImplicitPointerConversionCheck::check(
     const MatchFinder::MatchResult &Result) {
   const auto *MatchedExpr = Result.Nodes.getNodeAs<ImplicitCastExpr>("expr");
-  const QualType Target =
-      MatchedExpr->getType().getDesugaredType(*Result.Context);
-  const QualType Source =
+  QualType Target = MatchedExpr->getType().getDesugaredType(*Result.Context);
+  QualType Source =
       MatchedExpr->getSubExpr()->getType().getDesugaredType(*Result.Context);
 
   diag(MatchedExpr->getExprLoc(), "multilevel pointer conversion from %0 to "

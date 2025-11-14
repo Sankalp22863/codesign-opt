@@ -1,7 +1,7 @@
 ! RUN: bbc -emit-fir %s -o - | FileCheck %s
 
 ! CHECK-LABEL: func.func @_QPabort_test() {
-! CHECK:         fir.call @_FortranAAbort() {{.*}}: () -> ()
+! CHECK:         %[[VAL_0:.*]] = fir.call @_FortranAAbort() {{.*}}: () -> none
 ! CHECK:         return
 ! CHECK:       }
 

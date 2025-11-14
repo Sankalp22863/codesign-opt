@@ -17,7 +17,9 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Casting.h"
 #include <optional>
+#include <string_view>
 
 #include "TaggedUnionModeling.h"
 
@@ -29,7 +31,7 @@ REGISTER_MAP_WITH_PROGRAMSTATE(VariantHeldTypeMap, const MemRegion *, QualType)
 
 namespace clang::ento::tagged_union_modeling {
 
-static const CXXConstructorDecl *
+const CXXConstructorDecl *
 getConstructorDeclarationForCall(const CallEvent &Call) {
   const auto *ConstructorCall = dyn_cast<CXXConstructorCall>(&Call);
   if (!ConstructorCall)
@@ -74,7 +76,7 @@ bool isMoveAssignmentCall(const CallEvent &Call) {
   return AsMethodDecl->isMoveAssignmentOperator();
 }
 
-static bool isStdType(const Type *Type, llvm::StringRef TypeName) {
+bool isStdType(const Type *Type, llvm::StringRef TypeName) {
   auto *Decl = Type->getAsRecordDecl();
   if (!Decl)
     return false;
@@ -127,11 +129,9 @@ static llvm::StringRef indefiniteArticleBasedOnVowel(char a) {
 
 class StdVariantChecker : public Checker<eval::Call, check::RegionChanges> {
   // Call descriptors to find relevant calls
-  CallDescription VariantConstructor{CDM::CXXMethod,
-                                     {"std", "variant", "variant"}};
-  CallDescription VariantAssignmentOperator{CDM::CXXMethod,
-                                            {"std", "variant", "operator="}};
-  CallDescription StdGet{CDM::SimpleFunc, {"std", "get"}, 1, 1};
+  CallDescription VariantConstructor{{"std", "variant", "variant"}};
+  CallDescription VariantAssignmentOperator{{"std", "variant", "operator="}};
+  CallDescription StdGet{{"std", "get"}, 1, 1};
 
   BugType BadVariantType{this, "BadVariantType", "BadVariantType"};
 
@@ -211,13 +211,13 @@ private:
     if (!DefaultType)
       return;
 
-    ProgramStateRef State = C.getState();
+    ProgramStateRef State = ConstructorCall->getState();
     State = State->set<VariantHeldTypeMap>(ThisMemRegion, *DefaultType);
     C.addTransition(State);
   }
 
   bool handleStdGetCall(const CallEvent &Call, CheckerContext &C) const {
-    ProgramStateRef State = C.getState();
+    ProgramStateRef State = Call.getState();
 
     const auto &ArgType = Call.getArgSVal(0)
                               .getType(C.getASTContext())

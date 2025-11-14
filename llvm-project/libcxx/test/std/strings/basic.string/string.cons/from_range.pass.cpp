@@ -12,7 +12,6 @@
 //   constexpr basic_string(from_range_t, R&& rg, const Allocator& a = Allocator());           // since C++23
 
 #include <algorithm>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -62,33 +61,28 @@ constexpr bool test_constraints() {
 
 template <class Iter, class Sent, class Alloc>
 constexpr void test_with_input(std::vector<char> input) {
+  auto b = Iter(input.data());
+  auto e = Iter(input.data() + input.size());
+  std::ranges::subrange in(std::move(b), Sent(std::move(e)));
+
   { // (range)
-    std::ranges::subrange in(Iter(input.data()), Sent(Iter(input.data() + input.size())));
     std::string c(std::from_range, in);
 
     LIBCPP_ASSERT(c.__invariants());
     assert(c.size() == static_cast<std::size_t>(std::distance(c.begin(), c.end())));
-    assert(std::ranges::equal(input, c));
+    assert(std::ranges::equal(in, c));
     LIBCPP_ASSERT(is_string_asan_correct(c));
   }
 
   { // (range, allocator)
-    std::ranges::subrange in(Iter(input.data()), Sent(Iter(input.data() + input.size())));
     Alloc alloc;
     std::basic_string<char, std::char_traits<char>, Alloc> c(std::from_range, in, alloc);
 
     LIBCPP_ASSERT(c.__invariants());
     assert(c.get_allocator() == alloc);
     assert(c.size() == static_cast<std::size_t>(std::distance(c.begin(), c.end())));
-    assert(std::ranges::equal(input, c));
+    assert(std::ranges::equal(in, c));
     LIBCPP_ASSERT(is_string_asan_correct(c));
-  }
-
-  { // Ensure input-only sized ranges are accepted.
-    using input_iter = cpp20_input_iterator<const char*>;
-    const char in[]{'q', 'w', 'e', 'r'};
-    std::string s(std::from_range, std::views::counted(input_iter{std::ranges::begin(in)}, std::ranges::ssize(in)));
-    assert(s == "qwer");
   }
 }
 
@@ -124,15 +118,6 @@ constexpr bool test_inputs() {
   return true;
 }
 
-#ifndef TEST_HAS_NO_LOCALIZATION
-void test_counted_istream_view() {
-  std::istringstream is{"qwert"};
-  auto vals = std::views::istream<char>(is);
-  std::string s(std::from_range, std::views::counted(vals.begin(), 3));
-  assert(s == "qwe");
-}
-#endif
-
 int main(int, char**) {
   test_inputs();
   static_assert(test_inputs());
@@ -141,10 +126,6 @@ int main(int, char**) {
 
   // Note: `test_exception_safety_throwing_copy` doesn't apply because copying a `char` cannot throw.
   test_string_exception_safety_throwing_allocator();
-
-#ifndef TEST_HAS_NO_LOCALIZATION
-  test_counted_istream_view();
-#endif
 
   return 0;
 }

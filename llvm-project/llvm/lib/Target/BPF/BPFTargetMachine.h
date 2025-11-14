@@ -14,11 +14,11 @@
 #define LLVM_LIB_TARGET_BPF_BPFTARGETMACHINE_H
 
 #include "BPFSubtarget.h"
-#include "llvm/CodeGen/CodeGenTargetMachineImpl.h"
+#include "llvm/Target/TargetMachine.h"
 #include <optional>
 
 namespace llvm {
-class BPFTargetMachine : public CodeGenTargetMachineImpl {
+class BPFTargetMachine : public LLVMTargetMachine {
   std::unique_ptr<TargetLoweringObjectFile> TLOF;
   BPFSubtarget Subtarget;
 
@@ -42,7 +42,8 @@ public:
     return TLOF.get();
   }
 
-  void registerPassBuilderCallbacks(PassBuilder &PB) override;
+  void registerPassBuilderCallbacks(PassBuilder &PB,
+                                    bool PopulateClassToPassNames) override;
 };
 }
 

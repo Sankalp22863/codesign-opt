@@ -27,8 +27,7 @@ FunctionPass *createARCISelDag(ARCTargetMachine &TM, CodeGenOptLevel OptLevel);
 FunctionPass *createARCExpandPseudosPass();
 FunctionPass *createARCOptAddrMode();
 FunctionPass *createARCBranchFinalizePass();
-void initializeARCAsmPrinterPass(PassRegistry &);
-void initializeARCDAGToDAGISelLegacyPass(PassRegistry &);
+void initializeARCDAGToDAGISelPass(PassRegistry &);
 
 } // end namespace llvm
 

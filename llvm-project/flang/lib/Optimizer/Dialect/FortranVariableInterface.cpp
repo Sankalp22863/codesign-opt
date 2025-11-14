@@ -14,11 +14,11 @@
 
 #include "flang/Optimizer/Dialect/FortranVariableInterface.cpp.inc"
 
-llvm::LogicalResult
+mlir::LogicalResult
 fir::FortranVariableOpInterface::verifyDeclareLikeOpImpl(mlir::Value memref) {
   const unsigned numExplicitTypeParams = getExplicitTypeParams().size();
   mlir::Type memType = memref.getType();
-  const bool sourceIsBoxValue = mlir::isa<fir::BaseBoxType>(memType);
+  const bool sourceIsBoxValue = memType.isa<fir::BaseBoxType>();
   const bool sourceIsBoxAddress = fir::isBoxAddress(memType);
   const bool sourceIsBox = sourceIsBoxValue || sourceIsBoxAddress;
   if (isCharacter()) {
@@ -29,8 +29,7 @@ fir::FortranVariableOpInterface::verifyDeclareLikeOpImpl(mlir::Value memref) {
       return emitOpError("must be provided exactly one type parameter when its "
                          "base is a character that is not a box");
 
-  } else if (auto recordType =
-                 mlir::dyn_cast<fir::RecordType>(getElementType())) {
+  } else if (auto recordType = getElementType().dyn_cast<fir::RecordType>()) {
     if (numExplicitTypeParams < recordType.getNumLenParams() && !sourceIsBox)
       return emitOpError("must be provided all the derived type length "
                          "parameters when the base is not a box");
@@ -46,55 +45,25 @@ fir::FortranVariableOpInterface::verifyDeclareLikeOpImpl(mlir::Value memref) {
       if (sourceIsBoxAddress)
         return emitOpError("for box address must not have a shape operand");
       unsigned shapeRank = 0;
-      if (auto shapeType = mlir::dyn_cast<fir::ShapeType>(shape.getType())) {
+      if (auto shapeType = shape.getType().dyn_cast<fir::ShapeType>()) {
         shapeRank = shapeType.getRank();
       } else if (auto shapeShiftType =
-                     mlir::dyn_cast<fir::ShapeShiftType>(shape.getType())) {
+                     shape.getType().dyn_cast<fir::ShapeShiftType>()) {
         shapeRank = shapeShiftType.getRank();
       } else {
         if (!sourceIsBoxValue)
-          return emitOpError(
-              "of array entity with a raw address base must have a "
-              "shape operand that is a shape or shapeshift");
-        shapeRank = mlir::cast<fir::ShiftType>(shape.getType()).getRank();
+          emitOpError("of array entity with a raw address base must have a "
+                      "shape operand that is a shape or shapeshift");
+        shapeRank = shape.getType().cast<fir::ShiftType>().getRank();
       }
 
       std::optional<unsigned> rank = getRank();
       if (!rank || *rank != shapeRank)
         return emitOpError("has conflicting shape and base operand ranks");
     } else if (!sourceIsBox) {
-      return emitOpError(
-          "of array entity with a raw address base must have a shape "
-          "operand that is a shape or shapeshift");
+      emitOpError("of array entity with a raw address base must have a shape "
+                  "operand that is a shape or shapeshift");
     }
   }
-  return mlir::success();
-}
-
-mlir::LogicalResult
-fir::detail::verifyFortranVariableStorageOpInterface(mlir::Operation *op) {
-  auto storageIface = mlir::cast<fir::FortranVariableStorageOpInterface>(op);
-  mlir::Value storage = storageIface.getStorage();
-  std::uint64_t storageOffset = storageIface.getStorageOffset();
-  if (!storage) {
-    if (storageOffset != 0)
-      return op->emitOpError(
-          "storage offset specified without the storage reference");
-    return mlir::success();
-  }
-
-  auto storageType =
-      mlir::dyn_cast<fir::SequenceType>(fir::unwrapRefType(storage.getType()));
-  if (!storageType || storageType.getDimension() != 1)
-    return op->emitOpError("storage must be a vector");
-  if (storageType.hasDynamicExtents())
-    return op->emitOpError("storage must have known extent");
-  if (storageType.getEleTy() != mlir::IntegerType::get(op->getContext(), 8))
-    return op->emitOpError("storage must be an array of i8 elements");
-  if (storageOffset > storageType.getConstantArraySize())
-    return op->emitOpError("storage offset exceeds the storage size");
-  // TODO: we should probably verify that the (offset + sizeof(var))
-  // is within the storage object, but this requires mlir::DataLayout.
-  // Can we make it available during the verification?
   return mlir::success();
 }

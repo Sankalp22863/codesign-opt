@@ -1,27 +1,29 @@
-# ===----------------------------------------------------------------------===##
+#===----------------------------------------------------------------------===##
 #
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #
-# ===----------------------------------------------------------------------===##
+#===----------------------------------------------------------------------===##
 #
 # This file defines the buildkite and github actions builder images.
-# This images are tagged with <tag>. You can build both images using:
+# You can build & push both images using:
 #
-#   TAG=<tag> docker compose build
+#   docker compose build
+#   docker compose push
 #
-# Or you can select a single image to build
+# Or you can select a single image to build & push using:
 #
-#  TAG=test docker compose build actions-builder
+#  docker compose build buildkite-builder
+#  docker compose push buildkite-builder
 #
 # The final images can be found at
 #
-#  ghcr.io/libcxx/libcxx-linux-builder
+#  ghcr.io/libcxx/buildkite-builder
+#  ghcr.io/libcxx/actions-builder
 #  ghcr.io/libcxx/android-buildkite-builder
 #
-# Members of the github.com/libcxx/ organizations can push new images to the CI.
-# This is done by GitHub actions in the https://github.com/libcxx/builders repo.
+# Members of the github.com/libcxx/ organizations have permissions required to push new images.
 #
 # ===----------------------------------------------------------------------===##
 #                     Running the buildkite image
@@ -38,25 +40,18 @@
 # If you're only looking to run the Docker image locally for debugging a
 # build bot, see the `run-buildbot-container` script located in this directory.
 
-ARG ACTIONS_BASE_IMAGE
 
 # HACK: We set the base image in the docker-compose file depending on the final target (buildkite vs github actions).
 # This means we have a much slower container build, but we can use the same Dockerfile for both targets.
 ARG BASE_IMAGE
 FROM $BASE_IMAGE AS builder-base
 
-# Changing this file causes a rebuild of the image in a GitHub action.
-# However, it does not cause the CI runners to switch to that image
-# automatically, that must be done by updating the SHA in the Github workflow
-# file. The date uses the ISO format YYYY-MM-DD.
-RUN echo "Last forced update executed on 2025-04-28."
-
 # Make sure apt-get doesn't try to prompt for stuff like our time zone, etc.
 ENV DEBIAN_FRONTEND=noninteractive
 
 # populated in the docker-compose file
-ARG GCC_HEAD_VERSION
-ENV GCC_HEAD_VERSION=${GCC_HEAD_VERSION}
+ARG GCC_LATEST_VERSION
+ENV GCC_LATEST_VERSION=${GCC_LATEST_VERSION}
 
 # populated in the docker-compose file
 ARG LLVM_HEAD_VERSION
@@ -70,49 +65,42 @@ RUN <<EOF
   echo "ALL ALL = (ALL) NOPASSWD: ALL" | tee /etc/sudoers || true
 EOF
 
-# Installing tzdata before other packages avoids the time zone prompts.
-# These prompts seem to ignore DEBIAN_FRONTEND=noninteractive.
 RUN sudo apt-get update \
     && sudo apt-get install -y \
-        tzdata
-
-# Install various tools used by the build or the test suite
-# TODO add ninja-build once 1.11 is available in Ubuntu, also remove the manual
-# installation below.
-RUN sudo apt-get update \
-    && sudo apt-get install -y \
-        bash \
-        ccache \
-        curl \
-        gdb \
+        python3 \
+        python3-distutils \
+        python3-psutil \
         git \
+        gdb \
+        ccache \
         gpg \
+        wget \
+        bash \
+        curl \
+        python3 \
+        python3-dev \
+        libpython3-dev \
+        uuid-dev \
+        libncurses5-dev \
+        swig3.0 \
+        libxml2-dev \
+        libedit-dev \
         language-pack-en \
         language-pack-fr \
         language-pack-ja \
         language-pack-ru \
         language-pack-zh-hans \
-        libedit-dev \
-        libncurses5-dev \
-        libpython3-dev \
-        libxml2-dev \
         lsb-release \
-        make \
-        python3 \
-        python3-dev \
-        python3-packaging \
-        python3-setuptools \
-        python3-psutil \
-        software-properties-common \
-        swig \
-        unzip \
-        uuid-dev \
         wget \
-        xz-utils \
+        unzip \
+        software-properties-common \
     && sudo rm -rf /var/lib/apt/lists/*
 
+
+# Install various tools used by the build or the test suite
+#RUN apt-get update && apt-get install -y ninja-build python3 python3-distutils python3-psutil git gdb ccache
+# TODO add ninja-build once 1.11 is available in Ubuntu, also remove the manual installation.
 RUN <<EOF
-  set -e
   wget -qO /tmp/ninja.gz https://github.com/ninja-build/ninja/releases/latest/download/ninja-linux.zip
   gunzip /tmp/ninja.gz
   chmod a+x /tmp/ninja
@@ -122,7 +110,6 @@ EOF
 
 # These two locales are not enabled by default so generate them
 RUN <<EOF
-  set -e
   printf "fr_CA ISO-8859-1\ncs_CZ ISO-8859-2" | sudo tee -a /etc/locale.gen
   sudo mkdir /usr/local/share/i1en/
   printf "fr_CA ISO-8859-1\ncs_CZ ISO-8859-2" | sudo tee -a /usr/local/share/i1en/SUPPORTED
@@ -137,7 +124,6 @@ EOF
 # 14 release branch CI uses it. The tip-of-trunk CI will never use Clang 12,
 # though.
 RUN <<EOF
-  set -e
   sudo apt-get update
   wget https://apt.llvm.org/llvm.sh -O /tmp/llvm.sh
   chmod +x /tmp/llvm.sh
@@ -151,47 +137,37 @@ EOF
 
 # Install the most recent GCC, like clang install the previous version as a transition.
 RUN <<EOF
-  set -e
-  sudo git clone https://github.com/compiler-explorer/infra.git /tmp/ce-infra
-  (cd /tmp/ce-infra && sudo make ce)
-  # Current ToT, we do not guarantee any support in our support matrix.
-  sudo /tmp/ce-infra/bin/ce_install --enable nightly install compilers/c++/nightly/gcc trunk
-  sudo ln -s /opt/compiler-explorer/gcc-snapshot/bin/gcc /usr/bin/gcc-$GCC_HEAD_VERSION
-  sudo ln -s /opt/compiler-explorer/gcc-snapshot/bin/g++ /usr/bin/g++-$GCC_HEAD_VERSION
-  # The latest release.
-  sudo /tmp/ce-infra/bin/ce_install install compilers/c++/x86/gcc $((GCC_HEAD_VERSION - 1)).1.0
-  sudo ln -s /opt/compiler-explorer/gcc-$((GCC_HEAD_VERSION - 1)).1.0/bin/gcc /usr/bin/gcc-$((GCC_HEAD_VERSION - 1))
-  sudo ln -s /opt/compiler-explorer/gcc-$((GCC_HEAD_VERSION - 1)).1.0/bin/g++ /usr/bin/g++-$((GCC_HEAD_VERSION - 1))
-  # For CI transitions.
-  sudo /tmp/ce-infra/bin/ce_install install compilers/c++/x86/gcc $((GCC_HEAD_VERSION - 2)).1.0
-  sudo ln -s /opt/compiler-explorer/gcc-$((GCC_HEAD_VERSION - 2)).1.0/bin/gcc /usr/bin/gcc-$((GCC_HEAD_VERSION - 2))
-  sudo ln -s /opt/compiler-explorer/gcc-$((GCC_HEAD_VERSION - 2)).1.0/bin/g++ /usr/bin/g++-$((GCC_HEAD_VERSION - 2))
-  sudo rm -rf /tmp/ce-infra
+  sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+  sudo apt-get update
+  sudo apt-get install -y \
+    gcc-$((GCC_LATEST_VERSION - 1)) \
+    g++-$((GCC_LATEST_VERSION - 1)) \
+    gcc-$GCC_LATEST_VERSION \
+    g++-$GCC_LATEST_VERSION
+  sudo rm -rf /var/lib/apt/lists/*
 EOF
 
 RUN <<EOF
     # Install a recent CMake
-    set -e
-    wget https://github.com/Kitware/CMake/releases/download/v3.24.4/cmake-3.24.4-linux-x86_64.sh -O /tmp/install-cmake.sh
+    wget https://github.com/Kitware/CMake/releases/download/v3.21.1/cmake-3.21.1-linux-x86_64.sh -O /tmp/install-cmake.sh
     sudo bash /tmp/install-cmake.sh --prefix=/usr --exclude-subdir --skip-license
     rm /tmp/install-cmake.sh
 EOF
 
 # ===----------------------------------------------------------------------===##
-#                       Android Builder Base Image
+#                       Android Buildkite Image
 # ===----------------------------------------------------------------------===##
 
-FROM docker.io/library/ubuntu:jammy AS android-builder-base
+FROM ubuntu:jammy AS android-builder-base
 
 ARG ANDROID_CLANG_VERSION
 ARG ANDROID_CLANG_PREBUILTS_COMMIT
-ARG ANDROID_SYSROOT_COMMIT
+ARG ANDROID_SYSROOT_BID
 
-RUN apt-get update && apt-get install -y curl bzip2 git unzip
+RUN  apt-get update && apt-get install -y curl unzip git
 
 # Install the Android platform tools (e.g. adb) into /opt/android/sdk.
 RUN <<EOF
-  set -e
   mkdir -p /opt/android/sdk
   cd /opt/android/sdk
   curl -LO https://dl.google.com/android/repository/platform-tools-latest-linux.zip
@@ -205,7 +181,6 @@ EOF
 ENV ANDROID_CLANG_VERSION=$ANDROID_CLANG_VERSION
 ENV ANDROID_CLANG_PREBUILTS_COMMIT=$ANDROID_CLANG_PREBUILTS_COMMIT
 RUN <<EOF
-    set -e
     git clone --filter=blob:none --sparse \
         https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
         /opt/android/clang
@@ -218,18 +193,31 @@ RUN <<EOF
     ls /opt/android/clang/clang-current/bin/clang
 EOF
 
-# Install an Android sysroot. New Android sysroots are available at
-# https://android.googlesource.com/platform/prebuilts/ndk/+/refs/heads/mirror-goog-main-ndk/platform/sysroot.
+# Install an Android sysroot. New AOSP sysroots are available at
+# https://ci.android.com/builds/branches/aosp-main/grid, the "ndk" target. The
+# NDK also makes its sysroot prebuilt available at
+# https://android.googlesource.com/platform/prebuilts/ndk/+/refs/heads/dev/platform/sysroot.
 
-ENV ANDROID_SYSROOT_COMMIT=$ANDROID_SYSROOT_COMMIT
+ENV ANDROID_SYSROOT_BID=$ANDROID_SYSROOT_BID
 RUN <<EOF
-  set -e
-  mkdir -p /opt/android/ndk
-  cd /opt/android/ndk
-  git clone --filter=blob:none https://android.googlesource.com/platform/prebuilts/ndk tmp
-  git -C tmp checkout ${ANDROID_SYSROOT_COMMIT}
-  mv tmp/platform/sysroot .
-  rm -rf tmp
+  cd /opt/android
+  curl -L -o ndk_platform.tar.bz2 \
+      https://androidbuildinternal.googleapis.com/android/internal/build/v3/builds/${ANDROID_SYSROOT_BID}/ndk/attempts/latest/artifacts/ndk_platform.tar.bz2/url
+  tar xf ndk_platform.tar.bz2
+  rm ndk_platform.tar.bz2
+EOF
+
+# Install Docker
+RUN <<EOF
+  curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+  sh /tmp/get-docker.sh
+  rm /tmp/get-docker.sh
+
+  # Install Docker. Mark the binary setuid so it can be run without prefixing it
+  # with sudo. Adding the container user to the docker group doesn't work because
+  # /var/run/docker.sock is owned by the host's docker GID, not the container's
+  # docker GID.
+  chmod u+s /usr/bin/docker
 EOF
 
 # ===----------------------------------------------------------------------===##
@@ -249,7 +237,6 @@ WORKDIR /home/libcxx-builder
 # Install the Buildkite agent and dependencies. This must be done as non-root
 # for the Buildkite agent to be installed in a path where we can find it.
 RUN <<EOF
-  set -e
   cd /home/libcxx-builder
   curl -sL https://raw.githubusercontent.com/buildkite/agent/main/install.sh -o /tmp/install-agent.sh
   bash /tmp/install-agent.sh
@@ -278,22 +265,6 @@ COPY ./vendor/android/container-setup.sh /opt/android/container-setup.sh
 
 ENV PATH="/opt/android/sdk/platform-tools:${PATH}"
 
-USER root
-
-# Install Docker
-RUN <<EOF
-  set -e
-  curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-  sh /tmp/get-docker.sh
-  rm /tmp/get-docker.sh
-
-  # Install Docker. Mark the binary setuid so it can be run without prefixing it
-  # with sudo. Adding the container user to the docker group doesn't work because
-  # /var/run/docker.sock is owned by the host's docker GID, not the container's
-  # docker GID.
-  chmod u+s /usr/bin/docker
-EOF
-
 USER libcxx-builder
 WORKDIR /home/libcxx-builder
 
@@ -310,20 +281,14 @@ CMD /opt/android/container-setup.sh && buildkite-agent start
 #
 # IMAGE: ghcr.io/libcxx/actions-builder.
 #
-FROM $ACTIONS_BASE_IMAGE AS actions-builder
+FROM builder-base AS actions-builder
 
-ARG GITHUB_RUNNER_VERSION
+# Install 'act' for running github actions locally. This provides an alternative to the run-buildbot script
+# while still providing reproducability.
+RUN curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
 
-RUN useradd gha -u 1001 -m -s /bin/bash
-RUN adduser gha sudo
-RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-WORKDIR /home/gha
-USER gha
+WORKDIR /home/runner
+USER runner
 
-ENV RUNNER_MANUALLY_TRAP_SIG=1
-ENV ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT=1
-RUN mkdir actions-runner && \
-    cd actions-runner && \
-    curl -O -L https://github.com/actions/runner/releases/download/v$GITHUB_RUNNER_VERSION/actions-runner-linux-x64-$GITHUB_RUNNER_VERSION.tar.gz && \
-    tar xzf ./actions-runner-linux-x64-$GITHUB_RUNNER_VERSION.tar.gz && \
-    rm ./actions-runner-linux-x64-$GITHUB_RUNNER_VERSION.tar.gz
+
+

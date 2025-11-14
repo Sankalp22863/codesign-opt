@@ -3,8 +3,7 @@
 // Note: the spelling of the modulemap path still depends on the includer, since
 // that is the only source of information about it.
 
-// Needs symlinks
-// UNSUPPORTED: system-windows
+// REQUIRES: shell
 
 // RUN: rm -rf %t
 // RUN: split-file %s %t
@@ -18,10 +17,9 @@
 // CHECK:      "modules": [
 // CHECK-NEXT:   {
 // CHECK:          "file-deps": [
-// CHECK-NEXT:       "{{.*}}module.modulemap",
-// CHECK-NEXT:       "{{.*}}A.h"
+// CHECK-NEXT:       "{{.*}}A.h",
+// CHECK-NEXT:       "{{.*}}module.modulemap"
 // CHECK-NEXT:     ],
-// CHECK-NEXT:     "link-libraries": [],
 // CHECK-NEXT:     "name": "A"
 // CHECK-NEXT:   }
 

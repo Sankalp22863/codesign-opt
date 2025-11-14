@@ -68,12 +68,12 @@ bool UnwindAssembly_x86::AugmentUnwindPlanFromCallSite(
     AddressRange &func, Thread &thread, UnwindPlan &unwind_plan) {
   bool do_augment_unwindplan = true;
 
-  const UnwindPlan::Row *first_row = unwind_plan.GetRowForFunctionOffset(0);
-  const UnwindPlan::Row *last_row = unwind_plan.GetLastRow();
+  UnwindPlan::RowSP first_row = unwind_plan.GetRowForFunctionOffset(0);
+  UnwindPlan::RowSP last_row = unwind_plan.GetRowForFunctionOffset(-1);
 
   int wordsize = 8;
   ProcessSP process_sp(thread.GetProcess());
-  if (!process_sp || !first_row || !last_row)
+  if (process_sp.get() == nullptr)
     return false;
 
   wordsize = process_sp->GetTarget().GetArchitecture().GetAddressByteSize();
@@ -97,7 +97,7 @@ bool UnwindAssembly_x86::AugmentUnwindPlanFromCallSite(
       first_row->GetCFAValue().GetOffset() != wordsize) {
     return false;
   }
-  UnwindPlan::Row::AbstractRegisterLocation first_row_pc_loc;
+  UnwindPlan::Row::RegisterLocation first_row_pc_loc;
   if (!first_row->GetRegisterInfo(
           pc_regnum.GetAsKind(unwind_plan.GetRegisterKind()),
           first_row_pc_loc) ||
@@ -126,7 +126,7 @@ bool UnwindAssembly_x86::AugmentUnwindPlanFromCallSite(
       // Get the register locations for eip/rip from the first & last rows. Are
       // they both CFA plus an offset?  Is it the same offset?
 
-      UnwindPlan::Row::AbstractRegisterLocation last_row_pc_loc;
+      UnwindPlan::Row::RegisterLocation last_row_pc_loc;
       if (last_row->GetRegisterInfo(
               pc_regnum.GetAsKind(unwind_plan.GetRegisterKind()),
               last_row_pc_loc)) {
@@ -193,11 +193,9 @@ bool UnwindAssembly_x86::GetFastUnwindPlan(AddressRange &func, Thread &thread,
               0 ||
           memcmp(opcode_data.data(), x86_64_push_mov,
                  sizeof(x86_64_push_mov)) == 0) {
-        if (ABISP abi_sp = process_sp->GetABI()) {
-          if (UnwindPlanSP plan_sp = abi_sp->CreateDefaultUnwindPlan()) {
-            unwind_plan = std::move(*plan_sp);
-            return true;
-          }
+        ABISP abi_sp = process_sp->GetABI();
+        if (abi_sp) {
+          return abi_sp->CreateDefaultUnwindPlan(unwind_plan);
         }
       }
     }

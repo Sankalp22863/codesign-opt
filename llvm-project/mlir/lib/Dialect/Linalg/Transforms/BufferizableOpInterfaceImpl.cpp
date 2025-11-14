@@ -8,9 +8,10 @@
 
 #include "mlir/Dialect/Linalg/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Bufferization/IR/DstBufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
-#include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Interfaces/DestinationStyleOpInterface.h"
@@ -22,9 +23,10 @@ using namespace mlir::bufferization;
 namespace {
 
 /// Generic conversion for any DestinationStyleOpInterface on tensors.
-static LogicalResult bufferizeDestinationStyleOpInterface(
-    RewriterBase &rewriter, DestinationStyleOpInterface op,
-    const BufferizationOptions &options, const BufferizationState &state) {
+static LogicalResult
+bufferizeDestinationStyleOpInterface(RewriterBase &rewriter,
+                                     DestinationStyleOpInterface op,
+                                     const BufferizationOptions &options) {
   // Take a guard before anything else.
   OpBuilder::InsertionGuard g(rewriter);
   rewriter.setInsertionPoint(op);
@@ -46,8 +48,7 @@ static LogicalResult bufferizeDestinationStyleOpInterface(
       newInputBuffers.push_back(opOperand->get());
       continue;
     }
-    FailureOr<Value> buffer =
-        getBuffer(rewriter, opOperand->get(), options, state);
+    FailureOr<Value> buffer = getBuffer(rewriter, opOperand->get(), options);
     if (failed(buffer))
       return failure();
     newInputBuffers.push_back(*buffer);
@@ -58,7 +59,7 @@ static LogicalResult bufferizeDestinationStyleOpInterface(
   for (OpResult opResult : op->getOpResults()) {
     OpOperand *opOperand = op.getDpsInitOperand(opResult.getResultNumber());
     FailureOr<Value> resultBuffer =
-        getBuffer(rewriter, opOperand->get(), options, state);
+        getBuffer(rewriter, opOperand->get(), options);
     if (failed(resultBuffer))
       return failure();
     newOutputBuffers.push_back(*resultBuffer);
@@ -74,16 +75,10 @@ static LogicalResult bufferizeDestinationStyleOpInterface(
   // new op. Since the new op does not have any tensor results, it does not
   // return anything.
   assert(op->getNumRegions() == 1 && "expected that op has 1 region");
-  OperationState opState(op->getLoc(), op->getName(), newOperands, TypeRange{},
-                         op->getAttrs());
-  opState.addRegion();
-  Operation *newOp = Operation::create(opState);
-  newOp->getRegion(0).getBlocks().splice(newOp->getRegion(0).begin(),
-                                         op->getRegion(0).getBlocks());
-
-  // We don't want the rewriter tracks an incomplete operation, so insert new
-  // operation after op was fully constructed.
-  rewriter.insert(newOp);
+  auto newOp = cast<DestinationStyleOpInterface>(cloneWithoutRegions(
+      rewriter, op, /*newResultTypes=*/TypeRange{}, newOperands));
+  rewriter.inlineRegionBefore(op->getRegion(0), newOp->getRegion(0),
+                              newOp->getRegion(0).begin());
 
   // Replace the results of the old op with the new output buffers.
   replaceOpWithBufferizedValues(rewriter, op, newOutputBuffers);
@@ -115,10 +110,6 @@ struct LinalgOpInterface
                                      ArrayRef<OpOperand *> opOperands) const {
     auto linalgOp = cast<linalg::LinalgOp>(op);
 
-    // Accesses into sparse data structures are not necessarily elementwise.
-    if (sparse_tensor::hasAnySparseOperand(linalgOp))
-      return false;
-
     // All loops must be parallel.
     if (linalgOp.getNumLoops() != linalgOp.getNumParallelLoops())
       return false;
@@ -146,10 +137,9 @@ struct LinalgOpInterface
   }
 
   LogicalResult bufferize(Operation *op, RewriterBase &rewriter,
-                          const BufferizationOptions &options,
-                          BufferizationState &state) const {
+                          const BufferizationOptions &options) const {
     return bufferizeDestinationStyleOpInterface(
-        rewriter, cast<DestinationStyleOpInterface>(op), options, state);
+        rewriter, cast<DestinationStyleOpInterface>(op), options);
   }
 };
 
@@ -159,36 +149,6 @@ template <typename... Ops>
 struct LinalgOpInterfaceHelper {
   static void registerOpInterface(MLIRContext *ctx) {
     (Ops::template attachInterface<LinalgOpInterface<Ops>>(*ctx), ...);
-  }
-};
-
-struct SoftmaxOpInterface
-    : public DstBufferizableOpInterfaceExternalModel<SoftmaxOpInterface,
-                                                     linalg::SoftmaxOp> {
-  bool bufferizesToMemoryRead(Operation *op, OpOperand &opOperand,
-                              const AnalysisState &state) const {
-    // Output operand is not read.
-    auto softmaxOp = cast<linalg::SoftmaxOp>(op);
-    return &opOperand == &softmaxOp.getInputMutable();
-  }
-
-  LogicalResult bufferize(Operation *op, RewriterBase &rewriter,
-                          const BufferizationOptions &options,
-                          BufferizationState &state) const {
-    auto softmaxOp = cast<linalg::SoftmaxOp>(op);
-    FailureOr<Value> inputBuffer =
-        getBuffer(rewriter, softmaxOp.getInput(), options, state);
-    if (failed(inputBuffer))
-      return failure();
-    FailureOr<Value> outputBuffer =
-        getBuffer(rewriter, softmaxOp.getOutput(), options, state);
-    if (failed(outputBuffer))
-      return failure();
-    linalg::SoftmaxOp::create(rewriter, softmaxOp.getLoc(),
-                              /*result=*/TypeRange(), *inputBuffer,
-                              *outputBuffer, softmaxOp.getDimension());
-    replaceOpWithBufferizedValues(rewriter, op, *outputBuffer);
-    return success();
   }
 };
 } // namespace
@@ -202,9 +162,6 @@ void mlir::linalg::registerBufferizableOpInterfaceExternalModels(
     LinalgOpInterfaceHelper<
 #define GET_OP_LIST
 #include "mlir/Dialect/Linalg/IR/LinalgStructuredOps.cpp.inc"
-
         >::registerOpInterface(ctx);
-
-    SoftmaxOp::attachInterface<SoftmaxOpInterface>(*ctx);
   });
 }

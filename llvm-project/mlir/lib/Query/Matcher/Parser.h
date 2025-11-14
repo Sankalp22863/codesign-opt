@@ -16,11 +16,8 @@
 // provided to the parser.
 //
 // The grammar for the supported expressions is as follows:
-// <Expression>        := <Literal> | <MatcherExpression>
-// <Literal>           := <StringLiteral> | <NumericLiteral> | <BooleanLiteral>
+// <Expression>        := <StringLiteral> | <MatcherExpression>
 // <StringLiteral>     := "quoted string"
-// <BooleanLiteral>    := "true" | "false"
-// <NumericLiteral>    := [0-9]+
 // <MatcherExpression> := <MatcherName>(<ArgumentList>)
 // <MatcherName>       := [a-zA-Z]+
 // <ArgumentList>      := <Expression> | <Expression>,<ArgumentList>
@@ -67,9 +64,10 @@ public:
 
     // Process a matcher expression. The caller takes ownership of the Matcher
     // object returned.
-    virtual VariantMatcher actOnMatcherExpression(
-        MatcherCtor ctor, SourceRange nameRange, llvm::StringRef functionName,
-        llvm::ArrayRef<ParserValue> args, Diagnostics *error) = 0;
+    virtual VariantMatcher
+    actOnMatcherExpression(MatcherCtor ctor, SourceRange nameRange,
+                           llvm::ArrayRef<ParserValue> args,
+                           Diagnostics *error) = 0;
 
     // Look up a matcher by name in the matcher name found by the parser.
     virtual std::optional<MatcherCtor>
@@ -95,11 +93,10 @@ public:
     std::optional<MatcherCtor>
     lookupMatcherCtor(llvm::StringRef matcherName) override;
 
-    VariantMatcher actOnMatcherExpression(MatcherCtor Ctor,
-                                          SourceRange NameRange,
-                                          StringRef functionName,
-                                          ArrayRef<ParserValue> Args,
-                                          Diagnostics *Error) override;
+    VariantMatcher actOnMatcherExpression(MatcherCtor ctor,
+                                          SourceRange nameRange,
+                                          llvm::ArrayRef<ParserValue> args,
+                                          Diagnostics *error) override;
 
     std::vector<ArgKind> getAcceptedCompletionTypes(
         llvm::ArrayRef<std::pair<MatcherCtor, unsigned>> context) override;
@@ -155,8 +152,6 @@ private:
 
   Parser(CodeTokenizer *tokenizer, const Registry &matcherRegistry,
          const NamedValueMap *namedValues, Diagnostics *error);
-
-  bool parseChainedExpression(std::string &argument);
 
   bool parseExpressionImpl(VariantValue *value);
 

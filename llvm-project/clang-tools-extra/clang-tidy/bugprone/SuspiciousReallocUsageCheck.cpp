@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- SuspiciousReallocUsageCheck.cpp - clang-tidy----------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,7 +7,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "SuspiciousReallocUsageCheck.h"
+#include "../utils/Aliasing.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/DeclVisitor.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
@@ -44,7 +46,7 @@ public:
       return false;
     if (!check(E1->getBase(), E2->getBase()))
       return false;
-    const DeclAccessPair FD = E1->getFoundDecl();
+    DeclAccessPair FD = E1->getFoundDecl();
     return isa<FieldDecl>(FD.getDecl()) && FD == E2->getFoundDecl();
   }
 
@@ -145,7 +147,7 @@ void SuspiciousReallocUsageCheck::check(
         if (FindAssignToVarBefore{Var, DeclRef, SM}.Visit(Func->getBody()))
           return;
 
-  const StringRef CodeOfAssignedExpr = Lexer::getSourceText(
+  StringRef CodeOfAssignedExpr = Lexer::getSourceText(
       CharSourceRange::getTokenRange(PtrResultExpr->getSourceRange()), SM,
       getLangOpts());
   diag(Call->getBeginLoc(), "'%0' may be set to null if 'realloc' fails, which "

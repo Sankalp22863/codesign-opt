@@ -17,7 +17,6 @@
 
 #include "debug.h"
 #include "error.h"
-#include "jit_dispatch.h"
 #include "wrapper_function_utils.h"
 
 #include <array>
@@ -30,9 +29,9 @@
 
 #define DEBUG_TYPE "coff_platform"
 
-using namespace orc_rt;
+using namespace __orc_rt;
 
-namespace orc_rt {
+namespace __orc_rt {
 
 using COFFJITDylibDepInfo = std::vector<ExecutorAddr>;
 using COFFJITDylibDepInfoMap =
@@ -46,7 +45,7 @@ using SPSCOFFJITDylibDepInfo = SPSSequence<SPSExecutorAddr>;
 using SPSCOFFJITDylibDepInfoMap =
     SPSSequence<SPSTuple<SPSExecutorAddr, SPSCOFFJITDylibDepInfo>>;
 
-} // namespace orc_rt
+} // namespace __orc_rt
 
 ORC_RT_JIT_DISPATCH_TAG(__orc_rt_coff_symbol_lookup_tag)
 ORC_RT_JIT_DISPATCH_TAG(__orc_rt_coff_push_initializers_tag)
@@ -110,7 +109,6 @@ public:
 
   const char *dlerror();
   void *dlopen(std::string_view Name, int Mode);
-  int dlupdate(void *DSOHandle);
   int dlclose(void *Header);
   void *dlsym(void *Header, std::string_view Symbol);
 
@@ -141,10 +139,6 @@ private:
   Expected<void *> dlopenImpl(std::string_view Path, int Mode);
   Error dlopenFull(JITDylibState &JDS);
   Error dlopenInitialize(JITDylibState &JDS, COFFJITDylibDepInfoMap &DepInfo);
-
-  Error dlupdateImpl(void *DSOHandle);
-  Error dlupdateFull(JITDylibState &JDS);
-  Error dlupdateInitialize(JITDylibState &JDS);
 
   Error dlcloseImpl(void *DSOHandle);
   Error dlcloseDeinitialize(JITDylibState &JDS);
@@ -270,20 +264,6 @@ void *COFFPlatformRuntimeState::dlopen(std::string_view Path, int Mode) {
   }
 }
 
-int COFFPlatformRuntimeState::dlupdate(void *DSOHandle) {
-  ORC_RT_DEBUG({
-    std::string S;
-    printdbg("COFFPlatform::dlupdate(%p) (%s)\n", DSOHandle, S.c_str());
-  });
-  std::lock_guard<std::recursive_mutex> Lock(JDStatesMutex);
-  if (auto Err = dlupdateImpl(DSOHandle)) {
-    // FIXME: Make dlerror thread safe.
-    DLFcnError = toString(std::move(Err));
-    return -1;
-  }
-  return 0;
-}
-
 int COFFPlatformRuntimeState::dlclose(void *DSOHandle) {
   ORC_RT_DEBUG({
     auto *JDS = getJITDylibStateByHeader(DSOHandle);
@@ -335,9 +315,9 @@ Error COFFPlatformRuntimeState::dlopenFull(JITDylibState &JDS) {
   // Call back to the JIT to push the initializers.
   Expected<COFFJITDylibDepInfoMap> DepInfoMap((COFFJITDylibDepInfoMap()));
   if (auto Err = WrapperFunction<SPSExpected<SPSCOFFJITDylibDepInfoMap>(
-          SPSExecutorAddr)>::
-          call(JITDispatch(&__orc_rt_coff_push_initializers_tag), DepInfoMap,
-               ExecutorAddr::fromPtr(JDS.Header)))
+          SPSExecutorAddr)>::call(&__orc_rt_coff_push_initializers_tag,
+                                  DepInfoMap,
+                                  ExecutorAddr::fromPtr(JDS.Header)))
     return Err;
   if (!DepInfoMap)
     return DepInfoMap.takeError();
@@ -409,55 +389,6 @@ Error COFFPlatformRuntimeState::dlopenInitialize(
   return Error::success();
 }
 
-Error COFFPlatformRuntimeState::dlupdateImpl(void *DSOHandle) {
-  // Try to find JITDylib state by header.
-  auto *JDS = getJITDylibStateByHeader(DSOHandle);
-
-  if (!JDS) {
-    std::ostringstream ErrStream;
-    ErrStream << "No registered JITDylib for " << DSOHandle;
-    return make_error<StringError>(ErrStream.str());
-  }
-
-  if (!JDS->referenced())
-    return make_error<StringError>("dlupdate failed, JITDylib must be open.");
-
-  if (auto Err = dlupdateFull(*JDS))
-    return Err;
-
-  return Error::success();
-}
-
-Error COFFPlatformRuntimeState::dlupdateFull(JITDylibState &JDS) {
-  // Call back to the JIT to push the initializers.
-  Expected<COFFJITDylibDepInfoMap> DepInfoMap((COFFJITDylibDepInfoMap()));
-  if (auto Err = WrapperFunction<SPSExpected<SPSCOFFJITDylibDepInfoMap>(
-          SPSExecutorAddr)>::
-          call(JITDispatch(&__orc_rt_coff_push_initializers_tag), DepInfoMap,
-               ExecutorAddr::fromPtr(JDS.Header)))
-    return Err;
-  if (!DepInfoMap)
-    return DepInfoMap.takeError();
-
-  if (auto Err = dlupdateInitialize(JDS))
-    return Err;
-
-  return Error::success();
-}
-
-Error COFFPlatformRuntimeState::dlupdateInitialize(JITDylibState &JDS) {
-  ORC_RT_DEBUG({
-    printdbg("COFFPlatformRuntimeState::dlupdateInitialize(\"%s\")\n",
-             JDS.Name.c_str());
-  });
-
-  // Run static initializers.
-  JDS.CInitSection.RunAllNewAndFlush();
-  JDS.CXXInitSection.RunAllNewAndFlush();
-
-  return Error::success();
-}
-
 Error COFFPlatformRuntimeState::dlcloseImpl(void *DSOHandle) {
   // Try to find JITDylib state by header.
   auto *JDS = getJITDylibStateByHeader(DSOHandle);
@@ -514,9 +445,10 @@ COFFPlatformRuntimeState::lookupSymbolInJITDylib(void *header,
                                                  std::string_view Sym) {
   Expected<ExecutorAddr> Result((ExecutorAddr()));
   if (auto Err = WrapperFunction<SPSExpected<SPSExecutorAddr>(
-          SPSExecutorAddr,
-          SPSString)>::call(JITDispatch(&__orc_rt_coff_symbol_lookup_tag),
-                            Result, ExecutorAddr::fromPtr(header), Sym))
+          SPSExecutorAddr, SPSString)>::call(&__orc_rt_coff_symbol_lookup_tag,
+                                             Result,
+                                             ExecutorAddr::fromPtr(header),
+                                             Sym))
     return std::move(Err);
   return Result;
 }
@@ -662,19 +594,19 @@ void *COFFPlatformRuntimeState::findJITDylibBaseByPC(uint64_t PC) {
   return Range.Header;
 }
 
-ORC_RT_INTERFACE orc_rt_WrapperFunctionResult
+ORC_RT_INTERFACE orc_rt_CWrapperFunctionResult
 __orc_rt_coff_platform_bootstrap(char *ArgData, size_t ArgSize) {
   COFFPlatformRuntimeState::initialize();
   return WrapperFunctionResult().release();
 }
 
-ORC_RT_INTERFACE orc_rt_WrapperFunctionResult
+ORC_RT_INTERFACE orc_rt_CWrapperFunctionResult
 __orc_rt_coff_platform_shutdown(char *ArgData, size_t ArgSize) {
   COFFPlatformRuntimeState::destroy();
   return WrapperFunctionResult().release();
 }
 
-ORC_RT_INTERFACE orc_rt_WrapperFunctionResult
+ORC_RT_INTERFACE orc_rt_CWrapperFunctionResult
 __orc_rt_coff_register_jitdylib(char *ArgData, size_t ArgSize) {
   return WrapperFunction<SPSError(SPSString, SPSExecutorAddr)>::handle(
              ArgData, ArgSize,
@@ -685,7 +617,7 @@ __orc_rt_coff_register_jitdylib(char *ArgData, size_t ArgSize) {
       .release();
 }
 
-ORC_RT_INTERFACE orc_rt_WrapperFunctionResult
+ORC_RT_INTERFACE orc_rt_CWrapperFunctionResult
 __orc_rt_coff_deregister_jitdylib(char *ArgData, size_t ArgSize) {
   return WrapperFunction<SPSError(SPSExecutorAddr)>::handle(
              ArgData, ArgSize,
@@ -696,7 +628,7 @@ __orc_rt_coff_deregister_jitdylib(char *ArgData, size_t ArgSize) {
       .release();
 }
 
-ORC_RT_INTERFACE orc_rt_WrapperFunctionResult
+ORC_RT_INTERFACE orc_rt_CWrapperFunctionResult
 __orc_rt_coff_register_object_sections(char *ArgData, size_t ArgSize) {
   return WrapperFunction<SPSError(SPSExecutorAddr, SPSCOFFObjectSectionsMap,
                                   bool)>::
@@ -711,7 +643,7 @@ __orc_rt_coff_register_object_sections(char *ArgData, size_t ArgSize) {
           .release();
 }
 
-ORC_RT_INTERFACE orc_rt_WrapperFunctionResult
+ORC_RT_INTERFACE orc_rt_CWrapperFunctionResult
 __orc_rt_coff_deregister_object_sections(char *ArgData, size_t ArgSize) {
   return WrapperFunction<SPSError(SPSExecutorAddr, SPSCOFFObjectSectionsMap)>::
       handle(ArgData, ArgSize,
@@ -733,10 +665,6 @@ const char *__orc_rt_coff_jit_dlerror() {
 
 void *__orc_rt_coff_jit_dlopen(const char *path, int mode) {
   return COFFPlatformRuntimeState::get().dlopen(path, mode);
-}
-
-int __orc_rt_coff_jit_dlupdate(void *dso_handle) {
-  return COFFPlatformRuntimeState::get().dlupdate(dso_handle);
 }
 
 int __orc_rt_coff_jit_dlclose(void *header) {
@@ -824,7 +752,7 @@ ORC_RT_INTERFACE int64_t __orc_rt_coff_run_program(const char *JITDylibName,
   using MainTy = int (*)(int, char *[]);
 
   void *H =
-      __orc_rt_coff_jit_dlopen(JITDylibName, orc_rt::coff::ORC_RT_RTLD_LAZY);
+      __orc_rt_coff_jit_dlopen(JITDylibName, __orc_rt::coff::ORC_RT_RTLD_LAZY);
   if (!H) {
     __orc_rt_log_error(__orc_rt_coff_jit_dlerror());
     return -1;

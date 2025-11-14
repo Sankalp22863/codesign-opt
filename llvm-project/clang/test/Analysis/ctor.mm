@@ -56,6 +56,8 @@ void testNonPODCopyConstructor() {
 namespace ConstructorVirtualCalls {
   class A {
   public:
+    int *out1, *out2, *out3;
+
     virtual int get() { return 1; }
 
     A(int *out1) {
@@ -145,24 +147,24 @@ namespace PODUninitialized {
 
     NonPOD() {}
     NonPOD(const NonPOD &Other)
-      : x(Other.x), y(Other.y) // expected-warning {{uninitialized}}
+      : x(Other.x), y(Other.y) // expected-warning {{undefined}}
     {
     }
     NonPOD(NonPOD &&Other)
-    : x(Other.x), y(Other.y) // expected-warning {{uninitialized}}
+    : x(Other.x), y(Other.y) // expected-warning {{undefined}}
     {
     }
 
     NonPOD &operator=(const NonPOD &Other)
     {
       x = Other.x;
-      y = Other.y; // expected-warning {{uninitialized}}
+      y = Other.y; // expected-warning {{undefined}}
       return *this;
     }
     NonPOD &operator=(NonPOD &&Other)
     {
       x = Other.x;
-      y = Other.y; // expected-warning {{uninitialized}}
+      y = Other.y; // expected-warning {{undefined}}
       return *this;
     }
   };
@@ -175,23 +177,23 @@ namespace PODUninitialized {
 
       Inner() {}
       Inner(const Inner &Other)
-        : x(Other.x), y(Other.y) // expected-warning {{uninitialized}}
+        : x(Other.x), y(Other.y) // expected-warning {{undefined}}
       {
       }
       Inner(Inner &&Other)
-      : x(Other.x), y(Other.y) // expected-warning {{uninitialized}}
+      : x(Other.x), y(Other.y) // expected-warning {{undefined}}
       {
       }
 
       Inner &operator=(const Inner &Other)
       {
-        x = Other.x; // expected-warning {{uninitialized}}
+        x = Other.x; // expected-warning {{undefined}}
         y = Other.y;
         return *this;
       }
       Inner &operator=(Inner &&Other)
       {
-        x = Other.x; // expected-warning {{uninitialized}}
+        x = Other.x; // expected-warning {{undefined}}
         y = Other.y;
         return *this;
       }

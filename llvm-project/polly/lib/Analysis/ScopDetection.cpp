@@ -91,7 +91,6 @@
 using namespace llvm;
 using namespace polly;
 
-#include "polly/Support/PollyDebug.h"
 #define DEBUG_TYPE "polly-detect"
 
 // This option is set to a very high value, as analyzing such loops increases
@@ -366,7 +365,7 @@ void ScopDetection::detect(Function &F) {
 
   // Prune non-profitable regions.
   for (auto &DIt : DetectionContextMap) {
-    DetectionContext &DC = *DIt.getSecond();
+    DetectionContext &DC = *DIt.getSecond().get();
     if (DC.Log.hasErrors())
       continue;
     if (!ValidRegions.count(&DC.CurRegion))
@@ -407,8 +406,8 @@ inline bool ScopDetection::invalid(DetectionContext &Context, bool Assert,
     // canUseISLTripCount().
     Log.report(RejectReason);
 
-    POLLY_DEBUG(dbgs() << RejectReason->getMessage());
-    POLLY_DEBUG(dbgs() << "\n");
+    LLVM_DEBUG(dbgs() << RejectReason->getMessage());
+    LLVM_DEBUG(dbgs() << "\n");
   } else {
     assert(!Assert && "Verification of detected scop failed");
   }
@@ -431,7 +430,7 @@ bool ScopDetection::isMaxRegionInScop(const Region &R, bool Verify) {
     Entry = std::make_unique<DetectionContext>(const_cast<Region &>(R), AA,
                                                /*Verifying=*/false);
 
-    return isValidRegion(*Entry);
+    return isValidRegion(*Entry.get());
   }
 
   return true;
@@ -490,8 +489,7 @@ bool ScopDetection::onlyValidRequiredInvariantLoads(
 
     for (auto NonAffineRegion : Context.NonAffineSubRegionSet) {
       if (isSafeToLoadUnconditionally(Load->getPointerOperand(),
-                                      Load->getType(), Load->getAlign(), DL,
-                                      nullptr))
+                                      Load->getType(), Load->getAlign(), DL))
         continue;
 
       if (NonAffineRegion->contains(Load) &&
@@ -500,7 +498,7 @@ bool ScopDetection::onlyValidRequiredInvariantLoads(
     }
   }
 
-  Context.RequiredILS.insert_range(RequiredILS);
+  Context.RequiredILS.insert(RequiredILS.begin(), RequiredILS.end());
 
   return true;
 }
@@ -520,7 +518,7 @@ bool ScopDetection::involvesMultiplePtrs(const SCEV *S0, const SCEV *S1,
     if (!V->getType()->isPointerTy())
       continue;
 
-    const SCEV *PtrSCEV = SE.getSCEVAtScope(V, Scope);
+    auto *PtrSCEV = SE.getSCEVAtScope(V, Scope);
     if (isa<SCEVConstant>(PtrSCEV))
       continue;
 
@@ -528,7 +526,7 @@ bool ScopDetection::involvesMultiplePtrs(const SCEV *S0, const SCEV *S1,
     if (!BasePtr)
       return true;
 
-    Value *BasePtrVal = BasePtr->getValue();
+    auto *BasePtrVal = BasePtr->getValue();
     if (PtrVals.insert(BasePtrVal).second) {
       for (auto *PtrVal : PtrVals)
         if (PtrVal != BasePtrVal && !AA.isNoAlias(PtrVal, BasePtrVal))
@@ -706,8 +704,8 @@ bool ScopDetection::isValidCallInst(CallInst &CI,
     return false;
 
   if (isDebugCall(&CI)) {
-    POLLY_DEBUG(dbgs() << "Allow call to debug function: "
-                       << CalledFunction->getName() << '\n');
+    LLVM_DEBUG(dbgs() << "Allow call to debug function: "
+                      << CalledFunction->getName() << '\n');
     return true;
   }
 
@@ -720,8 +718,7 @@ bool ScopDetection::isValidCallInst(CallInst &CI,
 
         // Bail if a pointer argument has a base address not known to
         // ScalarEvolution. Note that a zero pointer is acceptable.
-        const SCEV *ArgSCEV =
-            SE.getSCEVAtScope(Arg, LI.getLoopFor(CI.getParent()));
+        auto *ArgSCEV = SE.getSCEVAtScope(Arg, LI.getLoopFor(CI.getParent()));
         if (ArgSCEV->isZero())
           continue;
 
@@ -892,7 +889,7 @@ ScopDetection::getDelinearizationTerms(DetectionContext &Context,
         if (auto *AF2 = dyn_cast<SCEVMulExpr>(Op)) {
           SmallVector<const SCEV *, 0> Operands;
 
-          for (const SCEV *MulOp : AF2->operands()) {
+          for (auto *MulOp : AF2->operands()) {
             if (auto *Const = dyn_cast<SCEVConstant>(MulOp))
               Operands.push_back(Const);
             if (auto *Unknown = dyn_cast<SCEVUnknown>(MulOp)) {
@@ -1367,7 +1364,7 @@ bool ScopDetection::isValidLoop(Loop *L, DetectionContext &Context) {
 ScopDetection::LoopStats
 ScopDetection::countBeneficialSubLoops(Loop *L, ScalarEvolution &SE,
                                        unsigned MinProfitableTrips) {
-  const SCEV *TripCount = SE.getBackedgeTakenCount(L);
+  auto *TripCount = SE.getBackedgeTakenCount(L);
 
   int NumLoops = 1;
   int MaxLoopDepth = 1;
@@ -1489,17 +1486,16 @@ Region *ScopDetection::expandRegion(Region &R) {
   std::unique_ptr<Region> LastValidRegion;
   auto ExpandedRegion = std::unique_ptr<Region>(R.getExpandedRegion());
 
-  POLLY_DEBUG(dbgs() << "\tExpanding " << R.getNameStr() << "\n");
+  LLVM_DEBUG(dbgs() << "\tExpanding " << R.getNameStr() << "\n");
 
   while (ExpandedRegion) {
     BBPair P = getBBPairForRegion(ExpandedRegion.get());
     std::unique_ptr<DetectionContext> &Entry = DetectionContextMap[P];
     Entry = std::make_unique<DetectionContext>(*ExpandedRegion, AA,
                                                /*Verifying=*/false);
-    DetectionContext &Context = *Entry;
+    DetectionContext &Context = *Entry.get();
 
-    POLLY_DEBUG(dbgs() << "\t\tTrying " << ExpandedRegion->getNameStr()
-                       << "\n");
+    LLVM_DEBUG(dbgs() << "\t\tTrying " << ExpandedRegion->getNameStr() << "\n");
     // Only expand when we did not collect errors.
 
     if (!Context.Log.hasErrors()) {
@@ -1533,7 +1529,7 @@ Region *ScopDetection::expandRegion(Region &R) {
     }
   }
 
-  POLLY_DEBUG({
+  LLVM_DEBUG({
     if (LastValidRegion)
       dbgs() << "\tto " << LastValidRegion->getNameStr() << "\n";
     else
@@ -1554,7 +1550,7 @@ static bool regionWithoutLoops(Region &R, LoopInfo &LI) {
 void ScopDetection::removeCachedResultsRecursively(const Region &R) {
   for (auto &SubRegion : R) {
     if (ValidRegions.count(SubRegion.get())) {
-      removeCachedResults(*SubRegion);
+      removeCachedResults(*SubRegion.get());
     } else
       removeCachedResultsRecursively(*SubRegion);
   }
@@ -1568,7 +1564,7 @@ void ScopDetection::findScops(Region &R) {
   std::unique_ptr<DetectionContext> &Entry =
       DetectionContextMap[getBBPairForRegion(&R)];
   Entry = std::make_unique<DetectionContext>(R, AA, /*Verifying=*/false);
-  DetectionContext &Context = *Entry;
+  DetectionContext &Context = *Entry.get();
 
   bool DidBailout = true;
   if (!PollyProcessUnprofitable && regionWithoutLoops(R, LI))
@@ -1699,8 +1695,6 @@ bool ScopDetection::hasPossiblyDistributableLoop(
     DetectionContext &Context) const {
   for (auto *BB : Context.CurRegion.blocks()) {
     auto *L = LI.getLoopFor(BB);
-    if (!L)
-      continue;
     if (!Context.CurRegion.contains(L))
       continue;
     if (Context.BoxedLoopsSet.count(L))
@@ -1756,11 +1750,10 @@ bool ScopDetection::isProfitableRegion(DetectionContext &Context) const {
 bool ScopDetection::isValidRegion(DetectionContext &Context) {
   Region &CurRegion = Context.CurRegion;
 
-  POLLY_DEBUG(dbgs() << "Checking region: " << CurRegion.getNameStr()
-                     << "\n\t");
+  LLVM_DEBUG(dbgs() << "Checking region: " << CurRegion.getNameStr() << "\n\t");
 
   if (!PollyAllowFullFunction && CurRegion.isTopLevelRegion()) {
-    POLLY_DEBUG(dbgs() << "Top level region is invalid\n");
+    LLVM_DEBUG(dbgs() << "Top level region is invalid\n");
     Context.IsInvalid = true;
     return false;
   }
@@ -1768,14 +1761,14 @@ bool ScopDetection::isValidRegion(DetectionContext &Context) {
   DebugLoc DbgLoc;
   if (CurRegion.getExit() &&
       isa<UnreachableInst>(CurRegion.getExit()->getTerminator())) {
-    POLLY_DEBUG(dbgs() << "Unreachable in exit\n");
+    LLVM_DEBUG(dbgs() << "Unreachable in exit\n");
     return invalid<ReportUnreachableInExit>(Context, /*Assert=*/true,
                                             CurRegion.getExit(), DbgLoc);
   }
 
   if (!OnlyRegion.empty() &&
       !CurRegion.getEntry()->getName().count(OnlyRegion)) {
-    POLLY_DEBUG({
+    LLVM_DEBUG({
       dbgs() << "Region entry does not match -polly-only-region";
       dbgs() << "\n";
     });
@@ -1809,7 +1802,7 @@ bool ScopDetection::isValidRegion(DetectionContext &Context) {
     return invalid<ReportIrreducibleRegion>(Context, /*Assert=*/true,
                                             &CurRegion, DbgLoc);
 
-  POLLY_DEBUG(dbgs() << "OK\n");
+  LLVM_DEBUG(dbgs() << "OK\n");
   return true;
 }
 
@@ -1834,7 +1827,7 @@ void ScopDetection::printLocations(Function &F) {
 
 void ScopDetection::emitMissedRemarks(const Function &F) {
   for (auto &DIt : DetectionContextMap) {
-    DetectionContext &DC = *DIt.getSecond();
+    DetectionContext &DC = *DIt.getSecond().get();
     if (DC.Log.hasErrors())
       emitRejectionRemarks(DIt.getFirst(), DC.Log, ORE);
   }

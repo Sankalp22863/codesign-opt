@@ -152,20 +152,6 @@ TEST(buildASTFromCode, ReportsErrors) {
   EXPECT_EQ(1u, Consumer.NumDiagnosticsSeen);
 }
 
-TEST(buildASTFromCode, FileSystem) {
-  auto InMemoryFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
-  InMemoryFileSystem->addFile("included_file.h", 0,
-                              llvm::MemoryBuffer::getMemBufferCopy("class X;"));
-  std::unique_ptr<ASTUnit> AST = buildASTFromCodeWithArgs(
-      R"(#include "included_file.h")", {}, "input.cc", "clang-tool",
-      std::make_shared<PCHContainerOperations>(),
-      getClangStripDependencyFileAdjuster(), FileContentMappings(), nullptr,
-      InMemoryFileSystem);
-  ASSERT_TRUE(AST.get());
-  EXPECT_TRUE(FindClassDeclX(AST.get()));
-}
-
 TEST(newFrontendActionFactory, CreatesFrontendActionFactoryFromType) {
   std::unique_ptr<FrontendActionFactory> Factory(
       newFrontendActionFactory<SyntaxOnlyAction>());
@@ -188,14 +174,13 @@ TEST(newFrontendActionFactory, CreatesFrontendActionFactoryFromFactoryType) {
 }
 
 TEST(ToolInvocation, TestMapVirtualFile) {
-  auto OverlayFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(
-          llvm::vfs::getRealFileSystem());
-  auto InMemoryFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
+      new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem()));
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
+      new llvm::vfs::InMemoryFileSystem);
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
-  auto Files = llvm::makeIntrusiveRefCnt<FileManager>(FileSystemOptions(),
-                                                      OverlayFileSystem);
+  llvm::IntrusiveRefCntPtr<FileManager> Files(
+      new FileManager(FileSystemOptions(), OverlayFileSystem));
   std::vector<std::string> Args;
   Args.push_back("tool-executable");
   Args.push_back("-Idef");
@@ -215,14 +200,13 @@ TEST(ToolInvocation, TestVirtualModulesCompilation) {
   // mapped module.modulemap is found on the include path. In the future, expand
   // this test to run a full modules enabled compilation, so we make sure we can
   // rerun modules compilations with a virtual file system.
-  auto OverlayFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(
-          llvm::vfs::getRealFileSystem());
-  auto InMemoryFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
+      new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem()));
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
+      new llvm::vfs::InMemoryFileSystem);
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
-  auto Files = llvm::makeIntrusiveRefCnt<FileManager>(FileSystemOptions(),
-                                                      OverlayFileSystem);
+  llvm::IntrusiveRefCntPtr<FileManager> Files(
+      new FileManager(FileSystemOptions(), OverlayFileSystem));
   std::vector<std::string> Args;
   Args.push_back("tool-executable");
   Args.push_back("-Idef");
@@ -242,14 +226,13 @@ TEST(ToolInvocation, TestVirtualModulesCompilation) {
 }
 
 TEST(ToolInvocation, DiagnosticsEngineProperlyInitializedForCC1Construction) {
-  auto OverlayFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(
-          llvm::vfs::getRealFileSystem());
-  auto InMemoryFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
+      new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem()));
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
+      new llvm::vfs::InMemoryFileSystem);
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
-  auto Files = llvm::makeIntrusiveRefCnt<FileManager>(FileSystemOptions(),
-                                                      OverlayFileSystem);
+  llvm::IntrusiveRefCntPtr<FileManager> Files(
+      new FileManager(FileSystemOptions(), OverlayFileSystem));
 
   std::vector<std::string> Args;
   Args.push_back("tool-executable");
@@ -272,14 +255,13 @@ TEST(ToolInvocation, DiagnosticsEngineProperlyInitializedForCC1Construction) {
 }
 
 TEST(ToolInvocation, CustomDiagnosticOptionsOverwriteParsedOnes) {
-  auto OverlayFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(
-          llvm::vfs::getRealFileSystem());
-  auto InMemoryFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
+      new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem()));
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
+      new llvm::vfs::InMemoryFileSystem);
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
-  auto Files = llvm::makeIntrusiveRefCnt<FileManager>(FileSystemOptions(),
-                                                      OverlayFileSystem);
+  llvm::IntrusiveRefCntPtr<FileManager> Files(
+      new FileManager(FileSystemOptions(), OverlayFileSystem));
 
   std::vector<std::string> Args;
   Args.push_back("tool-executable");
@@ -298,8 +280,8 @@ TEST(ToolInvocation, CustomDiagnosticOptionsOverwriteParsedOnes) {
   Invocation.setDiagnosticConsumer(&Consumer);
 
   // Inject custom `DiagnosticOptions` for command-line parsing.
-  DiagnosticOptions DiagOpts;
-  Invocation.setDiagnosticOptions(&DiagOpts);
+  auto DiagOpts = llvm::makeIntrusiveRefCnt<DiagnosticOptions>();
+  Invocation.setDiagnosticOptions(&*DiagOpts);
 
   EXPECT_TRUE(Invocation.run());
   // Check that the warning was issued during command-line parsing due to the
@@ -319,14 +301,13 @@ struct DiagnosticConsumerExpectingSourceManager : public DiagnosticConsumer {
 };
 
 TEST(ToolInvocation, DiagConsumerExpectingSourceManager) {
-  auto OverlayFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(
-          llvm::vfs::getRealFileSystem());
-  auto InMemoryFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
+      new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem()));
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
+      new llvm::vfs::InMemoryFileSystem);
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
-  auto Files = llvm::makeIntrusiveRefCnt<FileManager>(FileSystemOptions(),
-                                                      OverlayFileSystem);
+  llvm::IntrusiveRefCntPtr<FileManager> Files(
+      new FileManager(FileSystemOptions(), OverlayFileSystem));
   std::vector<std::string> Args;
   Args.push_back("tool-executable");
   // Note: intentional error; user probably meant -ferror-limit=0.
@@ -346,14 +327,13 @@ TEST(ToolInvocation, DiagConsumerExpectingSourceManager) {
 }
 
 TEST(ToolInvocation, CC1Args) {
-  auto OverlayFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(
-          llvm::vfs::getRealFileSystem());
-  auto InMemoryFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
+      new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem()));
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
+      new llvm::vfs::InMemoryFileSystem);
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
-  auto Files = llvm::makeIntrusiveRefCnt<FileManager>(FileSystemOptions(),
-                                                      OverlayFileSystem);
+  llvm::IntrusiveRefCntPtr<FileManager> Files(
+      new FileManager(FileSystemOptions(), OverlayFileSystem));
   std::vector<std::string> Args;
   Args.push_back("tool-executable");
   Args.push_back("-cc1");
@@ -367,14 +347,13 @@ TEST(ToolInvocation, CC1Args) {
 }
 
 TEST(ToolInvocation, CC1ArgsInvalid) {
-  auto OverlayFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(
-          llvm::vfs::getRealFileSystem());
-  auto InMemoryFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
+      new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem()));
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
+      new llvm::vfs::InMemoryFileSystem);
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
-  auto Files = llvm::makeIntrusiveRefCnt<FileManager>(FileSystemOptions(),
-                                                      OverlayFileSystem);
+  llvm::IntrusiveRefCntPtr<FileManager> Files(
+      new FileManager(FileSystemOptions(), OverlayFileSystem));
   std::vector<std::string> Args;
   Args.push_back("tool-executable");
   Args.push_back("-cc1");
@@ -399,14 +378,13 @@ overlayRealFS(llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS) {
 
 struct CommandLineExtractorTest : public ::testing::Test {
   llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFS;
-  DiagnosticOptions DiagOpts;
   llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags;
   driver::Driver Driver;
 
 public:
   CommandLineExtractorTest()
-      : InMemoryFS(llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>()),
-        Diags(CompilerInstance::createDiagnostics(*InMemoryFS, DiagOpts)),
+      : InMemoryFS(new llvm::vfs::InMemoryFileSystem),
+        Diags(CompilerInstance::createDiagnostics(new DiagnosticOptions)),
         Driver("clang", llvm::sys::getDefaultTargetTriple(), *Diags,
                "clang LLVM compiler", overlayRealFS(InMemoryFS)) {}
 
@@ -608,11 +586,6 @@ TEST(runToolOnCode, TestSkipFunctionBody) {
   EXPECT_FALSE(runToolOnCodeWithArgs(
       std::make_unique<SkipBodyAction>(),
       "template<typename T> int skipMeNot() { an_error_here }", Args2));
-
-  EXPECT_TRUE(runToolOnCodeWithArgs(
-      std::make_unique<SkipBodyAction>(),
-      "__inline __attribute__((__gnu_inline__)) void skipMe() {}",
-      {"--cuda-host-only", "-nocudainc", "-xcuda"}));
 }
 
 TEST(runToolOnCodeWithArgs, TestNoDepFile) {
@@ -762,11 +735,10 @@ TEST(ClangToolTest, NoOutputCommands) {
 
 TEST(ClangToolTest, BaseVirtualFileSystemUsage) {
   FixedCompilationDatabase Compilations("/", std::vector<std::string>());
-  auto OverlayFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(
-          llvm::vfs::getRealFileSystem());
-  auto InMemoryFileSystem =
-      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
+      new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem()));
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
+      new llvm::vfs::InMemoryFileSystem);
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
 
   InMemoryFileSystem->addFile(
@@ -801,7 +773,7 @@ TEST(ClangToolTest, StripDependencyFileAdjuster) {
   Tool.run(Action.get());
 
   auto HasFlag = [&FinalArgs](const std::string &Flag) {
-    return llvm::is_contained(FinalArgs, Flag);
+    return llvm::find(FinalArgs, Flag) != FinalArgs.end();
   };
   EXPECT_FALSE(HasFlag("-MD"));
   EXPECT_FALSE(HasFlag("-MMD"));
@@ -833,7 +805,7 @@ TEST(ClangToolTest, StripDependencyFileAdjusterShowIncludes) {
   Tool.run(Action.get());
 
   auto HasFlag = [&FinalArgs](const std::string &Flag) {
-    return llvm::is_contained(FinalArgs, Flag);
+    return llvm::find(FinalArgs, Flag) != FinalArgs.end();
   };
   EXPECT_FALSE(HasFlag("/showIncludes"));
   EXPECT_FALSE(HasFlag("/showIncludes:user"));
@@ -866,7 +838,7 @@ TEST(ClangToolTest, StripDependencyFileAdjusterMsvc) {
   Tool.run(Action.get());
 
   auto HasFlag = [&FinalArgs](const std::string &Flag) {
-    return llvm::is_contained(FinalArgs, Flag);
+    return llvm::find(FinalArgs, Flag) != FinalArgs.end();
   };
   EXPECT_TRUE(HasFlag("-MD"));
   EXPECT_TRUE(HasFlag("-MDd"));
@@ -899,7 +871,7 @@ TEST(ClangToolTest, StripPluginsAdjuster) {
   Tool.run(Action.get());
 
   auto HasFlag = [&FinalArgs](const std::string &Flag) {
-    return llvm::is_contained(FinalArgs, Flag);
+    return llvm::find(FinalArgs, Flag) != FinalArgs.end();
   };
   EXPECT_FALSE(HasFlag("-Xclang"));
   EXPECT_FALSE(HasFlag("-add-plugin"));

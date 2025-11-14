@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===-------- IncludeInserter.cpp - clang-tidy ----------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -25,8 +25,7 @@ public:
                           bool IsAngled, CharSourceRange FileNameRange,
                           OptionalFileEntryRef /*IncludedFile*/,
                           StringRef /*SearchPath*/, StringRef /*RelativePath*/,
-                          const Module * /*SuggestedModule*/,
-                          bool /*ModuleImported*/,
+                          const Module * /*ImportedModule*/,
                           SrcMgr::CharacteristicKind /*FileType*/) override {
     Inserter->addInclude(FileNameRef, IsAngled, HashLocation,
                          IncludeToken.getEndLoc());
@@ -69,7 +68,7 @@ IncludeSorter &IncludeInserter::getOrCreate(FileID FileID) {
 
 std::optional<FixItHint>
 IncludeInserter::createIncludeInsertion(FileID FileID, llvm::StringRef Header) {
-  const bool IsAngled = Header.consume_front("<");
+  bool IsAngled = Header.consume_front("<");
   if (IsAngled != Header.consume_back(">"))
     return std::nullopt;
   // We assume the same Header will never be included both angled and not
@@ -94,7 +93,7 @@ void IncludeInserter::addInclude(StringRef FileName, bool IsAngled,
                                  SourceLocation EndLocation) {
   assert(SourceMgr && "SourceMgr shouldn't be null; did you remember to call "
                       "registerPreprocessor()?");
-  const FileID FileID = SourceMgr->getFileID(HashLocation);
+  FileID FileID = SourceMgr->getFileID(HashLocation);
   getOrCreate(FileID).addInclude(FileName, IsAngled, HashLocation, EndLocation);
 }
 

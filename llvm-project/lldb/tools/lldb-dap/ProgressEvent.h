@@ -6,15 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_TOOLS_LLDB_DAP_PROGRESS_EVENT_H
-#define LLDB_TOOLS_LLDB_DAP_PROGRESS_EVENT_H
-
 #include <atomic>
-#include <chrono>
 #include <mutex>
 #include <optional>
 #include <queue>
 #include <thread>
+
+#include "DAPForward.h"
 
 #include "llvm/Support/JSON.h"
 
@@ -100,8 +98,7 @@ public:
 
   /// Receive a new progress event for the start event and try to report it if
   /// appropriate.
-  void Update(uint64_t progress_id, llvm::StringRef message, uint64_t completed,
-              uint64_t total);
+  void Update(uint64_t progress_id, uint64_t completed, uint64_t total);
 
   /// \return
   ///     \b true if a \a progressEnd event has been notified. There's no
@@ -130,12 +127,8 @@ class ProgressEventReporter {
 public:
   /// \param[in] report_callback
   ///     Function to invoke to report the event to the IDE.
-  explicit ProgressEventReporter(ProgressEventReportCallback report_callback);
+  ProgressEventReporter(ProgressEventReportCallback report_callback);
 
-  ProgressEventReporter(const ProgressEventReporter &) = delete;
-  ProgressEventReporter(ProgressEventReporter &&) = delete;
-  ProgressEventReporter &operator=(const ProgressEventReporter &) = delete;
-  ProgressEventReporter &operator=(ProgressEventReporter &&) = delete;
   ~ProgressEventReporter();
 
   /// Add a new event to the internal queue and report the event if
@@ -161,5 +154,3 @@ private:
 };
 
 } // namespace lldb_dap
-
-#endif // LLDB_TOOLS_LLDB_DAP_PROGRESS_EVENT_H

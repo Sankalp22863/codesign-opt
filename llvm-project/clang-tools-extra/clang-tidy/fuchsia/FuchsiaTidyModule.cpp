@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- FuchsiaTidyModule.cpp - clang-tidy -------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,7 +15,6 @@
 #include "MultipleInheritanceCheck.h"
 #include "OverloadedOperatorCheck.h"
 #include "StaticallyConstructedObjectsCheck.h"
-#include "TemporaryObjectsCheck.h"
 #include "TrailingReturnCheck.h"
 #include "VirtualInheritanceCheck.h"
 
@@ -40,8 +39,6 @@ public:
         "fuchsia-overloaded-operator");
     CheckFactories.registerCheck<StaticallyConstructedObjectsCheck>(
         "fuchsia-statically-constructed-objects");
-    CheckFactories.registerCheck<TemporaryObjectsCheck>(
-        "fuchsia-temporary-objects");
     CheckFactories.registerCheck<TrailingReturnCheck>(
         "fuchsia-trailing-return");
     CheckFactories.registerCheck<VirtualInheritanceCheck>(
@@ -55,6 +52,6 @@ static ClangTidyModuleRegistry::Add<FuchsiaModule>
 
 // This anchor is used to force the linker to link in the generated object file
 // and thus register the FuchsiaModule.
-volatile int FuchsiaModuleAnchorSource = 0; // NOLINT(misc-use-internal-linkage)
+volatile int FuchsiaModuleAnchorSource = 0;
 
 } // namespace clang::tidy

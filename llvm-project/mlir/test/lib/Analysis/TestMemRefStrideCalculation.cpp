@@ -35,7 +35,7 @@ void TestMemRefStrideCalculation::runOnOperation() {
     auto memrefType = cast<MemRefType>(allocOp.getResult().getType());
     int64_t offset;
     SmallVector<int64_t, 4> strides;
-    if (failed(memrefType.getStridesAndOffset(strides, offset))) {
+    if (failed(getStridesAndOffset(memrefType, strides, offset))) {
       llvm::outs() << "MemRefType " << memrefType << " cannot be converted to "
                    << "strided form\n";
       return;

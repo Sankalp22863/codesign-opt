@@ -14,10 +14,9 @@
 //
 // constexpr mapping() noexcept = default;
 
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
 #include <mdspan>
+#include <cassert>
+#include <cstdint>
 
 #include "test_macros.h"
 

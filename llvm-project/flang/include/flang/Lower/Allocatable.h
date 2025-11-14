@@ -15,7 +15,6 @@
 
 #include "flang/Lower/AbstractConverter.h"
 #include "flang/Optimizer/Builder/MutableBox.h"
-#include "flang/Runtime/allocator-registry-consts.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace mlir {
@@ -56,14 +55,12 @@ void genDeallocateStmt(AbstractConverter &converter,
 
 void genDeallocateBox(AbstractConverter &converter,
                       const fir::MutableBoxValue &box, mlir::Location loc,
-                      const Fortran::semantics::Symbol *sym = nullptr,
                       mlir::Value declaredTypeDesc = {});
 
 /// Deallocate an allocatable if it is allocated at the end of its lifetime.
 void genDeallocateIfAllocated(AbstractConverter &converter,
                               const fir::MutableBoxValue &box,
-                              mlir::Location loc,
-                              const Fortran::semantics::Symbol *sym = nullptr);
+                              mlir::Location loc);
 
 /// Create a MutableBoxValue for an allocatable or pointer entity.
 /// If the variables is a local variable that is not a dummy, it will be
@@ -71,8 +68,7 @@ void genDeallocateIfAllocated(AbstractConverter &converter,
 fir::MutableBoxValue
 createMutableBox(AbstractConverter &converter, mlir::Location loc,
                  const pft::Variable &var, mlir::Value boxAddr,
-                 mlir::ValueRange nonDeferredParams, bool alwaysUseBox,
-                 unsigned allocator = kDefaultAllocator);
+                 mlir::ValueRange nonDeferredParams, bool alwaysUseBox);
 
 /// Assign a boxed value to a boxed variable, \p box (known as a
 /// MutableBoxValue). Expression \p source will be lowered to build the

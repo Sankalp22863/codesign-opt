@@ -8,11 +8,10 @@
 
 #include "llvm/Transforms/Coroutines/CoroCleanup.h"
 #include "CoroInternal.h"
-#include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
-#include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/IR/Function.h"
 #include "llvm/Transforms/Scalar/SimplifyCFG.h"
 
 using namespace llvm;
@@ -53,7 +52,6 @@ bool Lowerer::lower(Function &F) {
       default:
         continue;
       case Intrinsic::coro_begin:
-      case Intrinsic::coro_begin_custom_abi:
         II->replaceAllUsesWith(II->getArgOperand(1));
         break;
       case Intrinsic::coro_free:
@@ -75,10 +73,10 @@ bool Lowerer::lower(Function &F) {
       case Intrinsic::coro_subfn_addr:
         lowerSubFn(Builder, cast<CoroSubFnInst>(II));
         break;
+      case Intrinsic::coro_end:
       case Intrinsic::coro_suspend_retcon:
-      case Intrinsic::coro_is_in_ramp:
         if (IsPrivateAndUnprocessed) {
-          II->replaceAllUsesWith(PoisonValue::get(II->getType()));
+          II->replaceAllUsesWith(UndefValue::get(II->getType()));
         } else
           continue;
         break;
@@ -110,11 +108,10 @@ bool Lowerer::lower(Function &F) {
 
 static bool declaresCoroCleanupIntrinsics(const Module &M) {
   return coro::declaresIntrinsics(
-      M, {Intrinsic::coro_alloc, Intrinsic::coro_begin,
-          Intrinsic::coro_subfn_addr, Intrinsic::coro_free, Intrinsic::coro_id,
-          Intrinsic::coro_id_retcon, Intrinsic::coro_id_async,
-          Intrinsic::coro_id_retcon_once, Intrinsic::coro_async_size_replace,
-          Intrinsic::coro_async_resume, Intrinsic::coro_begin_custom_abi});
+      M, {"llvm.coro.alloc", "llvm.coro.begin", "llvm.coro.subfn.addr",
+          "llvm.coro.free", "llvm.coro.id", "llvm.coro.id.retcon",
+          "llvm.coro.id.async", "llvm.coro.id.retcon.once",
+          "llvm.coro.async.size.replace", "llvm.coro.async.resume"});
 }
 
 PreservedAnalyses CoroCleanupPass::run(Module &M,

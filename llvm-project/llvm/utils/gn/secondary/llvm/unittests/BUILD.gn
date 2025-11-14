@@ -8,12 +8,7 @@ group("unittests") {
     "BinaryFormat:BinaryFormatTests",
     "Bitcode:BitcodeTests",
     "Bitstream:BitstreamTests",
-    "CAS:CASTests",
-    "CGData:CodeGenDataTests",
     "CodeGen:CodeGenTests",
-
-    # FIXME: Figure out how to make pass.
-    # "CodeGen/CGPluginTest",
     "CodeGen/GlobalISel:GlobalISelTests",
     "DWARFLinkerParallel:DWARFLinkerParallelTests",
     "DebugInfo/BTF:DebugInfoBTFTests",
@@ -48,24 +43,19 @@ group("unittests") {
     "Passes/Plugins:PluginsTests",
     "ProfileData:ProfileDataTests",
     "Remarks:RemarksTests",
-    "SandboxIR:SandboxIRTests",
     "Support:SupportTests",
     "Support/DynamicLibrary:DynamicLibraryTests",
-    "Support/LSP:LSPTests",
     "TableGen:TableGenTests",
     "Target:TargetMachineCTests",
     "TargetParser:TargetParserTests",
-    "Telemetry:TelemetryTests",
     "Testing/ADT:TestingADTTests",
     "Testing/Support:TestingSupportTests",
     "TextAPI:TextAPITests",
     "Transforms/Coroutines:CoroTests",
     "Transforms/IPO:IPOTests",
-    "Transforms/Instrumentation:InstrumentationTests",
     "Transforms/Scalar:ScalarTests",
     "Transforms/Utils:UtilsTests",
     "Transforms/Vectorize:VectorizeTests",
-    "Transforms/Vectorize/SandboxVectorizer:SandboxVectorizerTests",
     "XRay:XRayTests",
     "tools/llvm-cfi-verify:CFIVerifyTests",
     "tools/llvm-exegesis:LLVMExegesisTests",
@@ -87,7 +77,7 @@ group("unittests") {
   }
   if (llvm_build_AMDGPU) {
     deps += [
-      "MC/AMDGPU:AMDGPUMCTests",
+      "MC/AMDGPU:AMDGPUDwarfTests",
       "Target/AMDGPU:AMDGPUTests",
     ]
   }
@@ -107,10 +97,7 @@ group("unittests") {
     ]
   }
   if (llvm_build_RISCV) {
-    deps += [
-      "Target/RISCV:RISCVTests",
-      "tools/llvm-exegesis/RISCV:LLVMExegesisRISCVTests",
-    ]
+    deps += [ "Target/RISCV:RISCVTests" ]
   }
   if (llvm_build_SystemZ) {
     deps += [ "MC/SystemZ:SystemZAsmLexerTests" ]

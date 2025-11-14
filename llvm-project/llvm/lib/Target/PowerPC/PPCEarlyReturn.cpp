@@ -11,15 +11,24 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MCTargetDesc/PPCPredicates.h"
 #include "PPC.h"
+#include "PPCInstrBuilder.h"
 #include "PPCInstrInfo.h"
+#include "PPCMachineFunctionInfo.h"
+#include "PPCTargetMachine.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
 
@@ -33,7 +42,9 @@ namespace {
   // branch-to-blr sequences.
   struct PPCEarlyReturn : public MachineFunctionPass {
     static char ID;
-    PPCEarlyReturn() : MachineFunctionPass(ID) {}
+    PPCEarlyReturn() : MachineFunctionPass(ID) {
+      initializePPCEarlyReturnPass(*PassRegistry::getPassRegistry());
+    }
 
     const TargetInstrInfo *TII;
 
@@ -138,8 +149,8 @@ protected:
           Changed = true;
       }
 
-      for (MachineBasicBlock *MBB : PredToRemove)
-        MBB->removeSuccessor(&ReturnMBB, true);
+      for (unsigned i = 0, ie = PredToRemove.size(); i != ie; ++i)
+        PredToRemove[i]->removeSuccessor(&ReturnMBB, true);
 
       if (Changed && !ReturnMBB.hasAddressTaken()) {
         // We now might be able to merge this blr-only block into its
@@ -181,7 +192,8 @@ public:
     }
 
     MachineFunctionProperties getRequiredProperties() const override {
-      return MachineFunctionProperties().setNoVRegs();
+      return MachineFunctionProperties().set(
+          MachineFunctionProperties::Property::NoVRegs);
     }
 
     void getAnalysisUsage(AnalysisUsage &AU) const override {

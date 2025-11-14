@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/Rewrite/Frontend/ASTConsumers.h"
 #include "clang/AST/AST.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/Attr.h"
@@ -22,7 +23,6 @@
 #include "clang/Config/config.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Rewrite/Core/Rewriter.h"
-#include "clang/Rewrite/Frontend/ASTConsumers.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -34,7 +34,6 @@
 #if CLANG_ENABLE_OBJC_REWRITER
 
 using namespace clang;
-using llvm::RewriteBuffer;
 using llvm::utostr;
 
 namespace {
@@ -138,8 +137,10 @@ namespace {
     SmallVector<DeclRefExpr *, 32> BlockDeclRefs;
 
     // Block related declarations.
-    llvm::SmallSetVector<ValueDecl *, 8> BlockByCopyDecls;
-    llvm::SmallSetVector<ValueDecl *, 8> BlockByRefDecls;
+    SmallVector<ValueDecl *, 8> BlockByCopyDecls;
+    llvm::SmallPtrSet<ValueDecl *, 8> BlockByCopyDeclsPtrSet;
+    SmallVector<ValueDecl *, 8> BlockByRefDecls;
+    llvm::SmallPtrSet<ValueDecl *, 8> BlockByRefDeclsPtrSet;
     llvm::DenseMap<ValueDecl *, unsigned> BlockByRefDeclNo;
     llvm::SmallPtrSet<ValueDecl *, 8> ImportedBlockDecls;
     llvm::SmallPtrSet<VarDecl *, 8> ImportedLocalExternalDecls;
@@ -272,9 +273,10 @@ namespace {
       std::string SStr;
       llvm::raw_string_ostream S(SStr);
       New->printPretty(S, nullptr, PrintingPolicy(LangOpts));
+      const std::string &Str = S.str();
 
       // If replacement succeeded or warning disabled return with no warning.
-      if (!Rewrite.ReplaceText(SrcRange.getBegin(), Size, SStr)) {
+      if (!Rewrite.ReplaceText(SrcRange.getBegin(), Size, Str)) {
         ReplacedNodes[Old] = New;
         return;
       }
@@ -463,15 +465,15 @@ namespace {
 
     std::string SynthesizeByrefCopyDestroyHelper(VarDecl *VD, int flag);
     std::string SynthesizeBlockHelperFuncs(BlockExpr *CE, int i,
-                                           StringRef funcName,
-                                           const std::string &Tag);
-    std::string SynthesizeBlockFunc(BlockExpr *CE, int i, StringRef funcName,
-                                    const std::string &Tag);
-    std::string SynthesizeBlockImpl(BlockExpr *CE, const std::string &Tag,
-                                    const std::string &Desc);
-    std::string SynthesizeBlockDescriptor(const std::string &DescTag,
-                                          const std::string &ImplTag, int i,
-                                          StringRef funcName, unsigned hasCopy);
+                                      StringRef funcName, std::string Tag);
+    std::string SynthesizeBlockFunc(BlockExpr *CE, int i,
+                                      StringRef funcName, std::string Tag);
+    std::string SynthesizeBlockImpl(BlockExpr *CE,
+                                    std::string Tag, std::string Desc);
+    std::string SynthesizeBlockDescriptor(std::string DescTag,
+                                          std::string ImplTag,
+                                          int i, StringRef funcName,
+                                          unsigned hasCopy);
     Stmt *SynthesizeBlockCall(CallExpr *Exp, const Expr* BlockExp);
     void SynthesizeBlockLiterals(SourceLocation FunLocStart,
                                  StringRef FunName);
@@ -590,7 +592,7 @@ namespace {
     }
 
     bool ImplementationIsNonLazy(const ObjCImplDecl *OD) const {
-      const IdentifierInfo *II = &Context->Idents.get("load");
+      IdentifierInfo* II = &Context->Idents.get("load");
       Selector LoadSel = Context->Selectors.getSelector(0, &II);
       return OD->getClassMethod(LoadSel) != nullptr;
     }
@@ -852,7 +854,7 @@ RewriteModernObjC::getIvarAccessString(ObjCIvarDecl *D) {
     IvarT = GetGroupRecordTypeForObjCIvarBitfield(D);
 
   if (!IvarT->getAs<TypedefType>() && IvarT->isRecordType()) {
-    RecordDecl *RD = IvarT->castAsCanonical<RecordType>()->getDecl();
+    RecordDecl *RD = IvarT->castAs<RecordType>()->getDecl();
     RD = RD->getDefinition();
     if (RD && !RD->getDeclName().getAsIdentifierInfo()) {
       // decltype(((Foo_IMPL*)0)->bar) *
@@ -865,8 +867,7 @@ RewriteModernObjC::getIvarAccessString(ObjCIvarDecl *D) {
       RecordDecl *RD = RecordDecl::Create(*Context, TagTypeKind::Struct, TUDecl,
                                           SourceLocation(), SourceLocation(),
                                           &Context->Idents.get(RecName));
-      QualType PtrStructIMPL =
-          Context->getPointerType(Context->getCanonicalTagType(RD));
+      QualType PtrStructIMPL = Context->getPointerType(Context->getTagDeclType(RD));
       unsigned UnsignedIntSize =
       static_cast<unsigned>(Context->getTypeSize(Context->UnsignedIntTy));
       Expr *Zero = IntegerLiteral::Create(*Context,
@@ -2580,7 +2581,7 @@ Stmt *RewriteModernObjC::RewriteObjCStringLiteral(ObjCStringLiteral *Exp) {
   std::string prettyBufS;
   llvm::raw_string_ostream prettyBuf(prettyBufS);
   Exp->getString()->printPretty(prettyBuf, nullptr, PrintingPolicy(LangOpts));
-  Preamble += prettyBufS;
+  Preamble += prettyBuf.str();
   Preamble += ",";
   Preamble += utostr(Exp->getString()->getByteLength()) + "};\n";
 
@@ -3000,7 +3001,7 @@ QualType RewriteModernObjC::getSuperStructType() {
 
     SuperStructDecl->completeDefinition();
   }
-  return Context->getCanonicalTagType(SuperStructDecl);
+  return Context->getTagDeclType(SuperStructDecl);
 }
 
 QualType RewriteModernObjC::getConstantStringStructType() {
@@ -3033,7 +3034,7 @@ QualType RewriteModernObjC::getConstantStringStructType() {
 
     ConstantStringDecl->completeDefinition();
   }
-  return Context->getCanonicalTagType(ConstantStringDecl);
+  return Context->getTagDeclType(ConstantStringDecl);
 }
 
 /// getFunctionSourceLocation - returns start location of a function
@@ -3638,7 +3639,7 @@ bool RewriteModernObjC::RewriteObjCFieldDeclType(QualType &Type,
     return RewriteObjCFieldDeclType(ElemTy, Result);
   }
   else if (Type->isRecordType()) {
-    auto *RD = Type->castAsRecordDecl();
+    RecordDecl *RD = Type->castAs<RecordType>()->getDecl();
     if (RD->isCompleteDefinition()) {
       if (RD->isStruct())
         Result += "\n\tstruct ";
@@ -3659,26 +3660,27 @@ bool RewriteModernObjC::RewriteObjCFieldDeclType(QualType &Type,
       Result += "\t} ";
       return true;
     }
-  } else if (auto *ED = Type->getAsEnumDecl();
-             ED && ED->isCompleteDefinition()) {
-    Result += "\n\tenum ";
-    Result += ED->getName();
-    if (GlobalDefinedTags.count(ED)) {
-      // Enum is globall defined, use it.
-      Result += " ";
+  }
+  else if (Type->isEnumeralType()) {
+    EnumDecl *ED = Type->castAs<EnumType>()->getDecl();
+    if (ED->isCompleteDefinition()) {
+      Result += "\n\tenum ";
+      Result += ED->getName();
+      if (GlobalDefinedTags.count(ED)) {
+        // Enum is globall defined, use it.
+        Result += " ";
+        return true;
+      }
+
+      Result += " {\n";
+      for (const auto *EC : ED->enumerators()) {
+        Result += "\t"; Result += EC->getName(); Result += " = ";
+        Result += toString(EC->getInitVal(), 10);
+        Result += ",\n";
+      }
+      Result += "\t} ";
       return true;
     }
-
-    Result += " {\n";
-    for (const auto *EC : ED->enumerators()) {
-      Result += "\t";
-      Result += EC->getName();
-      Result += " = ";
-      Result += toString(EC->getInitVal(), 10);
-      Result += ",\n";
-    }
-    Result += "\t} ";
-    return true;
   }
 
   Result += "\t";
@@ -3699,8 +3701,7 @@ void RewriteModernObjC::RewriteObjCFieldDecl(FieldDecl *fieldDecl,
     Type.getAsStringInternal(Name, Context->getPrintingPolicy());
   Result += Name;
   if (fieldDecl->isBitField()) {
-    Result += " : ";
-    Result += utostr(fieldDecl->getBitWidthValue());
+    Result += " : "; Result += utostr(fieldDecl->getBitWidthValue(*Context));
   }
   else if (EleboratedType && Type->isArrayType()) {
     const ArrayType *AT = Context->getAsArrayType(Type);
@@ -3730,7 +3731,15 @@ void RewriteModernObjC::RewriteLocallyDefinedNamedAggregates(FieldDecl *fieldDec
 
   auto *IDecl = dyn_cast<ObjCContainerDecl>(fieldDecl->getDeclContext());
 
-  if (auto *TD = Type->getAsTagDecl()) {
+  TagDecl *TD = nullptr;
+  if (Type->isRecordType()) {
+    TD = Type->castAs<RecordType>()->getDecl();
+  }
+  else if (Type->isEnumeralType()) {
+    TD = Type->castAs<EnumType>()->getDecl();
+  }
+
+  if (TD) {
     if (GlobalDefinedTags.count(TD))
       return;
 
@@ -3785,15 +3794,15 @@ QualType RewriteModernObjC::SynthesizeBitfieldGroupStructType(
                                   false, ICIS_NoInit));
   }
   RD->completeDefinition();
-  return Context->getCanonicalTagType(RD);
+  return Context->getTagDeclType(RD);
 }
 
 QualType RewriteModernObjC::GetGroupRecordTypeForObjCIvarBitfield(ObjCIvarDecl *IV) {
   const ObjCInterfaceDecl *CDecl = IV->getContainingInterface();
   unsigned GroupNo = ObjCIvarBitfieldGroupNo(IV);
   std::pair<const ObjCInterfaceDecl*, unsigned> tuple = std::make_pair(CDecl, GroupNo);
-  if (auto It = GroupRecordType.find(tuple); It != GroupRecordType.end())
-    return It->second;
+  if (GroupRecordType.count(tuple))
+    return GroupRecordType[tuple];
 
   SmallVector<ObjCIvarDecl *, 8> IVars;
   for (const ObjCIvarDecl *IVD = CDecl->all_declared_ivar_begin();
@@ -4028,7 +4037,7 @@ static bool HasLocalVariableExternalStorage(ValueDecl *VD) {
 
 std::string RewriteModernObjC::SynthesizeBlockFunc(BlockExpr *CE, int i,
                                                    StringRef funcName,
-                                                   const std::string &Tag) {
+                                                   std::string Tag) {
   const FunctionType *AFT = CE->getFunctionType();
   QualType RT = AFT->getReturnType();
   std::string StructRef = "struct " + Tag;
@@ -4073,17 +4082,19 @@ std::string RewriteModernObjC::SynthesizeBlockFunc(BlockExpr *CE, int i,
 
   // Create local declarations to avoid rewriting all closure decl ref exprs.
   // First, emit a declaration for all "by ref" decls.
-  for (ValueDecl *VD : BlockByRefDecls) {
+  for (SmallVectorImpl<ValueDecl *>::iterator I = BlockByRefDecls.begin(),
+       E = BlockByRefDecls.end(); I != E; ++I) {
     S += "  ";
-    std::string Name = VD->getNameAsString();
+    std::string Name = (*I)->getNameAsString();
     std::string TypeString;
-    RewriteByRefString(TypeString, Name, VD);
+    RewriteByRefString(TypeString, Name, (*I));
     TypeString += " *";
     Name = TypeString + Name;
-    S += Name + " = __cself->" + VD->getNameAsString() + "; // bound by ref\n";
+    S += Name + " = __cself->" + (*I)->getNameAsString() + "; // bound by ref\n";
   }
   // Next, emit a declaration for all "by copy" declarations.
-  for (ValueDecl *VD : BlockByCopyDecls) {
+  for (SmallVectorImpl<ValueDecl *>::iterator I = BlockByCopyDecls.begin(),
+       E = BlockByCopyDecls.end(); I != E; ++I) {
     S += "  ";
     // Handle nested closure invocation. For example:
     //
@@ -4095,20 +4106,21 @@ std::string RewriteModernObjC::SynthesizeBlockFunc(BlockExpr *CE, int i,
     //     myImportedClosure(); // import and invoke the closure
     //   };
     //
-    if (isTopLevelBlockPointerType(VD->getType())) {
-      RewriteBlockPointerTypeVariable(S, VD);
+    if (isTopLevelBlockPointerType((*I)->getType())) {
+      RewriteBlockPointerTypeVariable(S, (*I));
       S += " = (";
-      RewriteBlockPointerType(S, VD->getType());
+      RewriteBlockPointerType(S, (*I)->getType());
       S += ")";
-      S += "__cself->" + VD->getNameAsString() + "; // bound by copy\n";
-    } else {
-      std::string Name = VD->getNameAsString();
-      QualType QT = VD->getType();
-      if (HasLocalVariableExternalStorage(VD))
+      S += "__cself->" + (*I)->getNameAsString() + "; // bound by copy\n";
+    }
+    else {
+      std::string Name = (*I)->getNameAsString();
+      QualType QT = (*I)->getType();
+      if (HasLocalVariableExternalStorage(*I))
         QT = Context->getPointerType(QT);
       QT.getAsStringInternal(Name, Context->getPrintingPolicy());
-      S += Name + " = __cself->" + VD->getNameAsString() +
-           "; // bound by copy\n";
+      S += Name + " = __cself->" +
+                              (*I)->getNameAsString() + "; // bound by copy\n";
     }
   }
   std::string RewrittenStr = RewrittenBlockExprs[CE];
@@ -4119,8 +4131,9 @@ std::string RewriteModernObjC::SynthesizeBlockFunc(BlockExpr *CE, int i,
   return S;
 }
 
-std::string RewriteModernObjC::SynthesizeBlockHelperFuncs(
-    BlockExpr *CE, int i, StringRef funcName, const std::string &Tag) {
+std::string RewriteModernObjC::SynthesizeBlockHelperFuncs(BlockExpr *CE, int i,
+                                                   StringRef funcName,
+                                                   std::string Tag) {
   std::string StructRef = "struct " + Tag;
   std::string S = "static void __";
 
@@ -4134,7 +4147,7 @@ std::string RewriteModernObjC::SynthesizeBlockHelperFuncs(
     S += VD->getNameAsString();
     S += ", (void*)src->";
     S += VD->getNameAsString();
-    if (BlockByRefDecls.count(VD))
+    if (BlockByRefDeclsPtrSet.count(VD))
       S += ", " + utostr(BLOCK_FIELD_IS_BYREF) + "/*BLOCK_FIELD_IS_BYREF*/);";
     else if (VD->getType()->isBlockPointerType())
       S += ", " + utostr(BLOCK_FIELD_IS_BLOCK) + "/*BLOCK_FIELD_IS_BLOCK*/);";
@@ -4151,7 +4164,7 @@ std::string RewriteModernObjC::SynthesizeBlockHelperFuncs(
   for (ValueDecl *VD : ImportedBlockDecls) {
     S += "_Block_object_dispose((void*)src->";
     S += VD->getNameAsString();
-    if (BlockByRefDecls.count(VD))
+    if (BlockByRefDeclsPtrSet.count(VD))
       S += ", " + utostr(BLOCK_FIELD_IS_BYREF) + "/*BLOCK_FIELD_IS_BYREF*/);";
     else if (VD->getType()->isBlockPointerType())
       S += ", " + utostr(BLOCK_FIELD_IS_BLOCK) + "/*BLOCK_FIELD_IS_BLOCK*/);";
@@ -4162,9 +4175,8 @@ std::string RewriteModernObjC::SynthesizeBlockHelperFuncs(
   return S;
 }
 
-std::string RewriteModernObjC::SynthesizeBlockImpl(BlockExpr *CE,
-                                                   const std::string &Tag,
-                                                   const std::string &Desc) {
+std::string RewriteModernObjC::SynthesizeBlockImpl(BlockExpr *CE, std::string Tag,
+                                             std::string Desc) {
   std::string S = "\nstruct " + Tag;
   std::string Constructor = "  " + Tag;
 
@@ -4178,9 +4190,10 @@ std::string RewriteModernObjC::SynthesizeBlockImpl(BlockExpr *CE,
 
   if (BlockDeclRefs.size()) {
     // Output all "by copy" declarations.
-    for (ValueDecl *VD : BlockByCopyDecls) {
+    for (SmallVectorImpl<ValueDecl *>::iterator I = BlockByCopyDecls.begin(),
+         E = BlockByCopyDecls.end(); I != E; ++I) {
       S += "  ";
-      std::string FieldName = VD->getNameAsString();
+      std::string FieldName = (*I)->getNameAsString();
       std::string ArgName = "_" + FieldName;
       // Handle nested closure invocation. For example:
       //
@@ -4192,12 +4205,12 @@ std::string RewriteModernObjC::SynthesizeBlockImpl(BlockExpr *CE,
       //     myImportedBlock(); // import and invoke the closure
       //   };
       //
-      if (isTopLevelBlockPointerType(VD->getType())) {
+      if (isTopLevelBlockPointerType((*I)->getType())) {
         S += "struct __block_impl *";
         Constructor += ", void *" + ArgName;
       } else {
-        QualType QT = VD->getType();
-        if (HasLocalVariableExternalStorage(VD))
+        QualType QT = (*I)->getType();
+        if (HasLocalVariableExternalStorage(*I))
           QT = Context->getPointerType(QT);
         QT.getAsStringInternal(FieldName, Context->getPrintingPolicy());
         QT.getAsStringInternal(ArgName, Context->getPrintingPolicy());
@@ -4206,13 +4219,14 @@ std::string RewriteModernObjC::SynthesizeBlockImpl(BlockExpr *CE,
       S += FieldName + ";\n";
     }
     // Output all "by ref" declarations.
-    for (ValueDecl *VD : BlockByRefDecls) {
+    for (SmallVectorImpl<ValueDecl *>::iterator I = BlockByRefDecls.begin(),
+         E = BlockByRefDecls.end(); I != E; ++I) {
       S += "  ";
-      std::string FieldName = VD->getNameAsString();
+      std::string FieldName = (*I)->getNameAsString();
       std::string ArgName = "_" + FieldName;
       {
         std::string TypeString;
-        RewriteByRefString(TypeString, FieldName, VD);
+        RewriteByRefString(TypeString, FieldName, (*I));
         TypeString += " *";
         FieldName = TypeString + FieldName;
         ArgName = TypeString + ArgName;
@@ -4224,21 +4238,24 @@ std::string RewriteModernObjC::SynthesizeBlockImpl(BlockExpr *CE,
     Constructor += ", int flags=0)";
     // Initialize all "by copy" arguments.
     bool firsTime = true;
-    for (const ValueDecl *VD : BlockByCopyDecls) {
-      std::string Name = VD->getNameAsString();
-      if (firsTime) {
-        Constructor += " : ";
-        firsTime = false;
-      } else
-        Constructor += ", ";
-      if (isTopLevelBlockPointerType(VD->getType()))
-        Constructor += Name + "((struct __block_impl *)_" + Name + ")";
-      else
-        Constructor += Name + "(_" + Name + ")";
+    for (SmallVectorImpl<ValueDecl *>::iterator I = BlockByCopyDecls.begin(),
+         E = BlockByCopyDecls.end(); I != E; ++I) {
+      std::string Name = (*I)->getNameAsString();
+        if (firsTime) {
+          Constructor += " : ";
+          firsTime = false;
+        }
+        else
+          Constructor += ", ";
+        if (isTopLevelBlockPointerType((*I)->getType()))
+          Constructor += Name + "((struct __block_impl *)_" + Name + ")";
+        else
+          Constructor += Name + "(_" + Name + ")";
     }
     // Initialize all "by ref" arguments.
-    for (const ValueDecl *VD : BlockByRefDecls) {
-      std::string Name = VD->getNameAsString();
+    for (SmallVectorImpl<ValueDecl *>::iterator I = BlockByRefDecls.begin(),
+         E = BlockByRefDecls.end(); I != E; ++I) {
+      std::string Name = (*I)->getNameAsString();
       if (firsTime) {
         Constructor += " : ";
         firsTime = false;
@@ -4273,9 +4290,10 @@ std::string RewriteModernObjC::SynthesizeBlockImpl(BlockExpr *CE,
   return S;
 }
 
-std::string RewriteModernObjC::SynthesizeBlockDescriptor(
-    const std::string &DescTag, const std::string &ImplTag, int i,
-    StringRef FunName, unsigned hasCopy) {
+std::string RewriteModernObjC::SynthesizeBlockDescriptor(std::string DescTag,
+                                                   std::string ImplTag, int i,
+                                                   StringRef FunName,
+                                                   unsigned hasCopy) {
   std::string S = "\nstatic struct " + DescTag;
 
   S += " {\n  size_t reserved;\n";
@@ -4323,11 +4341,17 @@ void RewriteModernObjC::SynthesizeBlockLiterals(SourceLocation FunLocStart,
       ValueDecl *VD = Exp->getDecl();
       BlockDeclRefs.push_back(Exp);
       if (!VD->hasAttr<BlocksAttr>()) {
-        BlockByCopyDecls.insert(VD);
+        if (!BlockByCopyDeclsPtrSet.count(VD)) {
+          BlockByCopyDeclsPtrSet.insert(VD);
+          BlockByCopyDecls.push_back(VD);
+        }
         continue;
       }
 
-      BlockByRefDecls.insert(VD);
+      if (!BlockByRefDeclsPtrSet.count(VD)) {
+        BlockByRefDeclsPtrSet.insert(VD);
+        BlockByRefDecls.push_back(VD);
+      }
 
       // imported objects in the inner blocks not used in the outer
       // blocks must be copied/disposed in the outer block as well.
@@ -4357,7 +4381,9 @@ void RewriteModernObjC::SynthesizeBlockLiterals(SourceLocation FunLocStart,
 
     BlockDeclRefs.clear();
     BlockByRefDecls.clear();
+    BlockByRefDeclsPtrSet.clear();
     BlockByCopyDecls.clear();
+    BlockByCopyDeclsPtrSet.clear();
     ImportedBlockDecls.clear();
   }
   if (RewriteSC) {
@@ -4389,7 +4415,7 @@ void RewriteModernObjC::SynthesizeBlockLiterals(SourceLocation FunLocStart,
     llvm::raw_string_ostream constructorExprBuf(SStr);
     GlobalConstructionExp->printPretty(constructorExprBuf, nullptr,
                                        PrintingPolicy(LangOpts));
-    globalBuf += SStr;
+    globalBuf += constructorExprBuf.str();
     globalBuf += ";\n";
     InsertText(FunLocStart, globalBuf);
     GlobalConstructionExp = nullptr;
@@ -4564,7 +4590,7 @@ Stmt *RewriteModernObjC::SynthesizeBlockCall(CallExpr *Exp, const Expr *BlockExp
   RecordDecl *RD = RecordDecl::Create(*Context, TagTypeKind::Struct, TUDecl,
                                       SourceLocation(), SourceLocation(),
                                       &Context->Idents.get("__block_impl"));
-  QualType PtrBlock = Context->getPointerType(Context->getCanonicalTagType(RD));
+  QualType PtrBlock = Context->getPointerType(Context->getTagDeclType(RD));
 
   // Generate a funky cast.
   SmallVector<QualType, 8> ArgTypes;
@@ -5135,12 +5161,20 @@ void RewriteModernObjC::CollectBlockDeclRefInfo(BlockExpr *Exp) {
   if (BlockDeclRefs.size()) {
     // Unique all "by copy" declarations.
     for (unsigned i = 0; i < BlockDeclRefs.size(); i++)
-      if (!BlockDeclRefs[i]->getDecl()->hasAttr<BlocksAttr>())
-        BlockByCopyDecls.insert(BlockDeclRefs[i]->getDecl());
+      if (!BlockDeclRefs[i]->getDecl()->hasAttr<BlocksAttr>()) {
+        if (!BlockByCopyDeclsPtrSet.count(BlockDeclRefs[i]->getDecl())) {
+          BlockByCopyDeclsPtrSet.insert(BlockDeclRefs[i]->getDecl());
+          BlockByCopyDecls.push_back(BlockDeclRefs[i]->getDecl());
+        }
+      }
     // Unique all "by ref" declarations.
     for (unsigned i = 0; i < BlockDeclRefs.size(); i++)
-      if (BlockDeclRefs[i]->getDecl()->hasAttr<BlocksAttr>())
-        BlockByRefDecls.insert(BlockDeclRefs[i]->getDecl());
+      if (BlockDeclRefs[i]->getDecl()->hasAttr<BlocksAttr>()) {
+        if (!BlockByRefDeclsPtrSet.count(BlockDeclRefs[i]->getDecl())) {
+          BlockByRefDeclsPtrSet.insert(BlockDeclRefs[i]->getDecl());
+          BlockByRefDecls.push_back(BlockDeclRefs[i]->getDecl());
+        }
+      }
     // Find any imported blocks...they will need special attention.
     for (unsigned i = 0; i < BlockDeclRefs.size(); i++)
       if (BlockDeclRefs[i]->getDecl()->hasAttr<BlocksAttr>() ||
@@ -5172,16 +5206,20 @@ Stmt *RewriteModernObjC::SynthBlockInitExpr(BlockExpr *Exp,
     for (unsigned i = 0; i < InnerBlockDeclRefs.size(); i++) {
       DeclRefExpr *Exp = InnerBlockDeclRefs[i];
       ValueDecl *VD = Exp->getDecl();
-      if (!VD->hasAttr<BlocksAttr>() && BlockByCopyDecls.insert(VD)) {
-        // We need to save the copied-in variables in nested
-        // blocks because it is needed at the end for some of the API
-        // generations. See SynthesizeBlockLiterals routine.
+      if (!VD->hasAttr<BlocksAttr>() && !BlockByCopyDeclsPtrSet.count(VD)) {
+      // We need to save the copied-in variables in nested
+      // blocks because it is needed at the end for some of the API generations.
+      // See SynthesizeBlockLiterals routine.
         InnerDeclRefs.push_back(Exp); countOfInnerDecls++;
         BlockDeclRefs.push_back(Exp);
+        BlockByCopyDeclsPtrSet.insert(VD);
+        BlockByCopyDecls.push_back(VD);
       }
-      if (VD->hasAttr<BlocksAttr>() && BlockByRefDecls.insert(VD)) {
+      if (VD->hasAttr<BlocksAttr>() && !BlockByRefDeclsPtrSet.count(VD)) {
         InnerDeclRefs.push_back(Exp); countOfInnerDecls++;
         BlockDeclRefs.push_back(Exp);
+        BlockByRefDeclsPtrSet.insert(VD);
+        BlockByRefDecls.push_back(VD);
       }
     }
     // Find any imported blocks...they will need special attention.
@@ -5262,43 +5300,47 @@ Stmt *RewriteModernObjC::SynthBlockInitExpr(BlockExpr *Exp,
   if (BlockDeclRefs.size()) {
     Expr *Exp;
     // Output all "by copy" declarations.
-    for (ValueDecl *VD : BlockByCopyDecls) {
-      if (isObjCType(VD->getType())) {
+    for (SmallVectorImpl<ValueDecl *>::iterator I = BlockByCopyDecls.begin(),
+         E = BlockByCopyDecls.end(); I != E; ++I) {
+      if (isObjCType((*I)->getType())) {
         // FIXME: Conform to ABI ([[obj retain] autorelease]).
-        FD = SynthBlockInitFunctionDecl(VD->getName());
+        FD = SynthBlockInitFunctionDecl((*I)->getName());
         Exp = new (Context) DeclRefExpr(*Context, FD, false, FD->getType(),
                                         VK_LValue, SourceLocation());
-        if (HasLocalVariableExternalStorage(VD)) {
-          QualType QT = VD->getType();
+        if (HasLocalVariableExternalStorage(*I)) {
+          QualType QT = (*I)->getType();
           QT = Context->getPointerType(QT);
           Exp = UnaryOperator::Create(const_cast<ASTContext &>(*Context), Exp,
                                       UO_AddrOf, QT, VK_PRValue, OK_Ordinary,
                                       SourceLocation(), false,
                                       FPOptionsOverride());
         }
-      } else if (isTopLevelBlockPointerType(VD->getType())) {
-        FD = SynthBlockInitFunctionDecl(VD->getName());
+      } else if (isTopLevelBlockPointerType((*I)->getType())) {
+        FD = SynthBlockInitFunctionDecl((*I)->getName());
         Arg = new (Context) DeclRefExpr(*Context, FD, false, FD->getType(),
                                         VK_LValue, SourceLocation());
         Exp = NoTypeInfoCStyleCastExpr(Context, Context->VoidPtrTy,
                                        CK_BitCast, Arg);
       } else {
-        FD = SynthBlockInitFunctionDecl(VD->getName());
+        FD = SynthBlockInitFunctionDecl((*I)->getName());
         Exp = new (Context) DeclRefExpr(*Context, FD, false, FD->getType(),
                                         VK_LValue, SourceLocation());
-        if (HasLocalVariableExternalStorage(VD)) {
-          QualType QT = VD->getType();
+        if (HasLocalVariableExternalStorage(*I)) {
+          QualType QT = (*I)->getType();
           QT = Context->getPointerType(QT);
           Exp = UnaryOperator::Create(const_cast<ASTContext &>(*Context), Exp,
                                       UO_AddrOf, QT, VK_PRValue, OK_Ordinary,
                                       SourceLocation(), false,
                                       FPOptionsOverride());
         }
+
       }
       InitExprs.push_back(Exp);
     }
     // Output all "by ref" declarations.
-    for (ValueDecl *ND : BlockByRefDecls) {
+    for (SmallVectorImpl<ValueDecl *>::iterator I = BlockByRefDecls.begin(),
+         E = BlockByRefDecls.end(); I != E; ++I) {
+      ValueDecl *ND = (*I);
       std::string Name(ND->getNameAsString());
       std::string RecName;
       RewriteByRefString(RecName, Name, ND, true);
@@ -5308,10 +5350,9 @@ Stmt *RewriteModernObjC::SynthBlockInitExpr(BlockExpr *Exp,
           RecordDecl::Create(*Context, TagTypeKind::Struct, TUDecl,
                              SourceLocation(), SourceLocation(), II);
       assert(RD && "SynthBlockInitExpr(): Can't find RecordDecl");
-      QualType castT =
-          Context->getPointerType(Context->getCanonicalTagType(RD));
+      QualType castT = Context->getPointerType(Context->getTagDeclType(RD));
 
-      FD = SynthBlockInitFunctionDecl(ND->getName());
+      FD = SynthBlockInitFunctionDecl((*I)->getName());
       Exp = new (Context) DeclRefExpr(*Context, FD, false, FD->getType(),
                                       VK_LValue, SourceLocation());
       bool isNestedCapturedVar = false;
@@ -5366,7 +5407,9 @@ Stmt *RewriteModernObjC::SynthBlockInitExpr(BlockExpr *Exp,
 
   BlockDeclRefs.clear();
   BlockByRefDecls.clear();
+  BlockByRefDeclsPtrSet.clear();
   BlockByCopyDecls.clear();
+  BlockByCopyDeclsPtrSet.clear();
   ImportedBlockDecls.clear();
   return NewRep;
 }
@@ -5712,7 +5755,7 @@ void RewriteModernObjC::HandleDeclInMainFile(Decl *D) {
           }
         }
       } else if (VD->getType()->isRecordType()) {
-        auto *RD = VD->getType()->castAsRecordDecl();
+        RecordDecl *RD = VD->getType()->castAs<RecordType>()->getDecl();
         if (RD->isCompleteDefinition())
           RewriteRecordBody(RD);
       }
@@ -7453,7 +7496,7 @@ Stmt *RewriteModernObjC::RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV) {
         IvarT = GetGroupRecordTypeForObjCIvarBitfield(D);
 
       if (!IvarT->getAs<TypedefType>() && IvarT->isRecordType()) {
-        RecordDecl *RD = IvarT->castAsCanonical<RecordType>()->getDecl();
+        RecordDecl *RD = IvarT->castAs<RecordType>()->getDecl();
         RD = RD->getDefinition();
         if (RD && !RD->getDeclName().getAsIdentifierInfo()) {
           // decltype(((Foo_IMPL*)0)->bar) *
@@ -7466,8 +7509,7 @@ Stmt *RewriteModernObjC::RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV) {
           RecordDecl *RD = RecordDecl::Create(
               *Context, TagTypeKind::Struct, TUDecl, SourceLocation(),
               SourceLocation(), &Context->Idents.get(RecName));
-          QualType PtrStructIMPL =
-              Context->getPointerType(Context->getCanonicalTagType(RD));
+          QualType PtrStructIMPL = Context->getPointerType(Context->getTagDeclType(RD));
           unsigned UnsignedIntSize =
             static_cast<unsigned>(Context->getTypeSize(Context->UnsignedIntTy));
           Expr *Zero = IntegerLiteral::Create(*Context,

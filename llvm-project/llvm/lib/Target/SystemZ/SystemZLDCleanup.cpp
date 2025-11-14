@@ -20,6 +20,7 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
+#include "llvm/Target/TargetMachine.h"
 
 using namespace llvm;
 
@@ -28,7 +29,9 @@ namespace {
 class SystemZLDCleanup : public MachineFunctionPass {
 public:
   static char ID;
-  SystemZLDCleanup() : MachineFunctionPass(ID), TII(nullptr), MF(nullptr) {}
+  SystemZLDCleanup() : MachineFunctionPass(ID), TII(nullptr), MF(nullptr) {
+    initializeSystemZLDCleanupPass(*PassRegistry::getPassRegistry());
+  }
 
   bool runOnMachineFunction(MachineFunction &MF) override;
   void getAnalysisUsage(AnalysisUsage &AU) const override;
@@ -55,7 +58,7 @@ FunctionPass *llvm::createSystemZLDCleanupPass(SystemZTargetMachine &TM) {
 
 void SystemZLDCleanup::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesCFG();
-  AU.addRequired<MachineDominatorTreeWrapperPass>();
+  AU.addRequired<MachineDominatorTree>();
   MachineFunctionPass::getAnalysisUsage(AU);
 }
 
@@ -72,8 +75,7 @@ bool SystemZLDCleanup::runOnMachineFunction(MachineFunction &F) {
     return false;
   }
 
-  MachineDominatorTree *DT =
-      &getAnalysis<MachineDominatorTreeWrapperPass>().getDomTree();
+  MachineDominatorTree *DT = &getAnalysis<MachineDominatorTree>();
   return VisitNode(DT->getRootNode(), 0);
 }
 

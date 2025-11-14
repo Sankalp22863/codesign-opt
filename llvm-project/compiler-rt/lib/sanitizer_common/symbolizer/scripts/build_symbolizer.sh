@@ -55,7 +55,6 @@ cd $BUILD_DIR
 
 ZLIB_BUILD=${BUILD_DIR}/zlib
 LIBCXX_BUILD=${BUILD_DIR}/libcxx
-LIBCXX_INSTALL=${BUILD_DIR}/libcxx-install
 LLVM_BUILD=${BUILD_DIR}/llvm
 SYMBOLIZER_BUILD=${BUILD_DIR}/symbolizer
 
@@ -87,13 +86,12 @@ AR="${AR}" CC="${CC}" CFLAGS="$FLAGS -Wno-deprecated-non-prototype" RANLIB=/bin/
 make -j libz.a
 
 # Build and install libcxxabi and libcxx.
-if [[ ! -f ${LIBCXX_BUILD}/build.ninja ]]; then
-  rm -rf "${LIBCXX_BUILD}" "${LIBCXX_INSTALL}"
-  mkdir -p ${LIBCXX_BUILD} ${LIBCXX_INSTALL}
+if [[ ! -f ${LLVM_BUILD}/build.ninja ]]; then
+  rm -rf ${LIBCXX_BUILD}
+  mkdir -p ${LIBCXX_BUILD}
   cd ${LIBCXX_BUILD}
   LIBCXX_FLAGS="${FLAGS} -Wno-macro-redefined"
   cmake -GNinja \
-    -DCMAKE_INSTALL_PREFIX="${LIBCXX_INSTALL}" \
     -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER_WORKS=ON \
@@ -116,11 +114,11 @@ if [[ ! -f ${LIBCXX_BUILD}/build.ninja ]]; then
   $LLVM_SRC/../runtimes
 fi
 cd ${LIBCXX_BUILD}
-ninja cxx cxxabi && ninja install-cxx install-cxxabi
+ninja cxx cxxabi
 
 FLAGS="${FLAGS} -fno-rtti -fno-exceptions"
 LLVM_CFLAGS="${FLAGS} -Wno-global-constructors"
-LLVM_CXXFLAGS="-isystem ${LIBCXX_INSTALL}/include -isystem ${LIBCXX_INSTALL}/include/c++/v1 ${LLVM_CFLAGS} -nostdinc++ -I${ZLIB_BUILD}"
+LLVM_CXXFLAGS="${LLVM_CFLAGS} -nostdinc++ -I${ZLIB_BUILD} -isystem ${LIBCXX_BUILD}/include -isystem ${LIBCXX_BUILD}/include/c++/v1"
 
 # Build LLVM.
 if [[ ! -f ${LLVM_BUILD}/build.ninja ]]; then
@@ -136,16 +134,17 @@ if [[ ! -f ${LLVM_BUILD}/build.ninja ]]; then
     -DLLVM_ENABLE_LIBCXX=ON \
     -DCMAKE_C_FLAGS_RELEASE="${LLVM_CFLAGS}" \
     -DCMAKE_CXX_FLAGS_RELEASE="${LLVM_CXXFLAGS}" \
-    -DCMAKE_EXE_LINKER_FLAGS="$LINKFLAGS -stdlib=libc++ -L${LIBCXX_INSTALL}/lib" \
+    -DCMAKE_EXE_LINKER_FLAGS="$LINKFLAGS -stdlib=libc++ -L${LIBCXX_BUILD}/lib" \
     -DLLVM_TABLEGEN=$TBLGEN \
     -DLLVM_INCLUDE_TESTS=OFF \
     -DLLVM_ENABLE_ZLIB=ON \
     -DLLVM_ENABLE_ZSTD=OFF \
+    -DLLVM_ENABLE_TERMINFO=OFF \
     -DLLVM_ENABLE_THREADS=OFF \
   $LLVM_SRC
 fi
 cd ${LLVM_BUILD}
-ninja LLVMSymbolize LLVMObject LLVMBinaryFormat LLVMDebugInfoDWARF LLVMDebugInfoGSYM LLVMSupport LLVMDebugInfoPDB LLVMDebuginfod LLVMMC LLVMDemangle LLVMTextAPI LLVMTargetParser LLVMCore
+ninja LLVMSymbolize LLVMObject LLVMBinaryFormat LLVMDebugInfoDWARF LLVMSupport LLVMDebugInfoPDB LLVMDebuginfod LLVMMC LLVMDemangle LLVMTextAPI LLVMTargetParser
 
 cd ${BUILD_DIR}
 rm -rf ${SYMBOLIZER_BUILD}
@@ -165,7 +164,7 @@ SYMBOLIZER_API_LIST+=,__sanitizer_symbolize_demangle
 SYMBOLIZER_API_LIST+=,__sanitizer_symbolize_set_demangle
 SYMBOLIZER_API_LIST+=,__sanitizer_symbolize_set_inline_frames
 
-LIBCXX_ARCHIVE_DIR=$(dirname $(find $LIBCXX_INSTALL -name libc++.a | head -n1))
+LIBCXX_ARCHIVE_DIR=$(dirname $(find $LIBCXX_BUILD -name libc++.a | head -n1))
 
 # Merge all the object files together and copy the resulting library back.
 $LINK $LIBCXX_ARCHIVE_DIR/libc++.a \
@@ -174,8 +173,6 @@ $LINK $LIBCXX_ARCHIVE_DIR/libc++.a \
       $LLVM_BUILD/lib/libLLVMObject.a \
       $LLVM_BUILD/lib/libLLVMBinaryFormat.a \
       $LLVM_BUILD/lib/libLLVMDebugInfoDWARF.a \
-      $LLVM_BUILD/lib/libLLVMDebugInfoDWARFLowLevel.a \
-      $LLVM_BUILD/lib/libLLVMDebugInfoGSYM.a \
       $LLVM_BUILD/lib/libLLVMSupport.a \
       $LLVM_BUILD/lib/libLLVMDebugInfoPDB.a \
       $LLVM_BUILD/lib/libLLVMDebugInfoMSF.a \
@@ -185,7 +182,6 @@ $LINK $LIBCXX_ARCHIVE_DIR/libc++.a \
       $LLVM_BUILD/lib/libLLVMMC.a \
       $LLVM_BUILD/lib/libLLVMTextAPI.a \
       $LLVM_BUILD/lib/libLLVMTargetParser.a \
-      $LLVM_BUILD/lib/libLLVMCore.a \
       $ZLIB_BUILD/libz.a \
       symbolizer.a \
       -ignore-non-bitcode -o all.bc
@@ -195,10 +191,8 @@ $OPT -passes=internalize -internalize-public-api-list=${SYMBOLIZER_API_LIST} all
 $CC $FLAGS -fno-lto -c opt.bc -o symbolizer.o
 
 echo "Checking undefined symbols..."
-export LC_ALL=C
-nm -f posix -g symbolizer.o | cut -f 1,2 -d \  | sort -u > undefined.new
-grep -Ev "^#|^$" $SCRIPT_DIR/global_symbols.txt | sort -u > expected.new
-(diff -u expected.new undefined.new | grep -E "^\+[^+]") && \
+nm -f posix -g symbolizer.o | cut -f 1,2 -d \  | LC_COLLATE=C sort -u > undefined.new
+(diff -u $SCRIPT_DIR/global_symbols.txt undefined.new | grep -E "^\+[^+]") && \
   (echo "Failed: unexpected symbols"; exit 1)
 
 cp -f symbolizer.o $OUTPUT

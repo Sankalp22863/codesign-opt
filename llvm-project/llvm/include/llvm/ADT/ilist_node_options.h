@@ -15,8 +15,8 @@
 
 namespace llvm {
 
-template <bool EnableSentinelTracking, class ParentTy> class ilist_node_base;
-template <bool EnableSentinelTracking, class ParentTy> class ilist_base;
+template <bool EnableSentinelTracking> class ilist_node_base;
+template <bool EnableSentinelTracking> class ilist_base;
 
 /// Option to choose whether to track sentinels.
 ///
@@ -39,27 +39,14 @@ template <class Tag> struct ilist_tag {};
 /// iterator class to store that information.
 template <bool ExtraIteratorBits> struct ilist_iterator_bits {};
 
-/// Option to add a pointer to this list's owner in every node.
-///
-/// This option causes the \a ilist_base_node for this list to contain a pointer
-/// ParentTy *Parent, returned by \a ilist_base_node::getNodeBaseParent() and
-/// set by \a ilist_base_node::setNodeBaseParent(ParentTy *Parent). The parent
-/// value is not set automatically; the ilist owner should set itself as the
-/// parent of the list sentinel, and the parent should be set on each node
-/// inserted into the list. This value is also not used by
-/// \a ilist_node_with_parent::getNodeParent(), but is used by \a
-/// ilist_iterator::getNodeParent(), which allows the parent to be fetched from
-/// any valid (non-null) iterator to this list, including the sentinel.
-template <class ParentTy> struct ilist_parent {};
-
 namespace ilist_detail {
 
 /// Helper trait for recording whether an option is specified explicitly.
 template <bool IsExplicit> struct explicitness {
   static const bool is_explicit = IsExplicit;
 };
-using is_explicit = explicitness<true>;
-using is_implicit = explicitness<false>;
+typedef explicitness<true> is_explicit;
+typedef explicitness<false> is_implicit;
 
 /// Check whether an option is valid.
 ///
@@ -82,7 +69,7 @@ template <class... Options> struct extract_sentinel_tracking;
 template <bool EnableSentinelTracking, class... Options>
 struct extract_sentinel_tracking<
     ilist_sentinel_tracking<EnableSentinelTracking>, Options...>
-    : std::bool_constant<EnableSentinelTracking>, is_explicit {};
+    : std::integral_constant<bool, EnableSentinelTracking>, is_explicit {};
 template <class Option1, class... Options>
 struct extract_sentinel_tracking<Option1, Options...>
     : extract_sentinel_tracking<Options...> {};
@@ -103,12 +90,12 @@ struct is_valid_option<ilist_sentinel_tracking<EnableSentinelTracking>>
 template <class... Options> struct extract_tag;
 template <class Tag, class... Options>
 struct extract_tag<ilist_tag<Tag>, Options...> {
-  using type = Tag;
+  typedef Tag type;
 };
 template <class Option1, class... Options>
 struct extract_tag<Option1, Options...> : extract_tag<Options...> {};
 template <> struct extract_tag<> {
-  using type = void;
+  typedef void type;
 };
 template <class Tag> struct is_valid_option<ilist_tag<Tag>> : std::true_type {};
 
@@ -119,7 +106,7 @@ template <class Tag> struct is_valid_option<ilist_tag<Tag>> : std::true_type {};
 template <class... Options> struct extract_iterator_bits;
 template <bool IteratorBits, class... Options>
 struct extract_iterator_bits<ilist_iterator_bits<IteratorBits>, Options...>
-    : std::bool_constant<IteratorBits> {};
+    : std::integral_constant<bool, IteratorBits> {};
 template <class Option1, class... Options>
 struct extract_iterator_bits<Option1, Options...>
     : extract_iterator_bits<Options...> {};
@@ -127,56 +114,42 @@ template <> struct extract_iterator_bits<> : std::false_type, is_implicit {};
 template <bool IteratorBits>
 struct is_valid_option<ilist_iterator_bits<IteratorBits>> : std::true_type {};
 
-/// Extract node parent option.
-///
-/// Look through \p Options for the \a ilist_parent option, pulling out the
-/// custom parent type, using void as a default.
-template <class... Options> struct extract_parent;
-template <class ParentTy, class... Options>
-struct extract_parent<ilist_parent<ParentTy>, Options...> {
-  using type = ParentTy;
-};
-template <class Option1, class... Options>
-struct extract_parent<Option1, Options...> : extract_parent<Options...> {};
-template <> struct extract_parent<> {
-  using type = void;
-};
-template <class ParentTy>
-struct is_valid_option<ilist_parent<ParentTy>> : std::true_type {};
-
 /// Check whether options are valid.
 ///
 /// The conjunction of \a is_valid_option on each individual option.
-template <class... Options>
-struct check_options : std::conjunction<is_valid_option<Options>...> {};
+template <class... Options> struct check_options;
+template <> struct check_options<> : std::true_type {};
+template <class Option1, class... Options>
+struct check_options<Option1, Options...>
+    : std::integral_constant<bool, is_valid_option<Option1>::value &&
+                                       check_options<Options...>::value> {};
 
 /// Traits for options for \a ilist_node.
 ///
 /// This is usually computed via \a compute_node_options.
 template <class T, bool EnableSentinelTracking, bool IsSentinelTrackingExplicit,
-          class TagT, bool HasIteratorBits, class ParentTy>
+          class TagT, bool HasIteratorBits>
 struct node_options {
-  using value_type = T;
-  using pointer = T *;
-  using reference = T &;
-  using const_pointer = const T *;
-  using const_reference = const T &;
+  typedef T value_type;
+  typedef T *pointer;
+  typedef T &reference;
+  typedef const T *const_pointer;
+  typedef const T &const_reference;
 
   static const bool enable_sentinel_tracking = EnableSentinelTracking;
   static const bool is_sentinel_tracking_explicit = IsSentinelTrackingExplicit;
   static const bool has_iterator_bits = HasIteratorBits;
-  using tag = TagT;
-  using parent_ty = ParentTy;
-  using node_base_type = ilist_node_base<enable_sentinel_tracking, parent_ty>;
-  using list_base_type = ilist_base<enable_sentinel_tracking, parent_ty>;
+  typedef TagT tag;
+  typedef ilist_node_base<enable_sentinel_tracking> node_base_type;
+  typedef ilist_base<enable_sentinel_tracking> list_base_type;
 };
 
 template <class T, class... Options> struct compute_node_options {
-  using type = node_options<T, extract_sentinel_tracking<Options...>::value,
-                            extract_sentinel_tracking<Options...>::is_explicit,
-                            typename extract_tag<Options...>::type,
-                            extract_iterator_bits<Options...>::value,
-                            typename extract_parent<Options...>::type>;
+  typedef node_options<T, extract_sentinel_tracking<Options...>::value,
+                       extract_sentinel_tracking<Options...>::is_explicit,
+                       typename extract_tag<Options...>::type,
+                       extract_iterator_bits<Options...>::value>
+      type;
 };
 
 } // end namespace ilist_detail

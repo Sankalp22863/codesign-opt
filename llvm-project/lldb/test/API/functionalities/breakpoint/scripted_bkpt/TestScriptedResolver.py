@@ -123,8 +123,8 @@ class TestScriptedResolver(TestBase):
 
         # Make sure these all got locations:
         for i in range(0, len(right)):
-            self.assertGreaterEqual(
-                right[i].GetNumLocations(), 1, "Breakpoint %d has no locations." % (i)
+            self.assertTrue(
+                right[i].GetNumLocations() >= 1, "Breakpoint %d has no locations." % (i)
             )
 
         # Now some ones that won't take:
@@ -229,21 +229,19 @@ class TestScriptedResolver(TestBase):
         bkpt = target.BreakpointCreateFromScript(
             "resolver.Resolver", extra_args, module_list, file_list
         )
-        self.assertGreater(bkpt.GetNumLocations(), 0, "Resolver got no locations.")
+        self.assertTrue(bkpt.GetNumLocations() > 0, "Resolver got no locations.")
         self.expect(
             "script print(resolver.Resolver.got_files)",
             substrs=["2"],
             msg="Was only passed modules",
         )
-        print(f"Made first breakpoint: {bkpt}")
-        bkpt = None
+
         # Make a breakpoint that asks for modules, check that we didn't get any files:
         bkpt = target.BreakpointCreateFromScript(
             "resolver.ResolverModuleDepth", extra_args, module_list, file_list
         )
-        print(f"Made Second breakpoint: {bkpt}")
-        self.assertGreater(
-            bkpt.GetNumLocations(), 0, "ResolverModuleDepth got no locations."
+        self.assertTrue(
+            bkpt.GetNumLocations() > 0, "ResolverModuleDepth got no locations."
         )
         self.expect(
             "script print(resolver.Resolver.got_files)",
@@ -255,9 +253,7 @@ class TestScriptedResolver(TestBase):
         bkpt = target.BreakpointCreateFromScript(
             "resolver.ResolverCUDepth", extra_args, module_list, file_list
         )
-        self.assertGreater(
-            bkpt.GetNumLocations(), 0, "ResolverCUDepth got no locations."
-        )
+        self.assertTrue(bkpt.GetNumLocations() > 0, "ResolverCUDepth got no locations.")
         self.expect(
             "script print(resolver.Resolver.got_files)",
             substrs=["1"],
@@ -268,8 +264,8 @@ class TestScriptedResolver(TestBase):
         bkpt = target.BreakpointCreateFromScript(
             "resolver.ResolverBadDepth", extra_args, module_list, file_list
         )
-        self.assertGreater(
-            bkpt.GetNumLocations(), 0, "ResolverBadDepth got no locations."
+        self.assertTrue(
+            bkpt.GetNumLocations() > 0, "ResolverBadDepth got no locations."
         )
         self.expect(
             "script print(resolver.Resolver.got_files)",
@@ -281,8 +277,8 @@ class TestScriptedResolver(TestBase):
         bkpt = target.BreakpointCreateFromScript(
             "resolver.ResolverFuncDepth", extra_args, module_list, file_list
         )
-        self.assertGreater(
-            bkpt.GetNumLocations(), 0, "ResolverFuncDepth got no locations."
+        self.assertTrue(
+            bkpt.GetNumLocations() > 0, "ResolverFuncDepth got no locations."
         )
         self.expect(
             "script print(resolver.Resolver.got_files)",

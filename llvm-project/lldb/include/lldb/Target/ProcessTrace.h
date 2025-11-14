@@ -27,8 +27,7 @@ public:
 
   static llvm::StringRef GetPluginDescriptionStatic();
 
-  ProcessTrace(lldb::TargetSP target_sp, lldb::ListenerSP listener_sp,
-               const FileSpec &core_file);
+  ProcessTrace(lldb::TargetSP target_sp, lldb::ListenerSP listener_sp);
 
   ~ProcessTrace() override;
 
@@ -48,8 +47,10 @@ public:
   void RefreshStateAfterStop() override;
 
   Status WillResume() override {
-    return Status::FromErrorStringWithFormatv(
+    Status error;
+    error.SetErrorStringWithFormatv(
         "error: {0} does not support resuming processes", GetPluginName());
+    return error;
   }
 
   bool WarnBeforeDetach() const override { return false; }

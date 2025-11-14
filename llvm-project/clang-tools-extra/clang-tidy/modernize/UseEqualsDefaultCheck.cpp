@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- UseEqualsDefaultCheck.cpp - clang-tidy----------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -26,7 +26,7 @@ getAllNamedFields(const CXXRecordDecl *Record) {
   std::set<const FieldDecl *> Result;
   for (const auto *Field : Record->fields()) {
     // Static data members are not in this range.
-    if (Field->isUnnamedBitField())
+    if (Field->isUnnamedBitfield())
       continue;
     Result.insert(Field);
   }
@@ -48,8 +48,8 @@ static std::set<const Type *> getAllDirectBases(const CXXRecordDecl *Record) {
 /// Returns a matcher that matches member expressions where the base is
 /// the variable declared as \p Var and the accessed member is the one declared
 /// as \p Field.
-static internal::Matcher<Expr> accessToFieldInVar(const FieldDecl *Field,
-                                                  const ValueDecl *Var) {
+internal::Matcher<Expr> accessToFieldInVar(const FieldDecl *Field,
+                                           const ValueDecl *Var) {
   return ignoringImpCasts(
       memberExpr(hasObjectExpression(declRefExpr(to(varDecl(equalsNode(Var))))),
                  member(fieldDecl(equalsNode(Field)))));
@@ -200,17 +200,17 @@ static bool isCopyAssignmentAndCanBeDefaulted(ASTContext *Context,
 /// Returns false if the body has any non-whitespace character.
 static bool bodyEmpty(const ASTContext *Context, const CompoundStmt *Body) {
   bool Invalid = false;
-  const StringRef Text = Lexer::getSourceText(
+  StringRef Text = Lexer::getSourceText(
       CharSourceRange::getCharRange(Body->getLBracLoc().getLocWithOffset(1),
                                     Body->getRBracLoc()),
       Context->getSourceManager(), Context->getLangOpts(), &Invalid);
-  return !Invalid && Text.ltrim(" \t\r\n").empty();
+  return !Invalid && std::strspn(Text.data(), " \t\r\n") == Text.size();
 }
 
 UseEqualsDefaultCheck::UseEqualsDefaultCheck(StringRef Name,
                                              ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context),
-      IgnoreMacros(Options.get("IgnoreMacros", true)) {}
+      IgnoreMacros(Options.getLocalOrGlobal("IgnoreMacros", true)) {}
 
 void UseEqualsDefaultCheck::storeOptions(ClangTidyOptions::OptionMap &Opts) {
   Options.store(Opts, "IgnoreMacros", IgnoreMacros);
@@ -306,8 +306,8 @@ void UseEqualsDefaultCheck::check(const MatchFinder::MatchResult &Result) {
     return;
 
   // If there are comments inside the body, don't do the change.
-  const bool ApplyFix = SpecialFunctionDecl->isCopyAssignmentOperator() ||
-                        bodyEmpty(Result.Context, Body);
+  bool ApplyFix = SpecialFunctionDecl->isCopyAssignmentOperator() ||
+                  bodyEmpty(Result.Context, Body);
 
   std::vector<FixItHint> RemoveInitializers;
   unsigned MemberType = 0;
@@ -345,14 +345,14 @@ void UseEqualsDefaultCheck::check(const MatchFinder::MatchResult &Result) {
   Diag << MemberType;
 
   if (ApplyFix) {
-    const SourceLocation UnifiedEnd = utils::lexer::getUnifiedEndLoc(
+    SourceLocation UnifiedEnd = utils::lexer::getUnifiedEndLoc(
         *Body, Result.Context->getSourceManager(),
         Result.Context->getLangOpts());
     // Skipping comments, check for a semicolon after Body->getSourceRange()
     std::optional<Token> Token = utils::lexer::findNextTokenSkippingComments(
         UnifiedEnd, Result.Context->getSourceManager(),
         Result.Context->getLangOpts());
-    const StringRef Replacement =
+    StringRef Replacement =
         Token && Token->is(tok::semi) ? "= default" : "= default;";
     Diag << FixItHint::CreateReplacement(Body->getSourceRange(), Replacement)
          << RemoveInitializers;

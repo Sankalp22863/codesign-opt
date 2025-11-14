@@ -5,7 +5,10 @@
 ; CHECK-LABEL: @f
 ; CHECK-LABEL: @g
 
-; NVPTX can only select dynamic_stackalloc on sm_52+ and with ptx73+
+; Stack realignment not supported.
+; XFAIL: target=sparc{{.*}}
+
+; NVPTX cannot select dynamic_stackalloc
 ; XFAIL: target=nvptx{{.*}}
 
 define i32 @f(ptr %p) nounwind {

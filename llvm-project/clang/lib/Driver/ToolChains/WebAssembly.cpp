@@ -7,13 +7,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "WebAssembly.h"
+#include "CommonArgs.h"
 #include "Gnu.h"
+#include "clang/Basic/Version.h"
 #include "clang/Config/config.h"
-#include "clang/Driver/CommonArgs.h"
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Driver.h"
-#include "clang/Options/Options.h"
-#include "llvm/Config/llvm-config.h" // for LLVM_VERSION_STRING
+#include "clang/Driver/DriverDiagnostic.h"
+#include "clang/Driver/Options.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
@@ -58,25 +59,6 @@ std::string wasm::Linker::getLinkerPath(const ArgList &Args) const {
   }
 
   return ToolChain.GetProgramPath(ToolChain.getDefaultLinker());
-}
-
-static bool TargetBuildsComponents(const llvm::Triple &TargetTriple) {
-  // WASIp2 and above are all based on components, so test for WASI but exclude
-  // the original `wasi` target in addition to the `wasip1` name.
-  return TargetTriple.isOSWASI() && TargetTriple.getOSName() != "wasip1" &&
-         TargetTriple.getOSName() != "wasi";
-}
-
-static bool WantsPthread(const llvm::Triple &Triple, const ArgList &Args) {
-  bool WantsPthread =
-      Args.hasFlag(options::OPT_pthread, options::OPT_no_pthread, false);
-
-  // If the WASI environment is "threads" then enable pthreads support
-  // without requiring -pthread, in order to prevent user error
-  if (Triple.isOSWASI() && Triple.getEnvironmentName() == "threads")
-    WantsPthread = true;
-
-  return WantsPthread;
 }
 
 void wasm::Linker::ConstructJob(Compilation &C, const JobAction &JA,
@@ -160,36 +142,25 @@ void wasm::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   AddLinkerInputs(ToolChain, Inputs, Args, CmdArgs, JA);
 
-  if (WantsPthread(ToolChain.getTriple(), Args))
-    CmdArgs.push_back("--shared-memory");
-
   if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs)) {
     if (ToolChain.ShouldLinkCXXStdlib(Args))
       ToolChain.AddCXXStdlibLibArgs(Args, CmdArgs);
 
-    if (WantsPthread(ToolChain.getTriple(), Args))
+    if (Args.hasArg(options::OPT_pthread)) {
       CmdArgs.push_back("-lpthread");
+      CmdArgs.push_back("--shared-memory");
+    }
 
     CmdArgs.push_back("-lc");
     AddRunTimeLibs(ToolChain, ToolChain.getDriver(), CmdArgs, Args);
   }
 
-  ToolChain.addProfileRTLibs(Args, CmdArgs);
-
   CmdArgs.push_back("-o");
   CmdArgs.push_back(Output.getFilename());
 
-  // Don't use wasm-opt by default on `wasip2` as it doesn't have support for
-  // components at this time. Retain the historical default otherwise, though,
-  // of running `wasm-opt` by default.
-  bool WasmOptDefault = !TargetBuildsComponents(ToolChain.getTriple());
-  bool RunWasmOpt = Args.hasFlag(options::OPT_wasm_opt,
-                                 options::OPT_no_wasm_opt, WasmOptDefault);
-
-  // If wasm-opt is enabled and optimizations are happening look for the
-  // `wasm-opt` program. If it's not found auto-disable it.
+  // When optimizing, if wasm-opt is available, run it.
   std::string WasmOptPath;
-  if (RunWasmOpt && Args.getLastArg(options::OPT_O_Group)) {
+  if (Args.getLastArg(options::OPT_O_Group)) {
     WasmOptPath = ToolChain.GetProgramPath("wasm-opt");
     if (WasmOptPath == "wasm-opt") {
       WasmOptPath = {};
@@ -244,7 +215,7 @@ WebAssembly::WebAssembly(const Driver &D, const llvm::Triple &Triple,
 
   assert(Triple.isArch32Bit() != Triple.isArch64Bit());
 
-  getProgramPaths().push_back(getDriver().Dir);
+  getProgramPaths().push_back(getDriver().getInstalledDir());
 
   auto SysRoot = getDriver().SysRoot;
   if (getTriple().getOS() == llvm::Triple::UnknownOS) {
@@ -268,7 +239,7 @@ WebAssembly::WebAssembly(const Driver &D, const llvm::Triple &Triple,
 }
 
 const char *WebAssembly::getDefaultLinker() const {
-  if (TargetBuildsComponents(getTriple()))
+  if (getOS() == "wasip2")
     return "wasm-component-ld";
   return "wasm-ld";
 }
@@ -297,12 +268,13 @@ bool WebAssembly::HasNativeLLVMSupport() const { return true; }
 void WebAssembly::addClangTargetOptions(const ArgList &DriverArgs,
                                         ArgStringList &CC1Args,
                                         Action::OffloadKind) const {
-  if (!DriverArgs.hasFlag(options::OPT_fuse_init_array,
+  if (!DriverArgs.hasFlag(clang::driver::options::OPT_fuse_init_array,
                           options::OPT_fno_use_init_array, true))
     CC1Args.push_back("-fno-use-init-array");
 
   // '-pthread' implies atomics, bulk-memory, mutable-globals, and sign-ext
-  if (WantsPthread(getTriple(), DriverArgs)) {
+  if (DriverArgs.hasFlag(options::OPT_pthread, options::OPT_no_pthread,
+                         false)) {
     if (DriverArgs.hasFlag(options::OPT_mno_atomics, options::OPT_matomics,
                            false))
       getDriver().Diag(diag::err_drv_argument_not_allowed_with)
@@ -354,59 +326,24 @@ void WebAssembly::addClangTargetOptions(const ArgList &DriverArgs,
     }
   }
 
-  bool HasBannedIncompatibleOptionsForWasmEHSjLj = false;
-  bool HasEnabledFeaturesForWasmEHSjLj = false;
-
-  // Bans incompatible options for Wasm EH / SjLj. We don't allow using
-  // different modes for EH and SjLj.
-  auto BanIncompatibleOptionsForWasmEHSjLj = [&](StringRef CurOption) {
-    if (HasBannedIncompatibleOptionsForWasmEHSjLj)
-      return;
-    HasBannedIncompatibleOptionsForWasmEHSjLj = true;
+  if (DriverArgs.getLastArg(options::OPT_fwasm_exceptions)) {
+    // '-fwasm-exceptions' is not compatible with '-mno-exception-handling'
     if (DriverArgs.hasFlag(options::OPT_mno_exception_handing,
                            options::OPT_mexception_handing, false))
       getDriver().Diag(diag::err_drv_argument_not_allowed_with)
-          << CurOption << "-mno-exception-handling";
-    // The standardized Wasm EH spec requires multivalue and reference-types.
-    if (DriverArgs.hasFlag(options::OPT_mno_multivalue,
-                           options::OPT_mmultivalue, false))
-      getDriver().Diag(diag::err_drv_argument_not_allowed_with)
-          << CurOption << "-mno-multivalue";
-    if (DriverArgs.hasFlag(options::OPT_mno_reference_types,
-                           options::OPT_mreference_types, false))
-      getDriver().Diag(diag::err_drv_argument_not_allowed_with)
-          << CurOption << "-mno-reference-types";
-
+          << "-fwasm-exceptions"
+          << "-mno-exception-handling";
+    // '-fwasm-exceptions' is not compatible with
+    // '-mllvm -enable-emscripten-cxx-exceptions'
     for (const Arg *A : DriverArgs.filtered(options::OPT_mllvm)) {
-      for (const auto *Option :
-           {"-enable-emscripten-cxx-exceptions", "-enable-emscripten-sjlj",
-            "-emscripten-cxx-exceptions-allowed"}) {
-        if (StringRef(A->getValue(0)) == Option)
-          getDriver().Diag(diag::err_drv_argument_not_allowed_with)
-              << CurOption << Option;
-      }
+      if (StringRef(A->getValue(0)) == "-enable-emscripten-cxx-exceptions")
+        getDriver().Diag(diag::err_drv_argument_not_allowed_with)
+            << "-fwasm-exceptions"
+            << "-mllvm -enable-emscripten-cxx-exceptions";
     }
-  };
-
-  // Enable necessary features for Wasm EH / SjLj in the backend.
-  auto EnableFeaturesForWasmEHSjLj = [&]() {
-    if (HasEnabledFeaturesForWasmEHSjLj)
-      return;
-    HasEnabledFeaturesForWasmEHSjLj = true;
+    // '-fwasm-exceptions' implies exception-handling feature
     CC1Args.push_back("-target-feature");
     CC1Args.push_back("+exception-handling");
-    // The standardized Wasm EH spec requires multivalue and reference-types.
-    CC1Args.push_back("-target-feature");
-    CC1Args.push_back("+multivalue");
-    CC1Args.push_back("-target-feature");
-    CC1Args.push_back("+reference-types");
-    // Backend needs '-exception-model=wasm' to use Wasm EH instructions
-    CC1Args.push_back("-exception-model=wasm");
-  };
-
-  if (DriverArgs.getLastArg(options::OPT_fwasm_exceptions)) {
-    BanIncompatibleOptionsForWasmEHSjLj("-fwasm-exceptions");
-    EnableFeaturesForWasmEHSjLj();
     // Backend needs -wasm-enable-eh to enable Wasm EH
     CC1Args.push_back("-mllvm");
     CC1Args.push_back("-wasm-enable-eh");
@@ -441,12 +378,36 @@ void WebAssembly::addClangTargetOptions(const ArgList &DriverArgs,
       }
     }
 
-    for (const auto *Option :
-         {"-wasm-enable-eh", "-wasm-enable-sjlj", "-wasm-use-legacy-eh"}) {
-      if (Opt.starts_with(Option)) {
-        BanIncompatibleOptionsForWasmEHSjLj(Option);
-        EnableFeaturesForWasmEHSjLj();
+    if (Opt.starts_with("-wasm-enable-sjlj")) {
+      // '-mllvm -wasm-enable-sjlj' is not compatible with
+      // '-mno-exception-handling'
+      if (DriverArgs.hasFlag(options::OPT_mno_exception_handing,
+                             options::OPT_mexception_handing, false))
+        getDriver().Diag(diag::err_drv_argument_not_allowed_with)
+            << "-mllvm -wasm-enable-sjlj"
+            << "-mno-exception-handling";
+      // '-mllvm -wasm-enable-sjlj' is not compatible with
+      // '-mllvm -enable-emscripten-cxx-exceptions'
+      // because we don't allow Emscripten EH + Wasm SjLj
+      for (const Arg *A : DriverArgs.filtered(options::OPT_mllvm)) {
+        if (StringRef(A->getValue(0)) == "-enable-emscripten-cxx-exceptions")
+          getDriver().Diag(diag::err_drv_argument_not_allowed_with)
+              << "-mllvm -wasm-enable-sjlj"
+              << "-mllvm -enable-emscripten-cxx-exceptions";
       }
+      // '-mllvm -wasm-enable-sjlj' is not compatible with
+      // '-mllvm -enable-emscripten-sjlj'
+      for (const Arg *A : DriverArgs.filtered(options::OPT_mllvm)) {
+        if (StringRef(A->getValue(0)) == "-enable-emscripten-sjlj")
+          getDriver().Diag(diag::err_drv_argument_not_allowed_with)
+              << "-mllvm -wasm-enable-sjlj"
+              << "-mllvm -enable-emscripten-sjlj";
+      }
+      // '-mllvm -wasm-enable-sjlj' implies exception-handling feature
+      CC1Args.push_back("-target-feature");
+      CC1Args.push_back("+exception-handling");
+      // Backend needs '-exception-model=wasm' to use Wasm EH instructions
+      CC1Args.push_back("-exception-model=wasm");
     }
   }
 }
@@ -472,7 +433,7 @@ WebAssembly::GetCXXStdlibType(const ArgList &Args) const {
 
 void WebAssembly::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
                                             ArgStringList &CC1Args) const {
-  if (DriverArgs.hasArg(options::OPT_nostdinc))
+  if (DriverArgs.hasArg(clang::driver::options::OPT_nostdinc))
     return;
 
   const Driver &D = getDriver();
@@ -543,13 +504,8 @@ void WebAssembly::AddCXXStdlibLibArgs(const llvm::opt::ArgList &Args,
 SanitizerMask WebAssembly::getSupportedSanitizers() const {
   SanitizerMask Res = ToolChain::getSupportedSanitizers();
   if (getTriple().isOSEmscripten()) {
-    Res |= SanitizerKind::Vptr | SanitizerKind::Leak;
+    Res |= SanitizerKind::Vptr | SanitizerKind::Leak | SanitizerKind::Address;
   }
-
-  if (getTriple().isOSEmscripten() || getTriple().isOSWASI()) {
-    Res |= SanitizerKind::Address;
-  }
-
   // -fsanitize=function places two words before the function label, which are
   // -unsupported.
   Res &= ~SanitizerKind::Function;

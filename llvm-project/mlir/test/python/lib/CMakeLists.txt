@@ -1,8 +1,7 @@
 set(LLVM_OPTIONAL_SOURCES
   PythonTestCAPI.cpp
   PythonTestDialect.cpp
-  PythonTestModulePybind11.cpp
-  PythonTestModuleNanobind.cpp
+  PythonTestModule.cpp
 )
 
 add_mlir_library(MLIRPythonTestDialect
@@ -12,8 +11,8 @@ add_mlir_library(MLIRPythonTestDialect
 
   DEPENDS
   MLIRPythonTestIncGen
-)
-mlir_target_link_libraries(MLIRPythonTestDialect PUBLIC
+
+  LINK_LIBS PUBLIC
   MLIRInferTypeOpInterface
   MLIRIR
   MLIRSupport

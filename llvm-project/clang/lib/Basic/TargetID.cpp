@@ -7,8 +7,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Basic/TargetID.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/TargetParser.h"
 #include "llvm/TargetParser/Triple.h"
 #include <map>
@@ -91,9 +91,11 @@ parseTargetIDWithFormatCheckingOnly(llvm::StringRef TargetID,
     if (Sign != '+' && Sign != '-')
       return std::nullopt;
     bool IsOn = Sign == '+';
+    auto Loc = FeatureMap->find(Feature);
     // Each feature can only show up at most once in target ID.
-    if (!FeatureMap->try_emplace(Feature, IsOn).second)
+    if (Loc != FeatureMap->end())
       return std::nullopt;
+    (*FeatureMap)[Feature] = IsOn;
     Features = Splits.second;
   }
   return Processor;
@@ -112,8 +114,9 @@ parseTargetID(const llvm::Triple &T, llvm::StringRef TargetID,
   if (Processor.empty())
     return std::nullopt;
 
-  llvm::SmallSet<llvm::StringRef, 4> AllFeatures(
-      llvm::from_range, getAllPossibleTargetIDFeatures(T, Processor));
+  llvm::SmallSet<llvm::StringRef, 4> AllFeatures;
+  for (auto &&F : getAllPossibleTargetIDFeatures(T, Processor))
+    AllFeatures.insert(F);
 
   for (auto &&F : *FeatureMap)
     if (!AllFeatures.count(F.first()))
@@ -143,15 +146,15 @@ getConflictTargetIDCombination(const std::set<llvm::StringRef> &TargetIDs) {
   struct Info {
     llvm::StringRef TargetID;
     llvm::StringMap<bool> Features;
-    Info(llvm::StringRef TargetID, const llvm::StringMap<bool> &Features)
-        : TargetID(TargetID), Features(Features) {}
   };
   llvm::StringMap<Info> FeatureMap;
   for (auto &&ID : TargetIDs) {
     llvm::StringMap<bool> Features;
     llvm::StringRef Proc = *parseTargetIDWithFormatCheckingOnly(ID, &Features);
-    auto [Loc, Inserted] = FeatureMap.try_emplace(Proc, ID, Features);
-    if (!Inserted) {
+    auto Loc = FeatureMap.find(Proc);
+    if (Loc == FeatureMap.end())
+      FeatureMap[Proc] = Info{ID, Features};
+    else {
       auto &ExistingFeatures = Loc->second.Features;
       if (llvm::any_of(Features, [&](auto &F) {
             return ExistingFeatures.count(F.first()) == 0;

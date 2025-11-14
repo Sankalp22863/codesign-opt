@@ -17,15 +17,13 @@
 
 #include "llvm/ADT/BitmaskEnum.h"
 #include "llvm/ADT/PointerUnion.h"
-#include "llvm/Analysis/MemoryLocation.h"
+#include "llvm/CodeGen/LowLevelType.h"
 #include "llvm/CodeGen/PseudoSourceValue.h"
-#include "llvm/CodeGenTypes/LowLevelType.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Value.h" // PointerLikeTypeTraits<Value*>
 #include "llvm/Support/AtomicOrdering.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/DataTypes.h"
 
 namespace llvm {
@@ -90,32 +88,32 @@ struct MachinePointerInfo {
 
   /// Return true if memory region [V, V+Offset+Size) is known to be
   /// dereferenceable.
-  LLVM_ABI bool isDereferenceable(unsigned Size, LLVMContext &C,
-                                  const DataLayout &DL) const;
+  bool isDereferenceable(unsigned Size, LLVMContext &C,
+                         const DataLayout &DL) const;
 
   /// Return the LLVM IR address space number that this pointer points into.
-  LLVM_ABI unsigned getAddrSpace() const;
+  unsigned getAddrSpace() const;
 
   /// Return a MachinePointerInfo record that refers to the constant pool.
-  LLVM_ABI static MachinePointerInfo getConstantPool(MachineFunction &MF);
+  static MachinePointerInfo getConstantPool(MachineFunction &MF);
 
   /// Return a MachinePointerInfo record that refers to the specified
   /// FrameIndex.
-  LLVM_ABI static MachinePointerInfo getFixedStack(MachineFunction &MF, int FI,
-                                                   int64_t Offset = 0);
+  static MachinePointerInfo getFixedStack(MachineFunction &MF, int FI,
+                                          int64_t Offset = 0);
 
   /// Return a MachinePointerInfo record that refers to a jump table entry.
-  LLVM_ABI static MachinePointerInfo getJumpTable(MachineFunction &MF);
+  static MachinePointerInfo getJumpTable(MachineFunction &MF);
 
   /// Return a MachinePointerInfo record that refers to a GOT entry.
-  LLVM_ABI static MachinePointerInfo getGOT(MachineFunction &MF);
+  static MachinePointerInfo getGOT(MachineFunction &MF);
 
   /// Stack pointer relative access.
-  LLVM_ABI static MachinePointerInfo getStack(MachineFunction &MF,
-                                              int64_t Offset, uint8_t ID = 0);
+  static MachinePointerInfo getStack(MachineFunction &MF, int64_t Offset,
+                                     uint8_t ID = 0);
 
   /// Stack memory without other information.
-  LLVM_ABI static MachinePointerInfo getUnknownStack(MachineFunction &MF);
+  static MachinePointerInfo getUnknownStack(MachineFunction &MF);
 };
 
 
@@ -153,9 +151,8 @@ public:
     MOTargetFlag1 = 1u << 6,
     MOTargetFlag2 = 1u << 7,
     MOTargetFlag3 = 1u << 8,
-    MOTargetFlag4 = 1u << 9,
 
-    LLVM_MARK_AS_BITMASK_ENUM(/* LargestFlag = */ MOTargetFlag4)
+    LLVM_MARK_AS_BITMASK_ENUM(/* LargestFlag = */ MOTargetFlag3)
   };
 
 private:
@@ -189,14 +186,12 @@ public:
   /// and atomic ordering requirements must also be specified. For cmpxchg
   /// atomic operations the atomic ordering requirements when store does not
   /// occur must also be specified.
-  LLVM_ABI
-  MachineMemOperand(MachinePointerInfo PtrInfo, Flags flags, LocationSize TS,
+  MachineMemOperand(MachinePointerInfo PtrInfo, Flags flags, uint64_t s,
                     Align a, const AAMDNodes &AAInfo = AAMDNodes(),
                     const MDNode *Ranges = nullptr,
                     SyncScope::ID SSID = SyncScope::System,
                     AtomicOrdering Ordering = AtomicOrdering::NotAtomic,
                     AtomicOrdering FailureOrdering = AtomicOrdering::NotAtomic);
-  LLVM_ABI
   MachineMemOperand(MachinePointerInfo PtrInfo, Flags flags, LLT type, Align a,
                     const AAMDNodes &AAInfo = AAMDNodes(),
                     const MDNode *Ranges = nullptr,
@@ -240,17 +235,13 @@ public:
   LLT getMemoryType() const { return MemoryType; }
 
   /// Return the size in bytes of the memory reference.
-  LocationSize getSize() const {
-    return MemoryType.isValid()
-               ? LocationSize::precise(MemoryType.getSizeInBytes())
-               : LocationSize::beforeOrAfterPointer();
+  uint64_t getSize() const {
+    return MemoryType.isValid() ? MemoryType.getSizeInBytes() : ~UINT64_C(0);
   }
 
   /// Return the size in bits of the memory reference.
-  LocationSize getSizeInBits() const {
-    return MemoryType.isValid()
-               ? LocationSize::precise(MemoryType.getSizeInBits())
-               : LocationSize::beforeOrAfterPointer();
+  uint64_t getSizeInBits() const {
+    return MemoryType.isValid() ? MemoryType.getSizeInBits() : ~UINT64_C(0);
   }
 
   LLT getType() const {
@@ -259,7 +250,7 @@ public:
 
   /// Return the minimum known alignment in bytes of the actual memory
   /// reference.
-  LLVM_ABI Align getAlign() const;
+  Align getAlign() const;
 
   /// Return the minimum known alignment in bytes of the base address, without
   /// the offset.
@@ -321,7 +312,7 @@ public:
   /// Update this MachineMemOperand to reflect the alignment of MMO, if it has a
   /// greater alignment. This must only be used when the new alignment applies
   /// to all users of this MachineMemOperand.
-  LLVM_ABI void refineAlignment(const MachineMemOperand *MMO);
+  void refineAlignment(const MachineMemOperand *MMO);
 
   /// Change the SourceValue for this MachineMemOperand. This should only be
   /// used when an object is being relocated and all references to it are being
@@ -335,15 +326,11 @@ public:
     MemoryType = NewTy;
   }
 
-  /// Unset the tracked range metadata.
-  void clearRanges() { Ranges = nullptr; }
-
   /// Support for operator<<.
   /// @{
-  LLVM_ABI void print(raw_ostream &OS, ModuleSlotTracker &MST,
-                      SmallVectorImpl<StringRef> &SSNs,
-                      const LLVMContext &Context, const MachineFrameInfo *MFI,
-                      const TargetInstrInfo *TII) const;
+  void print(raw_ostream &OS, ModuleSlotTracker &MST,
+             SmallVectorImpl<StringRef> &SSNs, const LLVMContext &Context,
+             const MachineFrameInfo *MFI, const TargetInstrInfo *TII) const;
   /// @}
 
   friend bool operator==(const MachineMemOperand &LHS,

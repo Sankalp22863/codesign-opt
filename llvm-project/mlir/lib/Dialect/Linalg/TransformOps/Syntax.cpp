@@ -8,18 +8,13 @@
 
 #include "mlir/Dialect/Linalg/TransformOps/Syntax.h"
 #include "mlir/IR/OpImplementation.h"
-#include "llvm/Support/InterleavedRange.h"
 
 using namespace mlir;
 
 ParseResult mlir::parseSemiFunctionType(OpAsmParser &parser, Type &argumentType,
-                                        Type &resultType, bool resultOptional) {
+                                        Type &resultType) {
   argumentType = resultType = nullptr;
-
-  bool hasLParen = resultOptional ? parser.parseOptionalLParen().succeeded()
-                                  : parser.parseLParen().succeeded();
-  if (!resultOptional && !hasLParen)
-    return failure();
+  bool hasLParen = parser.parseOptionalLParen().succeeded();
   if (parser.parseType(argumentType).failed())
     return failure();
   if (!hasLParen)
@@ -68,15 +63,13 @@ void mlir::printSemiFunctionType(OpAsmPrinter &printer, Operation *op,
 
   if (resultType.size() > 1)
     printer << "(";
-  printer << llvm::interleaved(resultType);
+  llvm::interleaveComma(resultType, printer.getStream());
   if (resultType.size() > 1)
     printer << ")";
 }
 
 void mlir::printSemiFunctionType(OpAsmPrinter &printer, Operation *op,
-                                 Type argumentType, Type resultType,
-                                 bool resultOptional) {
-  assert(resultOptional || resultType != nullptr);
+                                 Type argumentType, Type resultType) {
   return printSemiFunctionType(printer, op, argumentType,
                                resultType ? TypeRange(resultType)
                                           : TypeRange());

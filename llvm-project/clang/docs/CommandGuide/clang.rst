@@ -146,23 +146,6 @@ Language Selection and Mode Options
 
    ISO C 2017 with GNU extensions
 
-  | ``c23``
-  | ``iso9899:2024``
-
-   ISO C 2023
-
-  | ``gnu23``
-
-   ISO C 2023 with GNU extensions
-
-  | ``c2y``
-
-   ISO C 202y
-
-  | ``gnu2y``
-
-   ISO C 202y with GNU extensions
-
  The default C language standard is ``gnu17``, except on PS4, where it is
  ``gnu99``.
 
@@ -279,10 +262,9 @@ Language Selection and Mode Options
 .. option:: -ffreestanding
 
  Indicate that the file should be compiled for a freestanding, not a hosted,
- environment. Note that a freestanding build still requires linking against a C
- Standard Library which supports the freestanding interfaces for the specified
- language mode and target environment. This includes functions like `memcpy`,
- `memmove`, and `memset`.
+ environment. Note that it is assumed that a freestanding environment will
+ additionally provide `memcpy`, `memmove`, `memset` and `memcmp`
+ implementations, as these are needed for efficient codegen for many programs.
 
 .. option:: -fno-builtin
 
@@ -380,7 +362,7 @@ number of cross compilers, or may only support a native target.
 
   Specify the architecture to build for (all platforms).
 
-.. option:: -mmacos-version-min=<version>
+.. option:: -mmacosx-version-min=<version>
 
   When building for macOS, specify the minimum version supported by your
   application.
@@ -411,20 +393,6 @@ number of cross compilers, or may only support a native target.
   allowed to generate instructions that are valid on i486 and later processors,
   but which may not exist on earlier ones.
 
-.. option:: --print-enabled-extensions
-
-  Prints the list of extensions that are enabled for the target specified by the
-  combination of `--target`, `-march`, and `-mcpu` values. Currently, this
-  option is only supported on AArch64 and RISC-V. On RISC-V, this option also
-  prints out the ISA string of enabled extensions.
-
-.. option:: --print-supported-extensions
-
-  Prints the list of all extensions that are supported for every CPU target
-  for an architecture (specified through ``--target=<architecture>`` or
-  :option:`-arch` ``<architecture>``). If no target is specified, the system
-  default target will be used. Currently, this option is only supported on
-  AArch64 and RISC-V.
 
 Code Generation Options
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -447,12 +415,7 @@ Code Generation Options
 
     :option:`-Ofast` Enables all the optimizations from :option:`-O3` along
     with other aggressive optimizations that may violate strict compliance with
-    language standards. This is deprecated in Clang 19 and a warning is emitted
-    that :option:`-O3` in combination with :option:`-ffast-math` should be used
-    instead if the request for non-standard math behavior is intended. There
-    is no timeline yet for removal; the aim is to discourage use of
-    :option:`-Ofast` due to the surprising behavior of an optimization flag
-    changing the observable behavior of correct code.
+    language standards.
 
     :option:`-Os` Like :option:`-O2` with extra optimizations to reduce code
     size.
@@ -460,11 +423,8 @@ Code Generation Options
     :option:`-Oz` Like :option:`-Os` (and thus :option:`-O2`), but reduces code
     size further.
 
-    :option:`-Og` Similar to :option:`-O1`, but with slightly reduced
-    optimization and better variable visibility. The same optimizations are run
-    as at :option:`-O1`, but the ``-fextend-variable-liveness`` flag is
-    also set, which tries to prevent optimizations from reducing the liveness of
-    user variables, improving their availability when debugging.
+    :option:`-Og` Like :option:`-O1`. In future versions, this option might
+    disable different optimizations in order to improve debuggability.
 
     :option:`-O` Equivalent to :option:`-O1`.
 
@@ -645,7 +605,7 @@ Driver Options
 
   Save internal code generation (LLVM) statistics to a file in the current
   directory (:option:`-save-stats`/"-save-stats=cwd") or the directory
-  of the output file ("-save-stats=obj").
+  of the output file ("-save-state=obj").
 
   You can also use environment variables to control the statistics reporting.
   Setting ``CC_PRINT_INTERNAL_STAT`` to ``1`` enables the feature, the report
@@ -724,10 +684,6 @@ Preprocessor Options
 
   Do not search clang's builtin directory for include files.
 
-.. option:: -nostdinc++
-
-  Do not search the system C++ standard library directory for include files.
-
 .. option:: -fkeep-system-includes
 
   Usable only with :option:`-E`. Do not copy the preprocessed content of
@@ -754,23 +710,20 @@ ENVIRONMENT
 
 .. envvar:: CPATH
 
-  This environment variable specifies additional (non-system) header search
-  paths to be used to find included header files. These paths are searched after
-  paths specified with the :option:`-I\<directory\>` option, but before any
-  system header search paths. Paths are delimited by the platform dependent
-  delimiter as used in the ``PATH`` environment variable. Empty entries in the
-  delimited path list, including those at the beginning or end of the list, are
-  treated as specifying the compiler's current working directory.
+  If this environment variable is present, it is treated as a delimited list of
+  paths to be added to the default system include path list. The delimiter is
+  the platform dependent delimiter, as used in the PATH environment variable.
+
+  Empty components in the environment variable are ignored.
 
 .. envvar:: C_INCLUDE_PATH, OBJC_INCLUDE_PATH, CPLUS_INCLUDE_PATH, OBJCPLUS_INCLUDE_PATH
 
-  These environment variables specify additional system header file search
-  paths to be used when processing the corresponding language. Search paths are
-  delimited as for the :envvar:`CPATH` environment variable.
+  These environment variables specify additional paths, as for :envvar:`CPATH`, which are
+  only used when processing the appropriate language.
 
 .. envvar:: MACOSX_DEPLOYMENT_TARGET
 
-  If :option:`-mmacos-version-min` is unspecified, the default deployment
+  If :option:`-mmacosx-version-min` is unspecified, the default deployment
   target is read from this environment variable. This option only affects
   Darwin targets.
 

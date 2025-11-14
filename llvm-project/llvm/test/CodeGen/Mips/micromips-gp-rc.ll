@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=mipsel -mcpu=mips32r2 -mattr=+micromips \
+; RUN: llc -march=mipsel -mcpu=mips32r2 -mattr=+micromips \
 ; RUN:   -relocation-model=pic -O3 < %s | FileCheck %s
 
 @g = external global i32
@@ -14,6 +14,5 @@ entry:
 ; Function Attrs: noreturn
 declare void @exit(i32 signext)
 
-; CHECK: addu $gp, ${{[0-9]+}}, ${{[0-9]+}}
-; CHECK: lw ${{[0-9]+}}, %got(g)($gp)
-; CHECK: lw ${{[0-9]+}}, %call16(exit)($gp)
+; CHECK: move $gp, ${{[0-9]+}}
+

@@ -12,8 +12,15 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/RWMutex.h"
+#include <memory>
+#include <numeric>
 
 namespace mlir {
 namespace linalg {
@@ -46,7 +53,7 @@ FailureOr<Operation *> transposeConv2DHelper(RewriterBase &rewriter,
                                              FHWCConvOp op) {
   // Construct a permutation of the filter tensor dimensions. For a 2D
   // convolution this will be known statically as [1, 2, 3, 0].
-  SmallVector<int64_t> filterPerm = {1, 2, 3, 0};
+  SmallVector<int64_t> filterPerm({1, 2, 3, 0});
 
   // Create the type for the transposed filter tensor.
   auto filter = op->getOperand(1);
@@ -67,17 +74,18 @@ FailureOr<Operation *> transposeConv2DHelper(RewriterBase &rewriter,
   Value input;
   if (isTensorOp) {
 
-    input = tensor::EmptyOp::create(rewriter, loc, newFilterShape, elementTy)
+    input = rewriter.create<tensor::EmptyOp>(loc, newFilterShape, elementTy)
                 .getResult();
   } else {
-    input = memref::AllocOp::create(rewriter, loc,
-                                    MemRefType::get(newFilterShape, elementTy))
+    input = rewriter
+                .create<memref::AllocOp>(
+                    loc, MemRefType::get(newFilterShape, elementTy))
                 .getResult();
   }
 
   // We can then construct the transposition on our filter.
   auto transpose =
-      linalg::TransposeOp::create(rewriter, loc, filter, input, filterPerm);
+      rewriter.create<linalg::TransposeOp>(loc, filter, input, filterPerm);
 
   Value newFilter;
   if (isTensorOp) {
@@ -97,8 +105,8 @@ FailureOr<Operation *> transposeConv2DHelper(RewriterBase &rewriter,
     resultTy.push_back(op->getResult(0).getType());
   }
   auto newConv =
-      HWCFConvOp::create(rewriter, loc, resultTy, newInputs, op.getOutputs(),
-                         op.getStrides(), op.getDilations());
+      rewriter.create<HWCFConvOp>(loc, resultTy, newInputs, op.getOutputs(),
+                                  op.getStrides(), op.getDilations());
   rewriter.replaceOp(op, newConv);
   return newConv.getOperation();
 }
@@ -131,7 +139,7 @@ FailureOr<Operation *> transposeConv2D(RewriterBase &rewriter,
                                linalg::Conv2DNhwcHwcfQOp>(rewriter, op);
 }
 
-void populateTransposeConv2DPatterns(RewritePatternSet &patterns) {
+void populateTranposeConv2DPatterns(RewritePatternSet &patterns) {
   MLIRContext *context = patterns.getContext();
   patterns.insert<
       ConvConverter<linalg::Conv2DNhwcFhwcOp, linalg::Conv2DNhwcHwcfOp>,

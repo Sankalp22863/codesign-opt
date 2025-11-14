@@ -22,15 +22,13 @@
 #include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/simple_ilist.h"
+#include "llvm/ADT/ilist.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBundle.h"
-#include "llvm/CodeGen/MachinePassManager.h"
 #include "llvm/Support/Allocator.h"
-#include "llvm/Support/Compiler.h"
 #include <algorithm>
 #include <cassert>
 #include <iterator>
@@ -61,6 +59,10 @@ class raw_ostream;
       this->index = index;
     }
   };
+
+  template <>
+  struct ilist_alloc_traits<IndexListEntry>
+      : public ilist_noalloc_traits<IndexListEntry> {};
 
   /// SlotIndex - An opaque wrapper around machine indexes.
   class SlotIndex {
@@ -136,10 +138,10 @@ class raw_ostream;
     explicit operator bool() const { return isValid(); }
 
     /// Print this index to the given raw_ostream.
-    LLVM_ABI void print(raw_ostream &os) const;
+    void print(raw_ostream &os) const;
 
     /// Dump this index to stderr.
-    LLVM_ABI void dump() const;
+    void dump() const;
 
     /// Compare two SlotIndex objects for equality.
     bool operator==(SlotIndex other) const {
@@ -295,14 +297,12 @@ class raw_ostream;
   /// SlotIndexes pass.
   ///
   /// This pass assigns indexes to each instruction.
-  class SlotIndexes {
-    friend class SlotIndexesWrapperPass;
-
+  class SlotIndexes : public MachineFunctionPass {
   private:
     // IndexListEntry allocator.
     BumpPtrAllocator ileAllocator;
 
-    using IndexList = simple_ilist<IndexListEntry>;
+    using IndexList = ilist<IndexListEntry>;
     IndexList indexList;
 
     MachineFunction *mf = nullptr;
@@ -317,13 +317,6 @@ class raw_ostream;
     /// and MBB id.
     SmallVector<IdxMBBPair, 8> idx2MBBMap;
 
-    // For legacy pass manager.
-    SlotIndexes() = default;
-
-    LLVM_ABI void clear();
-
-    LLVM_ABI void analyze(MachineFunction &MF);
-
     IndexListEntry* createEntry(MachineInstr *mi, unsigned index) {
       IndexListEntry *entry =
           static_cast<IndexListEntry *>(ileAllocator.Allocate(
@@ -335,29 +328,27 @@ class raw_ostream;
     }
 
     /// Renumber locally after inserting curItr.
-    LLVM_ABI void renumberIndexes(IndexList::iterator curItr);
+    void renumberIndexes(IndexList::iterator curItr);
 
   public:
-    SlotIndexes(SlotIndexes &&) = default;
+    static char ID;
 
-    SlotIndexes(MachineFunction &MF) { analyze(MF); }
+    SlotIndexes();
 
-    LLVM_ABI ~SlotIndexes();
+    ~SlotIndexes() override;
 
-    void reanalyze(MachineFunction &MF) {
-      clear();
-      analyze(MF);
-    }
+    void getAnalysisUsage(AnalysisUsage &au) const override;
+    void releaseMemory() override;
 
-    LLVM_ABI void print(raw_ostream &OS) const;
+    bool runOnMachineFunction(MachineFunction &fn) override;
 
     /// Dump the indexes.
-    LLVM_ABI void dump() const;
+    void dump() const;
 
     /// Repair indexes after adding and removing instructions.
-    LLVM_ABI void repairIndexesInRange(MachineBasicBlock *MBB,
-                                       MachineBasicBlock::iterator Begin,
-                                       MachineBasicBlock::iterator End);
+    void repairIndexesInRange(MachineBasicBlock *MBB,
+                              MachineBasicBlock::iterator Begin,
+                              MachineBasicBlock::iterator End);
 
     /// Returns the zero index for this analysis.
     SlotIndex getZeroIndex() {
@@ -467,25 +458,14 @@ class raw_ostream;
       return getMBBRange(mbb).first;
     }
 
-    /// Returns the index past the last valid index in the given basic block.
+    /// Returns the last index in the given basic block number.
     SlotIndex getMBBEndIdx(unsigned Num) const {
       return getMBBRange(Num).second;
     }
 
-    /// Returns the index past the last valid index in the given basic block.
+    /// Returns the last index in the given basic block.
     SlotIndex getMBBEndIdx(const MachineBasicBlock *mbb) const {
       return getMBBRange(mbb).second;
-    }
-
-    /// Returns the last valid index in the given basic block.
-    /// This index corresponds to the dead slot of the last non-debug
-    /// instruction and can be used to find live-out ranges of the block. Note
-    /// that getMBBEndIdx returns the start index of the next block, which is
-    /// also used as the start index for segments with phi-def values. If the
-    /// basic block doesn't contain any non-debug instructions, this returns
-    /// the same as getMBBStartIdx.getDeadSlot().
-    SlotIndex getMBBLastIdx(const MachineBasicBlock *MBB) const {
-      return getMBBEndIdx(MBB).getPrevSlot();
     }
 
     /// Iterator over the idx2MBBMap (sorted pairs of slot index of basic block
@@ -569,7 +549,7 @@ class raw_ostream;
 
       // Insert a new list entry for MI.
       IndexList::iterator newItr =
-          indexList.insert(nextItr, *createEntry(&MI, newNumber));
+          indexList.insert(nextItr, createEntry(&MI, newNumber));
 
       // Renumber locally if we need to.
       if (dist == 0)
@@ -586,13 +566,13 @@ class raw_ostream;
     /// If \p AllowBundled is set then this can be used on a bundled
     /// instruction; however, this exists to support handleMoveIntoBundle,
     /// and in general removeSingleMachineInstrFromMaps should be used instead.
-    LLVM_ABI void removeMachineInstrFromMaps(MachineInstr &MI,
-                                             bool AllowBundled = false);
+    void removeMachineInstrFromMaps(MachineInstr &MI,
+                                    bool AllowBundled = false);
 
     /// Removes a single machine instruction \p MI from the mapping.
     /// This should be called before MachineInstr::eraseFromBundle() is used to
     /// remove a single instruction (out of a bundle).
-    LLVM_ABI void removeSingleMachineInstrFromMaps(MachineInstr &MI);
+    void removeSingleMachineInstrFromMaps(MachineInstr &MI);
 
     /// ReplaceMachineInstrInMaps - Replacing a machine instr with a new one in
     /// maps used by register allocator. \returns the index where the new
@@ -628,7 +608,7 @@ class raw_ostream;
           mbb->empty() ? endEntry
                        : getInstructionIndex(mbb->front()).listEntry();
       IndexList::iterator newItr =
-          indexList.insert(insEntry->getIterator(), *startEntry);
+          indexList.insert(insEntry->getIterator(), startEntry);
 
       SlotIndex startIdx(startEntry, SlotIndex::Slot_Block);
       SlotIndex endIdx(endEntry, SlotIndex::Slot_Block);
@@ -645,50 +625,12 @@ class raw_ostream;
     }
 
     /// Renumber all indexes using the default instruction distance.
-    LLVM_ABI void packIndexes();
+    void packIndexes();
   };
 
   // Specialize IntervalMapInfo for half-open slot index intervals.
   template <>
   struct IntervalMapInfo<SlotIndex> : IntervalMapHalfOpenInfo<SlotIndex> {
-  };
-
-  class SlotIndexesAnalysis : public AnalysisInfoMixin<SlotIndexesAnalysis> {
-    friend AnalysisInfoMixin<SlotIndexesAnalysis>;
-    LLVM_ABI static AnalysisKey Key;
-
-  public:
-    using Result = SlotIndexes;
-    LLVM_ABI Result run(MachineFunction &MF, MachineFunctionAnalysisManager &);
-  };
-
-  class SlotIndexesPrinterPass : public PassInfoMixin<SlotIndexesPrinterPass> {
-    raw_ostream &OS;
-
-  public:
-    explicit SlotIndexesPrinterPass(raw_ostream &OS) : OS(OS) {}
-    LLVM_ABI PreservedAnalyses run(MachineFunction &MF,
-                                   MachineFunctionAnalysisManager &MFAM);
-    static bool isRequired() { return true; }
-  };
-
-  class LLVM_ABI SlotIndexesWrapperPass : public MachineFunctionPass {
-    SlotIndexes SI;
-
-  public:
-    static char ID;
-
-    SlotIndexesWrapperPass();
-
-    void getAnalysisUsage(AnalysisUsage &au) const override;
-    void releaseMemory() override { SI.clear(); }
-
-    bool runOnMachineFunction(MachineFunction &fn) override {
-      SI.analyze(fn);
-      return false;
-    }
-
-    SlotIndexes &getSI() { return SI; }
   };
 
 } // end namespace llvm

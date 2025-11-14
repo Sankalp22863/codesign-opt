@@ -7,30 +7,30 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/__support/threads/thread.h"
-#include "config/app.h"
+#include "config/linux/app.h"
 #include "src/__support/CPP/atomic.h"
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/CPP/stringstream.h"
 #include "src/__support/OSUtil/syscall.h" // For syscall functions.
 #include "src/__support/common.h"
 #include "src/__support/error_or.h"
-#include "src/__support/libc_errno.h" // For error macros
-#include "src/__support/macros/config.h"
-#include "src/__support/threads/linux/futex_utils.h" // For FutexWordType
+#include "src/__support/threads/linux/futex_word.h" // For FutexWordType
+#include "src/errno/libc_errno.h"                   // For error macros
 
 #ifdef LIBC_TARGET_ARCH_IS_AARCH64
 #include <arm_acle.h>
 #endif
 
-#include "hdr/fcntl_macros.h"
-#include "hdr/stdint_proxy.h"
+#include <fcntl.h>
+#include <linux/futex.h>
 #include <linux/param.h> // For EXEC_PAGESIZE.
 #include <linux/prctl.h> // For PR_SET_NAME
 #include <linux/sched.h> // For CLONE_* flags.
+#include <stdint.h>
 #include <sys/mman.h>    // For PROT_* and MAP_* definitions.
 #include <sys/syscall.h> // For syscall numbers.
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
 #ifdef SYS_mmap2
 static constexpr long MMAP_SYSCALL_NUMBER = SYS_mmap2;
@@ -100,7 +100,7 @@ LIBC_INLINE ErrorOr<void *> alloc_stack(size_t stacksize, size_t guardsize) {
       -1,                          // Not backed by any file
       0                            // No offset
   );
-  if (!linux_utils::is_valid_mmap(mmap_result))
+  if (mmap_result < 0 && (uintptr_t(mmap_result) >= UINTPTR_MAX - size))
     return Error{int(-mmap_result)};
 
   if (guardsize) {
@@ -247,7 +247,8 @@ int Thread::run(ThreadStyle style, ThreadRunner runner, void *arg, void *stack,
   // stack memory.
 
   static constexpr size_t INTERNAL_STACK_DATA_SIZE =
-      sizeof(StartArgs) + sizeof(ThreadAttributes) + sizeof(Futex);
+      sizeof(StartArgs) + sizeof(ThreadAttributes) +
+      sizeof(cpp::Atomic<FutexWordType>);
 
   // This is pretty arbitrary, but at the moment we don't adjust user provided
   // stacksize (or default) to account for this data as its assumed minimal. If
@@ -287,9 +288,9 @@ int Thread::run(ThreadStyle style, ThreadRunner runner, void *arg, void *stack,
   start_args->runner = runner;
   start_args->arg = arg;
 
-  auto clear_tid = reinterpret_cast<Futex *>(
+  auto clear_tid = reinterpret_cast<cpp::Atomic<FutexWordType> *>(
       adjusted_stack + sizeof(StartArgs) + sizeof(ThreadAttributes));
-  clear_tid->set(CLEAR_TID_VALUE);
+  clear_tid->val = CLEAR_TID_VALUE;
   attrib->platform_data = clear_tid;
 
   // The clone syscall takes arguments in an architecture specific order.
@@ -373,11 +374,14 @@ void Thread::wait() {
   // The kernel should set the value at the clear tid address to zero.
   // If not, it is a spurious wake and we should continue to wait on
   // the futex.
-  auto *clear_tid = reinterpret_cast<Futex *>(attrib->platform_data);
-  // We cannot do a FUTEX_WAIT_PRIVATE here as the kernel does a
-  // FUTEX_WAKE and not a FUTEX_WAKE_PRIVATE.
-  while (clear_tid->load() != 0)
-    clear_tid->wait(CLEAR_TID_VALUE, cpp::nullopt, true);
+  auto *clear_tid =
+      reinterpret_cast<cpp::Atomic<FutexWordType> *>(attrib->platform_data);
+  while (clear_tid->load() != 0) {
+    // We cannot do a FUTEX_WAIT_PRIVATE here as the kernel does a
+    // FUTEX_WAKE and not a FUTEX_WAKE_PRIVATE.
+    LIBC_NAMESPACE::syscall_impl<long>(FUTEX_SYSCALL_ID, &clear_tid->val,
+                                       FUTEX_WAIT, CLEAR_TID_VALUE, nullptr);
+  }
 }
 
 bool Thread::operator==(const Thread &thread) const {
@@ -518,4 +522,4 @@ void thread_exit(ThreadReturnValue retval, ThreadStyle style) {
   __builtin_unreachable();
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

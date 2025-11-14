@@ -19,6 +19,7 @@ class TestDetachVrsProfile(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
 
     @skipUnlessDarwin
+    @skipIfOutOfTreeDebugserver
     @skipIfRemote
     def test_profile_and_detach(self):
         """There can be many tests in a test case - describe this test here."""
@@ -48,7 +49,7 @@ class TestDetachVrsProfile(TestBase):
         threads = lldbutil.continue_to_breakpoint(process, bkpt)
         self.assertEqual(len(threads), 1, "Hit our breakpoint again.")
         str = process.GetAsyncProfileData(1000)
-        self.assertGreater(len(str), 0, "Got some profile data")
+        self.assertTrue(len(str) > 0, "Got some profile data")
 
         # Now make the profiling interval very long and try to detach.
         interp.HandleCommand(

@@ -12,19 +12,16 @@
 
 #include "Thumb1InstrInfo.h"
 #include "ARMSubtarget.h"
-#include "llvm/ADT/BitVector.h"
-#include "llvm/CodeGen/LiveRegUnits.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
-#include "llvm/IR/Module.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstBuilder.h"
 
 using namespace llvm;
 
 Thumb1InstrInfo::Thumb1InstrInfo(const ARMSubtarget &STI)
-    : ARMBaseInstrInfo(STI, RI), RI(STI) {}
+    : ARMBaseInstrInfo(STI) {}
 
 /// Return the noop instruction to use for a noop.
 MCInst Thumb1InstrInfo::getNop() const {
@@ -41,9 +38,8 @@ unsigned Thumb1InstrInfo::getUnindexedOpcode(unsigned Opc) const {
 
 void Thumb1InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                   MachineBasicBlock::iterator I,
-                                  const DebugLoc &DL, Register DestReg,
-                                  Register SrcReg, bool KillSrc,
-                                  bool RenamableDest, bool RenamableSrc) const {
+                                  const DebugLoc &DL, MCRegister DestReg,
+                                  MCRegister SrcReg, bool KillSrc) const {
   // Need to check the arch.
   MachineFunction &MF = *MBB.getParent();
   const ARMSubtarget &st = MF.getSubtarget<ARMSubtarget>();
@@ -51,54 +47,21 @@ void Thumb1InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   assert(ARM::GPRRegClass.contains(DestReg, SrcReg) &&
          "Thumb1 can only copy GPR registers");
 
-  if (st.hasV6Ops() || ARM::hGPRRegClass.contains(SrcReg) ||
-      !ARM::tGPRRegClass.contains(DestReg))
+  if (st.hasV6Ops() || ARM::hGPRRegClass.contains(SrcReg)
+      || !ARM::tGPRRegClass.contains(DestReg))
     BuildMI(MBB, I, DL, get(ARM::tMOVr), DestReg)
         .addReg(SrcReg, getKillRegState(KillSrc))
         .add(predOps(ARMCC::AL));
   else {
+    // FIXME: Can also use 'mov hi, $src; mov $dst, hi',
+    // with hi as either r10 or r11.
+
     const TargetRegisterInfo *RegInfo = st.getRegisterInfo();
-    LiveRegUnits UsedRegs(*RegInfo);
-    UsedRegs.addLiveOuts(MBB);
-
-    auto InstUpToI = MBB.end();
-    while (InstUpToI != I)
-      // The pre-decrement is on purpose here.
-      // We want to have the liveness right before I.
-      UsedRegs.stepBackward(*--InstUpToI);
-
-    if (UsedRegs.available(ARM::CPSR)) {
+    if (MBB.computeRegisterLiveness(RegInfo, ARM::CPSR, I)
+        == MachineBasicBlock::LQR_Dead) {
       BuildMI(MBB, I, DL, get(ARM::tMOVSr), DestReg)
           .addReg(SrcReg, getKillRegState(KillSrc))
           ->addRegisterDead(ARM::CPSR, RegInfo);
-      return;
-    }
-
-    // Use high register to move source to destination
-    // if movs is not an option.
-    BitVector Allocatable = RegInfo->getAllocatableSet(
-        MF, RegInfo->getRegClass(ARM::hGPRRegClassID));
-
-    Register TmpReg = ARM::NoRegister;
-    // Prefer R12 as it is known to not be preserved anyway
-    if (UsedRegs.available(ARM::R12) && Allocatable.test(ARM::R12)) {
-      TmpReg = ARM::R12;
-    } else {
-      for (Register Reg : Allocatable.set_bits()) {
-        if (UsedRegs.available(Reg)) {
-          TmpReg = Reg;
-          break;
-        }
-      }
-    }
-
-    if (TmpReg) {
-      BuildMI(MBB, I, DL, get(ARM::tMOVr), TmpReg)
-          .addReg(SrcReg, getKillRegState(KillSrc))
-          .add(predOps(ARMCC::AL));
-      BuildMI(MBB, I, DL, get(ARM::tMOVr), DestReg)
-          .addReg(TmpReg, getKillRegState(true))
-          .add(predOps(ARMCC::AL));
       return;
     }
 
@@ -116,8 +79,8 @@ void Thumb1InstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
                                           MachineBasicBlock::iterator I,
                                           Register SrcReg, bool isKill, int FI,
                                           const TargetRegisterClass *RC,
-                                          Register VReg,
-                                          MachineInstr::MIFlag Flags) const {
+                                          const TargetRegisterInfo *TRI,
+                                          Register VReg) const {
   assert((RC == &ARM::tGPRRegClass ||
           (SrcReg.isPhysical() && isARMLowRegister(SrcReg))) &&
          "Unknown regclass!");
@@ -145,8 +108,8 @@ void Thumb1InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                                            MachineBasicBlock::iterator I,
                                            Register DestReg, int FI,
                                            const TargetRegisterClass *RC,
-                                           Register VReg,
-                                           MachineInstr::MIFlag Flags) const {
+                                           const TargetRegisterInfo *TRI,
+                                           Register VReg) const {
   assert((RC->hasSuperClassEq(&ARM::tGPRRegClass) ||
           (DestReg.isPhysical() && isARMLowRegister(DestReg))) &&
          "Unknown regclass!");

@@ -3,7 +3,6 @@ Test the lldb disassemble command on lib stdc++.
 """
 
 import os
-import re
 import lldb
 from lldbsuite.test.lldbtest import *
 import lldbsuite.test.lldbutil as lldbutil
@@ -31,19 +30,22 @@ class StdCXXDisassembleTestCase(TestBase):
                 self.runCmd("disassemble -n '%s'" % function.GetName())
 
         lib_stdcxx = "FAILHORRIBLYHERE"
-        # Find the stdc++ library...
-        stdlib_regex = re.compile(r"/lib(std)?c\+\+")
-        for module in target.module[stdlib_regex]:
-            lib_stdcxx = module.file.fullpath
-            break
+        # Iterate through the available modules, looking for stdc++ library...
+        for i in range(target.GetNumModules()):
+            module = target.GetModuleAtIndex(i)
+            fs = module.GetFileSpec()
+            if fs.GetFilename().startswith("libstdc++") or fs.GetFilename().startswith(
+                "libc++"
+            ):
+                lib_stdcxx = str(fs)
+                break
 
         # At this point, lib_stdcxx is the full path to the stdc++ library and
         # module is the corresponding SBModule.
 
-        if "lib" not in lib_stdcxx:
-            self.skipTest(
-                "This test requires libstdc++.so or libc++.dylib in the target's module list."
-            )
+        self.expect(
+            lib_stdcxx, "Libraray StdC++ is located", exe=False, substrs=["lib"]
+        )
 
         self.runCmd("image dump symtab '%s'" % lib_stdcxx)
         raw_output = self.res.GetOutput()

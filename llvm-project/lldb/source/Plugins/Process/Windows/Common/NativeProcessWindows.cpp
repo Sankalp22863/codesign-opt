@@ -120,7 +120,7 @@ Status NativeProcessWindows::Resume(const ResumeActionList &resume_actions) {
         break;
 
       default:
-        return Status::FromErrorStringWithFormat(
+        return Status(
             "NativeProcessWindows::%s (): unexpected state %s specified "
             "for pid %" PRIu64 ", tid %" PRIu64,
             __FUNCTION__, StateAsCString(action->state), GetID(),
@@ -129,7 +129,7 @@ Status NativeProcessWindows::Resume(const ResumeActionList &resume_actions) {
     }
 
     if (failed) {
-      error = Status::FromErrorString("NativeProcessWindows::DoResume failed");
+      error.SetErrorString("NativeProcessWindows::DoResume failed");
     } else {
       SetState(eStateRunning);
     }
@@ -177,10 +177,9 @@ Status NativeProcessWindows::Detach() {
     else
       LLDB_LOG(log, "Detaching process error: {0}", error);
   } else {
-    error = Status::FromErrorStringWithFormatv(
-        "error: process {0} in state = {1}, but "
-        "cannot detach it in this state.",
-        GetID(), state);
+    error.SetErrorStringWithFormatv("error: process {0} in state = {1}, but "
+                                    "cannot detach it in this state.",
+                                    GetID(), state);
     LLDB_LOG(log, "error: {0}", error);
   }
   return error;
@@ -188,8 +187,7 @@ Status NativeProcessWindows::Detach() {
 
 Status NativeProcessWindows::Signal(int signo) {
   Status error;
-  error = Status::FromErrorString(
-      "Windows does not support sending signals to processes");
+  error.SetErrorString("Windows does not support sending signals to processes");
   return error;
 }
 
@@ -292,8 +290,7 @@ NativeProcessWindows::GetAuxvData() const {
 
 llvm::Expected<llvm::ArrayRef<uint8_t>>
 NativeProcessWindows::GetSoftwareBreakpointTrapOpcode(size_t size_hint) {
-  static const uint8_t g_aarch64_opcode[] = {0x00, 0x00, 0x3e,
-                                             0xd4};     // brk #0xf000
+  static const uint8_t g_aarch64_opcode[] = {0x00, 0x00, 0x3e, 0xd4}; // brk #0xf000
   static const uint8_t g_thumb_opcode[] = {0xfe, 0xde}; // udf #0xfe
 
   switch (GetArchitecture().GetMachine()) {
@@ -310,9 +307,9 @@ NativeProcessWindows::GetSoftwareBreakpointTrapOpcode(size_t size_hint) {
 }
 
 size_t NativeProcessWindows::GetSoftwareBreakpointPCOffset() {
-  // Windows always reports an incremented PC after a breakpoint is hit,
-  // even on ARM.
-  return cantFail(GetSoftwareBreakpointTrapOpcode(0)).size();
+    // Windows always reports an incremented PC after a breakpoint is hit,
+    // even on ARM.
+    return cantFail(GetSoftwareBreakpointTrapOpcode(0)).size();
 }
 
 bool NativeProcessWindows::FindSoftwareBreakpoint(lldb::addr_t addr) {
@@ -362,7 +359,7 @@ Status NativeProcessWindows::CacheLoadedModules() {
       return Status();
   }
 
-  error = Status(::GetLastError(), lldb::ErrorType::eErrorTypeWin32);
+  error.SetError(::GetLastError(), lldb::ErrorType::eErrorTypeWin32);
   return error;
 }
 
@@ -380,9 +377,8 @@ Status NativeProcessWindows::GetLoadedModuleFileSpec(const char *module_path,
       return Status();
     }
   }
-  return Status::FromErrorStringWithFormat(
-      "Module (%s) not found in process %" PRIu64 "!",
-      module_file_spec.GetPath().c_str(), GetID());
+  return Status("Module (%s) not found in process %" PRIu64 "!",
+                module_file_spec.GetPath().c_str(), GetID());
 }
 
 Status
@@ -401,9 +397,8 @@ NativeProcessWindows::GetFileLoadAddress(const llvm::StringRef &file_name,
       return Status();
     }
   }
-  return Status::FromErrorStringWithFormat(
-      "Can't get loaded address of file (%s) in process %" PRIu64 "!",
-      file_spec.GetPath().c_str(), GetID());
+  return Status("Can't get loaded address of file (%s) in process %" PRIu64 "!",
+                file_spec.GetPath().c_str(), GetID());
 }
 
 void NativeProcessWindows::OnExitProcess(uint32_t exit_code) {
@@ -464,7 +459,6 @@ NativeProcessWindows::OnDebugException(bool first_chance,
   switch (record.GetExceptionCode()) {
   case DWORD(STATUS_SINGLE_STEP):
   case STATUS_WX86_SINGLE_STEP: {
-#ifndef __aarch64__
     uint32_t wp_id = LLDB_INVALID_INDEX32;
     if (NativeThreadWindows *thread = GetThreadByID(record.GetThreadID())) {
       NativeRegisterContextWindows &reg_ctx = thread->GetRegisterContext();
@@ -485,7 +479,6 @@ NativeProcessWindows::OnDebugException(bool first_chance,
       }
     }
     if (wp_id == LLDB_INVALID_INDEX32)
-#endif
       StopThread(record.GetThreadID(), StopReason::eStopReasonTrace);
 
     SetState(eStateStopped, true);
@@ -495,50 +488,23 @@ NativeProcessWindows::OnDebugException(bool first_chance,
   }
   case DWORD(STATUS_BREAKPOINT):
   case STATUS_WX86_BREAKPOINT:
+    if (FindSoftwareBreakpoint(record.GetExceptionAddress())) {
+      LLDB_LOG(log, "Hit non-loader breakpoint at address {0:x}.",
+               record.GetExceptionAddress());
 
-    if (NativeThreadWindows *stop_thread =
-            GetThreadByID(record.GetThreadID())) {
-      auto &reg_ctx = stop_thread->GetRegisterContext();
-      const auto exception_addr = record.GetExceptionAddress();
-      const auto thread_id = record.GetThreadID();
+      StopThread(record.GetThreadID(), StopReason::eStopReasonBreakpoint);
 
-      if (FindSoftwareBreakpoint(exception_addr)) {
-        LLDB_LOG(log, "Hit non-loader breakpoint at address {0:x}.",
-                 exception_addr);
+      if (NativeThreadWindows *stop_thread =
+              GetThreadByID(record.GetThreadID())) {
+        auto &register_context = stop_thread->GetRegisterContext();
+        uint32_t breakpoint_size = GetSoftwareBreakpointPCOffset();
         // The current PC is AFTER the BP opcode, on all architectures.
-        reg_ctx.SetPC(reg_ctx.GetPC() - GetSoftwareBreakpointPCOffset());
-        StopThread(thread_id, StopReason::eStopReasonBreakpoint);
-        SetState(eStateStopped, true);
-        return ExceptionResult::MaskException;
-      } else {
-        // This block of code will only be entered in case of a hardware
-        // watchpoint or breakpoint hit on AArch64. However, we only handle
-        // hardware watchpoints below as breakpoints are not yet supported.
-        const std::vector<ULONG_PTR> &args = record.GetExceptionArguments();
-        // Check that the ExceptionInformation array of EXCEPTION_RECORD
-        // contains at least two elements: the first is a read-write flag
-        // indicating the type of data access operation (read or write) while
-        // the second contains the virtual address of the accessed data.
-        if (args.size() >= 2) {
-          uint32_t hw_id = LLDB_INVALID_INDEX32;
-          Status error = reg_ctx.GetWatchpointHitIndex(hw_id, args[1]);
-          if (error.Fail())
-            LLDB_LOG(log,
-                     "received error while checking for watchpoint hits, pid = "
-                     "{0}, error = {1}",
-                     thread_id, error);
-
-          if (hw_id != LLDB_INVALID_INDEX32) {
-            std::string desc =
-                formatv("{0} {1} {2}", reg_ctx.GetWatchpointAddress(hw_id),
-                        hw_id, exception_addr)
-                    .str();
-            StopThread(thread_id, StopReason::eStopReasonWatchpoint, desc);
-            SetState(eStateStopped, true);
-            return ExceptionResult::MaskException;
-          }
-        }
+        uint64_t pc = register_context.GetPC() - breakpoint_size;
+        register_context.SetPC(pc);
       }
+
+      SetState(eStateStopped, true);
+      return ExceptionResult::MaskException;
     }
 
     if (!initial_stop) {
@@ -578,7 +544,7 @@ NativeProcessWindows::OnDebugException(bool first_chance,
                   << " encountered at address "
                   << llvm::format_hex(record.GetExceptionAddress(), 8);
       StopThread(record.GetThreadID(), StopReason::eStopReasonException,
-                 desc.c_str());
+                 desc_stream.str().c_str());
 
       SetState(eStateStopped, true);
     }

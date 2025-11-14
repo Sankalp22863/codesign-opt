@@ -22,10 +22,8 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/TargetFolder.h"
-#include "llvm/IR/CmpPredicate.h"
 #include "llvm/IR/IRBuilderFolder.h"
 #include "llvm/IR/Instruction.h"
-#include "llvm/Support/Compiler.h"
 
 namespace llvm {
 class Constant;
@@ -33,14 +31,14 @@ class Constant;
 /// InstSimplifyFolder - Use InstructionSimplify to fold operations to existing
 /// values. Also applies target-specific constant folding when not using
 /// InstructionSimplify.
-class LLVM_ABI InstSimplifyFolder final : public IRBuilderFolder {
+class InstSimplifyFolder final : public IRBuilderFolder {
   TargetFolder ConstFolder;
   SimplifyQuery SQ;
 
-  LLVM_DECLARE_VIRTUAL_ANCHOR_FUNCTION();
+  virtual void anchor();
 
 public:
-  explicit InstSimplifyFolder(const DataLayout &DL) : ConstFolder(DL), SQ(DL) {}
+  InstSimplifyFolder(const DataLayout &DL) : ConstFolder(DL), SQ(DL) {}
 
   //===--------------------------------------------------------------------===//
   // Value-based folders.
@@ -74,13 +72,13 @@ public:
     return simplifyUnOp(Opc, V, FMF, SQ);
   }
 
-  Value *FoldCmp(CmpInst::Predicate P, Value *LHS, Value *RHS) const override {
-    return simplifyCmpInst(P, LHS, RHS, SQ);
+  Value *FoldICmp(CmpInst::Predicate P, Value *LHS, Value *RHS) const override {
+    return simplifyICmpInst(P, LHS, RHS, SQ);
   }
 
   Value *FoldGEP(Type *Ty, Value *Ptr, ArrayRef<Value *> IdxList,
-                 GEPNoWrapFlags NW) const override {
-    return simplifyGEPInst(Ty, Ptr, IdxList, NW, SQ);
+                 bool IsInBounds = false) const override {
+    return simplifyGEPInst(Ty, Ptr, IdxList, IsInBounds, SQ);
   }
 
   Value *FoldSelect(Value *C, Value *True, Value *False) const override {
@@ -119,12 +117,6 @@ public:
     return simplifyCastInst(Op, V, DestTy, SQ);
   }
 
-  Value *FoldBinaryIntrinsic(Intrinsic::ID ID, Value *LHS, Value *RHS, Type *Ty,
-                             Instruction *FMFSource = nullptr) const override {
-    return simplifyBinaryIntrinsic(ID, Ty, LHS, RHS, SQ,
-                                   dyn_cast_if_present<CallBase>(FMFSource));
-  }
-
   //===--------------------------------------------------------------------===//
   // Cast/Conversion Operators
   //===--------------------------------------------------------------------===//
@@ -140,6 +132,15 @@ public:
     if (C->getType() == DestTy)
       return C; // avoid calling Fold
     return ConstFolder.CreatePointerBitCastOrAddrSpaceCast(C, DestTy);
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Compare Instructions
+  //===--------------------------------------------------------------------===//
+
+  Value *CreateFCmp(CmpInst::Predicate P, Constant *LHS,
+                    Constant *RHS) const override {
+    return ConstFolder.CreateFCmp(P, LHS, RHS);
   }
 };
 

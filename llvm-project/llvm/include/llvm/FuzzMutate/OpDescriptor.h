@@ -21,7 +21,6 @@
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
-#include "llvm/Support/Compiler.h"
 #include <functional>
 
 namespace llvm {
@@ -30,8 +29,8 @@ namespace fuzzerop {
 
 /// @{
 /// Populate a small list of potentially interesting constants of a given type.
-LLVM_ABI void makeConstantsWithType(Type *T, std::vector<Constant *> &Cs);
-LLVM_ABI std::vector<Constant *> makeConstantsWithType(Type *T);
+void makeConstantsWithType(Type *T, std::vector<Constant *> &Cs);
+std::vector<Constant *> makeConstantsWithType(Type *T);
 /// @}
 
 /// A matcher/generator for finding suitable values for the next source in an
@@ -64,7 +63,7 @@ public:
       // Default filter just calls Pred on each of the base types.
       std::vector<Constant *> Result;
       for (Type *T : BaseTypes) {
-        Constant *V = PoisonValue::get(T);
+        Constant *V = UndefValue::get(T);
         if (Pred(Cur, V))
           makeConstantsWithType(T, Result);
       }
@@ -90,7 +89,7 @@ public:
 struct OpDescriptor {
   unsigned Weight;
   SmallVector<SourcePred, 2> SourcePreds;
-  std::function<Value *(ArrayRef<Value *>, BasicBlock::iterator)> BuilderFunc;
+  std::function<Value *(ArrayRef<Value *>, Instruction *)> BuilderFunc;
 };
 
 static inline SourcePred onlyType(Type *Only) {
@@ -156,8 +155,7 @@ static inline SourcePred anyPtrType() {
     std::vector<Constant *> Result;
     // TODO: Should these point at something?
     for (Type *T : Ts)
-      Result.push_back(
-          PoisonValue::get(PointerType::getUnqual(T->getContext())));
+      Result.push_back(UndefValue::get(PointerType::getUnqual(T)));
     return Result;
   };
   return {Pred, Make};
@@ -177,8 +175,7 @@ static inline SourcePred sizedPtrType() {
     // as the pointer type will always be the same.
     for (Type *T : Ts)
       if (T->isSized())
-        Result.push_back(
-            PoisonValue::get(PointerType::getUnqual(T->getContext())));
+        Result.push_back(UndefValue::get(PointerType::getUnqual(T)));
 
     return Result;
   };

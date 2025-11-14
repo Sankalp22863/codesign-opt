@@ -21,13 +21,18 @@
 #include "llvm/DebugInfo/LogicalView/Core/LVSymbol.h"
 #include "llvm/DebugInfo/LogicalView/Core/LVType.h"
 #include "llvm/DebugInfo/LogicalView/Readers/LVCodeViewReader.h"
+#include "llvm/DebugInfo/PDB/Native/DbiStream.h"
 #include "llvm/DebugInfo/PDB/Native/InputFile.h"
+#include "llvm/DebugInfo/PDB/Native/NativeSession.h"
 #include "llvm/DebugInfo/PDB/Native/PDBFile.h"
 #include "llvm/DebugInfo/PDB/Native/PDBStringTable.h"
+#include "llvm/DebugInfo/PDB/Native/RawError.h"
 #include "llvm/DebugInfo/PDB/Native/TpiStream.h"
+#include "llvm/DebugInfo/PDB/PDB.h"
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/Object/COFF.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatAdapters.h"
 #include "llvm/Support/FormatVariadic.h"
 
@@ -155,23 +160,28 @@ class LVForwardReferences {
   }
 
   void add(StringRef Name, TypeIndex TIForward) {
-    auto [It, Inserted] =
-        ForwardTypesNames.try_emplace(Name, TIForward, TypeIndex::None());
-    if (!Inserted) {
+    if (ForwardTypesNames.find(Name) == ForwardTypesNames.end()) {
+      ForwardTypesNames.emplace(
+          std::piecewise_construct, std::forward_as_tuple(Name),
+          std::forward_as_tuple(TIForward, TypeIndex::None()));
+    } else {
       // Update a recorded definition with its reference.
-      It->second.first = TIForward;
-      add(TIForward, It->second.second);
+      ForwardTypesNames[Name].first = TIForward;
+      add(TIForward, ForwardTypesNames[Name].second);
     }
   }
 
   // Update a previously recorded forward reference with its definition.
   void update(StringRef Name, TypeIndex TIReference) {
-    auto [It, Inserted] =
-        ForwardTypesNames.try_emplace(Name, TypeIndex::None(), TIReference);
-    if (!Inserted) {
+    if (ForwardTypesNames.find(Name) != ForwardTypesNames.end()) {
       // Update the recorded forward reference with its definition.
-      It->second.second = TIReference;
-      add(It->second.first, TIReference);
+      ForwardTypesNames[Name].second = TIReference;
+      add(ForwardTypesNames[Name].first, TIReference);
+    } else {
+      // We have not seen the forward reference. Insert the definition.
+      ForwardTypesNames.emplace(
+          std::piecewise_construct, std::forward_as_tuple(Name),
+          std::forward_as_tuple(TypeIndex::None(), TIReference));
     }
   }
 
@@ -186,14 +196,15 @@ public:
   }
 
   TypeIndex find(TypeIndex TIForward) {
-    auto It = ForwardTypes.find(TIForward);
-    return It != ForwardTypes.end() ? It->second : TypeIndex::None();
+    return (ForwardTypes.find(TIForward) != ForwardTypes.end())
+               ? ForwardTypes[TIForward]
+               : TypeIndex::None();
   }
 
   TypeIndex find(StringRef Name) {
-    auto It = ForwardTypesNames.find(Name);
-    return It != ForwardTypesNames.end() ? It->second.second
-                                         : TypeIndex::None();
+    return (ForwardTypesNames.find(Name) != ForwardTypesNames.end())
+               ? ForwardTypesNames[Name].second
+               : TypeIndex::None();
   }
 
   // If the given TI corresponds to a reference, return the reference.
@@ -231,8 +242,9 @@ public:
 
   // Find the logical namespace for the 'Name' component.
   LVScope *find(StringRef Name) {
-    auto It = NamespaceNames.find(Name);
-    LVScope *Namespace = It != NamespaceNames.end() ? It->second : nullptr;
+    LVScope *Namespace = (NamespaceNames.find(Name) != NamespaceNames.end())
+                             ? NamespaceNames[Name]
+                             : nullptr;
     return Namespace;
   }
 
@@ -268,9 +280,10 @@ public:
 
   void add(TypeIndex TI, StringRef String) {
     static uint32_t Index = 0;
-    auto [It, Inserted] = Strings.try_emplace(TI);
-    if (Inserted)
-      It->second = std::make_tuple(++Index, std::string(String), nullptr);
+    if (Strings.find(TI) == Strings.end())
+      Strings.emplace(
+          std::piecewise_construct, std::forward_as_tuple(TI),
+          std::forward_as_tuple(++Index, std::string(String), nullptr));
   }
 
   StringRef find(TypeIndex TI) {
@@ -821,7 +834,7 @@ Error LVSymbolVisitor::visitKnownRecord(CVSymbol &Record,
     // Symbol was created as 'variable'; determine its real kind.
     Symbol->resetIsVariable();
 
-    if (Local.Name == "this") {
+    if (Local.Name.equals("this")) {
       Symbol->setIsParameter();
       Symbol->setIsArtificial();
     } else {
@@ -872,7 +885,7 @@ Error LVSymbolVisitor::visitKnownRecord(CVSymbol &Record,
     Symbol->resetIsVariable();
 
     // Check for the 'this' symbol.
-    if (Local.Name == "this") {
+    if (Local.Name.equals("this")) {
       Symbol->setIsArtificial();
       Symbol->setIsParameter();
     } else {
@@ -949,9 +962,6 @@ Error LVSymbolVisitor::visitKnownRecord(CVSymbol &Record,
     Scope->setName(CurrentObjectName);
     if (options().getAttributeProducer())
       Scope->setProducer(Compile2.Version);
-    if (options().getAttributeLanguage())
-      Scope->setSourceLanguage(LVSourceLanguage{
-          static_cast<llvm::codeview::SourceLanguage>(Compile2.getLanguage())});
     getReader().isSystemEntry(Scope, CurrentObjectName);
 
     // The line records in CodeView are recorded per Module ID. Update
@@ -997,9 +1007,6 @@ Error LVSymbolVisitor::visitKnownRecord(CVSymbol &Record,
     Scope->setName(CurrentObjectName);
     if (options().getAttributeProducer())
       Scope->setProducer(Compile3.Version);
-    if (options().getAttributeLanguage())
-      Scope->setSourceLanguage(LVSourceLanguage{
-          static_cast<llvm::codeview::SourceLanguage>(Compile3.getLanguage())});
     getReader().isSystemEntry(Scope, CurrentObjectName);
 
     // The line records in CodeView are recorded per Module ID. Update
@@ -1422,7 +1429,7 @@ Error LVSymbolVisitor::visitKnownRecord(CVSymbol &Record, LocalSym &Local) {
 
     // Be sure the 'this' symbol is marked as 'compiler generated'.
     if (bool(Local.Flags & LocalSymFlags::IsCompilerGenerated) ||
-        Local.Name == "this") {
+        Local.Name.equals("this")) {
       Symbol->setIsArtificial();
       Symbol->setIsParameter();
     } else {
@@ -1662,7 +1669,7 @@ Error LVSymbolVisitor::visitKnownRecord(CVSymbol &Record, UDTSym &UDT) {
       Type->resetIncludeInPrint();
     else {
       StringRef RecordName = getRecordName(Types, UDT.Type);
-      if (UDT.Name == RecordName)
+      if (UDT.Name.equals(RecordName))
         Type->resetIncludeInPrint();
       Type->setType(LogicalVisitor->getElement(StreamTPI, UDT.Type));
     }
@@ -1993,7 +2000,6 @@ Error LVLogicalVisitor::visitKnownRecord(CVType &Record, ClassRecord &Class,
   Scope->setName(Class.getName());
   if (Class.hasUniqueName())
     Scope->setLinkageName(Class.getUniqueName());
-  Scope->setBitSize(Class.getSize() * DWARF_CHAR_BIT);
 
   if (Class.isNested()) {
     Scope->setIsNested();
@@ -2462,7 +2468,6 @@ Error LVLogicalVisitor::visitKnownRecord(CVType &Record, UnionRecord &Union,
   Scope->setName(Union.getName());
   if (Union.hasUniqueName())
     Scope->setLinkageName(Union.getUniqueName());
-  Scope->setBitSize(Union.getSize() * DWARF_CHAR_BIT);
 
   if (Union.isNested()) {
     Scope->setIsNested();
@@ -2735,7 +2740,7 @@ Error LVLogicalVisitor::visitKnownMember(CVMemberRecord &Record,
             getInnerComponent(NestedTypeName);
         // We have an already created nested type. Add it to the current scope
         // and update all its children if any.
-        if (OuterComponent.size() && OuterComponent == RecordName) {
+        if (OuterComponent.size() && OuterComponent.equals(RecordName)) {
           if (!NestedType->getIsScopedAlready()) {
             Scope->addElement(NestedType);
             NestedType->setIsScopedAlready();
@@ -3216,7 +3221,6 @@ LVType *LVLogicalVisitor::createBaseType(TypeIndex TI, StringRef TypeName) {
 
   if (createElement(TIR, SimpleKind)) {
     CurrentType->setName(TypeName);
-    CurrentType->setBitSize(getSizeInBytesForTypeIndex(TIR) * DWARF_CHAR_BIT);
     Reader->getCompileUnit()->addElement(CurrentType);
   }
   return CurrentType;

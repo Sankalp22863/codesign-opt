@@ -15,13 +15,11 @@
 #include <optional>
 
 namespace lld::elf {
-struct Ctx;
-
 // Parses command line options.
 class ELFOptTable : public llvm::opt::GenericOptTable {
 public:
   ELFOptTable();
-  llvm::opt::InputArgList parse(Ctx &, ArrayRef<const char *> argv);
+  llvm::opt::InputArgList parse(ArrayRef<const char *> argv);
 };
 
 // Create enum with OPT_xxx values for each option in Options.td
@@ -32,13 +30,13 @@ enum {
 #undef OPTION
 };
 
-void printHelp(Ctx &ctx);
+void printHelp();
 std::string createResponseFile(const llvm::opt::InputArgList &args);
 
-std::optional<std::string> findFromSearchPaths(Ctx &, StringRef path);
-std::optional<std::string> searchScript(Ctx &, StringRef path);
-std::optional<std::string> searchLibraryBaseName(Ctx &, StringRef path);
-std::optional<std::string> searchLibrary(Ctx &, StringRef path);
+std::optional<std::string> findFromSearchPaths(StringRef path);
+std::optional<std::string> searchScript(StringRef path);
+std::optional<std::string> searchLibraryBaseName(StringRef path);
+std::optional<std::string> searchLibrary(StringRef path);
 
 } // namespace lld::elf
 

@@ -23,11 +23,9 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/PassManager.h"
-#include "llvm/IR/ProfDataUtils.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/Transforms/Utils/LoopUtils.h"
 #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
 
 using namespace llvm;
@@ -44,8 +42,10 @@ LoopVersioning::LoopVersioning(const LoopAccessInfo &LAI,
                                ArrayRef<RuntimePointerCheck> Checks, Loop *L,
                                LoopInfo *LI, DominatorTree *DT,
                                ScalarEvolution *SE)
-    : VersionedLoop(L), AliasChecks(Checks), Preds(LAI.getPSE().getPredicate()),
-      LAI(LAI), LI(LI), DT(DT), SE(SE) {}
+    : VersionedLoop(L), AliasChecks(Checks.begin(), Checks.end()),
+      Preds(LAI.getPSE().getPredicate()), LAI(LAI), LI(LI), DT(DT),
+      SE(SE) {
+}
 
 void LoopVersioning::versionLoop(
     const SmallVectorImpl<Instruction *> &DefsUsedOutside) {
@@ -62,27 +62,25 @@ void LoopVersioning::versionLoop(
   const auto &RtPtrChecking = *LAI.getRuntimePointerChecking();
 
   SCEVExpander Exp2(*RtPtrChecking.getSE(),
-                    VersionedLoop->getHeader()->getDataLayout(),
+                    VersionedLoop->getHeader()->getModule()->getDataLayout(),
                     "induction");
   MemRuntimeCheck = addRuntimeChecks(RuntimeCheckBB->getTerminator(),
                                      VersionedLoop, AliasChecks, Exp2);
 
-  SCEVExpander Exp(*SE, RuntimeCheckBB->getDataLayout(),
+  SCEVExpander Exp(*SE, RuntimeCheckBB->getModule()->getDataLayout(),
                    "scev.check");
   SCEVRuntimeCheck =
       Exp.expandCodeForPredicate(&Preds, RuntimeCheckBB->getTerminator());
 
   IRBuilder<InstSimplifyFolder> Builder(
       RuntimeCheckBB->getContext(),
-      InstSimplifyFolder(RuntimeCheckBB->getDataLayout()));
+      InstSimplifyFolder(RuntimeCheckBB->getModule()->getDataLayout()));
   if (MemRuntimeCheck && SCEVRuntimeCheck) {
     Builder.SetInsertPoint(RuntimeCheckBB->getTerminator());
     RuntimeCheck =
         Builder.CreateOr(MemRuntimeCheck, SCEVRuntimeCheck, "lver.safe");
   } else
     RuntimeCheck = MemRuntimeCheck ? MemRuntimeCheck : SCEVRuntimeCheck;
-
-  Exp.eraseDeadInstructions(SCEVRuntimeCheck);
 
   assert(RuntimeCheck && "called even though we don't need "
                          "any runtime checks");
@@ -110,12 +108,8 @@ void LoopVersioning::versionLoop(
   // Insert the conditional branch based on the result of the memchecks.
   Instruction *OrigTerm = RuntimeCheckBB->getTerminator();
   Builder.SetInsertPoint(OrigTerm);
-  auto *BI =
-      Builder.CreateCondBr(RuntimeCheck, NonVersionedLoop->getLoopPreheader(),
-                           VersionedLoop->getLoopPreheader());
-  // We don't know what the probability of executing the versioned vs the
-  // unversioned variants is.
-  setExplicitlyUnknownBranchWeightsIfProfiled(*BI, DEBUG_TYPE);
+  Builder.CreateCondBr(RuntimeCheck, NonVersionedLoop->getLoopPreheader(),
+                       VersionedLoop->getLoopPreheader());
   OrigTerm->eraseFromParent();
 
   // The loops merge in the original exit block.  This is now dominated by the
@@ -145,7 +139,7 @@ void LoopVersioning::addPHINodes(
     // original loop.
     for (auto I = PHIBlock->begin(); (PN = dyn_cast<PHINode>(I)); ++I) {
       if (PN->getIncomingValue(0) == Inst) {
-        SE->forgetLcssaPhiWithNewPredecessor(VersionedLoop, PN);
+        SE->forgetValue(PN);
         break;
       }
     }
@@ -232,43 +226,34 @@ void LoopVersioning::annotateLoopWithNoAlias() {
   }
 }
 
-std::pair<MDNode *, MDNode *>
-LoopVersioning::getNoAliasMetadataFor(const Instruction *OrigInst) const {
+void LoopVersioning::annotateInstWithNoAlias(Instruction *VersionedInst,
+                                             const Instruction *OrigInst) {
   if (!AnnotateNoAlias)
-    return {nullptr, nullptr};
+    return;
 
   LLVMContext &Context = VersionedLoop->getHeader()->getContext();
   const Value *Ptr = isa<LoadInst>(OrigInst)
                          ? cast<LoadInst>(OrigInst)->getPointerOperand()
                          : cast<StoreInst>(OrigInst)->getPointerOperand();
 
-  MDNode *AliasScope = nullptr;
-  MDNode *NoAlias = nullptr;
   // Find the group for the pointer and then add the scope metadata.
   auto Group = PtrToGroup.find(Ptr);
   if (Group != PtrToGroup.end()) {
-    AliasScope = MDNode::concatenate(
-        OrigInst->getMetadata(LLVMContext::MD_alias_scope),
-        MDNode::get(Context, GroupToScope.lookup(Group->second)));
+    VersionedInst->setMetadata(
+        LLVMContext::MD_alias_scope,
+        MDNode::concatenate(
+            VersionedInst->getMetadata(LLVMContext::MD_alias_scope),
+            MDNode::get(Context, GroupToScope[Group->second])));
 
     // Add the no-alias metadata.
     auto NonAliasingScopeList = GroupToNonAliasingScopeList.find(Group->second);
     if (NonAliasingScopeList != GroupToNonAliasingScopeList.end())
-      NoAlias =
-          MDNode::concatenate(OrigInst->getMetadata(LLVMContext::MD_noalias),
-                              NonAliasingScopeList->second);
+      VersionedInst->setMetadata(
+          LLVMContext::MD_noalias,
+          MDNode::concatenate(
+              VersionedInst->getMetadata(LLVMContext::MD_noalias),
+              NonAliasingScopeList->second));
   }
-  return {AliasScope, NoAlias};
-}
-
-void LoopVersioning::annotateInstWithNoAlias(Instruction *VersionedInst,
-                                             const Instruction *OrigInst) {
-  const auto &[AliasScopeMD, NoAliasMD] = getNoAliasMetadataFor(OrigInst);
-  if (AliasScopeMD)
-    VersionedInst->setMetadata(LLVMContext::MD_alias_scope, AliasScopeMD);
-
-  if (NoAliasMD)
-    VersionedInst->setMetadata(LLVMContext::MD_noalias, NoAliasMD);
 }
 
 namespace {
@@ -295,9 +280,6 @@ bool runImpl(LoopInfo *LI, LoopAccessInfoManager &LAIs, DominatorTree *DT,
     if (!LAI.hasConvergentOp() &&
         (LAI.getNumRuntimePointerChecks() ||
          !LAI.getPSE().getPredicate().isAlwaysTrue())) {
-      if (!L->isLCSSAForm(*DT))
-       formLCSSARecursively(*L, *DT, LI, SE);
-
       LoopVersioning LVer(LAI, LAI.getRuntimePointerChecking()->getChecks(), L,
                           LI, DT, SE);
       LVer.versionLoop();

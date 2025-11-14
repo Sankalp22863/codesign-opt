@@ -7,22 +7,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/string/memchr.h"
-#include "src/__support/macros/config.h"
-#include "src/__support/macros/null_check.h"
 #include "src/string/string_utils.h"
 
 #include "src/__support/common.h"
 #include <stddef.h>
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
 // TODO: Look at performance benefits of comparing words.
 LLVM_LIBC_FUNCTION(void *, memchr, (const void *src, int c, size_t n)) {
-  if (n)
-    LIBC_CRASH_ON_NULLPTR(src);
   return internal::find_first_character(
       reinterpret_cast<const unsigned char *>(src),
       static_cast<unsigned char>(c), n);
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

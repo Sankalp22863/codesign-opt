@@ -12,7 +12,6 @@
 
 #include "llvm/Object/XCOFFObjectFile.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/TargetParser/SubtargetFeature.h"
 #include <cstddef>
@@ -66,12 +65,6 @@ template <typename T> uint16_t XCOFFSectionHeader<T>::getSectionType() const {
 }
 
 template <typename T>
-uint32_t XCOFFSectionHeader<T>::getSectionSubtype() const {
-  const T &DerivedXCOFFSectionHeader = static_cast<const T &>(*this);
-  return DerivedXCOFFSectionHeader.Flags & ~SectionFlagsTypeMask;
-}
-
-template <typename T>
 bool XCOFFSectionHeader<T>::isReservedSectionType() const {
   return getSectionType() & SectionFlagsReservedMask;
 }
@@ -93,8 +86,8 @@ uint8_t XCOFFRelocation<AddressType>::getRelocatedLength() const {
   return (Info & XR_BIASED_LENGTH_MASK) + 1;
 }
 
-template struct LLVM_EXPORT_TEMPLATE ExceptionSectionEntry<support::ubig32_t>;
-template struct LLVM_EXPORT_TEMPLATE ExceptionSectionEntry<support::ubig64_t>;
+template struct ExceptionSectionEntry<support::ubig32_t>;
+template struct ExceptionSectionEntry<support::ubig64_t>;
 
 template <typename T>
 Expected<StringRef> getLoaderSecSymNameInStrTbl(const T *LoaderSecHeader,
@@ -379,7 +372,7 @@ Expected<StringRef> XCOFFObjectFile::getSectionName(DataRefImpl Sec) const {
 }
 
 uint64_t XCOFFObjectFile::getSectionAddress(DataRefImpl Sec) const {
-  // Avoid ternary due to failure to convert the ubig32_t value to a uint64_t
+  // Avoid ternary due to failure to convert the ubig32_t value to a unit64_t
   // with MSVC.
   if (is64Bit())
     return toSection64(Sec)->VirtualAddress;
@@ -397,7 +390,7 @@ uint64_t XCOFFObjectFile::getSectionIndex(DataRefImpl Sec) const {
 }
 
 uint64_t XCOFFObjectFile::getSectionSize(DataRefImpl Sec) const {
-  // Avoid ternary due to failure to convert the ubig32_t value to a uint64_t
+  // Avoid ternary due to failure to convert the ubig32_t value to a unit64_t
   // with MSVC.
   if (is64Bit())
     return toSection64(Sec)->SectionSize;
@@ -429,13 +422,9 @@ XCOFFObjectFile::getSectionContents(DataRefImpl Sec) const {
 }
 
 uint64_t XCOFFObjectFile::getSectionAlignment(DataRefImpl Sec) const {
-  // TODO: Copied from MC/XCOFFObjectWriter.cpp
-  // Sections other than DWARF section use DefaultSectionAlign as the default
-  // alignment, while DWARF sections have their own alignments. DWARF section
-  // alignment is bigger than DefaultSectionAlign.
-  if (isDebugSection(Sec))
-    return 8;
-  return 4;
+  uint64_t Result = 0;
+  llvm_unreachable("Not yet implemented!");
+  return Result;
 }
 
 uint64_t XCOFFObjectFile::getSectionFileOffsetToRawData(DataRefImpl Sec) const {
@@ -742,11 +731,9 @@ bool XCOFFObjectFile::isRelocatableObject() const {
 }
 
 Expected<uint64_t> XCOFFObjectFile::getStartAddress() const {
-  if (AuxiliaryHeader == nullptr)
-    return 0;
-
-  return is64Bit() ? auxiliaryHeader64()->getEntryPointAddr()
-                   : auxiliaryHeader32()->getEntryPointAddr();
+  // TODO FIXME Should get from auxiliary_header->o_entry when support for the
+  // auxiliary_header is added.
+  return 0;
 }
 
 StringRef XCOFFObjectFile::mapDebugSectionName(StringRef Name) const {
@@ -1065,9 +1052,9 @@ Expected<ArrayRef<ExceptEnt>> XCOFFObjectFile::getExceptionEntries() const {
       ExceptEntStart, ExceptEntStart + getSectionSize(DRI) / sizeof(ExceptEnt));
 }
 
-template LLVM_EXPORT_TEMPLATE Expected<ArrayRef<ExceptionSectionEntry32>>
+template Expected<ArrayRef<ExceptionSectionEntry32>>
 XCOFFObjectFile::getExceptionEntries() const;
-template LLVM_EXPORT_TEMPLATE Expected<ArrayRef<ExceptionSectionEntry64>>
+template Expected<ArrayRef<ExceptionSectionEntry64>>
 XCOFFObjectFile::getExceptionEntries() const;
 
 Expected<XCOFFStringTable>
@@ -1374,23 +1361,21 @@ Expected<StringRef> XCOFFSymbolRef::getName() const {
   return getObject()->getStringTableEntry(getSymbol64()->Offset);
 }
 
-// Explicitly instantiate template classes.
-template struct LLVM_EXPORT_TEMPLATE XCOFFSectionHeader<XCOFFSectionHeader32>;
-template struct LLVM_EXPORT_TEMPLATE XCOFFSectionHeader<XCOFFSectionHeader64>;
+// Explictly instantiate template classes.
+template struct XCOFFSectionHeader<XCOFFSectionHeader32>;
+template struct XCOFFSectionHeader<XCOFFSectionHeader64>;
 
-template struct LLVM_EXPORT_TEMPLATE XCOFFRelocation<llvm::support::ubig32_t>;
-template struct LLVM_EXPORT_TEMPLATE XCOFFRelocation<llvm::support::ubig64_t>;
+template struct XCOFFRelocation<llvm::support::ubig32_t>;
+template struct XCOFFRelocation<llvm::support::ubig64_t>;
 
-template LLVM_EXPORT_TEMPLATE
-    llvm::Expected<llvm::ArrayRef<llvm::object::XCOFFRelocation64>>
-    llvm::object::XCOFFObjectFile::relocations<
-        llvm::object::XCOFFSectionHeader64, llvm::object::XCOFFRelocation64>(
-        llvm::object::XCOFFSectionHeader64 const &) const;
-template LLVM_EXPORT_TEMPLATE
-    llvm::Expected<llvm::ArrayRef<llvm::object::XCOFFRelocation32>>
-    llvm::object::XCOFFObjectFile::relocations<
-        llvm::object::XCOFFSectionHeader32, llvm::object::XCOFFRelocation32>(
-        llvm::object::XCOFFSectionHeader32 const &) const;
+template llvm::Expected<llvm::ArrayRef<llvm::object::XCOFFRelocation64>>
+llvm::object::XCOFFObjectFile::relocations<llvm::object::XCOFFSectionHeader64,
+                                           llvm::object::XCOFFRelocation64>(
+    llvm::object::XCOFFSectionHeader64 const &) const;
+template llvm::Expected<llvm::ArrayRef<llvm::object::XCOFFRelocation32>>
+llvm::object::XCOFFObjectFile::relocations<llvm::object::XCOFFSectionHeader32,
+                                           llvm::object::XCOFFRelocation32>(
+    llvm::object::XCOFFSectionHeader32 const &) const;
 
 bool doesXCOFFTracebackTableBegin(ArrayRef<uint8_t> Bytes) {
   if (Bytes.size() < 4)
@@ -1418,7 +1403,7 @@ TBVectorExt::TBVectorExt(StringRef TBvectorStrRef, Error &Err) {
   unsigned ParmsNum =
       GETVALUEWITHMASKSHIFT(NumberOfVectorParmsMask, NumberOfVectorParmsShift);
 
-  ErrorAsOutParameter EAO(Err);
+  ErrorAsOutParameter EAO(&Err);
   Expected<SmallString<32>> VecParmsTypeOrError =
       parseVectorParmsType(VecParmsTypeValue, ParmsNum);
   if (!VecParmsTypeOrError)
@@ -1462,7 +1447,7 @@ XCOFFTracebackTable::create(const uint8_t *Ptr, uint64_t &Size, bool Is64Bit) {
 XCOFFTracebackTable::XCOFFTracebackTable(const uint8_t *Ptr, uint64_t &Size,
                                          Error &Err, bool Is64Bit)
     : TBPtr(Ptr), Is64BitObj(Is64Bit) {
-  ErrorAsOutParameter EAO(Err);
+  ErrorAsOutParameter EAO(&Err);
   DataExtractor DE(ArrayRef<uint8_t>(Ptr, Size), /*IsLittleEndian=*/false,
                    /*AddressSize=*/0);
   DataExtractor::Cursor Cur(/*Offset=*/0);
@@ -1568,7 +1553,7 @@ uint8_t XCOFFTracebackTable::getLanguageID() const {
 }
 
 bool XCOFFTracebackTable::isGlobalLinkage() const {
-  return GETBITWITHMASK(0, IsGlobalLinkageMask);
+  return GETBITWITHMASK(0, IsGlobaLinkageMask);
 }
 
 bool XCOFFTracebackTable::isOutOfLineEpilogOrPrologue() const {

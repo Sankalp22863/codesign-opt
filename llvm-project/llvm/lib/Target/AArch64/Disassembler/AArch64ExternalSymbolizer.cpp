@@ -7,7 +7,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "AArch64ExternalSymbolizer.h"
-#include "MCTargetDesc/AArch64MCAsmInfo.h"
+#include "MCTargetDesc/AArch64AddressingModes.h"
+#include "Utils/AArch64BaseInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
@@ -19,34 +20,34 @@ using namespace llvm;
 
 #define DEBUG_TYPE "aarch64-disassembler"
 
-static AArch64::Specifier
-getMachOSpecifier(uint64_t LLVMDisassembler_VariantKind) {
+static MCSymbolRefExpr::VariantKind
+getVariant(uint64_t LLVMDisassembler_VariantKind) {
   switch (LLVMDisassembler_VariantKind) {
   case LLVMDisassembler_VariantKind_None:
-    return AArch64::S_None;
+    return MCSymbolRefExpr::VK_None;
   case LLVMDisassembler_VariantKind_ARM64_PAGE:
-    return AArch64::S_MACHO_PAGE;
+    return MCSymbolRefExpr::VK_PAGE;
   case LLVMDisassembler_VariantKind_ARM64_PAGEOFF:
-    return AArch64::S_MACHO_PAGEOFF;
+    return MCSymbolRefExpr::VK_PAGEOFF;
   case LLVMDisassembler_VariantKind_ARM64_GOTPAGE:
-    return AArch64::S_MACHO_GOTPAGE;
+    return MCSymbolRefExpr::VK_GOTPAGE;
   case LLVMDisassembler_VariantKind_ARM64_GOTPAGEOFF:
-    return AArch64::S_MACHO_GOTPAGEOFF;
+    return MCSymbolRefExpr::VK_GOTPAGEOFF;
   case LLVMDisassembler_VariantKind_ARM64_TLVP:
-    return AArch64::S_MACHO_TLVPPAGE;
+    return MCSymbolRefExpr::VK_TLVPPAGE;
   case LLVMDisassembler_VariantKind_ARM64_TLVOFF:
-    return AArch64::S_MACHO_TLVPPAGEOFF;
+    return MCSymbolRefExpr::VK_TLVPPAGEOFF;
   default:
     llvm_unreachable("bad LLVMDisassembler_VariantKind");
   }
 }
 
-/// tryAddingSymbolicOperand - tryAddingSymbolicOperand tries to add a symbolic
+/// tryAddingSymbolicOperand - tryAddingSymbolicOperand trys to add a symbolic
 /// operand in place of the immediate Value in the MCInst.  The immediate
 /// Value has not had any PC adjustment made by the caller. If the instruction
 /// is a branch that adds the PC to the immediate Value then isBranch is
 /// Success, else Fail. If GetOpInfo is non-null, then it is called to get any
-/// symbolic information at the Address for this instruction.  If that returns
+/// symbolic information at the Address for this instrution.  If that returns
 /// non-zero then the symbolic information it returns is used to create an
 /// MCExpr and that is added as an operand to the MCInst.  If GetOpInfo()
 /// returns zero and isBranch is Success then a symbol look up for
@@ -170,9 +171,9 @@ bool AArch64ExternalSymbolizer::tryAddingSymbolicOperand(
     if (SymbolicOp.AddSymbol.Name) {
       StringRef Name(SymbolicOp.AddSymbol.Name);
       MCSymbol *Sym = Ctx.getOrCreateSymbol(Name);
-      auto Spec = getMachOSpecifier(SymbolicOp.VariantKind);
-      if (Spec != AArch64::S_None)
-        Add = MCSymbolRefExpr::create(Sym, Spec, Ctx);
+      MCSymbolRefExpr::VariantKind Variant = getVariant(SymbolicOp.VariantKind);
+      if (Variant != MCSymbolRefExpr::VK_None)
+        Add = MCSymbolRefExpr::create(Sym, Variant, Ctx);
       else
         Add = MCSymbolRefExpr::create(Sym, Ctx);
     } else {

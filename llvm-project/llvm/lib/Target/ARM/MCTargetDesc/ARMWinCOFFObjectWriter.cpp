@@ -7,17 +7,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/ARMFixupKinds.h"
-#include "MCTargetDesc/ARMMCAsmInfo.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCFixup.h"
+#include "llvm/MC/MCFixupKindInfo.h"
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/MC/MCValue.h"
 #include "llvm/MC/MCWinCOFFObjectWriter.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
 
@@ -45,35 +46,35 @@ unsigned ARMWinCOFFObjectWriter::getRelocType(MCContext &Ctx,
                                               const MCFixup &Fixup,
                                               bool IsCrossSection,
                                               const MCAsmBackend &MAB) const {
-  auto Spec = Target.getSpecifier();
+  MCSymbolRefExpr::VariantKind Modifier =
+    Target.isAbsolute() ? MCSymbolRefExpr::VK_None : Target.getSymA()->getKind();
+
   unsigned FixupKind = Fixup.getKind();
-  bool PCRel = false;
   if (IsCrossSection) {
-    if (PCRel || FixupKind != FK_Data_4) {
+    if (FixupKind != FK_Data_4) {
       Ctx.reportError(Fixup.getLoc(), "Cannot represent this expression");
       return COFF::IMAGE_REL_ARM_ADDR32;
     }
-    FixupKind = FK_Data_4;
-    PCRel = true;
+    FixupKind = FK_PCRel_4;
   }
 
 
   switch (FixupKind) {
   default: {
-    Ctx.reportError(Fixup.getLoc(), "unsupported relocation type");
-    return COFF::IMAGE_REL_ARM_ABSOLUTE;
+    const MCFixupKindInfo &Info = MAB.getFixupKindInfo(Fixup.getKind());
+    report_fatal_error(Twine("unsupported relocation type: ") + Info.Name);
   }
   case FK_Data_4:
-    if (PCRel)
-      return COFF::IMAGE_REL_ARM_REL32;
-    switch (Spec) {
+    switch (Modifier) {
     case MCSymbolRefExpr::VK_COFF_IMGREL32:
       return COFF::IMAGE_REL_ARM_ADDR32NB;
-    case ARM::S_COFF_SECREL:
+    case MCSymbolRefExpr::VK_SECREL:
       return COFF::IMAGE_REL_ARM_SECREL;
     default:
       return COFF::IMAGE_REL_ARM_ADDR32;
     }
+  case FK_PCRel_4:
+    return COFF::IMAGE_REL_ARM_REL32;
   case FK_SecRel_2:
     return COFF::IMAGE_REL_ARM_SECTION;
   case FK_SecRel_4:

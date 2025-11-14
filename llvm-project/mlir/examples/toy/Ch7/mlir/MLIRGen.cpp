@@ -15,6 +15,7 @@
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Value.h"
+#include "mlir/Support/LogicalResult.h"
 #include "toy/AST.h"
 #include "toy/Dialect.h"
 
@@ -132,7 +133,7 @@ private:
 
   /// Declare a variable in the current scope, return success if the variable
   /// wasn't declared yet.
-  llvm::LogicalResult declare(VarDeclExprAST &var, mlir::Value value) {
+  mlir::LogicalResult declare(VarDeclExprAST &var, mlir::Value value) {
     if (symbolTable.count(var.getName()))
       return mlir::failure();
     symbolTable.insert(var.getName(), {value, &var});
@@ -140,7 +141,7 @@ private:
   }
 
   /// Create an MLIR type for the given struct.
-  llvm::LogicalResult mlirGen(StructAST &str) {
+  mlir::LogicalResult mlirGen(StructAST &str) {
     if (structMap.count(str.getName()))
       return emitError(loc(str.loc())) << "error: struct type with name `"
                                        << str.getName() << "' already exists";
@@ -182,9 +183,9 @@ private:
         return nullptr;
       argTypes.push_back(type);
     }
-    auto funcType = builder.getFunctionType(argTypes, /*results=*/{});
-    return mlir::toy::FuncOp::create(builder, location, proto.getName(),
-                                     funcType);
+    auto funcType = builder.getFunctionType(argTypes, std::nullopt);
+    return builder.create<mlir::toy::FuncOp>(location, proto.getName(),
+                                             funcType);
   }
 
   /// Emit a new function and add it to the MLIR module.
@@ -227,7 +228,7 @@ private:
     if (!entryBlock.empty())
       returnOp = dyn_cast<ReturnOp>(entryBlock.back());
     if (!returnOp) {
-      ReturnOp::create(builder, loc(funcAST.getProto()->loc()));
+      builder.create<ReturnOp>(loc(funcAST.getProto()->loc()));
     } else if (returnOp.hasOperand()) {
       // Otherwise, if this return operation has an operand then add a result to
       // the function.
@@ -333,7 +334,7 @@ private:
         emitError(location, "invalid access into struct expression");
         return nullptr;
       }
-      return StructAccessOp::create(builder, location, lhs, *accessIndex);
+      return builder.create<StructAccessOp>(location, lhs, *accessIndex);
     }
 
     // Otherwise, this is a normal binary op.
@@ -345,9 +346,9 @@ private:
     // support '+' and '*'.
     switch (binop.getOp()) {
     case '+':
-      return AddOp::create(builder, location, lhs, rhs);
+      return builder.create<AddOp>(location, lhs, rhs);
     case '*':
-      return MulOp::create(builder, location, lhs, rhs);
+      return builder.create<MulOp>(location, lhs, rhs);
     }
 
     emitError(location, "invalid binary operator '") << binop.getOp() << "'";
@@ -367,7 +368,7 @@ private:
   }
 
   /// Emit a return operation. This will return failure if any generation fails.
-  llvm::LogicalResult mlirGen(ReturnExprAST &ret) {
+  mlir::LogicalResult mlirGen(ReturnExprAST &ret) {
     auto location = loc(ret.loc());
 
     // 'return' takes an optional expression, handle that case here.
@@ -378,8 +379,8 @@ private:
     }
 
     // Otherwise, this return operation has zero operands.
-    ReturnOp::create(builder, location,
-                     expr ? ArrayRef(expr) : ArrayRef<mlir::Value>());
+    builder.create<ReturnOp>(location,
+                             expr ? ArrayRef(expr) : ArrayRef<mlir::Value>());
     return mlir::success();
   }
 
@@ -405,7 +406,8 @@ private:
     // The attribute is a vector with a floating point value per element
     // (number) in the array, see `collectData()` below for more details.
     std::vector<double> data;
-    data.reserve(llvm::product_of(lit.getDims()));
+    data.reserve(std::accumulate(lit.getDims().begin(), lit.getDims().end(), 1,
+                                 std::multiplies<int>()));
     collectData(lit, data);
 
     // The type of this attribute is tensor of 64-bit floating-point with the
@@ -440,10 +442,10 @@ private:
     for (auto &var : lit.getValues()) {
       if (auto *number = llvm::dyn_cast<NumberExprAST>(var.get())) {
         attrElements.push_back(getConstantAttr(*number));
-        typeElements.push_back(getType(/*shape=*/{}));
+        typeElements.push_back(getType(std::nullopt));
       } else if (auto *lit = llvm::dyn_cast<LiteralExprAST>(var.get())) {
         attrElements.push_back(getConstantAttr(*lit));
-        typeElements.push_back(getType(/*shape=*/{}));
+        typeElements.push_back(getType(std::nullopt));
       } else {
         auto *structLit = llvm::cast<StructLiteralExprAST>(var.get());
         auto attrTypePair = getConstantAttr(*structLit);
@@ -463,7 +465,7 @@ private:
 
     // Build the MLIR op `toy.constant`. This invokes the `ConstantOp::build`
     // method.
-    return ConstantOp::create(builder, loc(lit.loc()), type, dataAttribute);
+    return builder.create<ConstantOp>(loc(lit.loc()), type, dataAttribute);
   }
 
   /// Emit a struct literal. It will be emitted as an array of
@@ -476,8 +478,7 @@ private:
 
     // Build the MLIR op `toy.struct_constant`. This invokes the
     // `StructConstantOp::build` method.
-    return StructConstantOp::create(builder, loc(lit.loc()), dataType,
-                                    dataAttr);
+    return builder.create<StructConstantOp>(loc(lit.loc()), dataType, dataAttr);
   }
 
   /// Recursive helper function to accumulate the data that compose an array
@@ -522,7 +523,7 @@ private:
                             "does not accept multiple arguments");
         return nullptr;
       }
-      return TransposeOp::create(builder, location, operands[0]);
+      return builder.create<TransposeOp>(location, operands[0]);
     }
 
     // Otherwise this is a call to a user-defined function. Calls to
@@ -534,25 +535,25 @@ private:
       return nullptr;
     }
     mlir::toy::FuncOp calledFunc = calledFuncIt->second;
-    return GenericCallOp::create(builder, location,
-                                 calledFunc.getFunctionType().getResult(0),
-                                 callee, operands);
+    return builder.create<GenericCallOp>(
+        location, calledFunc.getFunctionType().getResult(0),
+        mlir::SymbolRefAttr::get(builder.getContext(), callee), operands);
   }
 
   /// Emit a print expression. It emits specific operations for two builtins:
   /// transpose(x) and print(x).
-  llvm::LogicalResult mlirGen(PrintExprAST &call) {
+  mlir::LogicalResult mlirGen(PrintExprAST &call) {
     auto arg = mlirGen(*call.getArg());
     if (!arg)
       return mlir::failure();
 
-    PrintOp::create(builder, loc(call.loc()), arg);
+    builder.create<PrintOp>(loc(call.loc()), arg);
     return mlir::success();
   }
 
   /// Emit a constant for a single number (FIXME: semantic? broadcast?)
   mlir::Value mlirGen(NumberExprAST &num) {
-    return ConstantOp::create(builder, loc(num.loc()), num.getValue());
+    return builder.create<ConstantOp>(loc(num.loc()), num.getValue());
   }
 
   /// Dispatch codegen for the right expression subclass using RTTI.
@@ -614,8 +615,8 @@ private:
       // declared with specific shape, we emit a "reshape" operation. It will
       // get optimized out later as needed.
     } else if (!varType.shape.empty()) {
-      value = ReshapeOp::create(builder, loc(vardecl.loc()),
-                                getType(varType.shape), value);
+      value = builder.create<ReshapeOp>(loc(vardecl.loc()),
+                                        getType(varType.shape), value);
     }
 
     // Register the value in the symbol table.
@@ -625,7 +626,7 @@ private:
   }
 
   /// Codegen a list of expression, return failure if one of them hit an error.
-  llvm::LogicalResult mlirGen(ExprASTList &blockAST) {
+  mlir::LogicalResult mlirGen(ExprASTList &blockAST) {
     SymbolTableScopeT varScope(symbolTable);
     for (auto &expr : blockAST) {
       // Specific handling for variable declarations, return statement, and

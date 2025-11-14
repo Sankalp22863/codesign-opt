@@ -11,11 +11,10 @@
 
 #include "src/__support/CPP/type_traits.h"
 #include "src/__support/common.h"
-#include "src/__support/macros/config.h"
 #include "src/__support/macros/properties/architectures.h"
 #include "src/__support/macros/properties/cpu_features.h" // LIBC_TARGET_CPU_HAS_FMA
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 namespace fputil {
 
 // Implement a simple wrapper for multiply-add operation:
@@ -29,45 +28,32 @@ multiply_add(const T &x, const T &y, const T &z) {
 }
 
 template <typename T>
-LIBC_INLINE static constexpr cpp::enable_if_t<(sizeof(T) <= sizeof(void *)), T>
+LIBC_INLINE cpp::enable_if_t<(sizeof(T) <= sizeof(void *)), T>
 multiply_add(T x, T y, T z) {
   return x * y + z;
 }
 
 } // namespace fputil
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE
 
 #if defined(LIBC_TARGET_CPU_HAS_FMA)
 
 // FMA instructions are available.
-// We use builtins directly instead of including FMA.h to avoid a circular
-// dependency: multiply_add.h -> FMA.h -> generic/FMA.h -> dyadic_float.h.
+#include "FMA.h"
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 namespace fputil {
 
-#ifdef LIBC_TARGET_CPU_HAS_FMA_FLOAT
 LIBC_INLINE float multiply_add(float x, float y, float z) {
-#if __has_builtin(__builtin_elementwise_fma)
-  return __builtin_elementwise_fma(x, y, z);
-#else
-  return __builtin_fmaf(x, y, z);
-#endif
+  return fma(x, y, z);
 }
-#endif // LIBC_TARGET_CPU_HAS_FMA_FLOAT
 
-#ifdef LIBC_TARGET_CPU_HAS_FMA_DOUBLE
 LIBC_INLINE double multiply_add(double x, double y, double z) {
-#if __has_builtin(__builtin_elementwise_fma)
-  return __builtin_elementwise_fma(x, y, z);
-#else
-  return __builtin_fma(x, y, z);
-#endif
+  return fma(x, y, z);
 }
-#endif // LIBC_TARGET_CPU_HAS_FMA_DOUBLE
 
 } // namespace fputil
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE
 
 #endif // LIBC_TARGET_CPU_HAS_FMA
 

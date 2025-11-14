@@ -58,16 +58,17 @@ private:
 std::unique_ptr<ConversionTarget>
 getMemorySpaceToStorageClassTarget(MLIRContext &);
 
-/// Converts all MemRef types and attributes in the op, as decided by the
-/// `typeConverter`.
-void convertMemRefTypesAndAttrs(
-    Operation *op, MemorySpaceToStorageClassConverter &typeConverter);
+/// Appends to a pattern list additional patterns for converting numeric MemRef
+/// memory spaces into SPIR-V symbolic ones.
+void populateMemorySpaceToStorageClassPatterns(
+    MemorySpaceToStorageClassConverter &typeConverter,
+    RewritePatternSet &patterns);
 
 } // namespace spirv
 
 /// Appends to a pattern list additional patterns for translating MemRef ops
 /// to SPIR-V ops.
-void populateMemRefToSPIRVPatterns(const SPIRVTypeConverter &typeConverter,
+void populateMemRefToSPIRVPatterns(SPIRVTypeConverter &typeConverter,
                                    RewritePatternSet &patterns);
 
 } // namespace mlir

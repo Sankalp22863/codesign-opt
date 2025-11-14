@@ -46,7 +46,7 @@ public:
         [this](std::optional<llvm::StringRef> Data) {
           Value.reset();
           if (Data && !Data->empty()) {
-            auto Diagnostics = [](const llvm::SMDiagnostic &D) {
+            tidy::DiagCallback Diagnostics = [](const llvm::SMDiagnostic &D) {
               switch (D.getKind()) {
               case llvm::SourceMgr::DK_Error:
                 elog("tidy-config error at {0}:{1}:{2}: {3}", D.getFilename(),
@@ -149,7 +149,7 @@ static void mergeCheckList(std::optional<std::string> &Checks,
   *Checks = llvm::join_items(",", *Checks, List);
 }
 
-TidyProvider provideEnvironment() {
+TidyProviderRef provideEnvironment() {
   static const std::optional<std::string> User = [] {
     std::optional<std::string> Ret = llvm::sys::Process::GetEnv("USER");
 #ifdef _WIN32
@@ -167,7 +167,7 @@ TidyProvider provideEnvironment() {
   return [](tidy::ClangTidyOptions &, llvm::StringRef) {};
 }
 
-TidyProvider provideDefaultChecks() {
+TidyProviderRef provideDefaultChecks() {
   // These default checks are chosen for:
   //  - low false-positive rate
   //  - providing a lot of value
@@ -195,10 +195,10 @@ TidyProvider addTidyChecks(llvm::StringRef Checks,
 }
 
 TidyProvider disableUnusableChecks(llvm::ArrayRef<std::string> ExtraBadChecks) {
-  constexpr llvm::StringLiteral Separator(",");
+  constexpr llvm::StringLiteral Seperator(",");
   static const std::string BadChecks = llvm::join_items(
-      Separator,
-      // We want this list to start with a separator to
+      Seperator,
+      // We want this list to start with a seperator to
       // simplify appending in the lambda. So including an
       // empty string here will force that.
       "",
@@ -210,7 +210,6 @@ TidyProvider disableUnusableChecks(llvm::ArrayRef<std::string> ExtraBadChecks) {
       // Check relies on seeing ifndef/define/endif directives,
       // clangd doesn't replay those when using a preamble.
       "-llvm-header-guard", "-modernize-macro-to-enum",
-      "-cppcoreguidelines-macro-to-enum",
 
       // ----- Crashing Checks -----
 
@@ -222,13 +221,19 @@ TidyProvider disableUnusableChecks(llvm::ArrayRef<std::string> ExtraBadChecks) {
       "-hicpp-invalid-access-moved",
       // Check uses dataflow analysis, which might hang/crash unexpectedly on
       // incomplete code.
-      "-bugprone-unchecked-optional-access");
+      "-bugprone-unchecked-optional-access",
+
+      // ----- Performance problems -----
+
+      // This check runs expensive analysis for each variable.
+      // It has been observed to increase reparse time by 10x.
+      "-misc-const-correctness");
 
   size_t Size = BadChecks.size();
   for (const std::string &Str : ExtraBadChecks) {
     if (Str.empty())
       continue;
-    Size += Separator.size();
+    Size += Seperator.size();
     if (LLVM_LIKELY(Str.front() != '-'))
       ++Size;
     Size += Str.size();
@@ -239,7 +244,7 @@ TidyProvider disableUnusableChecks(llvm::ArrayRef<std::string> ExtraBadChecks) {
   for (const std::string &Str : ExtraBadChecks) {
     if (Str.empty())
       continue;
-    DisableGlob += Separator;
+    DisableGlob += Seperator;
     if (LLVM_LIKELY(Str.front() != '-'))
       DisableGlob.push_back('-');
     DisableGlob += Str;
@@ -252,7 +257,7 @@ TidyProvider disableUnusableChecks(llvm::ArrayRef<std::string> ExtraBadChecks) {
   };
 }
 
-TidyProvider provideClangdConfig() {
+TidyProviderRef provideClangdConfig() {
   return [](tidy::ClangTidyOptions &Opts, llvm::StringRef) {
     const auto &CurTidyConfig = Config::current().Diagnostics.ClangTidy;
     if (!CurTidyConfig.Checks.empty())

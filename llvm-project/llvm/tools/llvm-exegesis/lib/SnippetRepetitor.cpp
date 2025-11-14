@@ -48,8 +48,10 @@ public:
 
 class LoopSnippetRepetitor : public SnippetRepetitor {
 public:
-  explicit LoopSnippetRepetitor(const LLVMState &State, MCRegister LoopRegister)
-      : SnippetRepetitor(State), LoopCounter(LoopRegister) {}
+  explicit LoopSnippetRepetitor(const LLVMState &State)
+      : SnippetRepetitor(State),
+        LoopCounter(State.getExegesisTarget().getLoopCounterRegister(
+            State.getTargetMachine().getTargetTriple())) {}
 
   // Loop over the snippet ceil(MinInstructions / Instructions.Size()) times.
   FillFunction Repeat(ArrayRef<MCInst> Instructions, unsigned MinInstructions,
@@ -97,11 +99,12 @@ public:
       Entry.MBB->addSuccessor(Loop.MBB, BranchProbability::getOne());
       Loop.MBB->addSuccessor(Loop.MBB, BranchProbability::getOne());
       // If the snippet setup completed, then we can track liveness.
-      if (Loop.MF.getProperties().hasTracksLiveness()) {
+      if (Loop.MF.getProperties().hasProperty(
+              MachineFunctionProperties::Property::TracksLiveness)) {
         // The live ins are: the loop counter, the registers that were setup by
         // the entry block, and entry block live ins.
         Loop.MBB->addLiveIn(LoopCounter);
-        for (MCRegister Reg : Filler.getRegistersSetUp())
+        for (unsigned Reg : Filler.getRegistersSetUp())
           Loop.MBB->addLiveIn(Reg);
         for (const auto &LiveIn : Entry.MBB->liveins())
           Loop.MBB->addLiveIn(LiveIn);
@@ -110,8 +113,8 @@ public:
         (void)_;
         Loop.addInstructions(Instructions);
       }
-      ET.decrementLoopCounterAndJump(*Loop.MBB, *Loop.MBB, State.getInstrInfo(),
-                                     LoopCounter);
+      ET.decrementLoopCounterAndJump(*Loop.MBB, *Loop.MBB,
+                                     State.getInstrInfo());
 
       // Set up the exit basic block.
       Loop.MBB->addSuccessor(Exit.MBB, BranchProbability::getZero());
@@ -126,23 +129,21 @@ public:
   }
 
 private:
-  const MCRegister LoopCounter;
+  const unsigned LoopCounter;
 };
 
 } // namespace
 
-SnippetRepetitor::~SnippetRepetitor() = default;
+SnippetRepetitor::~SnippetRepetitor() {}
 
 std::unique_ptr<const SnippetRepetitor>
 SnippetRepetitor::Create(Benchmark::RepetitionModeE Mode,
-                         const LLVMState &State, MCRegister LoopRegister) {
+                         const LLVMState &State) {
   switch (Mode) {
   case Benchmark::Duplicate:
-  case Benchmark::MiddleHalfDuplicate:
     return std::make_unique<DuplicateSnippetRepetitor>(State);
   case Benchmark::Loop:
-  case Benchmark::MiddleHalfLoop:
-    return std::make_unique<LoopSnippetRepetitor>(State, LoopRegister);
+    return std::make_unique<LoopSnippetRepetitor>(State);
   case Benchmark::AggregateMin:
     break;
   }

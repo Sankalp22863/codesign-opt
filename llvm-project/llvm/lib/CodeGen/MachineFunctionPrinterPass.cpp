@@ -39,7 +39,7 @@ struct MachineFunctionPrinterPass : public MachineFunctionPass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesAll();
-    AU.addUsedIfAvailable<SlotIndexesWrapperPass>();
+    AU.addUsedIfAvailable<SlotIndexes>();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 
@@ -47,8 +47,7 @@ struct MachineFunctionPrinterPass : public MachineFunctionPass {
     if (!isFunctionInPrintList(MF.getName()))
       return false;
     OS << "# " << Banner << ":\n";
-    auto *SIWrapper = getAnalysisIfAvailable<SlotIndexesWrapperPass>();
-    MF.print(OS, SIWrapper ? &SIWrapper->getSI() : nullptr);
+    MF.print(OS, getAnalysisIfAvailable<SlotIndexes>());
     return false;
   }
 };
@@ -60,11 +59,13 @@ char &llvm::MachineFunctionPrinterPassID = MachineFunctionPrinterPass::ID;
 INITIALIZE_PASS(MachineFunctionPrinterPass, "machineinstr-printer",
                 "Machine Function Printer", false, false)
 
+namespace llvm {
 /// Returns a newly-created MachineFunction Printer pass. The
 /// default banner is empty.
 ///
-MachineFunctionPass *
-llvm::createMachineFunctionPrinterPass(raw_ostream &OS,
-                                       const std::string &Banner) {
+MachineFunctionPass *createMachineFunctionPrinterPass(raw_ostream &OS,
+                                                      const std::string &Banner){
   return new MachineFunctionPrinterPass(OS, Banner);
+}
+
 }

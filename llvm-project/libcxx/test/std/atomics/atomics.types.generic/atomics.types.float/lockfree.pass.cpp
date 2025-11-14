@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 // UNSUPPORTED: c++03, c++11, c++14, c++17
 // XFAIL: !has-64-bit-atomics
+// UNSUPPORTED: !non-lockfree-atomics
 
 //   static constexpr bool is_always_lock_free = implementation-defined;
 //   bool is_lock_free() const volatile noexcept;
@@ -54,7 +55,7 @@ void test() {
 int main(int, char**) {
   test<float>();
   test<double>();
-  // TODO https://llvm.org/PR48634
+  // TODO https://github.com/llvm/llvm-project/issues/47978
   // test<long double>();
 
   return 0;

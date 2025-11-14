@@ -15,9 +15,8 @@
 #define LLVM_LIB_TARGET_AMDGPU_AMDGPUTARGETMACHINE_H
 
 #include "GCNSubtarget.h"
-#include "llvm/CodeGen/CodeGenTargetMachineImpl.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
-#include "llvm/MC/MCStreamer.h"
+#include "llvm/Target/TargetMachine.h"
 #include <optional>
 #include <utility>
 
@@ -27,7 +26,7 @@ namespace llvm {
 // AMDGPU Target Machine (R600+)
 //===----------------------------------------------------------------------===//
 
-class AMDGPUTargetMachine : public CodeGenTargetMachineImpl {
+class AMDGPUTargetMachine : public LLVMTargetMachine {
 protected:
   std::unique_ptr<TargetLoweringObjectFile> TLOF;
 
@@ -35,24 +34,25 @@ protected:
   StringRef getFeatureString(const Function &F) const;
 
 public:
+  static bool EnableLateStructurizeCFG;
   static bool EnableFunctionCalls;
   static bool EnableLowerModuleLDS;
 
   AMDGPUTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
-                      StringRef FS, const TargetOptions &Options,
+                      StringRef FS, TargetOptions Options,
                       std::optional<Reloc::Model> RM,
                       std::optional<CodeModel::Model> CM, CodeGenOptLevel OL);
   ~AMDGPUTargetMachine() override;
 
   const TargetSubtargetInfo *getSubtargetImpl() const;
-  const TargetSubtargetInfo *
-  getSubtargetImpl(const Function &) const override = 0;
+  const TargetSubtargetInfo *getSubtargetImpl(const Function &) const override = 0;
 
   TargetLoweringObjectFile *getObjFileLowering() const override {
     return TLOF.get();
   }
 
-  void registerPassBuilderCallbacks(PassBuilder &PB) override;
+  void registerPassBuilderCallbacks(PassBuilder &PB,
+                                    bool PopulateClassToPassNames) override;
   void registerDefaultAliasAnalyses(AAManager &) override;
 
   /// Get the integer value of a null pointer in the given address space.
@@ -66,12 +66,6 @@ public:
   getPredicatedAddrSpace(const Value *V) const override;
 
   unsigned getAddressSpaceForPseudoSourceKind(unsigned Kind) const override;
-
-  bool splitModule(Module &M, unsigned NumParts,
-                   function_ref<void(std::unique_ptr<Module> MPart)>
-                       ModuleCallback) override;
-  ScheduleDAGInstrs *
-  createMachineScheduler(MachineSchedContext *C) const override;
 };
 
 //===----------------------------------------------------------------------===//
@@ -84,7 +78,7 @@ private:
 
 public:
   GCNTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
-                   StringRef FS, const TargetOptions &Options,
+                   StringRef FS, TargetOptions Options,
                    std::optional<Reloc::Model> RM,
                    std::optional<CodeModel::Model> CM, CodeGenOptLevel OL,
                    bool JIT);
@@ -95,13 +89,9 @@ public:
 
   TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
 
-  bool useIPRA() const override { return true; }
-
-  Error buildCodeGenPipeline(ModulePassManager &MPM, raw_pwrite_stream &Out,
-                             raw_pwrite_stream *DwoOut,
-                             CodeGenFileType FileType,
-                             const CGPassBuilderOption &Opts,
-                             PassInstrumentationCallbacks *PIC) override;
+  bool useIPRA() const override {
+    return true;
+  }
 
   void registerMachineRegisterInfoCallback(MachineFunction &MF) const override;
 
@@ -116,23 +106,23 @@ public:
                                 PerFunctionMIParsingState &PFS,
                                 SMDiagnostic &Error,
                                 SMRange &SourceRange) const override;
-  ScheduleDAGInstrs *
-  createMachineScheduler(MachineSchedContext *C) const override;
-  ScheduleDAGInstrs *
-  createPostMachineScheduler(MachineSchedContext *C) const override;
 };
 
 //===----------------------------------------------------------------------===//
-// AMDGPU Pass Setup - For Legacy Pass Manager.
+// AMDGPU Pass Setup
 //===----------------------------------------------------------------------===//
 
 class AMDGPUPassConfig : public TargetPassConfig {
 public:
-  AMDGPUPassConfig(TargetMachine &TM, PassManagerBase &PM);
+  AMDGPUPassConfig(LLVMTargetMachine &TM, PassManagerBase &PM);
 
   AMDGPUTargetMachine &getAMDGPUTargetMachine() const {
     return getTM<AMDGPUTargetMachine>();
   }
+
+  ScheduleDAGInstrs *
+  createMachineScheduler(MachineSchedContext *C) const override;
+
   void addEarlyCSEOrGVNPass();
   void addStraightLineScalarOptimizationPasses();
   void addIRPasses() override;

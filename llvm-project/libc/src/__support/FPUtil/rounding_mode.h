@@ -9,22 +9,18 @@
 #ifndef LLVM_LIBC_SRC___SUPPORT_FPUTIL_ROUNDING_MODE_H
 #define LLVM_LIBC_SRC___SUPPORT_FPUTIL_ROUNDING_MODE_H
 
-#include "hdr/fenv_macros.h"
-#include "src/__support/CPP/type_traits.h"   // is_constant_evaluated
 #include "src/__support/macros/attributes.h" // LIBC_INLINE
-#include "src/__support/macros/config.h"
 
-namespace LIBC_NAMESPACE_DECL {
-namespace fputil {
+#include <fenv.h>
 
-namespace generic {
+namespace LIBC_NAMESPACE::fputil {
 
 // Quick free-standing test whether fegetround() == FE_UPWARD.
 // Using the following observation:
 //   1.0f + 2^-25 = 1.0f        for FE_TONEAREST, FE_DOWNWARD, FE_TOWARDZERO
 //                = 0x1.000002f for FE_UPWARD.
 LIBC_INLINE bool fenv_is_round_up() {
-  static volatile float x = 0x1.0p-25f;
+  volatile float x = 0x1.0p-25f;
   return (1.0f + x != 1.0f);
 }
 
@@ -33,7 +29,7 @@ LIBC_INLINE bool fenv_is_round_up() {
 //   -1.0f - 2^-25 = -1.0f        for FE_TONEAREST, FE_UPWARD, FE_TOWARDZERO
 //                 = -0x1.000002f for FE_DOWNWARD.
 LIBC_INLINE bool fenv_is_round_down() {
-  static volatile float x = 0x1.0p-25f;
+  volatile float x = 0x1.0p-25f;
   return (-1.0f - x != -1.0f);
 }
 
@@ -45,8 +41,8 @@ LIBC_INLINE bool fenv_is_round_down() {
 //                = 0x1.0ffffep-1f for FE_DOWNWARD, FE_TOWARDZERO
 LIBC_INLINE bool fenv_is_round_to_nearest() {
   static volatile float x = 0x1.0p-24f;
-  float y = 1.5f + x;
-  return (y == 1.5f - x);
+  float y = x;
+  return (1.5f + y == 1.5f - y);
 }
 
 // Quick free-standing test whether fegetround() == FE_TOWARDZERO.
@@ -78,50 +74,6 @@ LIBC_INLINE int quick_get_round() {
   return (2.0f + y == 2.0f) ? FE_TONEAREST : FE_UPWARD;
 }
 
-} // namespace generic
-
-LIBC_INLINE static constexpr bool fenv_is_round_up() {
-  if (cpp::is_constant_evaluated()) {
-    return false;
-  } else {
-    return generic::fenv_is_round_up();
-  }
-}
-
-LIBC_INLINE static constexpr bool fenv_is_round_down() {
-  if (cpp::is_constant_evaluated()) {
-    return false;
-  } else {
-    return generic::fenv_is_round_down();
-  }
-}
-
-LIBC_INLINE static constexpr bool fenv_is_round_to_nearest() {
-  if (cpp::is_constant_evaluated()) {
-    return true;
-  } else {
-    return generic::fenv_is_round_to_nearest();
-  }
-}
-
-LIBC_INLINE static constexpr bool fenv_is_round_to_zero() {
-  if (cpp::is_constant_evaluated()) {
-    return false;
-  } else {
-    return generic::fenv_is_round_to_zero();
-  }
-}
-
-// Quick free standing get rounding mode based on the above observations.
-LIBC_INLINE static constexpr int quick_get_round() {
-  if (cpp::is_constant_evaluated()) {
-    return FE_TONEAREST;
-  } else {
-    return generic::quick_get_round();
-  }
-}
-
-} // namespace fputil
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE::fputil
 
 #endif // LLVM_LIBC_SRC___SUPPORT_FPUTIL_ROUNDING_MODE_H

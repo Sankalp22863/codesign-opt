@@ -47,31 +47,26 @@
 // PPC64:#define __FLT_MIN__ 1.17549435e-38F
 // PPC64:#define __FLT_RADIX__ 2
 // PPC64:#define __HAVE_BSWAP__ 1
-// PPC64:#define __INT16_C(c) c
 // PPC64:#define __INT16_C_SUFFIX__
 // PPC64:#define __INT16_FMTd__ "hd"
 // PPC64:#define __INT16_FMTi__ "hi"
 // PPC64:#define __INT16_MAX__ 32767
 // PPC64:#define __INT16_TYPE__ short
-// PPC64:#define __INT32_C(c) c
 // PPC64:#define __INT32_C_SUFFIX__
 // PPC64:#define __INT32_FMTd__ "d"
 // PPC64:#define __INT32_FMTi__ "i"
 // PPC64:#define __INT32_MAX__ 2147483647
 // PPC64:#define __INT32_TYPE__ int
-// PPC64:#define __INT64_C(c) c##L
 // PPC64:#define __INT64_C_SUFFIX__ L
 // PPC64:#define __INT64_FMTd__ "ld"
 // PPC64:#define __INT64_FMTi__ "li"
 // PPC64:#define __INT64_MAX__ 9223372036854775807L
 // PPC64:#define __INT64_TYPE__ long int
-// PPC64:#define __INT8_C(c) c
 // PPC64:#define __INT8_C_SUFFIX__
 // PPC64:#define __INT8_FMTd__ "hhd"
 // PPC64:#define __INT8_FMTi__ "hhi"
 // PPC64:#define __INT8_MAX__ 127
 // PPC64:#define __INT8_TYPE__ signed char
-// PPC64:#define __INTMAX_C(c) c##L
 // PPC64:#define __INTMAX_C_SUFFIX__ L
 // PPC64:#define __INTMAX_FMTd__ "ld"
 // PPC64:#define __INTMAX_FMTi__ "li"
@@ -162,23 +157,18 @@
 // PPC64:#define __SIZE_TYPE__ long unsigned int
 // PPC64:#define __SIZE_WIDTH__ 64
 // PPC64-CXX:#define __STDCPP_DEFAULT_NEW_ALIGNMENT__ 16UL
-// PPC64:#define __UINT16_C(c) c
 // PPC64:#define __UINT16_C_SUFFIX__
 // PPC64:#define __UINT16_MAX__ 65535
 // PPC64:#define __UINT16_TYPE__ unsigned short
-// PPC64:#define __UINT32_C(c) c##U
 // PPC64:#define __UINT32_C_SUFFIX__ U
 // PPC64:#define __UINT32_MAX__ 4294967295U
 // PPC64:#define __UINT32_TYPE__ unsigned int
-// PPC64:#define __UINT64_C(c) c##UL
 // PPC64:#define __UINT64_C_SUFFIX__ UL
 // PPC64:#define __UINT64_MAX__ 18446744073709551615UL
 // PPC64:#define __UINT64_TYPE__ long unsigned int
-// PPC64:#define __UINT8_C(c) c
 // PPC64:#define __UINT8_C_SUFFIX__
 // PPC64:#define __UINT8_MAX__ 255
 // PPC64:#define __UINT8_TYPE__ unsigned char
-// PPC64:#define __UINTMAX_C(c) c##UL
 // PPC64:#define __UINTMAX_C_SUFFIX__ UL
 // PPC64:#define __UINTMAX_MAX__ 18446744073709551615UL
 // PPC64:#define __UINTMAX_TYPE__ long unsigned int
@@ -260,31 +250,26 @@
 // PPC64LE:#define __FLT_MIN__ 1.17549435e-38F
 // PPC64LE:#define __FLT_RADIX__ 2
 // PPC64LE:#define __HAVE_BSWAP__ 1
-// PPC64LE:#define __INT16_C(c) c
 // PPC64LE:#define __INT16_C_SUFFIX__
 // PPC64LE:#define __INT16_FMTd__ "hd"
 // PPC64LE:#define __INT16_FMTi__ "hi"
 // PPC64LE:#define __INT16_MAX__ 32767
 // PPC64LE:#define __INT16_TYPE__ short
-// PPC64LE:#define __INT32_C(c) c
 // PPC64LE:#define __INT32_C_SUFFIX__
 // PPC64LE:#define __INT32_FMTd__ "d"
 // PPC64LE:#define __INT32_FMTi__ "i"
 // PPC64LE:#define __INT32_MAX__ 2147483647
 // PPC64LE:#define __INT32_TYPE__ int
-// PPC64LE:#define __INT64_C(c) c##L
 // PPC64LE:#define __INT64_C_SUFFIX__ L
 // PPC64LE:#define __INT64_FMTd__ "ld"
 // PPC64LE:#define __INT64_FMTi__ "li"
 // PPC64LE:#define __INT64_MAX__ 9223372036854775807L
 // PPC64LE:#define __INT64_TYPE__ long int
-// PPC64LE:#define __INT8_C(c) c
 // PPC64LE:#define __INT8_C_SUFFIX__
 // PPC64LE:#define __INT8_FMTd__ "hhd"
 // PPC64LE:#define __INT8_FMTi__ "hhi"
 // PPC64LE:#define __INT8_MAX__ 127
 // PPC64LE:#define __INT8_TYPE__ signed char
-// PPC64LE:#define __INTMAX_C(c) c##L
 // PPC64LE:#define __INTMAX_C_SUFFIX__ L
 // PPC64LE:#define __INTMAX_FMTd__ "ld"
 // PPC64LE:#define __INTMAX_FMTi__ "li"
@@ -376,23 +361,18 @@
 // PPC64LE:#define __SIZE_TYPE__ long unsigned int
 // PPC64LE:#define __SIZE_WIDTH__ 64
 // PPC64LE:#define __STRUCT_PARM_ALIGN__ 16
-// PPC64LE:#define __UINT16_C(c) c
 // PPC64LE:#define __UINT16_C_SUFFIX__
 // PPC64LE:#define __UINT16_MAX__ 65535
 // PPC64LE:#define __UINT16_TYPE__ unsigned short
-// PPC64LE:#define __UINT32_C(c) c##U
 // PPC64LE:#define __UINT32_C_SUFFIX__ U
 // PPC64LE:#define __UINT32_MAX__ 4294967295U
 // PPC64LE:#define __UINT32_TYPE__ unsigned int
-// PPC64LE:#define __UINT64_C(c) c##UL
 // PPC64LE:#define __UINT64_C_SUFFIX__ UL
 // PPC64LE:#define __UINT64_MAX__ 18446744073709551615UL
 // PPC64LE:#define __UINT64_TYPE__ long unsigned int
-// PPC64LE:#define __UINT8_C(c) c
 // PPC64LE:#define __UINT8_C_SUFFIX__
 // PPC64LE:#define __UINT8_MAX__ 255
 // PPC64LE:#define __UINT8_TYPE__ unsigned char
-// PPC64LE:#define __UINTMAX_C(c) c##UL
 // PPC64LE:#define __UINTMAX_C_SUFFIX__ UL
 // PPC64LE:#define __UINTMAX_MAX__ 18446744073709551615UL
 // PPC64LE:#define __UINTMAX_TYPE__ long unsigned int
@@ -652,27 +632,6 @@
 // PPCPOWER10:#define __PCREL__ 1
 // PPCPOWER10-NOT:#define __ROP_PROTECT__ 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-none-none -target-cpu pwr11 -fno-signed-char < /dev/null | FileCheck -match-full-lines -check-prefix PPCPOWER11 %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-none-none -target-cpu power11 -fno-signed-char < /dev/null | FileCheck -match-full-lines -check-prefix PPCPOWER11 %s
-//
-// PPCPOWER11:#define _ARCH_PPC 1
-// PPCPOWER11:#define _ARCH_PPC64 1
-// PPCPOWER11:#define _ARCH_PPCGR 1
-// PPCPOWER11:#define _ARCH_PPCSQ 1
-// PPCPOWER11:#define _ARCH_PWR10 1
-// PPCPOWER11:#define _ARCH_PWR11 1
-// PPCPOWER11:#define _ARCH_PWR4 1
-// PPCPOWER11:#define _ARCH_PWR5 1
-// PPCPOWER11:#define _ARCH_PWR5X 1
-// PPCPOWER11:#define _ARCH_PWR6 1
-// PPCPOWER11-NOT:#define _ARCH_PWR6X 1
-// PPCPOWER11:#define _ARCH_PWR7 1
-// PPCPOWER11:#define _ARCH_PWR8 1
-// PPCPOWER11:#define _ARCH_PWR9 1
-// PPCPOWER11:#define __MMA__ 1
-// PPCPOWER11:#define __PCREL__ 1
-// PPCPOWER11-NOT:#define __ROP_PROTECT__ 1
-//
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-none-none -target-cpu future -fno-signed-char < /dev/null | FileCheck -match-full-lines -check-prefix PPCFUTURE %s
 //
 // PPCFUTURE:#define _ARCH_PPC 1
@@ -680,7 +639,6 @@
 // PPCFUTURE:#define _ARCH_PPCGR 1
 // PPCFUTURE:#define _ARCH_PPCSQ 1
 // PPCFUTURE:#define _ARCH_PWR10 1
-// PPCFUTURE:#define _ARCH_PWR11 1
 // PPCFUTURE:#define _ARCH_PWR4 1
 // PPCFUTURE:#define _ARCH_PWR5 1
 // PPCFUTURE:#define _ARCH_PWR5X 1
@@ -753,31 +711,26 @@
 // PPC64-AIX:#define __FLT_MIN__ 1.17549435e-38F
 // PPC64-AIX:#define __FLT_RADIX__ 2
 // PPC64-AIX-NOT:#define __ILP32__ 1
-// PPC64-AIX:#define __INT16_C(c) c
 // PPC64-AIX:#define __INT16_C_SUFFIX__
 // PPC64-AIX:#define __INT16_FMTd__ "hd"
 // PPC64-AIX:#define __INT16_FMTi__ "hi"
 // PPC64-AIX:#define __INT16_MAX__ 32767
 // PPC64-AIX:#define __INT16_TYPE__ short
-// PPC64-AIX:#define __INT32_C(c) c
 // PPC64-AIX:#define __INT32_C_SUFFIX__
 // PPC64-AIX:#define __INT32_FMTd__ "d"
 // PPC64-AIX:#define __INT32_FMTi__ "i"
 // PPC64-AIX:#define __INT32_MAX__ 2147483647
 // PPC64-AIX:#define __INT32_TYPE__ int
-// PPC64-AIX:#define __INT64_C(c) c##L
 // PPC64-AIX:#define __INT64_C_SUFFIX__ L
 // PPC64-AIX:#define __INT64_FMTd__ "ld"
 // PPC64-AIX:#define __INT64_FMTi__ "li"
 // PPC64-AIX:#define __INT64_MAX__ 9223372036854775807L
 // PPC64-AIX:#define __INT64_TYPE__ long int
-// PPC64-AIX:#define __INT8_C(c) c
 // PPC64-AIX:#define __INT8_C_SUFFIX__
 // PPC64-AIX:#define __INT8_FMTd__ "hhd"
 // PPC64-AIX:#define __INT8_FMTi__ "hhi"
 // PPC64-AIX:#define __INT8_MAX__ 127
 // PPC64-AIX:#define __INT8_TYPE__ signed char
-// PPC64-AIX:#define __INTMAX_C(c) c##L
 // PPC64-AIX:#define __INTMAX_C_SUFFIX__ L
 // PPC64-AIX:#define __INTMAX_FMTd__ "ld"
 // PPC64-AIX:#define __INTMAX_FMTi__ "li"
@@ -867,23 +820,18 @@
 // PPC64-AIX:#define __SIZE_MAX__ 18446744073709551615UL
 // PPC64-AIX:#define __SIZE_TYPE__ long unsigned int
 // PPC64-AIX:#define __SIZE_WIDTH__ 64
-// PPC64-AIX:#define __UINT16_C(c) c
 // PPC64-AIX:#define __UINT16_C_SUFFIX__
 // PPC64-AIX:#define __UINT16_MAX__ 65535
 // PPC64-AIX:#define __UINT16_TYPE__ unsigned short
-// PPC64-AIX:#define __UINT32_C(c) c##U
 // PPC64-AIX:#define __UINT32_C_SUFFIX__ U
 // PPC64-AIX:#define __UINT32_MAX__ 4294967295U
 // PPC64-AIX:#define __UINT32_TYPE__ unsigned int
-// PPC64-AIX:#define __UINT64_C(c) c##UL
 // PPC64-AIX:#define __UINT64_C_SUFFIX__ UL
 // PPC64-AIX:#define __UINT64_MAX__ 18446744073709551615UL
 // PPC64-AIX:#define __UINT64_TYPE__ long unsigned int
-// PPC64-AIX:#define __UINT8_C(c) c
 // PPC64-AIX:#define __UINT8_C_SUFFIX__
 // PPC64-AIX:#define __UINT8_MAX__ 255
 // PPC64-AIX:#define __UINT8_TYPE__ unsigned char
-// PPC64-AIX:#define __UINTMAX_C(c) c##UL
 // PPC64-AIX:#define __UINTMAX_C_SUFFIX__ UL
 // PPC64-AIX:#define __UINTMAX_MAX__ 18446744073709551615UL
 // PPC64-AIX:#define __UINTMAX_TYPE__ long unsigned int
@@ -960,31 +908,26 @@
 // PPC64-LINUX:#define __FLT_MIN__ 1.17549435e-38F
 // PPC64-LINUX:#define __FLT_RADIX__ 2
 // PPC64-LINUX:#define __HAVE_BSWAP__ 1
-// PPC64-LINUX:#define __INT16_C(c) c
 // PPC64-LINUX:#define __INT16_C_SUFFIX__
 // PPC64-LINUX:#define __INT16_FMTd__ "hd"
 // PPC64-LINUX:#define __INT16_FMTi__ "hi"
 // PPC64-LINUX:#define __INT16_MAX__ 32767
 // PPC64-LINUX:#define __INT16_TYPE__ short
-// PPC64-LINUX:#define __INT32_C(c) c
 // PPC64-LINUX:#define __INT32_C_SUFFIX__
 // PPC64-LINUX:#define __INT32_FMTd__ "d"
 // PPC64-LINUX:#define __INT32_FMTi__ "i"
 // PPC64-LINUX:#define __INT32_MAX__ 2147483647
 // PPC64-LINUX:#define __INT32_TYPE__ int
-// PPC64-LINUX:#define __INT64_C(c) c##L
 // PPC64-LINUX:#define __INT64_C_SUFFIX__ L
 // PPC64-LINUX:#define __INT64_FMTd__ "ld"
 // PPC64-LINUX:#define __INT64_FMTi__ "li"
 // PPC64-LINUX:#define __INT64_MAX__ 9223372036854775807L
 // PPC64-LINUX:#define __INT64_TYPE__ long int
-// PPC64-LINUX:#define __INT8_C(c) c
 // PPC64-LINUX:#define __INT8_C_SUFFIX__
 // PPC64-LINUX:#define __INT8_FMTd__ "hhd"
 // PPC64-LINUX:#define __INT8_FMTi__ "hhi"
 // PPC64-LINUX:#define __INT8_MAX__ 127
 // PPC64-LINUX:#define __INT8_TYPE__ signed char
-// PPC64-LINUX:#define __INTMAX_C(c) c##L
 // PPC64-LINUX:#define __INTMAX_C_SUFFIX__ L
 // PPC64-LINUX:#define __INTMAX_FMTd__ "ld"
 // PPC64-LINUX:#define __INTMAX_FMTi__ "li"
@@ -1074,23 +1017,18 @@
 // PPC64-LINUX:#define __SIZE_MAX__ 18446744073709551615UL
 // PPC64-LINUX:#define __SIZE_TYPE__ long unsigned int
 // PPC64-LINUX:#define __SIZE_WIDTH__ 64
-// PPC64-LINUX:#define __UINT16_C(c) c
 // PPC64-LINUX:#define __UINT16_C_SUFFIX__
 // PPC64-LINUX:#define __UINT16_MAX__ 65535
 // PPC64-LINUX:#define __UINT16_TYPE__ unsigned short
-// PPC64-LINUX:#define __UINT32_C(c) c##U
 // PPC64-LINUX:#define __UINT32_C_SUFFIX__ U
 // PPC64-LINUX:#define __UINT32_MAX__ 4294967295U
 // PPC64-LINUX:#define __UINT32_TYPE__ unsigned int
-// PPC64-LINUX:#define __UINT64_C(c) c##UL
 // PPC64-LINUX:#define __UINT64_C_SUFFIX__ UL
 // PPC64-LINUX:#define __UINT64_MAX__ 18446744073709551615UL
 // PPC64-LINUX:#define __UINT64_TYPE__ long unsigned int
-// PPC64-LINUX:#define __UINT8_C(c) c
 // PPC64-LINUX:#define __UINT8_C_SUFFIX__
 // PPC64-LINUX:#define __UINT8_MAX__ 255
 // PPC64-LINUX:#define __UINT8_TYPE__ unsigned char
-// PPC64-LINUX:#define __UINTMAX_C(c) c##UL
 // PPC64-LINUX:#define __UINTMAX_C_SUFFIX__ UL
 // PPC64-LINUX:#define __UINTMAX_MAX__ 18446744073709551615UL
 // PPC64-LINUX:#define __UINTMAX_TYPE__ long unsigned int
@@ -1150,21 +1088,3 @@
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-unknown-freebsd < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-FREEBSD %s
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64le-unknown-freebsd < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-FREEBSD %s
 // PPC64-FREEBSD-NOT: #define __LONG_DOUBLE_128__ 1
-
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-none-none < /dev/null | FileCheck -match-full-lines -check-prefix PPC64PWR4-RSQRT %s
-//
-// PPC64PWR4-RSQRT-NOT:#define __RSQRTEF__ 1
-// PPC64PWR4-RSQRT-NOT:#define __RSQRTE__ 1
-//
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-none-none -target-feature +frsqrte -target-feature +frsqrtes < /dev/null | FileCheck -match-full-lines -check-prefix PPC64PWR5-RSQRT %s
-//
-// PPC64PWR5-RSQRT:#define __RSQRTEF__ 1
-// PPC64PWR5-RSQRT:#define __RSQRTE__ 1
-
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-unknown-linux-gnu -target-feature -hard-float -xc /dev/null | FileCheck --check-prefix=PPC64-SOFTFLT %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64le-unknown-linux-gnu -target-feature -hard-float -xc /dev/null | FileCheck --check-prefix=PPC64-SOFTFLT %s
-// PPC64-SOFTFLT:#define _SOFT_DOUBLE 1
-// PPC64-SOFTFLT:#define _SOFT_FLOAT 1
-// PPC64-SOFTFLT:#define __NO_FPRS__ 1
-// PPC64-SOFTFLT-NOT:#define __RSQRTE__ 1
-// PPC64-SOFTFLT-NOT:#define __RSQRTEF__ 1

@@ -15,20 +15,18 @@
 #define LLVM_CLANG_SERIALIZATION_ASTRECORDWRITER_H
 
 #include "clang/AST/AbstractBasicWriter.h"
-#include "clang/AST/OpenACCClause.h"
 #include "clang/AST/OpenMPClause.h"
-#include "clang/Serialization/ASTReader.h"
 #include "clang/Serialization/ASTWriter.h"
 #include "clang/Serialization/SourceLocationEncoding.h"
 
 namespace clang {
 
-class OpenACCClause;
 class TypeLoc;
 
 /// An object for streaming information to a record.
 class ASTRecordWriter
     : public serialization::DataStreamBasicWriter<ASTRecordWriter> {
+  using LocSeq = SourceLocationSequence;
 
   ASTWriter *Writer;
   ASTWriter::RecordDataImpl *Record;
@@ -60,9 +58,8 @@ class ASTRecordWriter
 
 public:
   /// Construct a ASTRecordWriter that uses the default encoding scheme.
-  ASTRecordWriter(ASTContext &Context, ASTWriter &W,
-                  ASTWriter::RecordDataImpl &Record)
-      : DataStreamBasicWriter(Context), Writer(&W), Record(&Record) {}
+  ASTRecordWriter(ASTWriter &W, ASTWriter::RecordDataImpl &Record)
+      : DataStreamBasicWriter(W.getASTContext()), Writer(&W), Record(&Record) {}
 
   /// Construct a ASTRecordWriter that uses the same encoding scheme as another
   /// ASTRecordWriter.
@@ -115,13 +112,6 @@ public:
     Record->push_back(BitOffset);
   }
 
-  void AddLookupOffsets(const LookupBlockOffsets &Offsets) {
-    AddOffset(Offsets.LexicalOffset);
-    AddOffset(Offsets.VisibleOffset);
-    AddOffset(Offsets.ModuleLocalOffset);
-    AddOffset(Offsets.TULocalOffset);
-  }
-
   /// Add the given statement or expression to the queue of
   /// statements to emit.
   ///
@@ -136,8 +126,6 @@ public:
     AddStmt(const_cast<Stmt*>(S));
   }
 
-  void writeAttr(const Attr *A) { AddAttr(A); }
-
   /// Write an BTFTypeTagAttr object.
   void writeBTFTypeTagAttr(const BTFTypeTagAttr *A) { AddAttr(A); }
 
@@ -146,35 +134,16 @@ public:
   void AddFunctionDefinition(const FunctionDecl *FD);
 
   /// Emit a source location.
-  void AddSourceLocation(SourceLocation Loc) {
-    return Writer->AddSourceLocation(Loc, *Record);
+  void AddSourceLocation(SourceLocation Loc, LocSeq *Seq = nullptr) {
+    return Writer->AddSourceLocation(Loc, *Record, Seq);
   }
   void writeSourceLocation(SourceLocation Loc) {
     AddSourceLocation(Loc);
   }
 
-  void writeTypeCoupledDeclRefInfo(TypeCoupledDeclRefInfo Info) {
-    writeDeclRef(Info.getDecl());
-    writeBool(Info.isDeref());
-  }
-
-  void writeHLSLSpirvOperand(SpirvOperand Op) {
-    QualType ResultType;
-    llvm::APInt Value;
-
-    if (Op.isConstant() || Op.isType())
-      ResultType = Op.getResultType();
-    if (Op.isConstant() || Op.isLiteral())
-      Value = Op.getValue();
-
-    Record->push_back(Op.getKind());
-    writeQualType(ResultType);
-    writeAPInt(Value);
-  }
-
   /// Emit a source range.
-  void AddSourceRange(SourceRange Range) {
-    return Writer->AddSourceRange(Range, *Record);
+  void AddSourceRange(SourceRange Range, LocSeq *Seq = nullptr) {
+    return Writer->AddSourceRange(Range, *Record, Seq);
   }
 
   void writeBool(bool Value) {
@@ -187,10 +156,6 @@ public:
 
   void writeUInt64(uint64_t Value) {
     Record->push_back(Value);
-  }
-
-  void writeUnsignedOrNone(UnsignedOrNone Value) {
-    Record->push_back(Value.toInternalRepresentation());
   }
 
   /// Emit an integral value.
@@ -234,7 +199,7 @@ public:
 
   /// Emit a reference to a type.
   void AddTypeRef(QualType T) {
-    return Writer->AddTypeRef(getASTContext(), T, *Record);
+    return Writer->AddTypeRef(T, *Record);
   }
   void writeQualType(QualType T) {
     AddTypeRef(T);
@@ -244,10 +209,11 @@ public:
   void AddTypeSourceInfo(TypeSourceInfo *TInfo);
 
   /// Emits source location information for a type. Does not emit the type.
-  void AddTypeLoc(TypeLoc TL);
+  void AddTypeLoc(TypeLoc TL, LocSeq *Seq = nullptr);
 
   /// Emits a template argument location info.
-  void AddTemplateArgumentLocInfo(const TemplateArgumentLoc &Arg);
+  void AddTemplateArgumentLocInfo(TemplateArgument::ArgKind Kind,
+                                  const TemplateArgumentLocInfo &Arg);
 
   /// Emits a template argument location.
   void AddTemplateArgumentLoc(const TemplateArgumentLoc &Arg);
@@ -279,7 +245,7 @@ public:
   void AddQualifierInfo(const QualifierInfo &Info);
 
   /// Emit a nested name specifier.
-  void AddNestedNameSpecifier(NestedNameSpecifier NNS) {
+  void AddNestedNameSpecifier(NestedNameSpecifier *NNS) {
     writeNestedNameSpecifier(NNS);
   }
 
@@ -320,18 +286,6 @@ public:
 
   /// Writes data related to the OpenMP directives.
   void writeOMPChildren(OMPChildren *Data);
-
-  void writeOpenACCVarList(const OpenACCClauseWithVarList *C);
-
-  void writeOpenACCIntExprList(ArrayRef<Expr *> Exprs);
-
-  /// Writes out a single OpenACC Clause.
-  void writeOpenACCClause(const OpenACCClause *C);
-
-  /// Writes out a list of OpenACC clauses.
-  void writeOpenACCClauseList(ArrayRef<const OpenACCClause *> Clauses);
-
-  void AddOpenACCRoutineDeclAttr(const OpenACCRoutineDeclAttr *A);
 
   /// Emit a string.
   void AddString(StringRef Str) {

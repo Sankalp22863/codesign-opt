@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===-- CalleeNamespaceCheck.cpp ------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,6 +8,7 @@
 
 #include "CalleeNamespaceCheck.h"
 #include "NamespaceConstants.h"
+#include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 
 #include "clang/ASTMatchers/ASTMatchers.h"
@@ -19,7 +20,7 @@ namespace clang::tidy::llvm_libc {
 
 // Gets the outermost namespace of a DeclContext, right under the Translation
 // Unit.
-static const DeclContext *getOutermostNamespace(const DeclContext *Decl) {
+const DeclContext *getOutermostNamespace(const DeclContext *Decl) {
   const DeclContext *Parent = Decl->getParent();
   if (Parent->isTranslationUnit())
     return Decl;
@@ -50,7 +51,7 @@ void CalleeNamespaceCheck::check(const MatchFinder::MatchResult &Result) {
   // __llvm_libc, we're good.
   const auto *NS = dyn_cast<NamespaceDecl>(getOutermostNamespace(FuncDecl));
   if (NS && Result.SourceManager->isMacroBodyExpansion(NS->getLocation()) &&
-      NS->getName().starts_with(RequiredNamespaceRefStart))
+      NS->getName().starts_with(RequiredNamespaceStart))
     return;
 
   const DeclarationName &Name = FuncDecl->getDeclName();
@@ -61,7 +62,7 @@ void CalleeNamespaceCheck::check(const MatchFinder::MatchResult &Result) {
   diag(UsageSiteExpr->getBeginLoc(),
        "%0 must resolve to a function declared "
        "within the namespace defined by the '%1' macro")
-      << FuncDecl << RequiredNamespaceRefMacroName;
+      << FuncDecl << RequiredNamespaceMacroName;
 
   diag(FuncDecl->getLocation(), "resolves to this declaration",
        clang::DiagnosticIDs::Note);

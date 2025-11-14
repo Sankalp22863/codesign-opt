@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- CoroutineHostileRAII.cpp - clang-tidy ----------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -56,16 +56,16 @@ AST_MATCHER_P(Stmt, forEachPrevStmt, ast_matchers::internal::Matcher<Stmt>,
 // Matches the expression awaited by the `co_await`.
 AST_MATCHER_P(CoawaitExpr, awaitable, ast_matchers::internal::Matcher<Expr>,
               InnerMatcher) {
-  if (const Expr *E = Node.getOperand())
+  if (Expr *E = Node.getOperand())
     return InnerMatcher.matches(*E, Finder, Builder);
   return false;
 }
-} // namespace
 
-static auto typeWithNameIn(const std::vector<StringRef> &Names) {
+auto typeWithNameIn(const std::vector<StringRef> &Names) {
   return hasType(
       hasCanonicalType(hasDeclaration(namedDecl(hasAnyName(Names)))));
 }
+} // namespace
 
 CoroutineHostileRAIICheck::CoroutineHostileRAIICheck(StringRef Name,
                                                      ClangTidyContext *Context)
@@ -73,9 +73,7 @@ CoroutineHostileRAIICheck::CoroutineHostileRAIICheck(StringRef Name,
       RAIITypesList(utils::options::parseStringList(
           Options.get("RAIITypesList", "std::lock_guard;std::scoped_lock"))),
       AllowedAwaitablesList(utils::options::parseStringList(
-          Options.get("AllowedAwaitablesList", ""))),
-      AllowedCallees(
-          utils::options::parseStringList(Options.get("AllowedCallees", ""))) {}
+          Options.get("AllowedAwaitablesList", ""))) {}
 
 void CoroutineHostileRAIICheck::registerMatchers(MatchFinder *Finder) {
   // A suspension happens with co_await or co_yield.
@@ -83,9 +81,7 @@ void CoroutineHostileRAIICheck::registerMatchers(MatchFinder *Finder) {
                                     hasAttr(attr::Kind::ScopedLockable)))))
                             .bind("scoped-lockable");
   auto OtherRAII = varDecl(typeWithNameIn(RAIITypesList)).bind("raii");
-  auto AllowedSuspend = awaitable(
-      anyOf(typeWithNameIn(AllowedAwaitablesList),
-            callExpr(callee(functionDecl(hasAnyName(AllowedCallees))))));
+  auto AllowedSuspend = awaitable(typeWithNameIn(AllowedAwaitablesList));
   Finder->addMatcher(
       expr(anyOf(coawaitExpr(unless(AllowedSuspend)), coyieldExpr()),
            forEachPrevStmt(
@@ -115,7 +111,5 @@ void CoroutineHostileRAIICheck::storeOptions(
                 utils::options::serializeStringList(RAIITypesList));
   Options.store(Opts, "SafeAwaitableList",
                 utils::options::serializeStringList(AllowedAwaitablesList));
-  Options.store(Opts, "SafeCallees",
-                utils::options::serializeStringList(AllowedCallees));
 }
 } // namespace clang::tidy::misc

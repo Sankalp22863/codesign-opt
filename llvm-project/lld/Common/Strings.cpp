@@ -19,14 +19,10 @@
 using namespace llvm;
 using namespace lld;
 
-static bool isExact(StringRef Pattern) {
-  return Pattern.size() > 2 && Pattern.starts_with("\"") &&
-         Pattern.ends_with("\"");
-}
-
-SingleStringMatcher::SingleStringMatcher(StringRef Pattern)
-    : ExactMatch(isExact(Pattern)) {
-  if (ExactMatch) {
+SingleStringMatcher::SingleStringMatcher(StringRef Pattern) {
+  if (Pattern.size() > 2 && Pattern.starts_with("\"") &&
+      Pattern.ends_with("\"")) {
+    ExactMatch = true;
     ExactPattern = Pattern.substr(1, Pattern.size() - 2);
   } else {
     Expected<GlobPattern> Glob = GlobPattern::create(Pattern);
@@ -34,6 +30,7 @@ SingleStringMatcher::SingleStringMatcher(StringRef Pattern)
       error(toString(Glob.takeError()) + ": " + Pattern);
       return;
     }
+    ExactMatch = false;
     GlobPatternMatcher = *Glob;
   }
 }

@@ -32,11 +32,9 @@ def RuntimeVerifiableOpInterface : OpInterface<"RuntimeVerifiableOpInterface"> {
       /*retTy=*/"void",
       /*methodName=*/"generateRuntimeVerification",
       /*args=*/(ins "::mlir::OpBuilder &":$builder,
-                    "::mlir::Location":$loc,
-                    "function_ref<std::string(Operation *, StringRef)>":$generateErrorMessage)
+                    "::mlir::Location":$loc)
     >,
   ];
-
 }
 
 #endif // MLIR_INTERFACES_RUNTIMEVERIFIABLEOPINTERFACE

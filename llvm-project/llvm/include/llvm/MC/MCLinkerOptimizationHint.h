@@ -19,14 +19,13 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/Support/Compiler.h"
 #include <cassert>
 #include <cstdint>
 
 namespace llvm {
 
 class MachObjectWriter;
-class MCAssembler;
+class MCAsmLayout;
 class MCSymbol;
 class raw_ostream;
 
@@ -109,8 +108,8 @@ class MCLOHDirective {
   /// Emit this directive in \p OutStream using the information available
   /// in the given \p ObjWriter and \p Layout to get the address of the
   /// arguments within the object file.
-  void emit_impl(raw_ostream &OutStream,
-                 const MachObjectWriter &ObjWriter) const;
+  void emit_impl(raw_ostream &OutStream, const MachObjectWriter &ObjWriter,
+                 const MCAsmLayout &Layout) const;
 
 public:
   using LOHArgs = SmallVectorImpl<MCSymbol *>;
@@ -126,12 +125,12 @@ public:
 
   /// Emit this directive as:
   /// <kind, numArgs, addr1, ..., addrN>
-  LLVM_ABI void emit(const MCAssembler &Asm, MachObjectWriter &ObjWriter) const;
+  void emit(MachObjectWriter &ObjWriter, const MCAsmLayout &Layout) const;
 
   /// Get the size in bytes of this directive if emitted in \p ObjWriter with
   /// the given \p Layout.
-  LLVM_ABI uint64_t getEmitSize(const MCAssembler &Asm,
-                                const MachObjectWriter &ObjWriter) const;
+  uint64_t getEmitSize(const MachObjectWriter &ObjWriter,
+                       const MCAsmLayout &Layout) const;
 };
 
 class MCLOHContainer {
@@ -158,20 +157,20 @@ public:
   }
 
   /// Get the size of the directives if emitted.
-  uint64_t getEmitSize(const MCAssembler &Asm,
-                       const MachObjectWriter &ObjWriter) const {
+  uint64_t getEmitSize(const MachObjectWriter &ObjWriter,
+                       const MCAsmLayout &Layout) const {
     if (!EmitSize) {
       for (const MCLOHDirective &D : Directives)
-        EmitSize += D.getEmitSize(Asm, ObjWriter);
+        EmitSize += D.getEmitSize(ObjWriter, Layout);
     }
     return EmitSize;
   }
 
   /// Emit all Linker Optimization Hint in one big table.
   /// Each line of the table is emitted by LOHDirective::emit.
-  void emit(const MCAssembler &Asm, MachObjectWriter &ObjWriter) const {
+  void emit(MachObjectWriter &ObjWriter, const MCAsmLayout &Layout) const {
     for (const MCLOHDirective &D : Directives)
-      D.emit(Asm, ObjWriter);
+      D.emit(ObjWriter, Layout);
   }
 
   void reset() {

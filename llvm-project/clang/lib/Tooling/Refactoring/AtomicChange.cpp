@@ -1,4 +1,4 @@
-//===--- AtomicChange.cpp - AtomicChange implementation ---------*- C++ -*-===//
+//===--- AtomicChange.cpp - AtomicChange implementation -----------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -104,9 +104,9 @@ bool violatesColumnLimit(llvm::StringRef Code, unsigned ColumnLimit,
 }
 
 std::vector<Range>
-getRangesForFormatting(llvm::StringRef Code, unsigned ColumnLimit,
-                       ApplyChangesSpec::FormatOption Format,
-                       const clang::tooling::Replacements &Replaces) {
+getRangesForFormating(llvm::StringRef Code, unsigned ColumnLimit,
+                      ApplyChangesSpec::FormatOption Format,
+                      const clang::tooling::Replacements &Replaces) {
   // kNone suppresses formatting entirely.
   if (Format == ApplyChangesSpec::kNone)
     return {};
@@ -196,7 +196,8 @@ combineReplacementsInChanges(llvm::StringRef FilePath,
 AtomicChange::AtomicChange(const SourceManager &SM,
                            SourceLocation KeyPosition) {
   const FullSourceLoc FullKeyPosition(KeyPosition, SM);
-  auto FileIDAndOffset = FullKeyPosition.getSpellingLoc().getDecomposedLoc();
+  std::pair<FileID, unsigned> FileIDAndOffset =
+      FullKeyPosition.getSpellingLoc().getDecomposedLoc();
   OptionalFileEntryRef FE = SM.getFileEntryRefForID(FileIDAndOffset.first);
   assert(FE && "Cannot create AtomicChange with invalid location.");
   FilePath = std::string(FE->getName());
@@ -234,6 +235,7 @@ std::string AtomicChange::toYAMLString() {
 
   llvm::yaml::Output YAML(YamlContentStream);
   YAML << *this;
+  YamlContentStream.flush();
   return YamlContent;
 }
 
@@ -350,7 +352,7 @@ applyAtomicChanges(llvm::StringRef FilePath, llvm::StringRef Code,
 
   AllReplaces = AllReplaces.merge(HeaderSortingReplacements);
 
-  std::vector<Range> FormatRanges = getRangesForFormatting(
+  std::vector<Range> FormatRanges = getRangesForFormating(
       *ChangedCode, Spec.Style.ColumnLimit, Spec.Format, AllReplaces);
   if (!FormatRanges.empty()) {
     Replacements FormatReplacements =

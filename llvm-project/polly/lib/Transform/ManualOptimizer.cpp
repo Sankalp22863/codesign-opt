@@ -22,7 +22,6 @@
 #include "llvm/Transforms/Utils/LoopUtils.h"
 #include <optional>
 
-#include "polly/Support/PollyDebug.h"
 #define DEBUG_TYPE "polly-opt-manual"
 
 using namespace polly;
@@ -149,10 +148,10 @@ private:
   // transformed in innermost-first order.
   isl::schedule Result;
 
-  /// Check whether a schedule after a  transformation is legal. Return the old
+  /// Check wether a schedule after a  transformation is legal. Return the old
   /// schedule without the transformation.
   isl::schedule
-  checkDependencyViolation(llvm::MDNode *LoopMD, llvm::BasicBlock *CodeRegion,
+  checkDependencyViolation(llvm::MDNode *LoopMD, llvm::Value *CodeRegion,
                            const isl::schedule_node &OrigBand,
                            StringRef DebugLocAttr, StringRef TransPrefix,
                            StringRef RemarkName, StringRef TransformationName) {
@@ -160,13 +159,13 @@ private:
       return Result;
 
     LLVMContext &Ctx = LoopMD->getContext();
-    POLLY_DEBUG(dbgs() << "Dependency violation detected\n");
+    LLVM_DEBUG(dbgs() << "Dependency violation detected\n");
 
     DebugLoc TransformLoc = findTransformationDebugLoc(LoopMD, DebugLocAttr);
 
     if (IgnoreDepcheck) {
-      POLLY_DEBUG(dbgs() << "Still accepting transformation due to "
-                            "-polly-pragma-ignore-depcheck\n");
+      LLVM_DEBUG(dbgs() << "Still accepting transformation due to "
+                           "-polly-pragma-ignore-depcheck\n");
       if (ORE) {
         ORE->emit(
             OptimizationRemark(DEBUG_TYPE, RemarkName, TransformLoc, CodeRegion)
@@ -178,7 +177,7 @@ private:
       return Result;
     }
 
-    POLLY_DEBUG(dbgs() << "Rolling back transformation\n");
+    LLVM_DEBUG(dbgs() << "Rolling back transformation\n");
 
     if (ORE) {
       ORE->emit(DiagnosticInfoOptimizationFailure(DEBUG_TYPE, RemarkName,
@@ -235,7 +234,7 @@ public:
     // TODO: Works only for original loop; for transformed loops, should track
     // where the loop's body code comes from.
     Loop *Loop = Attr->OriginalLoop;
-    BasicBlock *CodeRegion = nullptr;
+    Value *CodeRegion = nullptr;
     if (Loop)
       CodeRegion = Loop->getHeader();
 

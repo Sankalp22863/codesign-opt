@@ -6,7 +6,6 @@ set (FILES
   HostInfoTest.cpp
   HostTest.cpp
   MainLoopTest.cpp
-  JSONTransportTest.cpp
   NativeProcessProtocolTest.cpp
   PipeTest.cpp
   ProcessLaunchInfoTest.cpp
@@ -16,10 +15,10 @@ set (FILES
   XMLTest.cpp
 )
 
-if (UNIX)
+if (CMAKE_SYSTEM_NAME MATCHES "Linux|Android")
   list(APPEND FILES
-    posix/HostTest.cpp
-    posix/SupportTest.cpp
+    linux/HostTest.cpp
+    linux/SupportTest.cpp
   )
 endif()
 
@@ -37,9 +36,7 @@ add_lldb_unittest(HostTests
     lldbUtilityHelpers
     lldbHostHelpers
     LLVMTestingSupport
-
-  LINK_COMPONENTS
-    TargetParser
+    LLVMTargetParser
   )
 
 add_subdirectory(common)

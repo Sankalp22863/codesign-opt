@@ -118,7 +118,7 @@ private:
 
   /// Call fflush
   ///
-  /// @param Builder The builder used to insert the code.
+  /// @parma Builder The builder used to insert the code.
   static void createFlush(PollyIRBuilder &Builder);
 };
 } // namespace polly

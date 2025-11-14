@@ -9,6 +9,7 @@
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 
 #include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Bufferization/Transforms/OneShotAnalysis.h"
 #include "mlir/Dialect/Bufferization/Transforms/Transforms.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
@@ -48,7 +49,7 @@ LogicalResult linalg::linalgOpAnchoredEmptyTensorEliminationStep(
 
     for (OpOperand *in : op.getDpsInputOperands()) {
       // Skip non-tensor operands.
-      if (!isa<RankedTensorType>(in->get().getType()))
+      if (!in->get().getType().isa<RankedTensorType>())
         continue;
 
       // Find tensor.empty ops on the reverse SSA use-def chain. Only follow
@@ -58,7 +59,7 @@ LogicalResult linalg::linalgOpAnchoredEmptyTensorEliminationStep(
       config.followEquivalentOnly = true;
       config.alwaysIncludeLeaves = false;
       SetVector<Value> emptyTensors = state.findValueInReverseUseDefChain(
-          in, /*condition=*/
+          in->get(), /*condition=*/
           [&](Value val) {
             return val.getDefiningOp<tensor::EmptyOp>() &&
                    val.getType() == in->get().getType();

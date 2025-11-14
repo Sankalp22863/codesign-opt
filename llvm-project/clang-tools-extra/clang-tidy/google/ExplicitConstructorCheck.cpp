@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- ExplicitConstructorCheck.cpp - clang-tidy ------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -39,8 +39,8 @@ static SourceRange findToken(const SourceManager &Sources,
                              bool (*Pred)(const Token &)) {
   if (StartLoc.isMacroID() || EndLoc.isMacroID())
     return {};
-  const FileID File = Sources.getFileID(Sources.getSpellingLoc(StartLoc));
-  const StringRef Buf = Sources.getBufferData(File);
+  FileID File = Sources.getFileID(Sources.getSpellingLoc(StartLoc));
+  StringRef Buf = Sources.getBufferData(File);
   const char *StartChar = Sources.getCharacterData(StartLoc);
   Lexer Lex(StartLoc, LangOpts, StartChar, StartChar, Buf.end());
   Lex.SetCommentRetentionState(true);
@@ -79,21 +79,19 @@ static bool isStdInitializerList(QualType Type) {
 }
 
 void ExplicitConstructorCheck::check(const MatchFinder::MatchResult &Result) {
-  constexpr char NoExpressionWarningMessage[] =
+  constexpr char WarningMessage[] =
       "%0 must be marked explicit to avoid unintentional implicit conversions";
-  constexpr char WithExpressionWarningMessage[] =
-      "%0 explicit expression evaluates to 'false'";
 
   if (const auto *Conversion =
-          Result.Nodes.getNodeAs<CXXConversionDecl>("conversion")) {
+      Result.Nodes.getNodeAs<CXXConversionDecl>("conversion")) {
     if (Conversion->isOutOfLine())
       return;
-    const SourceLocation Loc = Conversion->getLocation();
+    SourceLocation Loc = Conversion->getLocation();
     // Ignore all macros until we learn to ignore specific ones (e.g. used in
     // gmock to define matchers).
     if (Loc.isMacroID())
       return;
-    diag(Loc, NoExpressionWarningMessage)
+    diag(Loc, WarningMessage)
         << Conversion << FixItHint::CreateInsertion(Loc, "explicit ");
     return;
   }
@@ -103,17 +101,15 @@ void ExplicitConstructorCheck::check(const MatchFinder::MatchResult &Result) {
       Ctor->getMinRequiredArguments() > 1)
     return;
 
-  const ExplicitSpecifier ExplicitSpec = Ctor->getExplicitSpecifier();
-
-  const bool TakesInitializerList = isStdInitializerList(
+  bool TakesInitializerList = isStdInitializerList(
       Ctor->getParamDecl(0)->getType().getNonReferenceType());
-  if (ExplicitSpec.isExplicit() &&
+  if (Ctor->isExplicit() &&
       (Ctor->isCopyOrMoveConstructor() || TakesInitializerList)) {
     auto IsKwExplicit = [](const Token &Tok) {
       return Tok.is(tok::raw_identifier) &&
              Tok.getRawIdentifier() == "explicit";
     };
-    const SourceRange ExplicitTokenRange =
+    SourceRange ExplicitTokenRange =
         findToken(*Result.SourceManager, getLangOpts(),
                   Ctor->getOuterLocStart(), Ctor->getEndLoc(), IsKwExplicit);
     StringRef ConstructorDescription;
@@ -134,31 +130,18 @@ void ExplicitConstructorCheck::check(const MatchFinder::MatchResult &Result) {
     return;
   }
 
-  if (ExplicitSpec.isExplicit() || Ctor->isCopyOrMoveConstructor() ||
+  if (Ctor->isExplicit() || Ctor->isCopyOrMoveConstructor() ||
       TakesInitializerList)
     return;
 
-  // Don't complain about explicit(false) or dependent expressions
-  const Expr *ExplicitExpr = ExplicitSpec.getExpr();
-  if (ExplicitExpr) {
-    ExplicitExpr = ExplicitExpr->IgnoreImplicit();
-    if (isa<CXXBoolLiteralExpr>(ExplicitExpr) ||
-        ExplicitExpr->isInstantiationDependent())
-      return;
-  }
-
-  const bool SingleArgument =
+  bool SingleArgument =
       Ctor->getNumParams() == 1 && !Ctor->getParamDecl(0)->isParameterPack();
-  const SourceLocation Loc = Ctor->getLocation();
-  auto Diag =
-      diag(Loc, ExplicitExpr ? WithExpressionWarningMessage
-                             : NoExpressionWarningMessage)
+  SourceLocation Loc = Ctor->getLocation();
+  diag(Loc, WarningMessage)
       << (SingleArgument
               ? "single-argument constructors"
-              : "constructors that are callable with a single argument");
-
-  if (!ExplicitExpr)
-    Diag << FixItHint::CreateInsertion(Loc, "explicit ");
+              : "constructors that are callable with a single argument")
+      << FixItHint::CreateInsertion(Loc, "explicit ");
 }
 
 } // namespace clang::tidy::google

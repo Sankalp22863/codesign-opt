@@ -32,9 +32,15 @@ struct ExpansionView {
   std::unique_ptr<SourceCoverageView> View;
 
   ExpansionView(const CounterMappingRegion &Region,
-                std::unique_ptr<SourceCoverageView> View);
-  ExpansionView(ExpansionView &&RHS);
-  ExpansionView &operator=(ExpansionView &&RHS);
+                std::unique_ptr<SourceCoverageView> View)
+      : Region(Region), View(std::move(View)) {}
+  ExpansionView(ExpansionView &&RHS)
+      : Region(std::move(RHS.Region)), View(std::move(RHS.View)) {}
+  ExpansionView &operator=(ExpansionView &&RHS) {
+    Region = std::move(RHS.Region);
+    View = std::move(RHS.View);
+    return *this;
+  }
 
   unsigned getLine() const { return Region.LineStart; }
   unsigned getStartCol() const { return Region.ColumnStart; }
@@ -52,7 +58,8 @@ struct InstantiationView {
   std::unique_ptr<SourceCoverageView> View;
 
   InstantiationView(StringRef FunctionName, unsigned Line,
-                    std::unique_ptr<SourceCoverageView> View);
+                    std::unique_ptr<SourceCoverageView> View)
+      : FunctionName(FunctionName), Line(Line), View(std::move(View)) {}
 
   friend bool operator<(const InstantiationView &LHS,
                         const InstantiationView &RHS) {
@@ -62,11 +69,13 @@ struct InstantiationView {
 
 /// A view that represents one or more branch regions on a given source line.
 struct BranchView {
-  SmallVector<CountedRegion, 0> Regions;
+  std::vector<CountedRegion> Regions;
+  std::unique_ptr<SourceCoverageView> View;
   unsigned Line;
 
-  BranchView(unsigned Line, SmallVector<CountedRegion, 0> Regions)
-      : Regions(std::move(Regions)), Line(Line) {}
+  BranchView(unsigned Line, ArrayRef<CountedRegion> Regions,
+             std::unique_ptr<SourceCoverageView> View)
+      : Regions(Regions), View(std::move(View)), Line(Line) {}
 
   unsigned getLine() const { return Line; }
 
@@ -77,11 +86,13 @@ struct BranchView {
 
 /// A view that represents one or more MCDC regions on a given source line.
 struct MCDCView {
-  SmallVector<MCDCRecord, 0> Records;
+  std::vector<MCDCRecord> Records;
+  std::unique_ptr<SourceCoverageView> View;
   unsigned Line;
 
-  MCDCView(unsigned Line, SmallVector<MCDCRecord, 0> Records)
-      : Records(std::move(Records)), Line(Line) {}
+  MCDCView(unsigned Line, ArrayRef<MCDCRecord> Records,
+           std::unique_ptr<SourceCoverageView> View)
+      : Records(Records), View(std::move(View)), Line(Line) {}
 
   unsigned getLine() const { return Line; }
 
@@ -122,7 +133,7 @@ public:
   static std::unique_ptr<CoveragePrinter>
   create(const CoverageViewOptions &Opts);
 
-  virtual ~CoveragePrinter() = default;
+  virtual ~CoveragePrinter() {}
 
   /// @name File Creation Interface
   /// @{
@@ -164,16 +175,14 @@ class SourceCoverageView {
   std::vector<ExpansionView> ExpansionSubViews;
 
   /// A container for all branches in the source on display.
-  SmallVector<BranchView, 0> BranchSubViews;
+  std::vector<BranchView> BranchSubViews;
 
   /// A container for all MCDC records in the source on display.
-  SmallVector<MCDCView, 0> MCDCSubViews;
+  std::vector<MCDCView> MCDCSubViews;
 
   /// A container for all instantiations (e.g template functions) in the source
   /// on display.
   std::vector<InstantiationView> InstantiationSubViews;
-
-  bool BinaryCounters;
 
   /// Get the first uncovered line number for the source file.
   unsigned getFirstUncoveredLineNo();
@@ -253,21 +262,14 @@ protected:
   virtual void renderTitle(raw_ostream &OS, StringRef CellText) = 0;
 
   /// Render the table header for a given source file.
-  virtual void renderTableHeader(raw_ostream &OS, unsigned IndentLevel) = 0;
+  virtual void renderTableHeader(raw_ostream &OS, unsigned FirstUncoveredLineNo,
+                                 unsigned IndentLevel) = 0;
 
   /// @}
 
   /// Format a count using engineering notation with 3 significant
   /// digits.
   static std::string formatCount(uint64_t N);
-
-  uint64_t BinaryCount(uint64_t N) const {
-    return (N && BinaryCounters ? 1 : N);
-  }
-
-  std::string formatBinaryCount(uint64_t N) const {
-    return formatCount(BinaryCount(N));
-  }
 
   /// Check if region marker output is expected for a line.
   bool shouldRenderRegionMarkers(const LineCoverageStats &LCS) const;
@@ -279,16 +281,14 @@ protected:
                      const CoverageViewOptions &Options,
                      CoverageData &&CoverageInfo)
       : SourceName(SourceName), File(File), Options(Options),
-        CoverageInfo(std::move(CoverageInfo)),
-        BinaryCounters(Options.BinaryCounters ||
-                       CoverageInfo.getSingleByteCoverage()) {}
+        CoverageInfo(std::move(CoverageInfo)) {}
 
 public:
   static std::unique_ptr<SourceCoverageView>
   create(StringRef SourceName, const MemoryBuffer &File,
          const CoverageViewOptions &Options, CoverageData &&CoverageInfo);
 
-  virtual ~SourceCoverageView() = default;
+  virtual ~SourceCoverageView() {}
 
   /// Return the source name formatted for the host OS.
   std::string getSourceName() const;
@@ -304,10 +304,12 @@ public:
                         std::unique_ptr<SourceCoverageView> View);
 
   /// Add a branch subview to this view.
-  void addBranch(unsigned Line, SmallVector<CountedRegion, 0> Regions);
+  void addBranch(unsigned Line, ArrayRef<CountedRegion> Regions,
+                 std::unique_ptr<SourceCoverageView> View);
 
   /// Add an MCDC subview to this view.
-  void addMCDCRecord(unsigned Line, SmallVector<MCDCRecord, 0> Records);
+  void addMCDCRecord(unsigned Line, ArrayRef<MCDCRecord> Records,
+                     std::unique_ptr<SourceCoverageView> View);
 
   /// Print the code coverage information for a specific portion of a
   /// source file to the output stream.

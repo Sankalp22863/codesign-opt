@@ -503,10 +503,8 @@ public:
 
       SPSInputBuffer IB(R.data(), R.size());
       if (auto Err = detail::ResultDeserializer<SPSRetTagT, RetT>::deserialize(
-              RetVal, R.data(), R.size())) {
+              RetVal, R.data(), R.size()))
         SDR(std::move(Err), std::move(RetVal));
-        return;
-      }
 
       SDR(Error::success(), std::move(RetVal));
     };
@@ -527,7 +525,7 @@ public:
   /// Handle a call to an async wrapper function.
   template <typename HandlerT, typename SendResultT>
   static void handleAsync(const char *ArgData, size_t ArgSize,
-                          SendResultT &&SendResult, HandlerT &&Handler) {
+                          HandlerT &&Handler, SendResultT &&SendResult) {
     using WFAHH = detail::WrapperFunctionAsyncHandlerHelper<
         std::remove_reference_t<HandlerT>, ResultSerializer, SPSTagTs...>;
     WFAHH::applyAsync(std::forward<HandlerT>(Handler),
@@ -586,12 +584,12 @@ public:
 ///   @code{.cpp}
 ///   class MyClass {
 ///   public:
-///     std::string myMethod(uint32_t, bool) { ... }
+///     void myMethod(uint32_t, bool) { ... }
 ///   };
 ///
 ///   // SPS Method signature -- note MyClass object address as first argument.
 ///   using SPSMyMethodWrapperSignature =
-///     SPSString(SPSExecutorAddr, uint32_t, bool);
+///     SPSTuple<SPSExecutorAddr, uint32_t, bool>;
 ///
 ///   WrapperFunctionResult
 ///   myMethodCallWrapper(const char *ArgData, size_t ArgSize) {

@@ -15,10 +15,10 @@ contains
     !DEF: /mm/foo/a ObjectEntity INTEGER(4)
     integer :: a = 3
     !$omp parallel
-    !DEF: /mm/foo/OtherConstruct1/a (OmpShared) HostAssoc INTEGER(4)
+    !REF: /mm/foo/a
     a = 1
     !DEF: /mm/i PUBLIC (Implicit, OmpThreadprivate) ObjectEntity INTEGER(4)
-    !REF: /mm/foo/OtherConstruct1/a
+    !REF: /mm/foo/a
     i = a
     !$omp end parallel
     !REF: /mm/foo/a
@@ -31,10 +31,10 @@ contains
     end block
   end subroutine foo
 end module mm
-!DEF: /TT MainProgram
-program TT
+!DEF: /tt MainProgram
+program tt
   !REF: /mm
   use :: mm
-  !DEF: /TT/foo (Subroutine) Use
+  !DEF: /tt/foo (Subroutine) Use
   call foo
-end program TT
+end program tt

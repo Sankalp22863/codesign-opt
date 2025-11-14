@@ -10,13 +10,12 @@
 
 #include "src/__support/OSUtil/syscall.h" // For internal syscall function.
 #include "src/__support/common.h"
-#include "src/__support/libc_errno.h"
-#include "src/__support/macros/config.h"
+#include "src/errno/libc_errno.h"
 
-#include "hdr/fcntl_macros.h"
+#include <fcntl.h>
 #include <sys/syscall.h> // For syscall numbers.
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
 LLVM_LIBC_FUNCTION(int, creat, (const char *path, int mode_flags)) {
 #ifdef SYS_open
@@ -27,11 +26,11 @@ LLVM_LIBC_FUNCTION(int, creat, (const char *path, int mode_flags)) {
       SYS_openat, AT_FDCWD, path, O_CREAT | O_WRONLY | O_TRUNC, mode_flags);
 #endif
 
-  if (fd < 0) {
-    libc_errno = -fd;
-    return -1;
-  }
-  return fd;
+  if (fd > 0)
+    return fd;
+
+  libc_errno = -fd;
+  return -1;
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

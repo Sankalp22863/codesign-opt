@@ -16,12 +16,14 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Config/config.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/Support/Endian.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Signals.h"
 #include <cctype>
+#include <cerrno>
 
 #if !defined(_MSC_VER) && !defined(__MINGW32__)
 #include <unistd.h>
@@ -561,7 +563,7 @@ void native(SmallVectorImpl<char> &Path, Style style) {
       Path = PathHome;
     }
   } else {
-    llvm::replace(Path, '\\', '/');
+    std::replace(Path.begin(), Path.end(), '\\', '/');
   }
 }
 
@@ -570,7 +572,7 @@ std::string convert_to_slash(StringRef path, Style style) {
     return std::string(path);
 
   std::string s = path.str();
-  llvm::replace(s, '\\', '/');
+  std::replace(s.begin(), s.end(), '\\', '/');
   return s;
 }
 
@@ -698,55 +700,6 @@ bool is_absolute_gnu(const Twine &path, Style style) {
 
 bool is_relative(const Twine &path, Style style) {
   return !is_absolute(path, style);
-}
-
-void make_absolute(const Twine &current_directory,
-                   SmallVectorImpl<char> &path) {
-  StringRef p(path.data(), path.size());
-
-  bool rootDirectory = has_root_directory(p);
-  bool rootName = has_root_name(p);
-
-  // Already absolute.
-  if ((rootName || is_style_posix(Style::native)) && rootDirectory)
-    return;
-
-  // All the following conditions will need the current directory.
-  SmallString<128> current_dir;
-  current_directory.toVector(current_dir);
-
-  // Relative path. Prepend the current directory.
-  if (!rootName && !rootDirectory) {
-    // Append path to the current directory.
-    append(current_dir, p);
-    // Set path to the result.
-    path.swap(current_dir);
-    return;
-  }
-
-  if (!rootName && rootDirectory) {
-    StringRef cdrn = root_name(current_dir);
-    SmallString<128> curDirRootName(cdrn.begin(), cdrn.end());
-    append(curDirRootName, p);
-    // Set path to the result.
-    path.swap(curDirRootName);
-    return;
-  }
-
-  if (rootName && !rootDirectory) {
-    StringRef pRootName = root_name(p);
-    StringRef bRootDirectory = root_directory(current_dir);
-    StringRef bRelativePath = relative_path(current_dir);
-    StringRef pRelativePath = relative_path(p);
-
-    SmallString<128> res;
-    append(res, pRootName, bRootDirectory, bRelativePath, pRelativePath);
-    path.swap(res);
-    return;
-  }
-
-  llvm_unreachable("All rootName and rootDirectory combinations should have "
-                   "occurred above!");
 }
 
 StringRef remove_leading_dotslash(StringRef Path, Style style) {
@@ -897,7 +850,7 @@ createTemporaryFile(const Twine &Model, int &ResultFD,
          "Model must be a simple filename.");
   // Use P.begin() so that createUniqueEntity doesn't need to recreate Storage.
   return createUniqueEntity(P.begin(), ResultFD, ResultPath, true, Type, Flags,
-                            all_read | all_write);
+                            owner_read | owner_write);
 }
 
 static std::error_code
@@ -952,6 +905,55 @@ getPotentiallyUniqueTempFileName(const Twine &Prefix, StringRef Suffix,
   return createTemporaryFile(Prefix, Suffix, Dummy, ResultPath, FS_Name);
 }
 
+void make_absolute(const Twine &current_directory,
+                   SmallVectorImpl<char> &path) {
+  StringRef p(path.data(), path.size());
+
+  bool rootDirectory = path::has_root_directory(p);
+  bool rootName = path::has_root_name(p);
+
+  // Already absolute.
+  if ((rootName || is_style_posix(Style::native)) && rootDirectory)
+    return;
+
+  // All of the following conditions will need the current directory.
+  SmallString<128> current_dir;
+  current_directory.toVector(current_dir);
+
+  // Relative path. Prepend the current directory.
+  if (!rootName && !rootDirectory) {
+    // Append path to the current directory.
+    path::append(current_dir, p);
+    // Set path to the result.
+    path.swap(current_dir);
+    return;
+  }
+
+  if (!rootName && rootDirectory) {
+    StringRef cdrn = path::root_name(current_dir);
+    SmallString<128> curDirRootName(cdrn.begin(), cdrn.end());
+    path::append(curDirRootName, p);
+    // Set path to the result.
+    path.swap(curDirRootName);
+    return;
+  }
+
+  if (rootName && !rootDirectory) {
+    StringRef pRootName      = path::root_name(p);
+    StringRef bRootDirectory = path::root_directory(current_dir);
+    StringRef bRelativePath  = path::relative_path(current_dir);
+    StringRef pRelativePath  = path::relative_path(p);
+
+    SmallString<128> res;
+    path::append(res, pRootName, bRootDirectory, bRelativePath, pRelativePath);
+    path.swap(res);
+    return;
+  }
+
+  llvm_unreachable("All rootName and rootDirectory combinations should have "
+                   "occurred above!");
+}
+
 std::error_code make_absolute(SmallVectorImpl<char> &path) {
   if (path::is_absolute(path))
     return {};
@@ -960,7 +962,7 @@ std::error_code make_absolute(SmallVectorImpl<char> &path) {
   if (std::error_code ec = current_path(current_dir))
     return ec;
 
-  path::make_absolute(current_dir, path);
+  make_absolute(current_dir, path);
   return {};
 }
 
@@ -1008,7 +1010,7 @@ static std::error_code copy_file_internal(int ReadFD, int WriteFD) {
   delete[] Buf;
 
   if (BytesRead < 0 || BytesWritten < 0)
-    return errnoAsErrorCode();
+    return std::error_code(errno, std::generic_category());
   return std::error_code();
 }
 
@@ -1058,7 +1060,7 @@ ErrorOr<MD5::MD5Result> md5_contents(int FD) {
   }
 
   if (BytesRead < 0)
-    return errnoAsErrorCode();
+    return std::error_code(errno, std::generic_category());
   MD5::MD5Result Result;
   Hash.final(Result);
   return Result;
@@ -1226,7 +1228,7 @@ TempFile::~TempFile() { assert(Done); }
 Error TempFile::discard() {
   Done = true;
   if (FD != -1 && close(FD) == -1) {
-    std::error_code EC = errnoAsErrorCode();
+    std::error_code EC = std::error_code(errno, std::generic_category());
     return errorCodeToError(EC);
   }
   FD = -1;
@@ -1295,8 +1297,10 @@ Error TempFile::keep(const Twine &Name) {
   if (!RenameEC)
     TmpName = "";
 
-  if (close(FD) == -1)
-    return errorCodeToError(errnoAsErrorCode());
+  if (close(FD) == -1) {
+    std::error_code EC(errno, std::generic_category());
+    return errorCodeToError(EC);
+  }
   FD = -1;
 
   return errorCodeToError(RenameEC);
@@ -1315,8 +1319,10 @@ Error TempFile::keep() {
 
   TmpName = "";
 
-  if (close(FD) == -1)
-    return errorCodeToError(errnoAsErrorCode());
+  if (close(FD) == -1) {
+    std::error_code EC(errno, std::generic_category());
+    return errorCodeToError(EC);
+  }
   FD = -1;
 
   return Error::success();

@@ -470,8 +470,6 @@ public:
     RT_BOR,  ///< Bitwise Or
     RT_BXOR, ///< Bitwise XOr
     RT_BAND, ///< Bitwise And
-
-    RT_BOTTOM, ///< Pseudo type for the data flow analysis
   };
 
   using SubscriptsTy = SmallVector<const SCEV *, 4>;
@@ -855,10 +853,10 @@ public:
   }
 
   /// Return a string representation of the access's reduction type.
-  std::string getReductionOperatorStr() const;
+  const std::string getReductionOperatorStr() const;
 
   /// Return a string representation of the reduction type @p RT.
-  static std::string getReductionOperatorStr(ReductionType RT);
+  static const std::string getReductionOperatorStr(ReductionType RT);
 
   /// Return the element type of the accessed array wrt. this access.
   Type *getElementType() const { return ElementType; }
@@ -1141,7 +1139,6 @@ class ScopStmt final {
   friend class ScopBuilder;
 
 public:
-  using MemoryAccessVec = llvm::SmallVector<MemoryAccess *, 8>;
   /// Create the ScopStmt from a BasicBlock.
   ScopStmt(Scop &parent, BasicBlock &bb, StringRef Name, Loop *SurroundingLoop,
            std::vector<Instruction *> Instructions);
@@ -1209,6 +1206,7 @@ private:
   /// The memory accesses of this statement.
   ///
   /// The only side effects of a statement are its memory accesses.
+  using MemoryAccessVec = llvm::SmallVector<MemoryAccess *, 8>;
   MemoryAccessVec MemAccs;
 
   /// Mapping from instructions to (scalar) memory accesses.
@@ -1494,7 +1492,7 @@ public:
   /// @param Access  The access to add.
   /// @param Prepend If true, will add @p Access before all other instructions
   ///                (instead of appending it).
-  void addAccess(MemoryAccess *Access, bool Prepend = false);
+  void addAccess(MemoryAccess *Access, bool Preprend = false);
 
   /// Remove a MemoryAccess from this statement.
   ///

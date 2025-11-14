@@ -14,7 +14,6 @@
 #ifndef LLVM_CLANG_LIB_CODEGEN_CGCALL_H
 #define LLVM_CLANG_LIB_CODEGEN_CGCALL_H
 
-#include "CGPointerAuthInfo.h"
 #include "CGValue.h"
 #include "EHScopeStack.h"
 #include "clang/AST/ASTFwd.h"
@@ -70,10 +69,6 @@ class CGCallee {
     Last = Virtual
   };
 
-  struct OrdinaryInfoStorage {
-    CGCalleeInfo AbstractInfo;
-    CGPointerAuthInfo PointerAuthInfo;
-  };
   struct BuiltinInfoStorage {
     const FunctionDecl *Decl;
     unsigned ID;
@@ -90,7 +85,7 @@ class CGCallee {
 
   SpecialKind KindOrFunctionPointer;
   union {
-    OrdinaryInfoStorage OrdinaryInfo;
+    CGCalleeInfo AbstractInfo;
     BuiltinInfoStorage BuiltinInfo;
     PseudoDestructorInfoStorage PseudoDestructorInfo;
     VirtualInfoStorage VirtualInfo;
@@ -109,13 +104,10 @@ public:
 
   /// Construct a callee.  Call this constructor directly when this
   /// isn't a direct call.
-  CGCallee(const CGCalleeInfo &abstractInfo, llvm::Value *functionPtr,
-           /* FIXME: make parameter pointerAuthInfo mandatory */
-           const CGPointerAuthInfo &pointerAuthInfo = CGPointerAuthInfo())
+  CGCallee(const CGCalleeInfo &abstractInfo, llvm::Value *functionPtr)
       : KindOrFunctionPointer(
             SpecialKind(reinterpret_cast<uintptr_t>(functionPtr))) {
-    OrdinaryInfo.AbstractInfo = abstractInfo;
-    OrdinaryInfo.PointerAuthInfo = pointerAuthInfo;
+    AbstractInfo = abstractInfo;
     assert(functionPtr && "configuring callee without function pointer");
     assert(functionPtr->getType()->isPointerTy());
   }
@@ -181,11 +173,7 @@ public:
     if (isVirtual())
       return VirtualInfo.MD;
     assert(isOrdinary());
-    return OrdinaryInfo.AbstractInfo;
-  }
-  const CGPointerAuthInfo &getPointerAuthInfo() const {
-    assert(isOrdinary());
-    return OrdinaryInfo.PointerAuthInfo;
+    return AbstractInfo;
   }
   llvm::Value *getFunctionPointer() const {
     assert(isOrdinary());
@@ -195,10 +183,6 @@ public:
     assert(isOrdinary());
     KindOrFunctionPointer =
         SpecialKind(reinterpret_cast<uintptr_t>(functionPtr));
-  }
-  void setPointerAuthInfo(CGPointerAuthInfo PointerAuth) {
-    assert(isOrdinary());
-    OrdinaryInfo.PointerAuthInfo = PointerAuth;
   }
 
   bool isVirtual() const {
@@ -285,10 +269,6 @@ public:
 
     /// A value to "use" after the writeback, or null.
     llvm::Value *ToUse;
-
-    /// An Expression (optional) that performs the writeback with any required
-    /// casting.
-    const Expr *WritebackExpr;
   };
 
   struct CallArgCleanup {
@@ -309,17 +289,19 @@ public:
   /// this, the old CallArgList retains its list of arguments, but must not
   /// be used to emit a call.
   void addFrom(const CallArgList &other) {
-    llvm::append_range(*this, other);
-    llvm::append_range(Writebacks, other.Writebacks);
-    llvm::append_range(CleanupsToDeactivate, other.CleanupsToDeactivate);
+    insert(end(), other.begin(), other.end());
+    Writebacks.insert(Writebacks.end(), other.Writebacks.begin(),
+                      other.Writebacks.end());
+    CleanupsToDeactivate.insert(CleanupsToDeactivate.end(),
+                                other.CleanupsToDeactivate.begin(),
+                                other.CleanupsToDeactivate.end());
     assert(!(StackBase && other.StackBase) && "can't merge stackbases");
     if (!StackBase)
       StackBase = other.StackBase;
   }
 
-  void addWriteback(LValue srcLV, Address temporary, llvm::Value *toUse,
-                    const Expr *writebackExpr = nullptr) {
-    Writeback writeback = {srcLV, temporary, toUse, writebackExpr};
+  void addWriteback(LValue srcLV, Address temporary, llvm::Value *toUse) {
+    Writeback writeback = {srcLV, temporary, toUse};
     Writebacks.push_back(writeback);
   }
 
@@ -352,11 +334,6 @@ public:
   /// memory.
   bool isUsingInAlloca() const { return StackBase; }
 
-  // Support reversing writebacks for MSVC ABI.
-  void reverseWritebacks() {
-    std::reverse(Writebacks.begin(), Writebacks.end());
-  }
-
 private:
   SmallVector<Writeback, 1> Writebacks;
 
@@ -380,11 +357,8 @@ class ReturnValueSlot {
   Address Addr = Address::invalid();
 
   // Return value slot flags
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IsVolatile : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IsUnused : 1;
-  LLVM_PREFERRED_TYPE(bool)
   unsigned IsExternallyDestructed : 1;
 
 public:
@@ -400,7 +374,6 @@ public:
   Address getValue() const { return Addr; }
   bool isUnused() const { return IsUnused; }
   bool isExternallyDestructed() const { return IsExternallyDestructed; }
-  Address getAddress() const { return Addr; }
 };
 
 /// Adds attributes to \p F according to our \p CodeGenOpts and \p LangOpts, as
@@ -410,10 +383,10 @@ public:
 /// This is useful for adding attrs to bitcode modules that you want to link
 /// with but don't control, such as CUDA's libdevice.  When linking with such
 /// a bitcode library, you might want to set e.g. its functions'
-/// "denormal-fp-math" attribute to match the attr of the functions you're
+/// "unsafe-fp-math" attribute to match the attr of the functions you're
 /// codegen'ing.  Otherwise, LLVM will interpret the bitcode module's lack of
-/// denormal-fp-math attrs as tantamount to denormal-fp-math=ieee, and then LLVM
-/// will propagate denormal-fp-math=ieee up to every transitive caller of a
+/// unsafe-fp-math attrs as tantamount to unsafe-fp-math=false, and then LLVM
+/// will propagate unsafe-fp-math=false up to every transitive caller of a
 /// function in the bitcode library!
 ///
 /// With the exception of fast-math attrs, this will only make the attributes
@@ -443,21 +416,15 @@ inline FnInfoOpts operator&(FnInfoOpts A, FnInfoOpts B) {
                                  llvm::to_underlying(B));
 }
 
-inline FnInfoOpts &operator|=(FnInfoOpts &A, FnInfoOpts B) {
+inline FnInfoOpts operator|=(FnInfoOpts A, FnInfoOpts B) {
   A = A | B;
   return A;
 }
 
-inline FnInfoOpts &operator&=(FnInfoOpts &A, FnInfoOpts B) {
+inline FnInfoOpts operator&=(FnInfoOpts A, FnInfoOpts B) {
   A = A & B;
   return A;
 }
-
-struct DisableDebugLocationUpdates {
-  CodeGenFunction &CGF;
-  DisableDebugLocationUpdates(CodeGenFunction &CGF);
-  ~DisableDebugLocationUpdates();
-};
 
 } // end namespace CodeGen
 } // end namespace clang

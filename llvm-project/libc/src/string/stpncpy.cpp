@@ -7,21 +7,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/string/stpncpy.h"
-#include "src/__support/macros/config.h"
-#include "src/__support/macros/null_check.h"
 #include "src/string/memory_utils/inline_bzero.h"
 
 #include "src/__support/common.h"
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
 LLVM_LIBC_FUNCTION(char *, stpncpy,
                    (char *__restrict dest, const char *__restrict src,
                     size_t n)) {
-  if (n) {
-    LIBC_CRASH_ON_NULLPTR(dest);
-    LIBC_CRASH_ON_NULLPTR(src);
-  }
   size_t i;
   // Copy up until \0 is found.
   for (i = 0; i < n && src[i] != '\0'; ++i)
@@ -32,4 +26,4 @@ LLVM_LIBC_FUNCTION(char *, stpncpy,
   return dest + i;
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

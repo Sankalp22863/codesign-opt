@@ -4,13 +4,11 @@ set(LLVM_LINK_COMPONENTS
   TargetParser
   )
 
-add_clang_library(clangTidyPortabilityModule STATIC
-  AvoidPragmaOnceCheck.cpp
+add_clang_library(clangTidyPortabilityModule
   PortabilityTidyModule.cpp
   RestrictSystemIncludesCheck.cpp
   SIMDIntrinsicsCheck.cpp
   StdAllocatorConstCheck.cpp
-  TemplateVirtualMemberFunctionCheck.cpp
 
   LINK_LIBS
   clangTidy

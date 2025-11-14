@@ -121,8 +121,7 @@ class Tool(TestToolBase):
 
         self.context.options.source_files.extend(list(new_source_files))
 
-        cond_controller_cmds = ["DexLimitSteps", "DexStepFunction", "DexContinue"]
-        if any(c in step_collection.commands for c in cond_controller_cmds):
+        if "DexLimitSteps" in step_collection.commands:
             debugger_controller = ConditionalController(self.context, step_collection)
         else:
             debugger_controller = DefaultController(self.context, step_collection)
@@ -151,7 +150,7 @@ class Tool(TestToolBase):
         """Returns the path to the test results directory for the test denoted
         by test_name.
         """
-        assert self.context.options.results_directory is not None
+        assert self.context.options.results_directory != None
         return os.path.join(
             self.context.options.results_directory,
             self._get_results_basename(test_name),

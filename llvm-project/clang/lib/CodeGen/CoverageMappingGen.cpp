@@ -12,16 +12,17 @@
 
 #include "CoverageMappingGen.h"
 #include "CodeGenFunction.h"
-#include "CodeGenPGO.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/FileManager.h"
+#include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Lex/Lexer.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ProfileData/Coverage/CoverageMapping.h"
 #include "llvm/ProfileData/Coverage/CoverageMappingReader.h"
 #include "llvm/ProfileData/Coverage/CoverageMappingWriter.h"
+#include "llvm/ProfileData/InstrProfReader.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include <optional>
@@ -30,26 +31,16 @@
 // is textually included.
 #define COVMAP_V3
 
-namespace llvm {
-cl::opt<bool>
-    EnableSingleByteCoverage("enable-single-byte-coverage",
-                             llvm::cl::ZeroOrMore,
-                             llvm::cl::desc("Enable single byte coverage"),
-                             llvm::cl::Hidden, llvm::cl::init(false));
-} // namespace llvm
-
 static llvm::cl::opt<bool> EmptyLineCommentCoverage(
     "emptyline-comment-coverage",
     llvm::cl::desc("Emit emptylines and comment lines as skipped regions (only "
                    "disable it on test)"),
     llvm::cl::init(true), llvm::cl::Hidden);
 
-namespace llvm::coverage {
-cl::opt<bool> SystemHeadersCoverage(
+llvm::cl::opt<bool> SystemHeadersCoverage(
     "system-headers-coverage",
-    cl::desc("Enable collecting coverage from system headers"), cl::init(false),
-    cl::Hidden);
-}
+    llvm::cl::desc("Enable collecting coverage from system headers"),
+    llvm::cl::init(false), llvm::cl::Hidden);
 
 using namespace clang;
 using namespace CodeGen;
@@ -104,6 +95,9 @@ void CoverageSourceInfo::updateNextTokLoc(SourceLocation Loc) {
 }
 
 namespace {
+using MCDCConditionID = CounterMappingRegion::MCDCConditionID;
+using MCDCParameters = CounterMappingRegion::MCDCParameters;
+
 /// A region of source code that can be mapped to a counter.
 class SourceMappingRegion {
   /// Primary Counter that is also used for Branch Regions for "True" branches.
@@ -113,7 +107,7 @@ class SourceMappingRegion {
   std::optional<Counter> FalseCount;
 
   /// Parameters used for Modified Condition/Decision Coverage
-  mcdc::Parameters MCDCParams;
+  MCDCParameters MCDCParams;
 
   /// The region's starting location.
   std::optional<SourceLocation> LocStart;
@@ -137,7 +131,7 @@ public:
         SkippedRegion(false) {}
 
   SourceMappingRegion(Counter Count, std::optional<Counter> FalseCount,
-                      mcdc::Parameters MCDCParams,
+                      MCDCParameters MCDCParams,
                       std::optional<SourceLocation> LocStart,
                       std::optional<SourceLocation> LocEnd,
                       bool GapRegion = false)
@@ -145,7 +139,7 @@ public:
         LocStart(LocStart), LocEnd(LocEnd), GapRegion(GapRegion),
         SkippedRegion(false) {}
 
-  SourceMappingRegion(mcdc::Parameters MCDCParams,
+  SourceMappingRegion(MCDCParameters MCDCParams,
                       std::optional<SourceLocation> LocStart,
                       std::optional<SourceLocation> LocEnd)
       : MCDCParams(MCDCParams), LocStart(LocStart), LocEnd(LocEnd),
@@ -191,25 +185,9 @@ public:
 
   bool isBranch() const { return FalseCount.has_value(); }
 
-  bool isMCDCBranch() const {
-    return std::holds_alternative<mcdc::BranchParameters>(MCDCParams);
-  }
+  bool isMCDCDecision() const { return MCDCParams.NumConditions != 0; }
 
-  const auto &getMCDCBranchParams() const {
-    return mcdc::getParams<const mcdc::BranchParameters>(MCDCParams);
-  }
-
-  bool isMCDCDecision() const {
-    return std::holds_alternative<mcdc::DecisionParameters>(MCDCParams);
-  }
-
-  const auto &getMCDCDecisionParams() const {
-    return mcdc::getParams<const mcdc::DecisionParameters>(MCDCParams);
-  }
-
-  const mcdc::Parameters &getMCDCParams() const { return MCDCParams; }
-
-  void resetMCDCParams() { MCDCParams = mcdc::Parameters(); }
+  const MCDCParameters &getMCDCParams() const { return MCDCParams; }
 };
 
 /// Spelling locations for the start and end of a source region.
@@ -300,36 +278,10 @@ public:
     return SM.getLocForEndOfFile(SM.getFileID(Loc));
   }
 
-  /// Find out where a macro is expanded. If the immediate result is a
-  /// <scratch space>, keep looking until the result isn't. Return a pair of
-  /// \c SourceLocation. The first object is always the begin sloc of found
-  /// result. The second should be checked by the caller: if it has value, it's
-  /// the end sloc of the found result. Otherwise the while loop didn't get
-  /// executed, which means the location wasn't changed and the caller has to
-  /// learn the end sloc from somewhere else.
-  std::pair<SourceLocation, std::optional<SourceLocation>>
-  getNonScratchExpansionLoc(SourceLocation Loc) {
-    std::optional<SourceLocation> EndLoc = std::nullopt;
-    while (Loc.isMacroID() &&
-           SM.isWrittenInScratchSpace(SM.getSpellingLoc(Loc))) {
-      auto ExpansionRange = SM.getImmediateExpansionRange(Loc);
-      Loc = ExpansionRange.getBegin();
-      EndLoc = ExpansionRange.getEnd();
-    }
-    return std::make_pair(Loc, EndLoc);
-  }
-
-  /// Find out where the current file is included or macro is expanded. If
-  /// \c AcceptScratch is set to false, keep looking for expansions until the
-  /// found sloc is not a <scratch space>.
-  SourceLocation getIncludeOrExpansionLoc(SourceLocation Loc,
-                                          bool AcceptScratch = true) {
-    if (!Loc.isMacroID())
-      return SM.getIncludeLoc(SM.getFileID(Loc));
-    Loc = SM.getImmediateExpansionRange(Loc).getBegin();
-    if (AcceptScratch)
-      return Loc;
-    return getNonScratchExpansionLoc(Loc).first;
+  /// Find out where the current file is included or macro is expanded.
+  SourceLocation getIncludeOrExpansionLoc(SourceLocation Loc) {
+    return Loc.isMacroID() ? SM.getImmediateExpansionRange(Loc).getBegin()
+                           : SM.getIncludeLoc(SM.getFileID(Loc));
   }
 
   /// Return true if \c Loc is a location in a built-in macro.
@@ -373,35 +325,16 @@ public:
 
     llvm::SmallSet<FileID, 8> Visited;
     SmallVector<std::pair<SourceLocation, unsigned>, 8> FileLocs;
-    for (auto &Region : SourceRegions) {
+    for (const auto &Region : SourceRegions) {
       SourceLocation Loc = Region.getBeginLoc();
-
-      // Replace Region with its definition if it is in <scratch space>.
-      auto NonScratchExpansionLoc = getNonScratchExpansionLoc(Loc);
-      auto EndLoc = NonScratchExpansionLoc.second;
-      if (EndLoc.has_value()) {
-        Loc = NonScratchExpansionLoc.first;
-        Region.setStartLoc(Loc);
-        Region.setEndLoc(EndLoc.value());
-      }
-
-      // Replace Loc with FileLoc if it is expanded with system headers.
-      if (!SystemHeadersCoverage && SM.isInSystemMacro(Loc)) {
-        auto BeginLoc = SM.getSpellingLoc(Loc);
-        auto EndLoc = SM.getSpellingLoc(Region.getEndLoc());
-        if (SM.isWrittenInSameFile(BeginLoc, EndLoc)) {
-          Loc = SM.getFileLoc(Loc);
-          Region.setStartLoc(Loc);
-          Region.setEndLoc(SM.getFileLoc(Region.getEndLoc()));
-        }
-      }
-
       FileID File = SM.getFileID(Loc);
       if (!Visited.insert(File).second)
         continue;
 
-      assert(SystemHeadersCoverage ||
-             !SM.isInSystemHeader(SM.getSpellingLoc(Loc)));
+      // Do not map FileID's associated with system headers unless collecting
+      // coverage from system headers is explicitly enabled.
+      if (!SystemHeadersCoverage && SM.isInSystemHeader(SM.getSpellingLoc(Loc)))
+        continue;
 
       unsigned Depth = 0;
       for (SourceLocation Parent = getIncludeOrExpansionLoc(Loc);
@@ -517,19 +450,13 @@ public:
       // Ignore regions from system headers unless collecting coverage from
       // system headers is explicitly enabled.
       if (!SystemHeadersCoverage &&
-          SM.isInSystemHeader(SM.getSpellingLoc(LocStart))) {
-        assert(!Region.isMCDCBranch() && !Region.isMCDCDecision() &&
-               "Don't suppress the condition in system headers");
+          SM.isInSystemHeader(SM.getSpellingLoc(LocStart)))
         continue;
-      }
 
       auto CovFileID = getCoverageFileID(LocStart);
       // Ignore regions that don't have a file, such as builtin macros.
-      if (!CovFileID) {
-        assert(!Region.isMCDCBranch() && !Region.isMCDCDecision() &&
-               "Don't suppress the condition in non-file regions");
+      if (!CovFileID)
         continue;
-      }
 
       SourceLocation LocEnd = Region.getEndLoc();
       assert(SM.isWrittenInSameFile(LocStart, LocEnd) &&
@@ -539,11 +466,8 @@ public:
       // This not only suppresses redundant regions, but sometimes prevents
       // creating regions with wrong counters if, for example, a statement's
       // body ends at the end of a nested macro.
-      if (Filter.count(std::make_pair(LocStart, LocEnd))) {
-        assert(!Region.isMCDCBranch() && !Region.isMCDCDecision() &&
-               "Don't suppress the condition");
+      if (Filter.count(std::make_pair(LocStart, LocEnd)))
         continue;
-      }
 
       // Find the spelling locations for the mapping region.
       SpellingRegion SR{SM, LocStart, LocEnd};
@@ -559,13 +483,13 @@ public:
             SR.ColumnEnd));
       } else if (Region.isBranch()) {
         MappingRegions.push_back(CounterMappingRegion::makeBranchRegion(
-            Region.getCounter(), Region.getFalseCounter(), *CovFileID,
-            SR.LineStart, SR.ColumnStart, SR.LineEnd, SR.ColumnEnd,
-            Region.getMCDCParams()));
+            Region.getCounter(), Region.getFalseCounter(),
+            Region.getMCDCParams(), *CovFileID, SR.LineStart, SR.ColumnStart,
+            SR.LineEnd, SR.ColumnEnd));
       } else if (Region.isMCDCDecision()) {
         MappingRegions.push_back(CounterMappingRegion::makeDecisionRegion(
-            Region.getMCDCDecisionParams(), *CovFileID, SR.LineStart,
-            SR.ColumnStart, SR.LineEnd, SR.ColumnEnd));
+            Region.getMCDCParams(), *CovFileID, SR.LineStart, SR.ColumnStart,
+            SR.LineEnd, SR.ColumnEnd));
       } else {
         MappingRegions.push_back(CounterMappingRegion::makeRegion(
             Region.getCounter(), *CovFileID, SR.LineStart, SR.ColumnStart,
@@ -579,7 +503,7 @@ public:
     SourceRegionFilter Filter;
     for (const auto &FM : FileIDMapping) {
       SourceLocation ExpandedLoc = FM.second.second;
-      SourceLocation ParentLoc = getIncludeOrExpansionLoc(ExpandedLoc, false);
+      SourceLocation ParentLoc = getIncludeOrExpansionLoc(ExpandedLoc);
       if (ParentLoc.isInvalid())
         continue;
 
@@ -647,7 +571,7 @@ struct EmptyCoverageMappingBuilder : public CoverageMappingBuilder {
     if (MappingRegions.empty())
       return;
 
-    CoverageMappingWriter Writer(FileIDMapping, {}, MappingRegions);
+    CoverageMappingWriter Writer(FileIDMapping, std::nullopt, MappingRegions);
     Writer.write(OS);
   }
 };
@@ -661,6 +585,11 @@ struct EmptyCoverageMappingBuilder : public CoverageMappingBuilder {
 /// are preserved in a map reference that is also provided during object
 /// creation.
 struct MCDCCoverageBuilder {
+
+  struct DecisionIDPair {
+    MCDCConditionID TrueID = 0;
+    MCDCConditionID FalseID = 0;
+  };
 
   /// The AST walk recursively visits nested logical-AND or logical-OR binary
   /// operator nodes and then visits their LHS and RHS children nodes.  As this
@@ -752,15 +681,14 @@ struct MCDCCoverageBuilder {
 private:
   CodeGenModule &CGM;
 
-  llvm::SmallVector<mcdc::ConditionIDs> DecisionStack;
-  MCDC::State &MCDCState;
-  const Stmt *DecisionStmt = nullptr;
-  mcdc::ConditionID NextID = 0;
+  llvm::SmallVector<DecisionIDPair> DecisionStack;
+  llvm::DenseMap<const Stmt *, MCDCConditionID> &CondIDs;
+  llvm::DenseMap<const Stmt *, unsigned> &MCDCBitmapMap;
+  MCDCConditionID NextID = 1;
   bool NotMapped = false;
 
-  /// Represent a sentinel value as a pair of final decisions for the bottom
-  // of DecisionStack.
-  static constexpr mcdc::ConditionIDs DecisionStackSentinel{-1, -1};
+  /// Represent a sentinel value of [0,0] for the bottom of DecisionStack.
+  static constexpr DecisionIDPair DecisionStackSentinel{0, 0};
 
   /// Is this a logical-AND operation?
   bool isLAnd(const BinaryOperator *E) const {
@@ -768,37 +696,38 @@ private:
   }
 
 public:
-  MCDCCoverageBuilder(CodeGenModule &CGM, MCDC::State &MCDCState)
-      : CGM(CGM), DecisionStack(1, DecisionStackSentinel),
-        MCDCState(MCDCState) {}
+  MCDCCoverageBuilder(CodeGenModule &CGM,
+                      llvm::DenseMap<const Stmt *, MCDCConditionID> &CondIDMap,
+                      llvm::DenseMap<const Stmt *, unsigned> &MCDCBitmapMap)
+      : CGM(CGM), DecisionStack(1, DecisionStackSentinel), CondIDs(CondIDMap),
+        MCDCBitmapMap(MCDCBitmapMap) {}
 
   /// Return whether the build of the control flow map is at the top-level
   /// (root) of a logical operator nest in a boolean expression prior to the
   /// assignment of condition IDs.
-  bool isIdle() const { return (NextID == 0 && !NotMapped); }
+  bool isIdle() const { return (NextID == 1 && !NotMapped); }
 
   /// Return whether any IDs have been assigned in the build of the control
   /// flow map, indicating that the map is being generated for this boolean
   /// expression.
-  bool isBuilding() const { return (NextID > 0); }
+  bool isBuilding() const { return (NextID > 1); }
 
   /// Set the given condition's ID.
-  void setCondID(const Expr *Cond, mcdc::ConditionID ID) {
-    MCDCState.BranchByStmt[CodeGenFunction::stripCond(Cond)] = {ID,
-                                                                DecisionStmt};
+  void setCondID(const Expr *Cond, MCDCConditionID ID) {
+    CondIDs[CodeGenFunction::stripCond(Cond)] = ID;
   }
 
   /// Return the ID of a given condition.
-  mcdc::ConditionID getCondID(const Expr *Cond) const {
-    auto I = MCDCState.BranchByStmt.find(CodeGenFunction::stripCond(Cond));
-    if (I == MCDCState.BranchByStmt.end())
-      return -1;
+  MCDCConditionID getCondID(const Expr *Cond) const {
+    auto I = CondIDs.find(CodeGenFunction::stripCond(Cond));
+    if (I == CondIDs.end())
+      return 0;
     else
-      return I->second.ID;
+      return I->second;
   }
 
   /// Return the LHS Decision ([0,0] if not set).
-  const mcdc::ConditionIDs &back() const { return DecisionStack.back(); }
+  const DecisionIDPair &back() const { return DecisionStack.back(); }
 
   /// Push the binary operator statement to track the nest level and assign IDs
   /// to the operator's LHS and RHS.  The RHS may be a larger subtree that is
@@ -808,47 +737,43 @@ public:
       return;
 
     // If binary expression is disqualified, don't do mapping.
-    if (!isBuilding() &&
-        !MCDCState.DecisionByStmt.contains(CodeGenFunction::stripCond(E)))
+    if (!isBuilding() && !MCDCBitmapMap.contains(CodeGenFunction::stripCond(E)))
       NotMapped = true;
 
     // Don't go any further if we don't need to map condition IDs.
     if (NotMapped)
       return;
 
-    if (NextID == 0) {
-      DecisionStmt = E;
-      assert(MCDCState.DecisionByStmt.contains(E));
-    }
-
-    const mcdc::ConditionIDs &ParentDecision = DecisionStack.back();
+    const DecisionIDPair &ParentDecision = DecisionStack.back();
 
     // If the operator itself has an assigned ID, this means it represents a
     // larger subtree.  In this case, assign that ID to its LHS node.  Its RHS
     // will receive a new ID below. Otherwise, assign ID+1 to LHS.
-    if (MCDCState.BranchByStmt.contains(CodeGenFunction::stripCond(E)))
+    if (CondIDs.contains(CodeGenFunction::stripCond(E)))
       setCondID(E->getLHS(), getCondID(E));
     else
       setCondID(E->getLHS(), NextID++);
 
     // Assign a ID+1 for the RHS.
-    mcdc::ConditionID RHSid = NextID++;
+    MCDCConditionID RHSid = NextID++;
     setCondID(E->getRHS(), RHSid);
 
     // Push the LHS decision IDs onto the DecisionStack.
     if (isLAnd(E))
-      DecisionStack.push_back({ParentDecision[false], RHSid});
+      DecisionStack.push_back({RHSid, ParentDecision.FalseID});
     else
-      DecisionStack.push_back({RHSid, ParentDecision[true]});
+      DecisionStack.push_back({ParentDecision.TrueID, RHSid});
   }
 
   /// Pop and return the LHS Decision ([0,0] if not set).
-  mcdc::ConditionIDs pop() {
+  DecisionIDPair pop() {
     if (!CGM.getCodeGenOpts().MCDCCoverage || NotMapped)
-      return DecisionStackSentinel;
+      return DecisionStack.front();
 
     assert(DecisionStack.size() > 1);
-    return DecisionStack.pop_back_val();
+    DecisionIDPair D = DecisionStack.back();
+    DecisionStack.pop_back();
+    return D;
   }
 
   /// Return the total number of conditions and reset the state. The number of
@@ -863,15 +788,15 @@ public:
     // Reset state if not doing mapping.
     if (NotMapped) {
       NotMapped = false;
-      assert(NextID == 0);
+      assert(NextID == 1);
       return 0;
     }
 
     // Set number of conditions and reset.
-    unsigned TotalConds = NextID;
+    unsigned TotalConds = NextID - 1;
 
     // Reset ID back to beginning.
-    NextID = 0;
+    NextID = 1;
 
     return TotalConds;
   }
@@ -883,16 +808,13 @@ struct CounterCoverageMappingBuilder
     : public CoverageMappingBuilder,
       public ConstStmtVisitor<CounterCoverageMappingBuilder> {
   /// The map of statements to count values.
-  llvm::DenseMap<const Stmt *, CounterPair> &CounterMap;
+  llvm::DenseMap<const Stmt *, unsigned> &CounterMap;
 
-  MCDC::State &MCDCState;
+  /// The map of statements to bitmap coverage object values.
+  llvm::DenseMap<const Stmt *, unsigned> &MCDCBitmapMap;
 
   /// A stack of currently live regions.
   llvm::SmallVector<SourceMappingRegion> RegionStack;
-
-  /// Set if the Expr should be handled as a leaf even if it is kind of binary
-  /// logical ops (&&, ||).
-  llvm::DenseSet<const Stmt *> LeafExprSet;
 
   /// An object to manage MCDC regions.
   MCDCCoverageBuilder MCDCBuilder;
@@ -913,8 +835,6 @@ struct CounterCoverageMappingBuilder
 
   /// Return a counter for the subtraction of \c RHS from \c LHS
   Counter subtractCounters(Counter LHS, Counter RHS, bool Simplify = true) {
-    assert(!llvm::EnableSingleByteCoverage &&
-           "cannot add counters when single byte coverage mode is enabled");
     return Builder.subtract(LHS, RHS, Simplify);
   }
 
@@ -932,52 +852,10 @@ struct CounterCoverageMappingBuilder
   ///
   /// This should only be called on statements that have a dedicated counter.
   Counter getRegionCounter(const Stmt *S) {
-    return Counter::getCounter(CounterMap[S].Executed);
+    return Counter::getCounter(CounterMap[S]);
   }
 
-  struct BranchCounterPair {
-    Counter Executed; ///< The Counter previously assigned.
-    Counter Skipped;  ///< An expression (Parent-Executed), or equivalent to it.
-  };
-
-  /// Retrieve or assign the pair of Counter(s).
-  ///
-  /// This returns BranchCounterPair {Executed, Skipped}.
-  /// Executed is the Counter associated with S assigned by an earlier
-  /// CounterMapping pass.
-  /// Skipped may be an expression (Executed - ParentCnt) or newly
-  /// assigned Counter in EnableSingleByteCoverage, as subtract
-  /// expressions are not available in this mode.
-  ///
-  /// \param S Key to the CounterMap
-  /// \param ParentCnt The Counter representing how many times S is evaluated.
-  /// \param SkipCntForOld (To be removed later) Optional fake Counter
-  ///                      to override Skipped for adjustment of
-  ///                      expressions in the old behavior of
-  ///                      EnableSingleByteCoverage that is unaware of
-  ///                      Branch coverage.
-  BranchCounterPair
-  getBranchCounterPair(const Stmt *S, Counter ParentCnt,
-                       std::optional<Counter> SkipCntForOld = std::nullopt) {
-    Counter ExecCnt = getRegionCounter(S);
-
-    // The old behavior of SingleByte is unaware of Branches.
-    // Will be pruned after the migration of SingleByte.
-    if (llvm::EnableSingleByteCoverage) {
-      assert(SkipCntForOld &&
-             "SingleByte must provide SkipCntForOld as a fake Skipped count.");
-      return {ExecCnt, *SkipCntForOld};
-    }
-
-    return {ExecCnt, Builder.subtract(ParentCnt, ExecCnt)};
-  }
-
-  bool IsCounterEqual(Counter OutCount, Counter ParentCount) {
-    if (OutCount == ParentCount)
-      return true;
-
-    return false;
-  }
+  unsigned getRegionBitmap(const Stmt *S) { return MCDCBitmapMap[S]; }
 
   /// Push a region onto the stack.
   ///
@@ -987,7 +865,8 @@ struct CounterCoverageMappingBuilder
                     std::optional<SourceLocation> StartLoc = std::nullopt,
                     std::optional<SourceLocation> EndLoc = std::nullopt,
                     std::optional<Counter> FalseCount = std::nullopt,
-                    const mcdc::Parameters &BranchParams = std::monostate()) {
+                    MCDCConditionID ID = 0, MCDCConditionID TrueID = 0,
+                    MCDCConditionID FalseID = 0) {
 
     if (StartLoc && !FalseCount) {
       MostRecentLocation = *StartLoc;
@@ -1006,16 +885,19 @@ struct CounterCoverageMappingBuilder
       StartLoc = std::nullopt;
     if (EndLoc && EndLoc->isInvalid())
       EndLoc = std::nullopt;
-    RegionStack.emplace_back(Count, FalseCount, BranchParams, StartLoc, EndLoc);
+    RegionStack.emplace_back(Count, FalseCount,
+                             MCDCParameters{0, 0, ID, TrueID, FalseID},
+                             StartLoc, EndLoc);
 
     return RegionStack.size() - 1;
   }
 
-  size_t pushRegion(const mcdc::DecisionParameters &DecisionParams,
+  size_t pushRegion(unsigned BitmapIdx, unsigned Conditions,
                     std::optional<SourceLocation> StartLoc = std::nullopt,
                     std::optional<SourceLocation> EndLoc = std::nullopt) {
 
-    RegionStack.emplace_back(DecisionParams, StartLoc, EndLoc);
+    RegionStack.emplace_back(MCDCParameters{BitmapIdx, Conditions}, StartLoc,
+                             EndLoc);
 
     return RegionStack.size() - 1;
   }
@@ -1136,12 +1018,21 @@ struct CounterCoverageMappingBuilder
     return ExitCount;
   }
 
+  /// Determine whether the given condition can be constant folded.
+  bool ConditionFoldsToBool(const Expr *Cond) {
+    Expr::EvalResult Result;
+    return (Cond->EvaluateAsInt(Result, CVM.getCodeGenModule().getContext()));
+  }
+
+  using MCDCDecisionIDPair = MCDCCoverageBuilder::DecisionIDPair;
+
   /// Create a Branch Region around an instrumentable condition for coverage
   /// and add it to the function's SourceRegions.  A branch region tracks a
   /// "True" counter and a "False" counter for boolean expressions that
   /// result in the generation of a branch.
-  void createBranchRegion(const Expr *C, Counter TrueCnt, Counter FalseCnt,
-                          const mcdc::ConditionIDs &Conds = {}) {
+  void
+  createBranchRegion(const Expr *C, Counter TrueCnt, Counter FalseCnt,
+                     const MCDCDecisionIDPair &IDPair = MCDCDecisionIDPair()) {
     // Check for NULL conditions.
     if (!C)
       return;
@@ -1150,14 +1041,10 @@ struct CounterCoverageMappingBuilder
     // region onto RegionStack but immediately pop it (which adds it to the
     // function's SourceRegions) because it doesn't apply to any other source
     // code other than the Condition.
-    // With !SystemHeadersCoverage, binary logical ops in system headers may be
-    // treated as instrumentable conditions.
-    if (CodeGenFunction::isInstrumentedCondition(C) ||
-        LeafExprSet.count(CodeGenFunction::stripCond(C))) {
-      mcdc::Parameters BranchParams;
-      mcdc::ConditionID ID = MCDCBuilder.getCondID(C);
-      if (ID >= 0)
-        BranchParams = mcdc::BranchParameters{ID, Conds};
+    if (CodeGenFunction::isInstrumentedCondition(C)) {
+      MCDCConditionID ID = MCDCBuilder.getCondID(C);
+      MCDCConditionID TrueID = IDPair.TrueID;
+      MCDCConditionID FalseID = IDPair.FalseID;
 
       // If a condition can fold to true or false, the corresponding branch
       // will be removed.  Create a region with both counters hard-coded to
@@ -1165,37 +1052,31 @@ struct CounterCoverageMappingBuilder
       // Alternatively, we can prevent any optimization done via
       // constant-folding by ensuring that ConstantFoldsToSimpleInteger() in
       // CodeGenFunction.c always returns false, but that is very heavy-handed.
-      Expr::EvalResult Result;
-      if (C->EvaluateAsInt(Result, CVM.getCodeGenModule().getContext())) {
-        if (Result.Val.getInt().getBoolValue())
-          FalseCnt = Counter::getZero();
-        else
-          TrueCnt = Counter::getZero();
-      }
-      popRegions(
-          pushRegion(TrueCnt, getStart(C), getEnd(C), FalseCnt, BranchParams));
+      if (ConditionFoldsToBool(C))
+        popRegions(pushRegion(Counter::getZero(), getStart(C), getEnd(C),
+                              Counter::getZero(), ID, TrueID, FalseID));
+      else
+        // Otherwise, create a region with the True counter and False counter.
+        popRegions(pushRegion(TrueCnt, getStart(C), getEnd(C), FalseCnt, ID,
+                              TrueID, FalseID));
     }
   }
 
   /// Create a Decision Region with a BitmapIdx and number of Conditions. This
   /// type of region "contains" branch regions, one for each of the conditions.
   /// The visualization tool will group everything together.
-  void createDecisionRegion(const Expr *C,
-                            const mcdc::DecisionParameters &DecisionParams) {
-    popRegions(pushRegion(DecisionParams, getStart(C), getEnd(C)));
+  void createDecisionRegion(const Expr *C, unsigned BitmapIdx, unsigned Conds) {
+    popRegions(pushRegion(BitmapIdx, Conds, getStart(C), getEnd(C)));
   }
 
   /// Create a Branch Region around a SwitchCase for code coverage
   /// and add it to the function's SourceRegions.
-  /// Returns Counter that corresponds to SC.
-  Counter createSwitchCaseRegion(const SwitchCase *SC, Counter ParentCount) {
+  void createSwitchCaseRegion(const SwitchCase *SC, Counter TrueCnt,
+                              Counter FalseCnt) {
     // Push region onto RegionStack but immediately pop it (which adds it to
     // the function's SourceRegions) because it doesn't apply to any other
     // source other than the SwitchCase.
-    Counter TrueCnt = getRegionCounter(SC);
-    popRegions(pushRegion(TrueCnt, getStart(SC), SC->getColonLoc(),
-                          subtractCounters(ParentCount, TrueCnt)));
-    return TrueCnt;
+    popRegions(pushRegion(TrueCnt, getStart(SC), SC->getColonLoc(), FalseCnt));
   }
 
   /// Check whether a region with bounds \c StartLoc and \c EndLoc
@@ -1268,9 +1149,12 @@ struct CounterCoverageMappingBuilder
         // we've seen this region.
         if (StartLocs.insert(Loc).second) {
           if (I.isBranch())
-            SourceRegions.emplace_back(I.getCounter(), I.getFalseCounter(),
-                                       I.getMCDCParams(), Loc,
-                                       getEndOfFileOrMacro(Loc), I.isBranch());
+            SourceRegions.emplace_back(
+                I.getCounter(), I.getFalseCounter(),
+                MCDCParameters{0, 0, I.getMCDCParams().ID,
+                               I.getMCDCParams().TrueID,
+                               I.getMCDCParams().FalseID},
+                Loc, getEndOfFileOrMacro(Loc), I.isBranch());
           else
             SourceRegions.emplace_back(I.getCounter(), Loc,
                                        getEndOfFileOrMacro(Loc));
@@ -1443,7 +1327,7 @@ struct CounterCoverageMappingBuilder
       return;
     assert(SpellingRegion(SM, NewStartLoc, EndLoc).isInSourceOrder());
     handleFileExit(NewStartLoc);
-    size_t Index = pushRegion(Counter{}, NewStartLoc, EndLoc);
+    size_t Index = pushRegion({}, NewStartLoc, EndLoc);
     getRegion().setSkipped(true);
     handleFileExit(EndLoc);
     popRegions(Index);
@@ -1458,10 +1342,13 @@ struct CounterCoverageMappingBuilder
 
   CounterCoverageMappingBuilder(
       CoverageMappingModuleGen &CVM,
-      llvm::DenseMap<const Stmt *, CounterPair> &CounterMap,
-      MCDC::State &MCDCState, SourceManager &SM, const LangOptions &LangOpts)
+      llvm::DenseMap<const Stmt *, unsigned> &CounterMap,
+      llvm::DenseMap<const Stmt *, unsigned> &MCDCBitmapMap,
+      llvm::DenseMap<const Stmt *, MCDCConditionID> &CondIDMap,
+      SourceManager &SM, const LangOptions &LangOpts)
       : CoverageMappingBuilder(CVM, SM, LangOpts), CounterMap(CounterMap),
-        MCDCState(MCDCState), MCDCBuilder(CVM.getCodeGenModule(), MCDCState) {}
+        MCDCBitmapMap(MCDCBitmapMap),
+        MCDCBuilder(CVM.getCodeGenModule(), CondIDMap, MCDCBitmapMap) {}
 
   /// Write the mapping data to the output stream
   void write(llvm::raw_ostream &OS) {
@@ -1504,14 +1391,6 @@ struct CounterCoverageMappingBuilder
     if (SaveTerminateStmt)
       HasTerminateStmt = true;
     handleFileExit(getEnd(S));
-  }
-
-  void VisitStmtExpr(const StmtExpr *E) {
-    Visit(E->getSubStmt());
-    // Any region termination (such as a noreturn CallExpr) within the statement
-    // expression has been handled by visiting the sub-statement. The visitor
-    // cannot be at a terminate statement leaving the statement expression.
-    HasTerminateStmt = false;
   }
 
   void VisitDecl(const Decl *D) {
@@ -1565,10 +1444,6 @@ struct CounterCoverageMappingBuilder
     terminateRegion(S);
   }
 
-  void VisitCoroutineSuspendExpr(const CoroutineSuspendExpr *E) {
-    Visit(E->getOperand());
-  }
-
   void VisitCXXThrowExpr(const CXXThrowExpr *E) {
     extendRegion(E);
     if (E->getSubExpr())
@@ -1589,9 +1464,8 @@ struct CounterCoverageMappingBuilder
 
   void VisitBreakStmt(const BreakStmt *S) {
     assert(!BreakContinueStack.empty() && "break not in a loop or switch!");
-    if (!llvm::EnableSingleByteCoverage)
-      BreakContinueStack.back().BreakCount = addCounters(
-          BreakContinueStack.back().BreakCount, getRegion().getCounter());
+    BreakContinueStack.back().BreakCount = addCounters(
+        BreakContinueStack.back().BreakCount, getRegion().getCounter());
     // FIXME: a break in a switch should terminate regions for all preceding
     // case statements, not just the most recent one.
     terminateRegion(S);
@@ -1599,9 +1473,8 @@ struct CounterCoverageMappingBuilder
 
   void VisitContinueStmt(const ContinueStmt *S) {
     assert(!BreakContinueStack.empty() && "continue stmt not in a loop!");
-    if (!llvm::EnableSingleByteCoverage)
-      BreakContinueStack.back().ContinueCount = addCounters(
-          BreakContinueStack.back().ContinueCount, getRegion().getCounter());
+    BreakContinueStack.back().ContinueCount = addCounters(
+        BreakContinueStack.back().ContinueCount, getRegion().getCounter());
     terminateRegion(S);
   }
 
@@ -1619,9 +1492,7 @@ struct CounterCoverageMappingBuilder
     extendRegion(S);
 
     Counter ParentCount = getRegion().getCounter();
-    Counter BodyCount = llvm::EnableSingleByteCoverage
-                            ? getRegionCounter(S->getBody())
-                            : getRegionCounter(S);
+    Counter BodyCount = getRegionCounter(S);
 
     // Handle the body first so that we can get the backedge count.
     BreakContinueStack.push_back(BreakContinue());
@@ -1634,13 +1505,7 @@ struct CounterCoverageMappingBuilder
 
     // Go back to handle the condition.
     Counter CondCount =
-        llvm::EnableSingleByteCoverage
-            ? getRegionCounter(S->getCond())
-            : addCounters(ParentCount, BackedgeCount, BC.ContinueCount);
-    auto BranchCount = getBranchCounterPair(S, CondCount, getRegionCounter(S));
-    assert(BranchCount.Executed.isZero() || BranchCount.Executed == BodyCount ||
-           llvm::EnableSingleByteCoverage);
-
+        addCounters(ParentCount, BackedgeCount, BC.ContinueCount);
     propagateCounts(CondCount, S->getCond());
     adjustForOutOfOrderTraversal(getEnd(S));
 
@@ -1649,11 +1514,9 @@ struct CounterCoverageMappingBuilder
     if (Gap)
       fillGapAreaWithCount(Gap->getBegin(), Gap->getEnd(), BodyCount);
 
-    assert(
-        !llvm::EnableSingleByteCoverage ||
-        (BC.BreakCount.isZero() && BranchCount.Skipped == getRegionCounter(S)));
-    Counter OutCount = addCounters(BC.BreakCount, BranchCount.Skipped);
-    if (!IsCounterEqual(OutCount, ParentCount)) {
+    Counter OutCount =
+        addCounters(BC.BreakCount, subtractCounters(CondCount, BodyCount));
+    if (OutCount != ParentCount) {
       pushRegion(OutCount);
       GapRegionCounter = OutCount;
       if (BodyHasTerminateStmt)
@@ -1661,56 +1524,41 @@ struct CounterCoverageMappingBuilder
     }
 
     // Create Branch Region around condition.
-    if (!llvm::EnableSingleByteCoverage)
-      createBranchRegion(S->getCond(), BodyCount, BranchCount.Skipped);
+    createBranchRegion(S->getCond(), BodyCount,
+                       subtractCounters(CondCount, BodyCount));
   }
 
   void VisitDoStmt(const DoStmt *S) {
     extendRegion(S);
 
     Counter ParentCount = getRegion().getCounter();
-    Counter BodyCount = llvm::EnableSingleByteCoverage
-                            ? getRegionCounter(S->getBody())
-                            : getRegionCounter(S);
+    Counter BodyCount = getRegionCounter(S);
 
     BreakContinueStack.push_back(BreakContinue());
     extendRegion(S->getBody());
-
-    Counter BackedgeCount;
-    if (llvm::EnableSingleByteCoverage)
-      propagateCounts(BodyCount, S->getBody());
-    else
-      BackedgeCount =
-          propagateCounts(addCounters(ParentCount, BodyCount), S->getBody());
-
+    Counter BackedgeCount =
+        propagateCounts(addCounters(ParentCount, BodyCount), S->getBody());
     BreakContinue BC = BreakContinueStack.pop_back_val();
 
     bool BodyHasTerminateStmt = HasTerminateStmt;
     HasTerminateStmt = false;
 
-    Counter CondCount = llvm::EnableSingleByteCoverage
-                            ? getRegionCounter(S->getCond())
-                            : addCounters(BackedgeCount, BC.ContinueCount);
-    auto BranchCount = getBranchCounterPair(S, CondCount, getRegionCounter(S));
-    assert(BranchCount.Executed.isZero() || BranchCount.Executed == BodyCount ||
-           llvm::EnableSingleByteCoverage);
-
+    Counter CondCount = addCounters(BackedgeCount, BC.ContinueCount);
     propagateCounts(CondCount, S->getCond());
 
-    assert(
-        !llvm::EnableSingleByteCoverage ||
-        (BC.BreakCount.isZero() && BranchCount.Skipped == getRegionCounter(S)));
-    Counter OutCount = addCounters(BC.BreakCount, BranchCount.Skipped);
-    if (!IsCounterEqual(OutCount, ParentCount)) {
+    Counter OutCount =
+        addCounters(BC.BreakCount, subtractCounters(CondCount, BodyCount));
+    if (OutCount != ParentCount) {
       pushRegion(OutCount);
       GapRegionCounter = OutCount;
-      if (BodyHasTerminateStmt)
-        HasTerminateStmt = true;
     }
 
     // Create Branch Region around condition.
-    if (!llvm::EnableSingleByteCoverage)
-      createBranchRegion(S->getCond(), BodyCount, BranchCount.Skipped);
+    createBranchRegion(S->getCond(), BodyCount,
+                       subtractCounters(CondCount, BodyCount));
+
+    if (BodyHasTerminateStmt)
+      HasTerminateStmt = true;
   }
 
   void VisitForStmt(const ForStmt *S) {
@@ -1719,9 +1567,7 @@ struct CounterCoverageMappingBuilder
       Visit(S->getInit());
 
     Counter ParentCount = getRegion().getCounter();
-    Counter BodyCount = llvm::EnableSingleByteCoverage
-                            ? getRegionCounter(S->getBody())
-                            : getRegionCounter(S);
+    Counter BodyCount = getRegionCounter(S);
 
     // The loop increment may contain a break or continue.
     if (S->getInc())
@@ -1740,26 +1586,14 @@ struct CounterCoverageMappingBuilder
     // the count for all the continue statements.
     BreakContinue IncrementBC;
     if (const Stmt *Inc = S->getInc()) {
-      Counter IncCount;
-      if (llvm::EnableSingleByteCoverage)
-        IncCount = getRegionCounter(S->getInc());
-      else
-        IncCount = addCounters(BackedgeCount, BodyBC.ContinueCount);
-      propagateCounts(IncCount, Inc);
+      propagateCounts(addCounters(BackedgeCount, BodyBC.ContinueCount), Inc);
       IncrementBC = BreakContinueStack.pop_back_val();
     }
 
     // Go back to handle the condition.
-    Counter CondCount =
-        llvm::EnableSingleByteCoverage
-            ? getRegionCounter(S->getCond())
-            : addCounters(
-                  addCounters(ParentCount, BackedgeCount, BodyBC.ContinueCount),
-                  IncrementBC.ContinueCount);
-    auto BranchCount = getBranchCounterPair(S, CondCount, getRegionCounter(S));
-    assert(BranchCount.Executed.isZero() || BranchCount.Executed == BodyCount ||
-           llvm::EnableSingleByteCoverage);
-
+    Counter CondCount = addCounters(
+        addCounters(ParentCount, BackedgeCount, BodyBC.ContinueCount),
+        IncrementBC.ContinueCount);
     if (const Expr *Cond = S->getCond()) {
       propagateCounts(CondCount, Cond);
       adjustForOutOfOrderTraversal(getEnd(S));
@@ -1770,11 +1604,9 @@ struct CounterCoverageMappingBuilder
     if (Gap)
       fillGapAreaWithCount(Gap->getBegin(), Gap->getEnd(), BodyCount);
 
-    assert(!llvm::EnableSingleByteCoverage ||
-           (BodyBC.BreakCount.isZero() && IncrementBC.BreakCount.isZero()));
     Counter OutCount = addCounters(BodyBC.BreakCount, IncrementBC.BreakCount,
-                                   BranchCount.Skipped);
-    if (!IsCounterEqual(OutCount, ParentCount)) {
+                                   subtractCounters(CondCount, BodyCount));
+    if (OutCount != ParentCount) {
       pushRegion(OutCount);
       GapRegionCounter = OutCount;
       if (BodyHasTerminateStmt)
@@ -1782,8 +1614,8 @@ struct CounterCoverageMappingBuilder
     }
 
     // Create Branch Region around condition.
-    if (!llvm::EnableSingleByteCoverage)
-      createBranchRegion(S->getCond(), BodyCount, BranchCount.Skipped);
+    createBranchRegion(S->getCond(), BodyCount,
+                       subtractCounters(CondCount, BodyCount));
   }
 
   void VisitCXXForRangeStmt(const CXXForRangeStmt *S) {
@@ -1794,9 +1626,7 @@ struct CounterCoverageMappingBuilder
     Visit(S->getRangeStmt());
 
     Counter ParentCount = getRegion().getCounter();
-    Counter BodyCount = llvm::EnableSingleByteCoverage
-                            ? getRegionCounter(S->getBody())
-                            : getRegionCounter(S);
+    Counter BodyCount = getRegionCounter(S);
 
     BreakContinueStack.push_back(BreakContinue());
     extendRegion(S->getBody());
@@ -1813,15 +1643,9 @@ struct CounterCoverageMappingBuilder
 
     Counter LoopCount =
         addCounters(ParentCount, BackedgeCount, BC.ContinueCount);
-    auto BranchCount = getBranchCounterPair(S, LoopCount, getRegionCounter(S));
-    assert(BranchCount.Executed.isZero() || BranchCount.Executed == BodyCount ||
-           llvm::EnableSingleByteCoverage);
-    assert(
-        !llvm::EnableSingleByteCoverage ||
-        (BC.BreakCount.isZero() && BranchCount.Skipped == getRegionCounter(S)));
-
-    Counter OutCount = addCounters(BC.BreakCount, BranchCount.Skipped);
-    if (!IsCounterEqual(OutCount, ParentCount)) {
+    Counter OutCount =
+        addCounters(BC.BreakCount, subtractCounters(LoopCount, BodyCount));
+    if (OutCount != ParentCount) {
       pushRegion(OutCount);
       GapRegionCounter = OutCount;
       if (BodyHasTerminateStmt)
@@ -1829,8 +1653,8 @@ struct CounterCoverageMappingBuilder
     }
 
     // Create Branch Region around condition.
-    if (!llvm::EnableSingleByteCoverage)
-      createBranchRegion(S->getCond(), BodyCount, BranchCount.Skipped);
+    createBranchRegion(S->getCond(), BodyCount,
+                       subtractCounters(LoopCount, BodyCount));
   }
 
   void VisitObjCForCollectionStmt(const ObjCForCollectionStmt *S) {
@@ -1852,10 +1676,9 @@ struct CounterCoverageMappingBuilder
 
     Counter LoopCount =
         addCounters(ParentCount, BackedgeCount, BC.ContinueCount);
-    auto BranchCount = getBranchCounterPair(S, LoopCount);
-    assert(BranchCount.Executed.isZero() || BranchCount.Executed == BodyCount);
-    Counter OutCount = addCounters(BC.BreakCount, BranchCount.Skipped);
-    if (!IsCounterEqual(OutCount, ParentCount)) {
+    Counter OutCount =
+        addCounters(BC.BreakCount, subtractCounters(LoopCount, BodyCount));
+    if (OutCount != ParentCount) {
       pushRegion(OutCount);
       GapRegionCounter = OutCount;
     }
@@ -1892,7 +1715,7 @@ struct CounterCoverageMappingBuilder
       propagateCounts(Counter::getZero(), Body);
     BreakContinue BC = BreakContinueStack.pop_back_val();
 
-    if (!BreakContinueStack.empty() && !llvm::EnableSingleByteCoverage)
+    if (!BreakContinueStack.empty())
       BreakContinueStack.back().ContinueCount = addCounters(
           BreakContinueStack.back().ContinueCount, BC.ContinueCount);
 
@@ -1907,11 +1730,6 @@ struct CounterCoverageMappingBuilder
     MostRecentLocation = getStart(S);
     handleFileExit(ExitLoc);
 
-    // When single byte coverage mode is enabled, do not create branch region by
-    // early returning.
-    if (llvm::EnableSingleByteCoverage)
-      return;
-
     // Create a Branch Region around each Case. Subtract the case's
     // counter from the Parent counter to track the "False" branch count.
     Counter CaseCountSum;
@@ -1919,22 +1737,24 @@ struct CounterCoverageMappingBuilder
     const SwitchCase *Case = S->getSwitchCaseList();
     for (; Case; Case = Case->getNextSwitchCase()) {
       HasDefaultCase = HasDefaultCase || isa<DefaultStmt>(Case);
-      auto CaseCount = createSwitchCaseRegion(Case, ParentCount);
-      CaseCountSum = addCounters(CaseCountSum, CaseCount, /*Simplify=*/false);
+      CaseCountSum =
+          addCounters(CaseCountSum, getRegionCounter(Case), /*Simplify=*/false);
+      createSwitchCaseRegion(
+          Case, getRegionCounter(Case),
+          subtractCounters(ParentCount, getRegionCounter(Case)));
     }
+    // Simplify is skipped while building the counters above: it can get really
+    // slow on top of switches with thousands of cases. Instead, trigger
+    // simplification by adding zero to the last counter.
+    CaseCountSum = addCounters(CaseCountSum, Counter::getZero());
+
     // If no explicit default case exists, create a branch region to represent
     // the hidden branch, which will be added later by the CodeGen. This region
     // will be associated with the switch statement's condition.
     if (!HasDefaultCase) {
-      // Simplify is skipped while building the counters above: it can get
-      // really slow on top of switches with thousands of cases. Instead,
-      // trigger simplification by adding zero to the last counter.
-      CaseCountSum =
-          addCounters(CaseCountSum, Counter::getZero(), /*Simplify=*/true);
-
-      // This is considered as the False count on SwitchStmt.
-      Counter SwitchFalse = subtractCounters(ParentCount, CaseCountSum);
-      createBranchRegion(S->getCond(), CaseCountSum, SwitchFalse);
+      Counter DefaultTrue = subtractCounters(ParentCount, CaseCountSum);
+      Counter DefaultFalse = subtractCounters(ParentCount, DefaultTrue);
+      createBranchRegion(S->getCond(), DefaultTrue, DefaultFalse);
     }
   }
 
@@ -1942,10 +1762,8 @@ struct CounterCoverageMappingBuilder
     extendRegion(S);
 
     SourceMappingRegion &Parent = getRegion();
-    Counter Count = llvm::EnableSingleByteCoverage
-                        ? getRegionCounter(S)
-                        : addCounters(Parent.getCounter(), getRegionCounter(S));
 
+    Counter Count = addCounters(Parent.getCounter(), getRegionCounter(S));
     // Reuse the existing region if it starts at our label. This is typical of
     // the first case in a switch.
     if (Parent.hasStartLoc() && Parent.getBeginLoc() == getStart(S))
@@ -2063,12 +1881,7 @@ struct CounterCoverageMappingBuilder
     extendRegion(S->getCond());
 
     Counter ParentCount = getRegion().getCounter();
-    auto [ThenCount, ElseCount] =
-        (llvm::EnableSingleByteCoverage
-             ? BranchCounterPair{getRegionCounter(S->getThen()),
-                                 (S->getElse() ? getRegionCounter(S->getElse())
-                                               : Counter::getZero())}
-             : getBranchCounterPair(S, ParentCount));
+    Counter ThenCount = getRegionCounter(S);
 
     // Emitting a counter for the condition makes it easier to interpret the
     // counter for the body when looking at the coverage.
@@ -2082,6 +1895,7 @@ struct CounterCoverageMappingBuilder
 
     extendRegion(S->getThen());
     Counter OutCount = propagateCounts(ThenCount, S->getThen());
+    Counter ElseCount = subtractCounters(ParentCount, ThenCount);
 
     if (const Stmt *Else = S->getElse()) {
       bool ThenHasTerminateStmt = HasTerminateStmt;
@@ -2092,27 +1906,21 @@ struct CounterCoverageMappingBuilder
       if (Gap)
         fillGapAreaWithCount(Gap->getBegin(), Gap->getEnd(), ElseCount);
       extendRegion(Else);
-
-      Counter ElseOutCount = propagateCounts(ElseCount, Else);
-      if (!llvm::EnableSingleByteCoverage)
-        OutCount = addCounters(OutCount, ElseOutCount);
+      OutCount = addCounters(OutCount, propagateCounts(ElseCount, Else));
 
       if (ThenHasTerminateStmt)
         HasTerminateStmt = true;
-    } else if (!llvm::EnableSingleByteCoverage)
+    } else
       OutCount = addCounters(OutCount, ElseCount);
 
-    if (llvm::EnableSingleByteCoverage)
-      OutCount = getRegionCounter(S);
-
-    if (!IsCounterEqual(OutCount, ParentCount)) {
+    if (OutCount != ParentCount) {
       pushRegion(OutCount);
       GapRegionCounter = OutCount;
     }
 
-    if (!llvm::EnableSingleByteCoverage)
-      // Create Branch Region around condition.
-      createBranchRegion(S->getCond(), ThenCount, ElseCount);
+    // Create Branch Region around condition.
+    createBranchRegion(S->getCond(), ThenCount,
+                       subtractCounters(ParentCount, ThenCount));
   }
 
   void VisitCXXTryStmt(const CXXTryStmt *S) {
@@ -2138,18 +1946,12 @@ struct CounterCoverageMappingBuilder
     extendRegion(E);
 
     Counter ParentCount = getRegion().getCounter();
-    auto [TrueCount, FalseCount] =
-        (llvm::EnableSingleByteCoverage
-             ? BranchCounterPair{getRegionCounter(E->getTrueExpr()),
-                                 getRegionCounter(E->getFalseExpr())}
-             : getBranchCounterPair(E, ParentCount));
+    Counter TrueCount = getRegionCounter(E);
+
+    propagateCounts(ParentCount, E->getCond());
     Counter OutCount;
 
-    if (const auto *BCO = dyn_cast<BinaryConditionalOperator>(E)) {
-      propagateCounts(ParentCount, BCO->getCommon());
-      OutCount = TrueCount;
-    } else {
-      propagateCounts(ParentCount, E->getCond());
+    if (!isa<BinaryConditionalOperator>(E)) {
       // The 'then' count applies to the area immediately after the condition.
       auto Gap =
           findGapAreaBetween(E->getQuestionLoc(), getStart(E->getTrueExpr()));
@@ -2161,103 +1963,22 @@ struct CounterCoverageMappingBuilder
     }
 
     extendRegion(E->getFalseExpr());
-    Counter FalseOutCount = propagateCounts(FalseCount, E->getFalseExpr());
-    if (llvm::EnableSingleByteCoverage)
-      OutCount = getRegionCounter(E);
-    else
-      OutCount = addCounters(OutCount, FalseOutCount);
+    OutCount = addCounters(
+        OutCount, propagateCounts(subtractCounters(ParentCount, TrueCount),
+                                  E->getFalseExpr()));
 
-    if (!IsCounterEqual(OutCount, ParentCount)) {
+    if (OutCount != ParentCount) {
       pushRegion(OutCount);
       GapRegionCounter = OutCount;
     }
 
     // Create Branch Region around condition.
-    if (!llvm::EnableSingleByteCoverage)
-      createBranchRegion(E->getCond(), TrueCount, FalseCount);
-  }
-
-  void createOrCancelDecision(const BinaryOperator *E, unsigned Since) {
-    unsigned NumConds = MCDCBuilder.getTotalConditionsAndReset(E);
-    if (NumConds == 0)
-      return;
-
-    // Extract [ID, Conds] to construct the graph.
-    llvm::SmallVector<mcdc::ConditionIDs> CondIDs(NumConds);
-    for (const auto &SR : ArrayRef(SourceRegions).slice(Since)) {
-      if (SR.isMCDCBranch()) {
-        auto [ID, Conds] = SR.getMCDCBranchParams();
-        CondIDs[ID] = Conds;
-      }
-    }
-
-    // Construct the graph and calculate `Indices`.
-    mcdc::TVIdxBuilder Builder(CondIDs);
-    unsigned NumTVs = Builder.NumTestVectors;
-    unsigned MaxTVs = CVM.getCodeGenModule().getCodeGenOpts().MCDCMaxTVs;
-    assert(MaxTVs < mcdc::TVIdxBuilder::HardMaxTVs);
-
-    if (NumTVs > MaxTVs) {
-      // NumTVs exceeds MaxTVs -- warn and cancel the Decision.
-      cancelDecision(E, Since, NumTVs, MaxTVs);
-      return;
-    }
-
-    // Update the state for CodeGenPGO
-    assert(MCDCState.DecisionByStmt.contains(E));
-    MCDCState.DecisionByStmt[E] = {
-        MCDCState.BitmapBits, // Top
-        std::move(Builder.Indices),
-    };
-
-    auto DecisionParams = mcdc::DecisionParameters{
-        MCDCState.BitmapBits += NumTVs, // Tail
-        NumConds,
-    };
-
-    // Create MCDC Decision Region.
-    createDecisionRegion(E, DecisionParams);
-  }
-
-  // Warn and cancel the Decision.
-  void cancelDecision(const BinaryOperator *E, unsigned Since, int NumTVs,
-                      int MaxTVs) {
-    auto &Diag = CVM.getCodeGenModule().getDiags();
-    unsigned DiagID =
-        Diag.getCustomDiagID(DiagnosticsEngine::Warning,
-                             "unsupported MC/DC boolean expression; "
-                             "number of test vectors (%0) exceeds max (%1). "
-                             "Expression will not be covered");
-    Diag.Report(E->getBeginLoc(), DiagID) << NumTVs << MaxTVs;
-
-    // Restore MCDCBranch to Branch.
-    for (auto &SR : MutableArrayRef(SourceRegions).slice(Since)) {
-      assert(!SR.isMCDCDecision() && "Decision shouldn't be seen here");
-      if (SR.isMCDCBranch())
-        SR.resetMCDCParams();
-    }
-
-    // Tell CodeGenPGO not to instrument.
-    MCDCState.DecisionByStmt.erase(E);
-  }
-
-  /// Check if E belongs to system headers.
-  bool isExprInSystemHeader(const BinaryOperator *E) const {
-    return (!SystemHeadersCoverage &&
-            SM.isInSystemHeader(SM.getSpellingLoc(E->getOperatorLoc())) &&
-            SM.isInSystemHeader(SM.getSpellingLoc(E->getBeginLoc())) &&
-            SM.isInSystemHeader(SM.getSpellingLoc(E->getEndLoc())));
+    createBranchRegion(E->getCond(), TrueCount,
+                       subtractCounters(ParentCount, TrueCount));
   }
 
   void VisitBinLAnd(const BinaryOperator *E) {
-    if (isExprInSystemHeader(E)) {
-      LeafExprSet.insert(E);
-      return;
-    }
-
     bool IsRootNode = MCDCBuilder.isIdle();
-
-    unsigned SourceRegionsSince = SourceRegions.size();
 
     // Keep track of Binary Operator and assign MCDC condition IDs.
     MCDCBuilder.pushAndAssignIDs(E);
@@ -2269,40 +1990,34 @@ struct CounterCoverageMappingBuilder
     // Track LHS True/False Decision.
     const auto DecisionLHS = MCDCBuilder.pop();
 
-    if (auto Gap =
-            findGapAreaBetween(getEnd(E->getLHS()), getStart(E->getRHS()))) {
-      fillGapAreaWithCount(Gap->getBegin(), Gap->getEnd(), getRegionCounter(E));
-    }
-
     // Counter tracks the right hand side of a logical and operator.
     extendRegion(E->getRHS());
     propagateCounts(getRegionCounter(E), E->getRHS());
 
-    if (llvm::EnableSingleByteCoverage)
-      return;
-
     // Track RHS True/False Decision.
     const auto DecisionRHS = MCDCBuilder.back();
+
+    // Create MCDC Decision Region if at top-level (root).
+    unsigned NumConds = 0;
+    if (IsRootNode && (NumConds = MCDCBuilder.getTotalConditionsAndReset(E)))
+      createDecisionRegion(E, getRegionBitmap(E), NumConds);
+
+    // Extract the RHS's Execution Counter.
+    Counter RHSExecCnt = getRegionCounter(E);
+
+    // Extract the RHS's "True" Instance Counter.
+    Counter RHSTrueCnt = getRegionCounter(E->getRHS());
 
     // Extract the Parent Region Counter.
     Counter ParentCnt = getRegion().getCounter();
 
-    // Extract the RHS's Execution Counter.
-    auto [RHSExecCnt, LHSExitCnt] = getBranchCounterPair(E, ParentCnt);
-
-    // Extract the RHS's "True" Instance Counter.
-    auto [RHSTrueCnt, RHSExitCnt] =
-        getBranchCounterPair(E->getRHS(), RHSExecCnt);
-
     // Create Branch Region around LHS condition.
-    createBranchRegion(E->getLHS(), RHSExecCnt, LHSExitCnt, DecisionLHS);
+    createBranchRegion(E->getLHS(), RHSExecCnt,
+                       subtractCounters(ParentCnt, RHSExecCnt), DecisionLHS);
 
     // Create Branch Region around RHS condition.
-    createBranchRegion(E->getRHS(), RHSTrueCnt, RHSExitCnt, DecisionRHS);
-
-    // Create MCDC Decision Region if at top-level (root).
-    if (IsRootNode)
-      createOrCancelDecision(E, SourceRegionsSince);
+    createBranchRegion(E->getRHS(), RHSTrueCnt,
+                       subtractCounters(RHSExecCnt, RHSTrueCnt), DecisionRHS);
   }
 
   // Determine whether the right side of OR operation need to be visited.
@@ -2316,14 +2031,7 @@ struct CounterCoverageMappingBuilder
   }
 
   void VisitBinLOr(const BinaryOperator *E) {
-    if (isExprInSystemHeader(E)) {
-      LeafExprSet.insert(E);
-      return;
-    }
-
     bool IsRootNode = MCDCBuilder.isIdle();
-
-    unsigned SourceRegionsSince = SourceRegions.size();
 
     // Keep track of Binary Operator and assign MCDC condition IDs.
     MCDCBuilder.pushAndAssignIDs(E);
@@ -2335,53 +2043,43 @@ struct CounterCoverageMappingBuilder
     // Track LHS True/False Decision.
     const auto DecisionLHS = MCDCBuilder.pop();
 
-    if (auto Gap =
-            findGapAreaBetween(getEnd(E->getLHS()), getStart(E->getRHS()))) {
-      fillGapAreaWithCount(Gap->getBegin(), Gap->getEnd(), getRegionCounter(E));
-    }
-
     // Counter tracks the right hand side of a logical or operator.
     extendRegion(E->getRHS());
     propagateCounts(getRegionCounter(E), E->getRHS());
 
-    if (llvm::EnableSingleByteCoverage)
-      return;
-
     // Track RHS True/False Decision.
     const auto DecisionRHS = MCDCBuilder.back();
 
-    // Extract the Parent Region Counter.
-    Counter ParentCnt = getRegion().getCounter();
+    // Create MCDC Decision Region if at top-level (root).
+    unsigned NumConds = 0;
+    if (IsRootNode && (NumConds = MCDCBuilder.getTotalConditionsAndReset(E)))
+      createDecisionRegion(E, getRegionBitmap(E), NumConds);
 
     // Extract the RHS's Execution Counter.
-    auto [RHSExecCnt, LHSExitCnt] = getBranchCounterPair(E, ParentCnt);
+    Counter RHSExecCnt = getRegionCounter(E);
 
     // Extract the RHS's "False" Instance Counter.
-    auto [RHSFalseCnt, RHSExitCnt] =
-        getBranchCounterPair(E->getRHS(), RHSExecCnt);
+    Counter RHSFalseCnt = getRegionCounter(E->getRHS());
 
     if (!shouldVisitRHS(E->getLHS())) {
       GapRegionCounter = OutCount;
     }
 
+    // Extract the Parent Region Counter.
+    Counter ParentCnt = getRegion().getCounter();
+
     // Create Branch Region around LHS condition.
-    createBranchRegion(E->getLHS(), LHSExitCnt, RHSExecCnt, DecisionLHS);
+    createBranchRegion(E->getLHS(), subtractCounters(ParentCnt, RHSExecCnt),
+                       RHSExecCnt, DecisionLHS);
 
     // Create Branch Region around RHS condition.
-    createBranchRegion(E->getRHS(), RHSExitCnt, RHSFalseCnt, DecisionRHS);
-
-    // Create MCDC Decision Region if at top-level (root).
-    if (IsRootNode)
-      createOrCancelDecision(E, SourceRegionsSince);
+    createBranchRegion(E->getRHS(), subtractCounters(RHSExecCnt, RHSFalseCnt),
+                       RHSFalseCnt, DecisionRHS);
   }
 
   void VisitLambdaExpr(const LambdaExpr *LE) {
     // Lambdas are treated as their own functions for now, so we shouldn't
     // propagate counts into them.
-  }
-
-  void VisitArrayInitLoopExpr(const ArrayInitLoopExpr *AILE) {
-    Visit(AILE->getCommonExpr()->getSourceExpr());
   }
 
   void VisitPseudoObjectExpr(const PseudoObjectExpr *POE) {
@@ -2390,8 +2088,7 @@ struct CounterCoverageMappingBuilder
   }
 
   void VisitOpaqueValueExpr(const OpaqueValueExpr* OVE) {
-    if (OVE->isUnique())
-      Visit(OVE->getSourceExpr());
+    Visit(OVE->getSourceExpr());
   }
 };
 
@@ -2428,24 +2125,22 @@ static void dump(llvm::raw_ostream &OS, StringRef FunctionName,
     OS << "File " << R.FileID << ", " << R.LineStart << ":" << R.ColumnStart
        << " -> " << R.LineEnd << ":" << R.ColumnEnd << " = ";
 
-    if (const auto *DecisionParams =
-            std::get_if<mcdc::DecisionParameters>(&R.MCDCParams)) {
-      OS << "M:" << DecisionParams->BitmapIdx;
-      OS << ", C:" << DecisionParams->NumConditions;
+    if (R.Kind == CounterMappingRegion::MCDCDecisionRegion) {
+      OS << "M:" << R.MCDCParams.BitmapIdx;
+      OS << ", C:" << R.MCDCParams.NumConditions;
     } else {
       Ctx.dump(R.Count, OS);
 
-      if (R.isBranch()) {
+      if (R.Kind == CounterMappingRegion::BranchRegion ||
+          R.Kind == CounterMappingRegion::MCDCBranchRegion) {
         OS << ", ";
         Ctx.dump(R.FalseCount, OS);
       }
     }
 
-    if (const auto *BranchParams =
-            std::get_if<mcdc::BranchParameters>(&R.MCDCParams)) {
-      OS << " [" << BranchParams->ID + 1 << ","
-         << BranchParams->Conds[true] + 1;
-      OS << "," << BranchParams->Conds[false] + 1 << "] ";
+    if (R.Kind == CounterMappingRegion::MCDCBranchRegion) {
+      OS << " [" << R.MCDCParams.ID << "," << R.MCDCParams.TrueID;
+      OS << "," << R.MCDCParams.FalseID << "] ";
     }
 
     if (R.Kind == CounterMappingRegion::ExpansionRegion)
@@ -2459,7 +2154,12 @@ CoverageMappingModuleGen::CoverageMappingModuleGen(
     : CGM(CGM), SourceInfo(SourceInfo) {}
 
 std::string CoverageMappingModuleGen::getCurrentDirname() {
-  return CGM.getCodeGenOpts().CoverageCompilationDir;
+  if (!CGM.getCodeGenOpts().CoverageCompilationDir.empty())
+    return CGM.getCodeGenOpts().CoverageCompilationDir;
+
+  SmallString<256> CWD;
+  llvm::sys::fs::current_path(CWD);
+  return CWD.str().str();
 }
 
 std::string CoverageMappingModuleGen::normalizeFilename(StringRef Filename) {
@@ -2627,9 +2327,8 @@ void CoverageMappingModuleGen::emit() {
   CGM.addUsedGlobal(CovData);
   // Create the deferred function records array
   if (!FunctionNames.empty()) {
-    auto AddrSpace = FunctionNames.front()->getType()->getPointerAddressSpace();
-    auto NamesArrTy = llvm::ArrayType::get(
-        llvm::PointerType::get(Ctx, AddrSpace), FunctionNames.size());
+    auto NamesArrTy = llvm::ArrayType::get(llvm::PointerType::getUnqual(Ctx),
+                                           FunctionNames.size());
     auto NamesArrVal = llvm::ConstantArray::get(NamesArrTy, FunctionNames);
     // This variable will *NOT* be emitted to the object file. It is used
     // to pass the list of names referenced to codegen.
@@ -2640,14 +2339,19 @@ void CoverageMappingModuleGen::emit() {
 }
 
 unsigned CoverageMappingModuleGen::getFileID(FileEntryRef File) {
-  return FileEntries.try_emplace(File, FileEntries.size() + 1).first->second;
+  auto It = FileEntries.find(File);
+  if (It != FileEntries.end())
+    return It->second;
+  unsigned FileID = FileEntries.size() + 1;
+  FileEntries.insert(std::make_pair(File, FileID));
+  return FileID;
 }
 
 void CoverageMappingGen::emitCounterMapping(const Decl *D,
                                             llvm::raw_ostream &OS) {
-  assert(CounterMap && MCDCState);
-  CounterCoverageMappingBuilder Walker(CVM, *CounterMap, *MCDCState, SM,
-                                       LangOpts);
+  assert(CounterMap && MCDCBitmapMap);
+  CounterCoverageMappingBuilder Walker(CVM, *CounterMap, *MCDCBitmapMap,
+                                       *CondIDMap, SM, LangOpts);
   Walker.VisitDecl(D);
   Walker.write(OS);
 }

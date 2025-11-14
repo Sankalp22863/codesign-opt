@@ -128,25 +128,20 @@ private:
   /// Read a range of bytes from the Wasm module.
   DataExtractor ReadImageData(lldb::offset_t offset, uint32_t size);
 
-  struct section_info {
+  typedef struct section_info {
     lldb::offset_t offset;
     uint32_t size;
     uint32_t id;
     ConstString name;
-    lldb::offset_t GetFileOffset() const { return offset & 0xffffffff; }
-  };
-
-  std::optional<section_info> GetSectionInfo(uint32_t section_id);
-  std::optional<section_info> GetSectionInfo(llvm::StringRef section_name);
+  } section_info_t;
 
   /// Wasm section header dump routines.
   /// \{
-  void DumpSectionHeader(llvm::raw_ostream &ostream, const section_info &sh);
+  void DumpSectionHeader(llvm::raw_ostream &ostream, const section_info_t &sh);
   void DumpSectionHeaders(llvm::raw_ostream &ostream);
   /// \}
 
-  std::vector<section_info> m_sect_infos;
-  std::vector<Symbol> m_symbols;
+  std::vector<section_info_t> m_sect_infos;
   ArchSpec m_arch;
   UUID m_uuid;
 };

@@ -33,9 +33,11 @@ ARCTargetMachine::ARCTargetMachine(const Target &T, const Triple &TT,
                                    std::optional<Reloc::Model> RM,
                                    std::optional<CodeModel::Model> CM,
                                    CodeGenOptLevel OL, bool JIT)
-    : CodeGenTargetMachineImpl(T, TT.computeDataLayout(), TT, CPU, FS, Options,
-                               getRelocModel(RM),
-                               getEffectiveCodeModel(CM, CodeModel::Small), OL),
+    : LLVMTargetMachine(T,
+                        "e-m:e-p:32:32-i1:8:32-i8:8:32-i16:16:32-i32:32:32-"
+                        "f32:32:32-i64:32-f64:32-a:0:32-n32",
+                        TT, CPU, FS, Options, getRelocModel(RM),
+                        getEffectiveCodeModel(CM, CodeModel::Small), OL),
       TLOF(std::make_unique<TargetLoweringObjectFileELF>()),
       Subtarget(TT, std::string(CPU), std::string(FS), *this) {
   initAsmInfo();
@@ -68,7 +70,7 @@ TargetPassConfig *ARCTargetMachine::createPassConfig(PassManagerBase &PM) {
 }
 
 void ARCPassConfig::addIRPasses() {
-  addPass(createAtomicExpandLegacyPass());
+  addPass(createAtomicExpandPass());
 
   TargetPassConfig::addIRPasses();
 }
@@ -95,11 +97,10 @@ MachineFunctionInfo *ARCTargetMachine::createMachineFunctionInfo(
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeARCTarget() {
   RegisterTargetMachine<ARCTargetMachine> X(getTheARCTarget());
   PassRegistry &PR = *PassRegistry::getPassRegistry();
-  initializeARCAsmPrinterPass(PR);
-  initializeARCDAGToDAGISelLegacyPass(PR);
+  initializeARCDAGToDAGISelPass(PR);
 }
 
 TargetTransformInfo
 ARCTargetMachine::getTargetTransformInfo(const Function &F) const {
-  return TargetTransformInfo(std::make_unique<ARCTTIImpl>(this, F));
+  return TargetTransformInfo(ARCTTIImpl(this, F));
 }

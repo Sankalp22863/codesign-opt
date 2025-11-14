@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===---------- ASTUtils.cpp - clang-tidy ---------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -67,7 +67,7 @@ bool rangeIsEntirelyWithinMacroArgument(SourceRange Range,
   // Check if the range is entirely contained within a macro argument.
   SourceLocation MacroArgExpansionStartForRangeBegin;
   SourceLocation MacroArgExpansionStartForRangeEnd;
-  const bool RangeIsEntirelyWithinMacroArgument =
+  bool RangeIsEntirelyWithinMacroArgument =
       SM &&
       SM->isMacroArgExpansion(Range.getBegin(),
                               &MacroArgExpansionStartForRangeBegin) &&
@@ -96,7 +96,7 @@ bool areStatementsIdentical(const Stmt *FirstStmt, const Stmt *SecondStmt,
   if (FirstStmt == SecondStmt)
     return true;
 
-  if (FirstStmt->getStmtClass() != SecondStmt->getStmtClass())
+  if (FirstStmt->getStmtClass() != FirstStmt->getStmtClass())
     return false;
 
   if (isa<Expr>(FirstStmt) && isa<Expr>(SecondStmt)) {

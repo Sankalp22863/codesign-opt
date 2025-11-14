@@ -10,6 +10,7 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/OpImplementation.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringSwitch.h"
 #include <optional>
@@ -120,7 +121,7 @@ SymbolTable::SymbolTable(Operation *symbolTableOp)
          "expected operation to have SymbolTable trait");
   assert(symbolTableOp->getNumRegions() == 1 &&
          "expected operation to have a single region");
-  assert(symbolTableOp->getRegion(0).hasOneBlock() &&
+  assert(llvm::hasSingleElement(symbolTableOp->getRegion(0)) &&
          "expected operation to have a single block");
 
   StringAttr symbolNameId = StringAttr::get(symbolTableOp->getContext(),
@@ -483,7 +484,7 @@ LogicalResult detail::verifySymbolTable(Operation *op) {
   if (op->getNumRegions() != 1)
     return op->emitOpError()
            << "Operations with a 'SymbolTable' must have exactly one region";
-  if (!op->getRegion(0).hasOneBlock())
+  if (!llvm::hasSingleElement(op->getRegion(0)))
     return op->emitOpError()
            << "Operations with a 'SymbolTable' must have exactly one block";
 
@@ -622,7 +623,7 @@ struct SymbolScope {
   std::optional<WalkResult> walk(CallbackT cback) {
     if (Region *region = llvm::dyn_cast_if_present<Region *>(limit))
       return walkSymbolUses(*region, cback);
-    return walkSymbolUses(cast<Operation *>(limit), cback);
+    return walkSymbolUses(limit.get<Operation *>(), cback);
   }
   /// This variant is used when the callback type matches a stripped down type:
   /// void(SymbolTable::SymbolUse use)
@@ -642,7 +643,7 @@ struct SymbolScope {
   std::optional<WalkResult> walkSymbolTable(CallbackT &&cback) {
     if (Region *region = llvm::dyn_cast_if_present<Region *>(limit))
       return ::walkSymbolTable(*region, cback);
-    return ::walkSymbolTable(cast<Operation *>(limit), cback);
+    return ::walkSymbolTable(limit.get<Operation *>(), cback);
   }
 
   /// The representation of the symbol within this scope.
@@ -758,7 +759,6 @@ static bool isReferencePrefixOf(SymbolRefAttr subRef, SymbolRefAttr ref) {
 
 //===----------------------------------------------------------------------===//
 // SymbolTable::getSymbolUses
-//===----------------------------------------------------------------------===//
 
 /// The implementation of SymbolTable::getSymbolUses below.
 template <typename FromT>
@@ -789,7 +789,6 @@ auto SymbolTable::getSymbolUses(Region *from) -> std::optional<UseRange> {
 
 //===----------------------------------------------------------------------===//
 // SymbolTable::getSymbolUses
-//===----------------------------------------------------------------------===//
 
 /// The implementation of SymbolTable::getSymbolUses below.
 template <typename SymbolT, typename IRUnitT>
@@ -807,9 +806,9 @@ static std::optional<SymbolTable::UseRange> getSymbolUsesImpl(SymbolT symbol,
 }
 
 /// Get all of the uses of the given symbol that are nested within the given
-/// operation 'from'. This does not traverse into any nested symbol tables.
-/// This function returns std::nullopt if there are any unknown operations that
-/// may potentially be symbol tables.
+/// operation 'from', invoking the provided callback for each. This does not
+/// traverse into any nested symbol tables. This function returns std::nullopt
+/// if there are any unknown operations that may potentially be symbol tables.
 auto SymbolTable::getSymbolUses(StringAttr symbol, Operation *from)
     -> std::optional<UseRange> {
   return getSymbolUsesImpl(symbol, from);
@@ -829,7 +828,6 @@ auto SymbolTable::getSymbolUses(Operation *symbol, Region *from)
 
 //===----------------------------------------------------------------------===//
 // SymbolTable::symbolKnownUseEmpty
-//===----------------------------------------------------------------------===//
 
 /// The implementation of SymbolTable::symbolKnownUseEmpty below.
 template <typename SymbolT, typename IRUnitT>
@@ -865,7 +863,6 @@ bool SymbolTable::symbolKnownUseEmpty(Operation *symbol, Region *from) {
 
 //===----------------------------------------------------------------------===//
 // SymbolTable::replaceAllSymbolUses
-//===----------------------------------------------------------------------===//
 
 /// Generates a new symbol reference attribute with a new leaf reference.
 static SymbolRefAttr generateNewRefAttr(SymbolRefAttr oldAttr,
@@ -997,10 +994,6 @@ SymbolTable &SymbolTableCollection::getSymbolTable(Operation *op) {
   return *it.first->second;
 }
 
-void SymbolTableCollection::invalidateSymbolTable(Operation *op) {
-  symbolTables.erase(op);
-}
-
 //===----------------------------------------------------------------------===//
 // LockedSymbolTableCollection
 //===----------------------------------------------------------------------===//
@@ -1099,7 +1092,7 @@ void SymbolUserMap::replaceAllUsesWith(Operation *symbol,
   if (newSymbol != symbol) {
     // Transfer over the users to the new symbol.  The reference to the old one
     // is fetched again as the iterator is invalidated during the insertion.
-    auto newIt = symbolToUsers.try_emplace(newSymbol);
+    auto newIt = symbolToUsers.try_emplace(newSymbol, SetVector<Operation *>{});
     auto oldIt = symbolToUsers.find(symbol);
     assert(oldIt != symbolToUsers.end() && "missing old users list");
     if (newIt.second)

@@ -16,6 +16,7 @@
 
 #include "MCTargetDesc/PPCPredicates.h"
 #include "PPC.h"
+#include "PPCInstrBuilder.h"
 #include "PPCInstrInfo.h"
 #include "PPCSubtarget.h"
 #include "llvm/ADT/Statistic.h"
@@ -37,7 +38,9 @@ STATISTIC(NumPrefixedAligned,
 namespace {
   struct PPCBSel : public MachineFunctionPass {
     static char ID;
-    PPCBSel() : MachineFunctionPass(ID) {}
+    PPCBSel() : MachineFunctionPass(ID) {
+      initializePPCBSelPass(*PassRegistry::getPassRegistry());
+    }
 
     // The sizes of the basic blocks in the function (the first
     // element of the pair); the second element of the pair is the amount of the
@@ -58,7 +61,8 @@ namespace {
     bool runOnMachineFunction(MachineFunction &Fn) override;
 
     MachineFunctionProperties getRequiredProperties() const override {
-      return MachineFunctionProperties().setNoVRegs();
+      return MachineFunctionProperties().set(
+          MachineFunctionProperties::Property::NoVRegs);
     }
 
     StringRef getPassName() const override { return "PowerPC Branch Selector"; }

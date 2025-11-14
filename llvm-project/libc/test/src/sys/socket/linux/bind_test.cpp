@@ -12,23 +12,20 @@
 #include "src/stdio/remove.h"
 #include "src/unistd/close.h"
 
-#include "test/UnitTest/ErrnoCheckingTest.h"
-#include "test/UnitTest/ErrnoSetterMatcher.h"
+#include "src/errno/libc_errno.h"
+#include "test/UnitTest/LibcTest.h"
 #include "test/UnitTest/Test.h"
 
 #include <sys/socket.h> // For AF_UNIX and SOCK_DGRAM
 
-using LIBC_NAMESPACE::testing::ErrnoSetterMatcher::Succeeds;
-using LlvmLibcBindTest = LIBC_NAMESPACE::testing::ErrnoCheckingTest;
-
-TEST_F(LlvmLibcBindTest, BindLocalSocket) {
+TEST(LlvmLibcSocketTest, BindLocalSocket) {
 
   const char *FILENAME = "bind_file.test";
   auto SOCK_PATH = libc_make_test_file_path(FILENAME);
 
   int sock = LIBC_NAMESPACE::socket(AF_UNIX, SOCK_DGRAM, 0);
   ASSERT_GE(sock, 0);
-  ASSERT_ERRNO_SUCCESS();
+  ASSERT_EQ(libc_errno, 0);
 
   struct sockaddr_un my_addr;
 
@@ -45,10 +42,14 @@ TEST_F(LlvmLibcBindTest, BindLocalSocket) {
   ASSERT_LT(
       i, static_cast<unsigned int>(sizeof(sockaddr_un) - sizeof(sa_family_t)));
 
-  ASSERT_THAT(
+  int result =
       LIBC_NAMESPACE::bind(sock, reinterpret_cast<struct sockaddr *>(&my_addr),
-                           sizeof(struct sockaddr_un)),
-      Succeeds(0));
-  ASSERT_THAT(LIBC_NAMESPACE::close(sock), Succeeds(0));
-  ASSERT_THAT(LIBC_NAMESPACE::remove(SOCK_PATH), Succeeds(0));
+                           sizeof(struct sockaddr_un));
+
+  ASSERT_EQ(result, 0);
+  ASSERT_EQ(libc_errno, 0);
+
+  LIBC_NAMESPACE::close(sock);
+
+  LIBC_NAMESPACE::remove(SOCK_PATH);
 }

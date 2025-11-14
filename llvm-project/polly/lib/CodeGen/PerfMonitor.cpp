@@ -13,7 +13,6 @@
 #include "polly/ScopInfo.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/IntrinsicsX86.h"
-#include "llvm/IR/Module.h"
 #include "llvm/TargetParser/Triple.h"
 
 using namespace llvm;
@@ -59,12 +58,12 @@ void PerfMonitor::addToGlobalConstructors(Function *Fn) {
 }
 
 Function *PerfMonitor::getRDTSCP() {
-  return Intrinsic::getOrInsertDeclaration(M, Intrinsic::x86_rdtscp);
+  return Intrinsic::getDeclaration(M, Intrinsic::x86_rdtscp);
 }
 
 PerfMonitor::PerfMonitor(const Scop &S, Module *M)
     : M(M), Builder(M->getContext()), S(S) {
-  if (M->getTargetTriple().getArch() == llvm::Triple::x86_64)
+  if (Triple(M->getTargetTriple()).getArch() == llvm::Triple::x86_64)
     Supported = true;
   else
     Supported = false;
@@ -267,7 +266,7 @@ void PerfMonitor::insertRegionStart(Instruction *InsertBefore) {
   if (!Supported)
     return;
 
-  Builder.SetInsertPoint(InsertBefore->getIterator());
+  Builder.SetInsertPoint(InsertBefore);
   Function *RDTSCPFn = getRDTSCP();
   Value *CurrentCycles =
       Builder.CreateExtractValue(Builder.CreateCall(RDTSCPFn), {0});
@@ -278,7 +277,7 @@ void PerfMonitor::insertRegionEnd(Instruction *InsertBefore) {
   if (!Supported)
     return;
 
-  Builder.SetInsertPoint(InsertBefore->getIterator());
+  Builder.SetInsertPoint(InsertBefore);
   Function *RDTSCPFn = getRDTSCP();
   Type *Int64Ty = Builder.getInt64Ty();
   LoadInst *CyclesStart =

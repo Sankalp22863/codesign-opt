@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- HeaderIncludeCycleCheck.cpp - clang-tidy -------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -9,12 +9,15 @@
 #include "HeaderIncludeCycleCheck.h"
 #include "../utils/OptionsUtils.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Regex.h"
 #include <algorithm>
+#include <deque>
 #include <optional>
-#include <vector>
+#include <string>
 
 using namespace clang::ast_matchers;
 
@@ -23,8 +26,8 @@ namespace clang::tidy::misc {
 namespace {
 
 struct Include {
-  const FileEntry *File;
-  StringRef Name;
+  FileID Id;
+  llvm::StringRef Name;
   SourceLocation Loc;
 };
 
@@ -50,57 +53,71 @@ public:
     if (Reason != EnterFile && Reason != ExitFile)
       return;
 
-    const FileID Id = SM.getFileID(Loc);
+    FileID Id = SM.getFileID(Loc);
     if (Id.isInvalid())
       return;
 
-    const FileEntry *NewFile = SM.getFileEntryForID(Id);
-    const FileEntry *PrevFile = SM.getFileEntryForID(PrevFID);
-
     if (Reason == ExitFile) {
-      if ((Files.size() > 1U) && (Files.back().File == PrevFile) &&
-          (Files[Files.size() - 2U].File == NewFile))
+      if ((Files.size() > 1U) && (Files.back().Id == PrevFID) &&
+          (Files[Files.size() - 2U].Id == Id))
         Files.pop_back();
       return;
     }
 
-    if (!Files.empty() && Files.back().File == NewFile)
+    if (!Files.empty() && Files.back().Id == Id)
       return;
 
-    const std::optional<StringRef> FilePath = SM.getNonBuiltinFilenameForID(Id);
-    const StringRef FileName =
-        FilePath ? llvm::sys::path::filename(*FilePath) : StringRef();
-    Files.push_back({NewFile, FileName, std::exchange(NextToEnter, {})});
+    std::optional<llvm::StringRef> FilePath = SM.getNonBuiltinFilenameForID(Id);
+    llvm::StringRef FileName =
+        FilePath ? llvm::sys::path::filename(*FilePath) : llvm::StringRef();
+
+    if (!NextToEnter)
+      NextToEnter = Include{Id, FileName, SourceLocation()};
+
+    assert(NextToEnter->Name == FileName);
+    NextToEnter->Id = Id;
+    Files.emplace_back(*NextToEnter);
+    NextToEnter.reset();
   }
 
   void InclusionDirective(SourceLocation, const Token &, StringRef FilePath,
                           bool, CharSourceRange Range,
                           OptionalFileEntryRef File, StringRef, StringRef,
-                          const Module *, bool,
+                          const Module *,
                           SrcMgr::CharacteristicKind FileType) override {
     if (FileType != clang::SrcMgr::C_User)
       return;
 
-    NextToEnter = Range.getBegin();
+    llvm::StringRef FileName = llvm::sys::path::filename(FilePath);
+    NextToEnter = {FileID(), FileName, Range.getBegin()};
 
     if (!File)
       return;
 
-    checkForDoubleInclude(&File->getFileEntry(),
-                          llvm::sys::path::filename(FilePath),
-                          Range.getBegin());
+    FileID Id = SM.translateFile(*File);
+    if (Id.isInvalid())
+      return;
+
+    checkForDoubleInclude(Id, FileName, Range.getBegin());
   }
 
-  void checkForDoubleInclude(const FileEntry *File, StringRef FileName,
+  void EndOfMainFile() override {
+    if (!Files.empty() && Files.back().Id == SM.getMainFileID())
+      Files.pop_back();
+
+    assert(Files.empty());
+  }
+
+  void checkForDoubleInclude(FileID Id, llvm::StringRef FileName,
                              SourceLocation Loc) {
-    const auto It =
-        llvm::find_if(llvm::reverse(Files),
-                      [&](const Include &Entry) { return Entry.File == File; });
+    auto It =
+        std::find_if(Files.rbegin(), Files.rend(),
+                     [&](const Include &Entry) { return Entry.Id == Id; });
     if (It == Files.rend())
       return;
 
-    const StringRef FilePath = File->tryGetRealPathName();
-    if (FilePath.empty() || isFileIgnored(FilePath))
+    const std::optional<StringRef> FilePath = SM.getNonBuiltinFilenameForID(Id);
+    if (!FilePath || isFileIgnored(*FilePath))
       return;
 
     if (It == Files.rbegin()) {
@@ -113,15 +130,18 @@ public:
         << FileName;
 
     const bool IsIncludePathValid =
-        std::all_of(Files.rbegin(), It + 1, [](const Include &Elem) {
+        std::all_of(Files.rbegin(), It, [](const Include &Elem) {
           return !Elem.Name.empty() && Elem.Loc.isValid();
         });
+
     if (!IsIncludePathValid)
       return;
 
-    for (const Include &I : llvm::make_range(Files.rbegin(), It + 1))
-      Check.diag(I.Loc, "'%0' included from here", DiagnosticIDs::Note)
-          << I.Name;
+    auto CurrentIt = Files.rbegin();
+    do {
+      Check.diag(CurrentIt->Loc, "'%0' included from here", DiagnosticIDs::Note)
+          << CurrentIt->Name;
+    } while (CurrentIt++ != It);
   }
 
   bool isFileIgnored(StringRef FileName) const {
@@ -130,19 +150,9 @@ public:
     });
   }
 
-#ifndef NDEBUG
-  void EndOfMainFile() override {
-    if (!Files.empty() &&
-        Files.back().File == SM.getFileEntryForID(SM.getMainFileID()))
-      Files.pop_back();
-
-    assert(Files.empty());
-  }
-#endif
-
 private:
-  std::vector<Include> Files;
-  SourceLocation NextToEnter;
+  std::deque<Include> Files;
+  std::optional<Include> NextToEnter;
   HeaderIncludeCycleCheck &Check;
   const SourceManager &SM;
   std::vector<llvm::Regex> IgnoredFilesRegexes;

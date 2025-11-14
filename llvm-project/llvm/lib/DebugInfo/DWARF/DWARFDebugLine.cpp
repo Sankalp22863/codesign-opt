@@ -158,12 +158,13 @@ void DWARFDebugLine::Prologue::dump(raw_ostream &OS,
     uint32_t FileBase = getVersion() >= 5 ? 0 : 1;
     for (uint32_t I = 0; I != FileNames.size(); ++I) {
       const FileNameEntry &FileEntry = FileNames[I];
-      OS << format("file_names[%3u]:\n", I + FileBase);
-      OS << "           name: ";
+      OS <<   format("file_names[%3u]:\n", I + FileBase);
+      OS <<          "           name: ";
       FileEntry.Name.dump(OS, DumpOptions);
-      OS << '\n' << format("      dir_index: %" PRIu64 "\n", FileEntry.DirIdx);
+      OS << '\n'
+         <<   format("      dir_index: %" PRIu64 "\n", FileEntry.DirIdx);
       if (ContentTypes.HasMD5)
-        OS << "   md5_checksum: " << FileEntry.Checksum.digest() << '\n';
+        OS <<        "   md5_checksum: " << FileEntry.Checksum.digest() << '\n';
       if (ContentTypes.HasModTime)
         OS << format("       mod_time: 0x%8.8" PRIx64 "\n", FileEntry.ModTime);
       if (ContentTypes.HasLength)
@@ -340,8 +341,8 @@ parseV5DirFileTables(const DWARFDataExtractor &DebugLineData,
           return createStringError(
               errc::invalid_argument,
               "failed to parse file entry because the MD5 hash is invalid");
-        llvm::uninitialized_copy(*Value.getAsBlock(),
-                                 FileEntry.Checksum.begin());
+        std::uninitialized_copy_n(Value.getAsBlock()->begin(), 16,
+                                  FileEntry.Checksum.begin());
         break;
       default:
         break;
@@ -388,25 +389,9 @@ Error DWARFDebugLine::Prologue::parse(
 
   if (getVersion() >= 5) {
     FormParams.AddrSize = DebugLineData.getU8(Cursor);
-    const uint8_t DataAddrSize = DebugLineData.getAddressSize();
-    const uint8_t PrologueAddrSize = getAddressSize();
-    if (Cursor) {
-      if (DataAddrSize == 0) {
-        if (PrologueAddrSize != 4 && PrologueAddrSize != 8) {
-          RecoverableErrorHandler(createStringError(
-              errc::not_supported,
-              "parsing line table prologue at offset 0x%8.8" PRIx64
-              ": invalid address size %" PRIu8,
-              PrologueOffset, PrologueAddrSize));
-        }
-      } else if (DataAddrSize != PrologueAddrSize) {
-        RecoverableErrorHandler(createStringError(
-            errc::not_supported,
-            "parsing line table prologue at offset 0x%8.8" PRIx64 ": address "
-            "size %" PRIu8 " doesn't match architecture address size %" PRIu8,
-            PrologueOffset, PrologueAddrSize, DataAddrSize));
-      }
-    }
+    assert((!Cursor || DebugLineData.getAddressSize() == 0 ||
+            DebugLineData.getAddressSize() == getAddressSize()) &&
+           "Line table header and data extractor disagree");
     SegSelectorSize = DebugLineData.getU8(Cursor);
   }
 
@@ -531,7 +516,6 @@ void DWARFDebugLine::Sequence::reset() {
   FirstRowIndex = 0;
   LastRowIndex = 0;
   Empty = true;
-  StmtSeqOffset = UINT64_MAX;
 }
 
 DWARFDebugLine::LineTable::LineTable() { clear(); }
@@ -562,12 +546,13 @@ void DWARFDebugLine::LineTable::clear() {
 DWARFDebugLine::ParsingState::ParsingState(
     struct LineTable *LT, uint64_t TableOffset,
     function_ref<void(Error)> ErrorHandler)
-    : LineTable(LT), LineTableOffset(TableOffset), ErrorHandler(ErrorHandler) {}
+    : LineTable(LT), LineTableOffset(TableOffset), ErrorHandler(ErrorHandler) {
+  resetRowAndSequence();
+}
 
-void DWARFDebugLine::ParsingState::resetRowAndSequence(uint64_t Offset) {
+void DWARFDebugLine::ParsingState::resetRowAndSequence() {
   Row.reset(LineTable->Prologue.DefaultIsStmt);
   Sequence.reset();
-  Sequence.StmtSeqOffset = Offset;
 }
 
 void DWARFDebugLine::ParsingState::appendRowToMatrix() {
@@ -603,10 +588,9 @@ Expected<const DWARFDebugLine::LineTable *> DWARFDebugLine::getOrParseLineTable(
     DWARFDataExtractor &DebugLineData, uint64_t Offset, const DWARFContext &Ctx,
     const DWARFUnit *U, function_ref<void(Error)> RecoverableErrorHandler) {
   if (!DebugLineData.isValidOffset(Offset))
-    return createStringError(errc::invalid_argument,
-                             "offset 0x%8.8" PRIx64
-                             " is not a valid debug line section offset",
-                             Offset);
+    return createStringError(errc::invalid_argument, "offset 0x%8.8" PRIx64
+                       " is not a valid debug line section offset",
+                       Offset);
 
   std::pair<LineTableIter, bool> Pos =
       LineTableMap.insert(LineTableMapTy::value_type(Offset, LineTable()));
@@ -848,10 +832,6 @@ Error DWARFDebugLine::LineTable::parse(
     *OS << '\n';
     Row::dumpTableHeader(*OS, /*Indent=*/Verbose ? 12 : 0);
   }
-  // *OffsetPtr points to the end of the prologue - i.e. the start of the first
-  // sequence. So initialize the first sequence offset accordingly.
-  State.resetRowAndSequence(*OffsetPtr);
-
   bool TombstonedAddress = false;
   auto EmitRow = [&] {
     if (!TombstonedAddress) {
@@ -916,9 +896,7 @@ Error DWARFDebugLine::LineTable::parse(
         // into this code path - if it were invalid, the default case would be
         // followed.
         EmitRow();
-        // Cursor now points to right after the end_sequence opcode - so points
-        // to the start of the next sequence - if one exists.
-        State.resetRowAndSequence(Cursor.tell());
+        State.resetRowAndSequence();
         break;
 
       case DW_LNE_set_address:
@@ -972,8 +950,7 @@ Error DWARFDebugLine::LineTable::parse(
 
           if (Cursor && Verbose) {
             *OS << " (";
-            DWARFFormValue::dumpAddress(*OS, OpcodeAddressSize,
-                                        State.Row.Address.Address);
+            DWARFFormValue::dumpAddress(*OS, OpcodeAddressSize, State.Row.Address.Address);
             *OS << ')';
           }
         }
@@ -1166,7 +1143,8 @@ Error DWARFDebugLine::LineTable::parse(
         // DW_LNS_advance_pc. Such assemblers, however, can use
         // DW_LNS_fixed_advance_pc instead, sacrificing compression.
         {
-          uint16_t PCOffset = TableData.getRelocatedValue(Cursor, 2);
+          uint16_t PCOffset =
+              TableData.getRelocatedValue(Cursor, 2);
           if (Cursor) {
             State.Row.Address.Address += PCOffset;
             State.Row.OpIndex = 0;
@@ -1274,14 +1252,13 @@ Error DWARFDebugLine::LineTable::parse(
 
   // Sort all sequences so that address lookup will work faster.
   if (!Sequences.empty()) {
-    llvm::stable_sort(Sequences, Sequence::orderByHighPC);
+    llvm::sort(Sequences, Sequence::orderByHighPC);
     // Note: actually, instruction address ranges of sequences should not
     // overlap (in shared objects and executables). If they do, the address
     // lookup would still work, though, but result would be ambiguous.
     // We don't report warning in this case. For example,
     // sometimes .so compiled from multiple object files contains a few
     // rudimentary sequences for address ranges [0x0, 0xsomething).
-    // Address ranges may also overlap when using ICF.
   }
 
   // Terminate the table with a final blank line to clearly delineate it from
@@ -1319,12 +1296,11 @@ uint32_t DWARFDebugLine::LineTable::findRowInSeq(
   return RowPos - Rows.begin();
 }
 
-uint32_t
-DWARFDebugLine::LineTable::lookupAddress(object::SectionedAddress Address,
-                                         bool *IsApproximateLine) const {
+uint32_t DWARFDebugLine::LineTable::lookupAddress(
+    object::SectionedAddress Address) const {
 
   // Search for relocatable addresses
-  uint32_t Result = lookupAddressImpl(Address, IsApproximateLine);
+  uint32_t Result = lookupAddressImpl(Address);
 
   if (Result != UnknownRowIndex ||
       Address.SectionIndex == object::SectionedAddress::UndefSection)
@@ -1332,15 +1308,11 @@ DWARFDebugLine::LineTable::lookupAddress(object::SectionedAddress Address,
 
   // Search for absolute addresses
   Address.SectionIndex = object::SectionedAddress::UndefSection;
-  return lookupAddressImpl(Address, IsApproximateLine);
+  return lookupAddressImpl(Address);
 }
 
-uint32_t
-DWARFDebugLine::LineTable::lookupAddressImpl(object::SectionedAddress Address,
-                                             bool *IsApproximateLine) const {
-  assert((!IsApproximateLine || !*IsApproximateLine) &&
-         "Make sure IsApproximateLine is appropriately "
-         "initialized, if provided");
+uint32_t DWARFDebugLine::LineTable::lookupAddressImpl(
+    object::SectionedAddress Address) const {
   // First, find an instruction sequence containing the given address.
   DWARFDebugLine::Sequence Sequence;
   Sequence.SectionIndex = Address.SectionIndex;
@@ -1349,33 +1321,15 @@ DWARFDebugLine::LineTable::lookupAddressImpl(object::SectionedAddress Address,
                                       DWARFDebugLine::Sequence::orderByHighPC);
   if (It == Sequences.end() || It->SectionIndex != Address.SectionIndex)
     return UnknownRowIndex;
-
-  uint32_t RowIndex = findRowInSeq(*It, Address);
-  if (RowIndex == UnknownRowIndex || !IsApproximateLine)
-    return RowIndex;
-
-  // Approximation will only be attempted if a valid RowIndex exists.
-  uint32_t ApproxRowIndex = RowIndex;
-  // Approximation Loop
-  for (; ApproxRowIndex >= It->FirstRowIndex; --ApproxRowIndex) {
-    if (Rows[ApproxRowIndex].Line)
-      return ApproxRowIndex;
-    *IsApproximateLine = true;
-  }
-  // Approximation Loop fails to find the valid ApproxRowIndex
-  if (ApproxRowIndex < It->FirstRowIndex)
-    *IsApproximateLine = false;
-
-  return RowIndex;
+  return findRowInSeq(*It, Address);
 }
 
 bool DWARFDebugLine::LineTable::lookupAddressRange(
     object::SectionedAddress Address, uint64_t Size,
-    std::vector<uint32_t> &Result,
-    std::optional<uint64_t> StmtSequenceOffset) const {
+    std::vector<uint32_t> &Result) const {
 
   // Search for relocatable addresses
-  if (lookupAddressRangeImpl(Address, Size, Result, StmtSequenceOffset))
+  if (lookupAddressRangeImpl(Address, Size, Result))
     return true;
 
   if (Address.SectionIndex == object::SectionedAddress::UndefSection)
@@ -1383,13 +1337,12 @@ bool DWARFDebugLine::LineTable::lookupAddressRange(
 
   // Search for absolute addresses
   Address.SectionIndex = object::SectionedAddress::UndefSection;
-  return lookupAddressRangeImpl(Address, Size, Result, StmtSequenceOffset);
+  return lookupAddressRangeImpl(Address, Size, Result);
 }
 
 bool DWARFDebugLine::LineTable::lookupAddressRangeImpl(
     object::SectionedAddress Address, uint64_t Size,
-    std::vector<uint32_t> &Result,
-    std::optional<uint64_t> StmtSequenceOffset) const {
+    std::vector<uint32_t> &Result) const {
   if (Sequences.empty())
     return false;
   uint64_t EndAddr = Address.Address + Size;
@@ -1398,38 +1351,16 @@ bool DWARFDebugLine::LineTable::lookupAddressRangeImpl(
   Sequence.SectionIndex = Address.SectionIndex;
   Sequence.HighPC = Address.Address;
   SequenceIter LastSeq = Sequences.end();
-  SequenceIter SeqPos;
-
-  if (StmtSequenceOffset) {
-    // If we have a statement sequence offset, find the specific sequence.
-    // Linear search for sequence with matching StmtSeqOffset
-    SeqPos = std::find_if(Sequences.begin(), LastSeq,
-                          [&](const DWARFDebugLine::Sequence &S) {
-                            return S.StmtSeqOffset == *StmtSequenceOffset;
-                          });
-
-    // If sequence not found, return false
-    if (SeqPos == LastSeq)
-      return false;
-
-    // Set LastSeq to the next sequence since we only want the one matching
-    // sequence (sequences are guaranteed to have unique StmtSeqOffset)
-    LastSeq = SeqPos + 1;
-  } else {
-    // No specific sequence requested, find first sequence containing address
-    SeqPos = std::upper_bound(Sequences.begin(), LastSeq, Sequence,
-                              DWARFDebugLine::Sequence::orderByHighPC);
-    if (SeqPos == LastSeq)
-      return false;
-  }
-
-  // If the start sequence doesn't contain the address, nothing to do
-  if (!SeqPos->containsPC(Address))
+  SequenceIter SeqPos = llvm::upper_bound(
+      Sequences, Sequence, DWARFDebugLine::Sequence::orderByHighPC);
+  if (SeqPos == LastSeq || !SeqPos->containsPC(Address))
     return false;
 
   SequenceIter StartPos = SeqPos;
 
-  // Process sequences that overlap with the desired range
+  // Add the rows from the first sequence to the vector, starting with the
+  // index we just calculated
+
   while (SeqPos != LastSeq && SeqPos->LowPC < EndAddr) {
     const DWARFDebugLine::Sequence &CurSeq = *SeqPos;
     // For the first sequence, we need to find which row in the sequence is the
@@ -1530,11 +1461,10 @@ bool DWARFDebugLine::Prologue::getFileNameByIndex(
 }
 
 bool DWARFDebugLine::LineTable::getFileLineInfoForAddress(
-    object::SectionedAddress Address, bool Approximate, const char *CompDir,
+    object::SectionedAddress Address, const char *CompDir,
     FileLineInfoKind Kind, DILineInfo &Result) const {
   // Get the index of row we're looking for in the line table.
-  uint32_t RowIndex =
-      lookupAddress(Address, Approximate ? &Result.IsApproximateLine : nullptr);
+  uint32_t RowIndex = lookupAddress(Address);
   if (RowIndex == -1U)
     return false;
   // Take file number and line/column from the row.

@@ -11,14 +11,12 @@
 #include "flang/Evaluate/fold.h"
 #include "flang/Evaluate/shape.h"
 #include "flang/Evaluate/type.h"
-#include "flang/Runtime/descriptor-consts.h"
+#include "flang/Runtime/descriptor.h"
 #include "flang/Semantics/scope.h"
 #include "flang/Semantics/semantics.h"
 #include "flang/Semantics/symbol.h"
 #include "flang/Semantics/tools.h"
 #include "flang/Semantics/type.h"
-#include "llvm/TargetParser/Host.h"
-#include "llvm/TargetParser/Triple.h"
 #include <algorithm>
 #include <vector>
 
@@ -53,12 +51,9 @@ private:
   SymbolAndOffset Resolve(const SymbolAndOffset &);
   std::size_t ComputeOffset(const EquivalenceObject &);
   // Returns amount of padding that was needed for alignment
-  std::size_t DoSymbol(
-      Symbol &, std::optional<const size_t> newAlign = std::nullopt);
+  std::size_t DoSymbol(Symbol &);
   SizeAndAlignment GetSizeAndAlignment(const Symbol &, bool entire);
   std::size_t Align(std::size_t, std::size_t);
-  std::optional<size_t> CompAlignment(const Symbol &);
-  std::optional<size_t> HasSpecialAlign(const Symbol &, Scope &);
 
   SemanticsContext &context_;
   std::size_t offset_{0};
@@ -69,69 +64,6 @@ private:
   std::map<MutableSymbolRef, SizeAndAlignment, SymbolAddressCompare>
       equivalenceBlock_;
 };
-
-// This function is only called if the target platform is AIX.
-static bool isReal8OrLarger(const Fortran::semantics::DeclTypeSpec *type) {
-  return ((type->IsNumeric(common::TypeCategory::Real) ||
-              type->IsNumeric(common::TypeCategory::Complex)) &&
-      evaluate::ToInt64(type->numericTypeSpec().kind()) > 4);
-}
-
-// This function is only called if the target platform is AIX.
-// It determines the alignment of a component. If the component is a derived
-// type, the alignment is computed accordingly.
-std::optional<size_t> ComputeOffsetsHelper::CompAlignment(const Symbol &sym) {
-  size_t max_align{0};
-  constexpr size_t fourByteAlign{4};
-  bool contain_double{false};
-  auto derivedTypeSpec{sym.GetType()->AsDerived()};
-  DirectComponentIterator directs{*derivedTypeSpec};
-  for (auto it{directs.begin()}; it != directs.end(); ++it) {
-    auto type{it->GetType()};
-    auto s{GetSizeAndAlignment(*it, true)};
-    if (isReal8OrLarger(type)) {
-      max_align = std::max(max_align, fourByteAlign);
-      contain_double = true;
-    } else if (type->AsDerived()) {
-      if (const auto newAlgin{CompAlignment(*it)}) {
-        max_align = std::max(max_align, s.alignment);
-      } else {
-        return std::nullopt;
-      }
-    } else {
-      max_align = std::max(max_align, s.alignment);
-    }
-  }
-
-  if (contain_double) {
-    return max_align;
-  } else {
-    return std::nullopt;
-  }
-}
-
-// This function is only called if the target platform is AIX.
-// Special alignment is needed only if it is a bind(c) derived type
-// and contain real type components that have larger than 4 bytes.
-std::optional<size_t> ComputeOffsetsHelper::HasSpecialAlign(
-    const Symbol &sym, Scope &scope) {
-  // On AIX, if the component that is not the first component and is
-  // a float of 8 bytes or larger, it has the 4-byte alignment.
-  // Only set the special alignment for bind(c) derived type on that platform.
-  if (const auto type{sym.GetType()}) {
-    auto &symOwner{sym.owner()};
-    if (symOwner.symbol() && symOwner.IsDerivedType() &&
-        symOwner.symbol()->attrs().HasAny({semantics::Attr::BIND_C}) &&
-        &sym != &(*scope.GetSymbols().front())) {
-      if (isReal8OrLarger(type)) {
-        return 4UL;
-      } else if (type->AsDerived()) {
-        return CompAlignment(sym);
-      }
-    }
-  }
-  return std::nullopt;
-}
 
 void ComputeOffsetsHelper::Compute(Scope &scope) {
   for (Scope &child : scope.children()) {
@@ -181,22 +113,7 @@ void ComputeOffsetsHelper::Compute(Scope &scope) {
     if (!FindCommonBlockContaining(*symbol) &&
         dependents_.find(symbol) == dependents_.end() &&
         equivalenceBlock_.find(symbol) == equivalenceBlock_.end()) {
-
-      std::optional<size_t> newAlign{std::nullopt};
-      // Handle special alignment requirement for AIX
-      auto triple{llvm::Triple(
-          llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple()))};
-      if (triple.getOS() == llvm::Triple::OSType::AIX) {
-        newAlign = HasSpecialAlign(*symbol, scope);
-      }
-      DoSymbol(*symbol, newAlign);
-      if (auto *generic{symbol->detailsIf<GenericDetails>()}) {
-        if (Symbol * specific{generic->specific()};
-            specific && !FindCommonBlockContaining(*specific)) {
-          // might be a shadowed procedure pointer
-          DoSymbol(*specific);
-        }
-      }
+      DoSymbol(*symbol);
     }
   }
   // Ensure that the size is a multiple of the alignment
@@ -239,15 +156,15 @@ void ComputeOffsetsHelper::DoCommonBlock(Symbol &commonBlock) {
   std::size_t minAlignment{0};
   UnorderedSymbolSet previous;
   for (auto object : details.objects()) {
-    // Allow for host association when the common block is
-    // OpenMP firstprivate.
-    Symbol &symbol{object->GetUltimate()};
+    Symbol &symbol{*object};
     auto errorSite{
         commonBlock.name().empty() ? symbol.name() : commonBlock.name()};
     if (std::size_t padding{DoSymbol(symbol.GetUltimate())}) {
-      context_.Warn(common::UsageWarning::CommonBlockPadding, errorSite,
-          "COMMON block /%s/ requires %zd bytes of padding before '%s' for alignment"_port_en_US,
-          commonBlock.name(), padding, symbol.name());
+      if (context_.ShouldWarn(common::UsageWarning::CommonBlockPadding)) {
+        context_.Say(errorSite,
+            "COMMON block /%s/ requires %zd bytes of padding before '%s' for alignment"_port_en_US,
+            commonBlock.name(), padding, symbol.name());
+      }
     }
     previous.emplace(symbol);
     auto eqIter{equivalenceBlock_.end()};
@@ -360,22 +277,20 @@ std::size_t ComputeOffsetsHelper::ComputeOffset(
     const EquivalenceObject &object) {
   std::size_t offset{0};
   if (!object.subscripts.empty()) {
-    if (const auto *details{object.symbol.detailsIf<ObjectEntityDetails>()}) {
-      const ArraySpec &shape{details->shape()};
-      auto lbound{[&](std::size_t i) {
-        return *ToInt64(shape[i].lbound().GetExplicit());
-      }};
-      auto ubound{[&](std::size_t i) {
-        return *ToInt64(shape[i].ubound().GetExplicit());
-      }};
-      for (std::size_t i{object.subscripts.size() - 1};;) {
-        offset += object.subscripts[i] - lbound(i);
-        if (i == 0) {
-          break;
-        }
-        --i;
-        offset *= ubound(i) - lbound(i) + 1;
+    const ArraySpec &shape{object.symbol.get<ObjectEntityDetails>().shape()};
+    auto lbound{[&](std::size_t i) {
+      return *ToInt64(shape[i].lbound().GetExplicit());
+    }};
+    auto ubound{[&](std::size_t i) {
+      return *ToInt64(shape[i].ubound().GetExplicit());
+    }};
+    for (std::size_t i{object.subscripts.size() - 1};;) {
+      offset += object.subscripts[i] - lbound(i);
+      if (i == 0) {
+        break;
       }
+      --i;
+      offset *= ubound(i) - lbound(i) + 1;
     }
   }
   auto result{offset * GetSizeAndAlignment(object.symbol, false).size};
@@ -391,8 +306,7 @@ std::size_t ComputeOffsetsHelper::ComputeOffset(
   return result;
 }
 
-std::size_t ComputeOffsetsHelper::DoSymbol(
-    Symbol &symbol, std::optional<const size_t> newAlign) {
+std::size_t ComputeOffsetsHelper::DoSymbol(Symbol &symbol) {
   if (!symbol.has<ObjectEntityDetails>() && !symbol.has<ProcEntityDetails>()) {
     return 0;
   }
@@ -401,13 +315,12 @@ std::size_t ComputeOffsetsHelper::DoSymbol(
     return 0;
   }
   std::size_t previousOffset{offset_};
-  size_t alignVal{newAlign.value_or(s.alignment)};
-  offset_ = Align(offset_, alignVal);
+  offset_ = Align(offset_, s.alignment);
   std::size_t padding{offset_ - previousOffset};
   symbol.set_size(s.size);
   symbol.set_offset(offset_);
   offset_ += s.size;
-  alignment_ = std::max(alignment_, alignVal);
+  alignment_ = std::max(alignment_, s.alignment);
   return padding;
 }
 
@@ -419,12 +332,8 @@ auto ComputeOffsetsHelper::GetSizeAndAlignment(
     const auto *derived{evaluate::GetDerivedTypeSpec(dyType)};
     int lenParams{derived ? CountLenParameters(*derived) : 0};
     bool needAddendum{derived || (dyType && dyType->IsUnlimitedPolymorphic())};
-
-    // FIXME: Get descriptor size from targetCharacteristics instead
-    // overapproximation
-    std::size_t size{runtime::MaxDescriptorSizeInBytes(
+    std::size_t size{runtime::Descriptor::SizeInBytes(
         symbol.Rank(), needAddendum, lenParams)};
-
     return {size, targetCharacteristics.descriptorAlignment()};
   }
   if (IsProcedurePointer(symbol)) {

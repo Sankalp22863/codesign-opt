@@ -19,14 +19,21 @@ public:
       : CommandObjectParsed(interpreter, "session save",
                             "Save the current session transcripts to a file.\n"
                             "If no file if specified, transcripts will be "
-                            "saved to a temporary file.\n"
-                            "Note: transcripts will only be saved if "
-                            "interpreter.save-transcript is true.\n",
+                            "saved to a temporary file.",
                             "session save [file]") {
-    AddSimpleArgumentList(eArgTypePath, eArgRepeatOptional);
+    CommandArgumentEntry arg1;
+    arg1.emplace_back(eArgTypePath, eArgRepeatOptional);
+    m_arguments.push_back(arg1);
   }
 
   ~CommandObjectSessionSave() override = default;
+
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    lldb_private::CommandCompletions::InvokeCommonCompletionCallbacks(
+        GetCommandInterpreter(), lldb::eDiskFileCompletion, request, nullptr);
+  }
 
 protected:
   void DoExecute(Args &args, CommandReturnObject &result) override {

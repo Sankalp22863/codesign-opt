@@ -22,23 +22,24 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 
-namespace llvm::misexpect {
+namespace llvm {
+namespace misexpect {
 
 /// checkBackendInstrumentation - compares PGO counters to the thresholds used
 /// for llvm.expect and warns if the PGO counters are outside of the expected
-/// range. It extracts the expected weights from the MD_prof weights attached
+/// range. It extracts the expected weights from the MD_prof weights attatched
 /// to the instruction, which are assumed to come from lowered llvm.expect
 /// intrinsics. The RealWeights parameter and the extracted expected weights are
 /// then passed to verifyMisexpect() for verification
 ///
 /// \param I The Instruction being checked
 /// \param RealWeights A vector of profile weights for each target block
-void checkBackendInstrumentation(const Instruction &I,
-                                 ArrayRef<uint32_t> RealWeights);
+void checkBackendInstrumentation(Instruction &I,
+                                 const llvm::ArrayRef<uint32_t> RealWeights);
 
 /// checkFrontendInstrumentation - compares PGO counters to the thresholds used
 /// for llvm.expect and warns if the PGO counters are outside of the expected
-/// range. It extracts the expected weights from the MD_prof weights attached
+/// range. It extracts the expected weights from the MD_prof weights attatched
 /// to the instruction, which are assumed to come from profiling data
 /// attached by the frontend prior to llvm.expect intrinsic lowering. The
 /// ExpectedWeights parameter and the extracted real weights are then passed to
@@ -46,9 +47,9 @@ void checkBackendInstrumentation(const Instruction &I,
 ///
 /// \param I The Instruction being checked
 /// \param ExpectedWeights A vector of the expected weights for each target
-/// block, this determines the threshold values used when emitting diagnostics
-void checkFrontendInstrumentation(const Instruction &I,
-                                  ArrayRef<uint32_t> ExpectedWeights);
+/// block, this determines the threshold values used when emiting diagnostics
+void checkFrontendInstrumentation(Instruction &I,
+                                  const ArrayRef<uint32_t> ExpectedWeights);
 
 /// veryifyMisExpect - compares RealWeights to the thresholds used
 /// for llvm.expect and warns if the PGO counters are outside of the expected
@@ -57,12 +58,12 @@ void checkFrontendInstrumentation(const Instruction &I,
 /// \param I The Instruction being checked
 /// \param RealWeights A vector of profile weights from the profile data
 /// \param ExpectedWeights A vector of the weights attatch by llvm.expect
-void verifyMisExpect(const Instruction &I, ArrayRef<uint32_t> RealWeights,
-                     ArrayRef<uint32_t> ExpectedWeights);
+void verifyMisExpect(Instruction &I, ArrayRef<uint32_t> RealWeights,
+                     const ArrayRef<uint32_t> ExpectedWeights);
 
 /// checkExpectAnnotations - compares PGO counters to the thresholds used
 /// for llvm.expect and warns if the PGO counters are outside of the expected
-/// range. It extracts the expected weights from the MD_prof weights attached
+/// range. It extracts the expected weights from the MD_prof weights attatched
 /// to the instruction, which are assumed to come from lowered llvm.expect
 /// intrinsics. The RealWeights parameter and the extracted expected weights are
 /// then passed to verifyMisexpect() for verification. It is a thin wrapper
@@ -71,10 +72,11 @@ void verifyMisExpect(const Instruction &I, ArrayRef<uint32_t> RealWeights,
 /// \param I The Instruction being checked
 /// \param ExistingWeights A vector of profile weights for each target block
 /// \param IsFrontend A boolean describing if this is Frontend instrumentation
-void checkExpectAnnotations(const Instruction &I,
-                            ArrayRef<uint32_t> ExistingWeights,
+void checkExpectAnnotations(Instruction &I,
+                            const ArrayRef<uint32_t> ExistingWeights,
                             bool IsFrontend);
 
-} // namespace llvm::misexpect
+} // namespace misexpect
+} // namespace llvm
 
 #endif

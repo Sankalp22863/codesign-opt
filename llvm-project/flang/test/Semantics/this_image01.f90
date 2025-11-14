@@ -8,8 +8,6 @@ subroutine test
   type(team_type) :: coteam[*]
   integer :: coscalar[*], coarray(3)[*]
   save :: coteam, coscalar, coarray
-  real, save :: coarray1[*], coarray2[2,*], coarray3[2,3,*]
-  integer indices(3)
 
   ! correct calls, should produce no errors
   team = get_team()
@@ -19,10 +17,6 @@ subroutine test
   print *, this_image(coarray, team)
   print *, this_image(coarray, 1)
   print *, this_image(coarray, 1, team)
-  print *, this_image(coarray(1))
-  print *, this_image(coarray(1), team)
-  print *, this_image(coarray(1), 1)
-  print *, this_image(coarray(1), 1, team)
   print *, this_image(coscalar)
   print *, this_image(coscalar, team)
   print *, this_image(coscalar, 1)
@@ -33,15 +27,5 @@ subroutine test
 
   print *, team_number()
   print *, team_number(team)
-
-  indices(1:1) = this_image(coarray1) ! ok
-  indices(1:2) = this_image(coarray2) ! ok
-  indices(1:3) = this_image(coarray3) ! ok
-  !ERROR: Dimension 1 of left-hand side has extent 2, but right-hand side has extent 1
-  indices(1:2) = this_image(coarray1)
-  !ERROR: Dimension 1 of left-hand side has extent 3, but right-hand side has extent 2
-  indices(1:3) = this_image(coarray2)
-  !ERROR: Dimension 1 of left-hand side has extent 1, but right-hand side has extent 3
-  indices(1:1) = this_image(coarray3)
 
 end subroutine

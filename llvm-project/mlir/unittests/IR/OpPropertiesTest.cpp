@@ -96,9 +96,10 @@ inline llvm::hash_code computeHash(const TestProperties &prop) {
   // We hash `b` which is a float using its underlying array of char:
   unsigned char const *p = reinterpret_cast<unsigned char const *>(&prop.b);
   ArrayRef<unsigned char> bBytes{p, sizeof(prop.b)};
-  return llvm::hash_combine(prop.a, llvm::hash_combine_range(bBytes),
-                            llvm::hash_combine_range(prop.array),
-                            StringRef(*prop.label));
+  return llvm::hash_combine(
+      prop.a, llvm::hash_combine_range(bBytes.begin(), bBytes.end()),
+      llvm::hash_combine_range(prop.array.begin(), prop.array.end()),
+      StringRef(*prop.label));
 }
 
 /// A custom operation for the purpose of showcasing how to use "properties".
@@ -190,7 +191,7 @@ TEST(OpPropertiesTest, Properties) {
                  "array = array<i64: 40, 41>, "
                  "b = -4.200000e+01 : f32, "
                  "label = \"bar foo\"}> : () -> ()\n",
-                 output.c_str());
+                 os.str().c_str());
   }
   // Get a mutable reference to the properties for this operation and modify it
   // in place one member at a time.
@@ -200,44 +201,40 @@ TEST(OpPropertiesTest, Properties) {
     std::string output;
     llvm::raw_string_ostream os(output);
     opWithProp.print(os);
-    StringRef view(output);
-    EXPECT_TRUE(view.contains("a = 42"));
-    EXPECT_TRUE(view.contains("b = -4.200000e+01"));
-    EXPECT_TRUE(view.contains("array = array<i64: 40, 41>"));
-    EXPECT_TRUE(view.contains("label = \"bar foo\""));
+    EXPECT_TRUE(StringRef(os.str()).contains("a = 42"));
+    EXPECT_TRUE(StringRef(os.str()).contains("b = -4.200000e+01"));
+    EXPECT_TRUE(StringRef(os.str()).contains("array = array<i64: 40, 41>"));
+    EXPECT_TRUE(StringRef(os.str()).contains("label = \"bar foo\""));
   }
   prop.b = 42.;
   {
     std::string output;
     llvm::raw_string_ostream os(output);
     opWithProp.print(os);
-    StringRef view(output);
-    EXPECT_TRUE(view.contains("a = 42"));
-    EXPECT_TRUE(view.contains("b = 4.200000e+01"));
-    EXPECT_TRUE(view.contains("array = array<i64: 40, 41>"));
-    EXPECT_TRUE(view.contains("label = \"bar foo\""));
+    EXPECT_TRUE(StringRef(os.str()).contains("a = 42"));
+    EXPECT_TRUE(StringRef(os.str()).contains("b = 4.200000e+01"));
+    EXPECT_TRUE(StringRef(os.str()).contains("array = array<i64: 40, 41>"));
+    EXPECT_TRUE(StringRef(os.str()).contains("label = \"bar foo\""));
   }
   prop.array.push_back(42);
   {
     std::string output;
     llvm::raw_string_ostream os(output);
     opWithProp.print(os);
-    StringRef view(output);
-    EXPECT_TRUE(view.contains("a = 42"));
-    EXPECT_TRUE(view.contains("b = 4.200000e+01"));
-    EXPECT_TRUE(view.contains("array = array<i64: 40, 41, 42>"));
-    EXPECT_TRUE(view.contains("label = \"bar foo\""));
+    EXPECT_TRUE(StringRef(os.str()).contains("a = 42"));
+    EXPECT_TRUE(StringRef(os.str()).contains("b = 4.200000e+01"));
+    EXPECT_TRUE(StringRef(os.str()).contains("array = array<i64: 40, 41, 42>"));
+    EXPECT_TRUE(StringRef(os.str()).contains("label = \"bar foo\""));
   }
   prop.label = std::make_shared<std::string>("foo bar");
   {
     std::string output;
     llvm::raw_string_ostream os(output);
     opWithProp.print(os);
-    StringRef view(output);
-    EXPECT_TRUE(view.contains("a = 42"));
-    EXPECT_TRUE(view.contains("b = 4.200000e+01"));
-    EXPECT_TRUE(view.contains("array = array<i64: 40, 41, 42>"));
-    EXPECT_TRUE(view.contains("label = \"foo bar\""));
+    EXPECT_TRUE(StringRef(os.str()).contains("a = 42"));
+    EXPECT_TRUE(StringRef(os.str()).contains("b = 4.200000e+01"));
+    EXPECT_TRUE(StringRef(os.str()).contains("array = array<i64: 40, 41, 42>"));
+    EXPECT_TRUE(StringRef(os.str()).contains("label = \"foo bar\""));
   }
 }
 
@@ -300,10 +297,9 @@ TEST(OpPropertiesTest, DefaultValues) {
     std::string output;
     llvm::raw_string_ostream os(output);
     op->print(os);
-    StringRef view(output);
-    EXPECT_TRUE(view.contains("a = -1"));
-    EXPECT_TRUE(view.contains("b = -1"));
-    EXPECT_TRUE(view.contains("array = array<i64: -33>"));
+    EXPECT_TRUE(StringRef(os.str()).contains("a = -1"));
+    EXPECT_TRUE(StringRef(os.str()).contains("b = -1"));
+    EXPECT_TRUE(StringRef(os.str()).contains("array = array<i64: -33>"));
   }
   op->erase();
 }
@@ -375,10 +371,9 @@ TEST(OpPropertiesTest, getOrAddProperties) {
     std::string output;
     llvm::raw_string_ostream os(output);
     op->print(os);
-    StringRef view(output);
-    EXPECT_TRUE(view.contains("a = 1"));
-    EXPECT_TRUE(view.contains("b = 2"));
-    EXPECT_TRUE(view.contains("array = array<i64: 3, 4, 5>"));
+    EXPECT_TRUE(StringRef(os.str()).contains("a = 1"));
+    EXPECT_TRUE(StringRef(os.str()).contains("b = 2"));
+    EXPECT_TRUE(StringRef(os.str()).contains("array = array<i64: 3, 4, 5>"));
   }
   op->erase();
 }
@@ -405,9 +400,8 @@ TEST(OpPropertiesTest, withoutPropertiesDiscardableAttrs) {
   std::string output;
   llvm::raw_string_ostream os(output);
   op->print(os);
-  StringRef view(output);
-  EXPECT_TRUE(view.contains("inherent_attr = 42"));
-  EXPECT_TRUE(view.contains("other_attr = 56"));
+  EXPECT_TRUE(StringRef(os.str()).contains("inherent_attr = 42"));
+  EXPECT_TRUE(StringRef(os.str()).contains("other_attr = 56"));
 
   OwningOpRef<Operation *> reparsed = parseSourceString(os.str(), config);
   auto trivialHash = [](Value v) { return hash_value(v); };

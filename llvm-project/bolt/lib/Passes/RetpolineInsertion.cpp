@@ -33,17 +33,19 @@ namespace opts {
 
 extern cl::OptionCategory BoltCategory;
 
-static llvm::cl::opt<bool>
-    InsertRetpolines("insert-retpolines",
-                     cl::desc("run retpoline insertion pass"),
-                     cl::cat(BoltCategory));
+llvm::cl::opt<bool> InsertRetpolines("insert-retpolines",
+                                     cl::desc("run retpoline insertion pass"),
+                                     cl::cat(BoltCategory));
 
-static llvm::cl::opt<bool> RetpolineLfence(
-    "retpoline-lfence",
-    cl::desc("determine if lfence instruction should exist in the retpoline"),
-    cl::init(true), cl::ZeroOrMore, cl::Hidden, cl::cat(BoltCategory));
+llvm::cl::opt<bool>
+RetpolineLfence("retpoline-lfence",
+  cl::desc("determine if lfence instruction should exist in the retpoline"),
+  cl::init(true),
+  cl::ZeroOrMore,
+  cl::Hidden,
+  cl::cat(BoltCategory));
 
-static cl::opt<RetpolineInsertion::AvailabilityOptions> R11Availability(
+cl::opt<RetpolineInsertion::AvailabilityOptions> R11Availability(
     "r11-availability",
     cl::desc("determine the availability of r11 before indirect branches"),
     cl::init(RetpolineInsertion::AvailabilityOptions::NEVER),
@@ -78,7 +80,7 @@ BinaryFunction *createNewRetpoline(BinaryContext &BC,
                                    const IndirectBranchInfo &BrInfo,
                                    bool R11Available) {
   auto &MIB = *BC.MIB;
-  MCContext &Ctx = *BC.Ctx;
+  MCContext &Ctx = *BC.Ctx.get();
   LLVM_DEBUG(dbgs() << "BOLT-DEBUG: Creating a new retpoline function["
                     << RetpolineTag << "]\n");
 
@@ -179,6 +181,7 @@ std::string createRetpolineFunctionTag(BinaryContext &BC,
   if (BrInfo.isReg()) {
     BC.InstPrinter->printRegName(TagOS, BrInfo.BranchReg);
     TagOS << "_";
+    TagOS.flush();
     return Tag;
   }
 
@@ -195,7 +198,7 @@ std::string createRetpolineFunctionTag(BinaryContext &BC,
 
   TagOS << "+";
   if (MemRef.DispExpr)
-    BC.AsmInfo->printExpr(TagOS, *MemRef.DispExpr);
+    MemRef.DispExpr->print(TagOS, BC.AsmInfo.get());
   else
     TagOS << MemRef.DispImm;
 
@@ -209,6 +212,7 @@ std::string createRetpolineFunctionTag(BinaryContext &BC,
     BC.InstPrinter->printRegName(TagOS, MemRef.SegRegNum);
   }
 
+  TagOS.flush();
   return Tag;
 }
 
@@ -267,9 +271,9 @@ IndirectBranchInfo::IndirectBranchInfo(MCInst &Inst, MCPlusBuilder &MIB) {
   }
 }
 
-Error RetpolineInsertion::runOnFunctions(BinaryContext &BC) {
+void RetpolineInsertion::runOnFunctions(BinaryContext &BC) {
   if (!opts::InsertRetpolines)
-    return Error::success();
+    return;
 
   assert(BC.isX86() &&
          "retpoline insertion not supported for target architecture");
@@ -323,11 +327,10 @@ Error RetpolineInsertion::runOnFunctions(BinaryContext &BC) {
       }
     }
   }
-  BC.outs() << "BOLT-INFO: The number of created retpoline functions is : "
-            << CreatedRetpolines.size()
-            << "\nBOLT-INFO: The number of retpolined branches is : "
-            << RetpolinedBranches << "\n";
-  return Error::success();
+  outs() << "BOLT-INFO: The number of created retpoline functions is : "
+         << CreatedRetpolines.size()
+         << "\nBOLT-INFO: The number of retpolined branches is : "
+         << RetpolinedBranches << "\n";
 }
 
 } // namespace bolt

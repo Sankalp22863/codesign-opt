@@ -256,8 +256,8 @@ struct AllocatedCXCodeCompleteResults : public CXCodeCompleteResults {
   /// Allocated API-exposed wrappters for Diagnostics.
   SmallVector<std::unique_ptr<CXStoredDiagnostic>, 8> DiagnosticsWrappers;
 
-  DiagnosticOptions DiagOpts;
-
+  IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts;
+  
   /// Diag object
   IntrusiveRefCntPtr<DiagnosticsEngine> Diag;
   
@@ -356,12 +356,11 @@ static std::atomic<unsigned> CodeCompletionResultObjects;
 
 AllocatedCXCodeCompleteResults::AllocatedCXCodeCompleteResults(
     IntrusiveRefCntPtr<FileManager> FileMgr)
-    : CXCodeCompleteResults(),
-      Diag(llvm::makeIntrusiveRefCnt<DiagnosticsEngine>(DiagnosticIDs::create(),
-                                                        DiagOpts)),
+    : CXCodeCompleteResults(), DiagOpts(new DiagnosticOptions),
+      Diag(new DiagnosticsEngine(
+          IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs), &*DiagOpts)),
       FileMgr(std::move(FileMgr)),
-      SourceMgr(
-          llvm::makeIntrusiveRefCnt<SourceManager>(*Diag, *this->FileMgr)),
+      SourceMgr(new SourceManager(*Diag, *this->FileMgr)),
       CodeCompletionAllocator(
           std::make_shared<clang::GlobalCodeCompletionAllocator>()),
       Contexts(CXCompletionContext_Unknown),
@@ -370,7 +369,7 @@ AllocatedCXCodeCompleteResults::AllocatedCXCodeCompleteResults(
     fprintf(stderr, "+++ %u completion results\n",
             ++CodeCompletionResultObjects);
 }
-
+  
 AllocatedCXCodeCompleteResults::~AllocatedCXCodeCompleteResults() {
   delete [] Results;
 
@@ -602,15 +601,15 @@ namespace {
       AllocatedResults.Contexts = getContextsForContextKind(contextKind, S);
       
       AllocatedResults.Selector = "";
-      ArrayRef<const IdentifierInfo *> SelIdents = Context.getSelIdents();
-      for (ArrayRef<const IdentifierInfo *>::iterator I = SelIdents.begin(),
-                                                      E = SelIdents.end();
+      ArrayRef<IdentifierInfo *> SelIdents = Context.getSelIdents();
+      for (ArrayRef<IdentifierInfo *>::iterator I = SelIdents.begin(),
+                                                E = SelIdents.end();
            I != E; ++I) {
-        if (const IdentifierInfo *selIdent = *I)
+        if (IdentifierInfo *selIdent = *I)
           AllocatedResults.Selector += selIdent->getName();
         AllocatedResults.Selector += ":";
       }
-
+      
       QualType baseType = Context.getBaseType();
       NamedDecl *D = nullptr;
 
@@ -737,8 +736,8 @@ clang_codeCompleteAt_Impl(CXTranslationUnit TU, const char *complete_filename,
   }
 
   // Parse the resulting source file to find code-completion results.
-  AllocatedCXCodeCompleteResults *Results =
-      new AllocatedCXCodeCompleteResults(AST->getFileManagerPtr());
+  AllocatedCXCodeCompleteResults *Results = new AllocatedCXCodeCompleteResults(
+      &AST->getFileManager());
   Results->Results = nullptr;
   Results->NumResults = 0;
   
@@ -764,8 +763,8 @@ clang_codeCompleteAt_Impl(CXTranslationUnit TU, const char *complete_filename,
                     RemappedFiles, (options & CXCodeComplete_IncludeMacros),
                     (options & CXCodeComplete_IncludeCodePatterns),
                     IncludeBriefComments, Capture,
-                    CXXIdx->getPCHContainerOperations(), Results->Diag,
-                    Results->LangOpts, Results->SourceMgr, Results->FileMgr,
+                    CXXIdx->getPCHContainerOperations(), *Results->Diag,
+                    Results->LangOpts, *Results->SourceMgr, *Results->FileMgr,
                     Results->Diagnostics, Results->TemporaryBuffers,
                     /*SyntaxOnlyAction=*/nullptr);
 

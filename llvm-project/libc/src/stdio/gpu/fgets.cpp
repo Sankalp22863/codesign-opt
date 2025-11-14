@@ -7,14 +7,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/stdio/fgets.h"
-
 #include "file.h"
-#include "hdr/stdint_proxy.h"
-#include "hdr/stdio_macros.h" // for EOF.
-#include "hdr/types/FILE.h"
-#include "src/__support/common.h"
+#include "src/stdio/feof.h"
+#include "src/stdio/ferror.h"
 
-namespace LIBC_NAMESPACE_DECL {
+#include <stddef.h>
+#include <stdio.h>
+
+namespace LIBC_NAMESPACE {
 
 LLVM_LIBC_FUNCTION(char *, fgets,
                    (char *__restrict str, int count,
@@ -24,8 +24,8 @@ LLVM_LIBC_FUNCTION(char *, fgets,
 
   uint64_t recv_size;
   void *buf = nullptr;
-  rpc::Client::Port port = rpc::client.open<LIBC_READ_FGETS>();
-  port.send([=](rpc::Buffer *buffer, uint32_t) {
+  rpc::Client::Port port = rpc::client.open<RPC_READ_FGETS>();
+  port.send([=](rpc::Buffer *buffer) {
     buffer->data[0] = count;
     buffer->data[1] = file::from_stream(stream);
   });
@@ -39,4 +39,4 @@ LLVM_LIBC_FUNCTION(char *, fgets,
   return str;
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "bolt/Passes/ShrinkWrapping.h"
+#include "bolt/Core/MCPlus.h"
 #include "bolt/Passes/DataflowInfoManager.h"
 #include "bolt/Passes/MCF.h"
 #include "bolt/Utils/CommandLineOpts.h"
@@ -402,7 +403,7 @@ void StackLayoutModifier::classifyCFIs() {
         break;
       case MCCFIInstruction::OpRestoreState: {
         assert(!CFIStack.empty() && "Corrupt CFI stack");
-        std::pair<int64_t, uint16_t> Elem = CFIStack.top();
+        std::pair<int64_t, uint16_t> &Elem = CFIStack.top();
         CFIStack.pop();
         CfaOffset = Elem.first;
         CfaReg = Elem.second;
@@ -679,15 +680,16 @@ void StackLayoutModifier::performChanges() {
       if (StackPtrReg != BC.MIB->getFramePointer())
         Adjustment = -Adjustment;
       if (IsLoad)
-        BC.MIB->createRestoreFromStack(Inst, StackPtrReg,
-                                       StackOffset + Adjustment, Reg, Size);
+        Success = BC.MIB->createRestoreFromStack(
+            Inst, StackPtrReg, StackOffset + Adjustment, Reg, Size);
       else if (IsStore)
-        BC.MIB->createSaveToStack(Inst, StackPtrReg, StackOffset + Adjustment,
-                                  Reg, Size);
+        Success = BC.MIB->createSaveToStack(
+            Inst, StackPtrReg, StackOffset + Adjustment, Reg, Size);
       LLVM_DEBUG({
         dbgs() << "Adjusted instruction: ";
         Inst.dump();
       });
+      assert(Success);
     }
   }
 }
@@ -825,13 +827,14 @@ void ShrinkWrapping::computeSaveLocations() {
     if (!CSA.CalleeSaved[I])
       continue;
 
-    llvm::stable_sort(BestSavePos[I], [&](const MCInst *A, const MCInst *B) {
-      const BinaryBasicBlock *BBA = InsnToBB[A];
-      const BinaryBasicBlock *BBB = InsnToBB[B];
-      const uint64_t CountA = BBA->getKnownExecutionCount();
-      const uint64_t CountB = BBB->getKnownExecutionCount();
-      return CountB < CountA;
-    });
+    std::stable_sort(BestSavePos[I].begin(), BestSavePos[I].end(),
+                     [&](const MCInst *A, const MCInst *B) {
+                       const BinaryBasicBlock *BBA = InsnToBB[A];
+                       const BinaryBasicBlock *BBB = InsnToBB[B];
+                       const uint64_t CountA = BBA->getKnownExecutionCount();
+                       const uint64_t CountB = BBB->getKnownExecutionCount();
+                       return CountB < CountA;
+                     });
 
     for (MCInst *Pos : BestSavePos[I]) {
       const BinaryBasicBlock *BB = InsnToBB[Pos];
@@ -1643,20 +1646,26 @@ void ShrinkWrapping::rebuildCFIForSP() {
         ++I;
 }
 
-Expected<MCInst> ShrinkWrapping::createStackAccess(int SPVal, int FPVal,
-                                                   const FrameIndexEntry &FIE,
-                                                   bool CreatePushOrPop) {
+MCInst ShrinkWrapping::createStackAccess(int SPVal, int FPVal,
+                                         const FrameIndexEntry &FIE,
+                                         bool CreatePushOrPop) {
   MCInst NewInst;
   if (SPVal != StackPointerTracking::SUPERPOSITION &&
       SPVal != StackPointerTracking::EMPTY) {
     if (FIE.IsLoad) {
-      BC.MIB->createRestoreFromStack(NewInst, BC.MIB->getStackPointer(),
-                                     FIE.StackOffset - SPVal, FIE.RegOrImm,
-                                     FIE.Size);
+      if (!BC.MIB->createRestoreFromStack(NewInst, BC.MIB->getStackPointer(),
+                                          FIE.StackOffset - SPVal, FIE.RegOrImm,
+                                          FIE.Size)) {
+        errs() << "createRestoreFromStack: not supported on this platform\n";
+        abort();
+      }
     } else {
-      BC.MIB->createSaveToStack(NewInst, BC.MIB->getStackPointer(),
-                                FIE.StackOffset - SPVal, FIE.RegOrImm,
-                                FIE.Size);
+      if (!BC.MIB->createSaveToStack(NewInst, BC.MIB->getStackPointer(),
+                                     FIE.StackOffset - SPVal, FIE.RegOrImm,
+                                     FIE.Size)) {
+        errs() << "createSaveToStack: not supported on this platform\n";
+        abort();
+      }
     }
     if (CreatePushOrPop)
       BC.MIB->changeToPushOrPop(NewInst);
@@ -1666,12 +1675,19 @@ Expected<MCInst> ShrinkWrapping::createStackAccess(int SPVal, int FPVal,
          FPVal != StackPointerTracking::EMPTY);
 
   if (FIE.IsLoad) {
-    BC.MIB->createRestoreFromStack(NewInst, BC.MIB->getFramePointer(),
-                                   FIE.StackOffset - FPVal, FIE.RegOrImm,
-                                   FIE.Size);
+    if (!BC.MIB->createRestoreFromStack(NewInst, BC.MIB->getFramePointer(),
+                                        FIE.StackOffset - FPVal, FIE.RegOrImm,
+                                        FIE.Size)) {
+      errs() << "createRestoreFromStack: not supported on this platform\n";
+      abort();
+    }
   } else {
-    BC.MIB->createSaveToStack(NewInst, BC.MIB->getFramePointer(),
-                              FIE.StackOffset - FPVal, FIE.RegOrImm, FIE.Size);
+    if (!BC.MIB->createSaveToStack(NewInst, BC.MIB->getFramePointer(),
+                                   FIE.StackOffset - FPVal, FIE.RegOrImm,
+                                   FIE.Size)) {
+      errs() << "createSaveToStack: not supported on this platform\n";
+      abort();
+    }
   }
   return NewInst;
 }
@@ -1727,11 +1743,10 @@ BBIterTy ShrinkWrapping::insertCFIsForPushOrPop(BinaryBasicBlock &BB,
   return Pos;
 }
 
-Expected<BBIterTy> ShrinkWrapping::processInsertion(BBIterTy InsertionPoint,
-                                                    BinaryBasicBlock *CurBB,
-                                                    const WorklistItem &Item,
-                                                    int64_t SPVal,
-                                                    int64_t FPVal) {
+BBIterTy ShrinkWrapping::processInsertion(BBIterTy InsertionPoint,
+                                          BinaryBasicBlock *CurBB,
+                                          const WorklistItem &Item,
+                                          int64_t SPVal, int64_t FPVal) {
   // Trigger CFI reconstruction for this CSR if necessary - writing to
   // PushOffsetByReg/PopOffsetByReg *will* trigger CFI update
   if ((Item.FIEToInsert.IsStore &&
@@ -1757,12 +1772,9 @@ Expected<BBIterTy> ShrinkWrapping::processInsertion(BBIterTy InsertionPoint,
            << " Is push = " << (Item.Action == WorklistItem::InsertPushOrPop)
            << "\n";
   });
-  Expected<MCInst> NewInstOrErr =
+  MCInst NewInst =
       createStackAccess(SPVal, FPVal, Item.FIEToInsert,
                         Item.Action == WorklistItem::InsertPushOrPop);
-  if (auto E = NewInstOrErr.takeError())
-    return Error(std::move(E));
-  MCInst &NewInst = *NewInstOrErr;
   if (InsertionPoint != CurBB->end()) {
     LLVM_DEBUG({
       dbgs() << "Adding before Inst: ";
@@ -1779,7 +1791,7 @@ Expected<BBIterTy> ShrinkWrapping::processInsertion(BBIterTy InsertionPoint,
   return CurBB->end();
 }
 
-Expected<BBIterTy> ShrinkWrapping::processInsertionsList(
+BBIterTy ShrinkWrapping::processInsertionsList(
     BBIterTy InsertionPoint, BinaryBasicBlock *CurBB,
     std::vector<WorklistItem> &TodoList, int64_t SPVal, int64_t FPVal) {
   bool HasInsertions = llvm::any_of(TodoList, [&](WorklistItem &Item) {
@@ -1828,11 +1840,8 @@ Expected<BBIterTy> ShrinkWrapping::processInsertionsList(
         Item.Action == WorklistItem::ChangeToAdjustment)
       continue;
 
-    auto InsertionPointOrErr =
+    InsertionPoint =
         processInsertion(InsertionPoint, CurBB, Item, SPVal, FPVal);
-    if (auto E = InsertionPointOrErr.takeError())
-      return Error(std::move(E));
-    InsertionPoint = *InsertionPointOrErr;
     if (Item.Action == WorklistItem::InsertPushOrPop &&
         Item.FIEToInsert.IsStore)
       SPVal -= Item.FIEToInsert.Size;
@@ -1843,7 +1852,7 @@ Expected<BBIterTy> ShrinkWrapping::processInsertionsList(
   return InsertionPoint;
 }
 
-Expected<bool> ShrinkWrapping::processInsertions() {
+bool ShrinkWrapping::processInsertions() {
   PredictiveStackPointerTracking PSPT(BF, Todo, Info, AllocatorId);
   PSPT.run();
 
@@ -1866,20 +1875,14 @@ Expected<bool> ShrinkWrapping::processInsertions() {
       auto Iter = I;
       std::pair<int, int> SPTState =
           *PSPT.getStateAt(Iter == BB.begin() ? (ProgramPoint)&BB : &*(--Iter));
-      auto IterOrErr =
-          processInsertionsList(I, &BB, List, SPTState.first, SPTState.second);
-      if (auto E = IterOrErr.takeError())
-        return Error(std::move(E));
-      I = *IterOrErr;
+      I = processInsertionsList(I, &BB, List, SPTState.first, SPTState.second);
     }
     // Process insertions at the end of bb
     auto WRI = Todo.find(&BB);
     if (WRI != Todo.end()) {
       std::pair<int, int> SPTState = *PSPT.getStateAt(*BB.rbegin());
-      if (auto E = processInsertionsList(BB.end(), &BB, WRI->second,
-                                         SPTState.first, SPTState.second)
-                       .takeError())
-        return Error(std::move(E));
+      processInsertionsList(BB.end(), &BB, WRI->second, SPTState.first,
+                            SPTState.second);
       Changes = true;
     }
   }
@@ -1942,7 +1945,7 @@ void ShrinkWrapping::rebuildCFI() {
   }
 }
 
-Expected<bool> ShrinkWrapping::perform(bool HotOnly) {
+bool ShrinkWrapping::perform(bool HotOnly) {
   HasDeletedOffsetCFIs = BitVector(BC.MRI->getNumRegs(), false);
   PushOffsetByReg = std::vector<int64_t>(BC.MRI->getNumRegs(), 0LL);
   PopOffsetByReg = std::vector<int64_t>(BC.MRI->getNumRegs(), 0LL);
@@ -1995,11 +1998,7 @@ Expected<bool> ShrinkWrapping::perform(bool HotOnly) {
   });
   SLM.performChanges();
   // Early exit if processInsertions doesn't detect any todo items
-  auto ModifiedOrErr = processInsertions();
-  if (auto E = ModifiedOrErr.takeError())
-    return Error(std::move(E));
-  const bool Modified = *ModifiedOrErr;
-  if (!Modified)
+  if (!processInsertions())
     return false;
   processDeletions();
   if (foldIdenticalSplitEdges()) {
@@ -2019,28 +2018,28 @@ Expected<bool> ShrinkWrapping::perform(bool HotOnly) {
   return true;
 }
 
-void ShrinkWrapping::printStats(BinaryContext &BC) {
-  BC.outs() << "BOLT-INFO: Shrink wrapping moved " << SpillsMovedRegularMode
-            << " spills inserting load/stores and " << SpillsMovedPushPopMode
-            << " spills inserting push/pops\n";
+void ShrinkWrapping::printStats() {
+  outs() << "BOLT-INFO: Shrink wrapping moved " << SpillsMovedRegularMode
+         << " spills inserting load/stores and " << SpillsMovedPushPopMode
+         << " spills inserting push/pops\n";
   if (!InstrDynamicCount || !StoreDynamicCount)
     return;
-  BC.outs() << "BOLT-INFO: Shrink wrapping reduced " << SpillsMovedDynamicCount
-            << " store executions ("
-            << format("%.1lf%%",
-                      (100.0 * SpillsMovedDynamicCount / InstrDynamicCount))
-            << " total instructions executed, "
-            << format("%.1lf%%",
-                      (100.0 * SpillsMovedDynamicCount / StoreDynamicCount))
-            << " store instructions)\n";
-  BC.outs() << "BOLT-INFO: Shrink wrapping failed at reducing "
-            << SpillsFailedDynamicCount << " store executions ("
-            << format("%.1lf%%",
-                      (100.0 * SpillsFailedDynamicCount / InstrDynamicCount))
-            << " total instructions executed, "
-            << format("%.1lf%%",
-                      (100.0 * SpillsFailedDynamicCount / StoreDynamicCount))
-            << " store instructions)\n";
+  outs() << "BOLT-INFO: Shrink wrapping reduced " << SpillsMovedDynamicCount
+         << " store executions ("
+         << format("%.1lf%%",
+                   (100.0 * SpillsMovedDynamicCount / InstrDynamicCount))
+         << " total instructions executed, "
+         << format("%.1lf%%",
+                   (100.0 * SpillsMovedDynamicCount / StoreDynamicCount))
+         << " store instructions)\n";
+  outs() << "BOLT-INFO: Shrink wrapping failed at reducing "
+         << SpillsFailedDynamicCount << " store executions ("
+         << format("%.1lf%%",
+                   (100.0 * SpillsFailedDynamicCount / InstrDynamicCount))
+         << " total instructions executed, "
+         << format("%.1lf%%",
+                   (100.0 * SpillsFailedDynamicCount / StoreDynamicCount))
+         << " store instructions)\n";
 }
 
 // Operators necessary as a result of using MCAnnotation

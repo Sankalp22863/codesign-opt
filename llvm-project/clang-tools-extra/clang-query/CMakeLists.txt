@@ -4,7 +4,7 @@ set(LLVM_LINK_COMPONENTS
   FrontendOpenMP
   )
 
-add_clang_library(clangQuery STATIC
+add_clang_library(clangQuery
   Query.cpp
   QueryParser.cpp
 
@@ -20,6 +20,7 @@ clang_target_link_libraries(clangQuery
   clangBasic
   clangDynamicASTMatchers
   clangFrontend
+  clangTooling
   clangSerialization
   )
 

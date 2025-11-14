@@ -19,7 +19,7 @@ define ptr @test1() {
 ; Return a pointer trivially nonnull (argument attribute)
 define ptr @test2(ptr nonnull %p) {
 ; FNATTRS-LABEL: define nonnull ptr @test2(
-; FNATTRS-SAME: ptr nonnull readnone returned captures(ret: address, provenance) [[P:%.*]]) #[[ATTR0:[0-9]+]] {
+; FNATTRS-SAME: ptr nonnull readnone returned [[P:%.*]]) #[[ATTR0:[0-9]+]] {
 ; FNATTRS-NEXT:    ret ptr [[P]]
 ;
 ; ATTRIBUTOR-LABEL: define nonnull ptr @test2(
@@ -148,15 +148,14 @@ define ptr @test5(i1 %c) {
 }
 
 ; Local analysis, but going through a self recursive phi
-define ptr @test6a(i1 %arg) {
-; COMMON-LABEL: define nonnull ptr @test6a(
-; COMMON-SAME: i1 [[ARG:%.*]]) {
+define ptr @test6a() {
+; COMMON-LABEL: define nonnull ptr @test6a() {
 ; COMMON-NEXT:  entry:
 ; COMMON-NEXT:    [[RET:%.*]] = call ptr @ret_nonnull()
 ; COMMON-NEXT:    br label [[LOOP:%.*]]
 ; COMMON:       loop:
 ; COMMON-NEXT:    [[PHI:%.*]] = phi ptr [ [[RET]], [[ENTRY:%.*]] ], [ [[PHI]], [[LOOP]] ]
-; COMMON-NEXT:    br i1 [[ARG]], label [[LOOP]], label [[EXIT:%.*]]
+; COMMON-NEXT:    br i1 undef, label [[LOOP]], label [[EXIT:%.*]]
 ; COMMON:       exit:
 ; COMMON-NEXT:    ret ptr [[PHI]]
 ;
@@ -165,7 +164,7 @@ entry:
   br label %loop
 loop:
   %phi = phi ptr [%ret, %entry], [%phi, %loop]
-  br i1 %arg, label %loop, label %exit
+  br i1 undef, label %loop, label %exit
 exit:
   ret ptr %phi
 }
@@ -194,7 +193,7 @@ exit:
 
 define ptr @test7(ptr %a) {
 ; FNATTRS-LABEL: define ptr @test7(
-; FNATTRS-SAME: ptr readnone returned captures(ret: address, provenance) [[A:%.*]]) #[[ATTR0]] {
+; FNATTRS-SAME: ptr readnone returned [[A:%.*]]) #[[ATTR0]] {
 ; FNATTRS-NEXT:    ret ptr [[A]]
 ;
 ; ATTRIBUTOR-LABEL: define ptr @test7(
@@ -206,7 +205,7 @@ define ptr @test7(ptr %a) {
 
 define ptr @test8(ptr %a) {
 ; FNATTRS-LABEL: define nonnull ptr @test8(
-; FNATTRS-SAME: ptr readnone captures(ret: address, provenance) [[A:%.*]]) #[[ATTR0]] {
+; FNATTRS-SAME: ptr readnone [[A:%.*]]) #[[ATTR0]] {
 ; FNATTRS-NEXT:    [[B:%.*]] = getelementptr inbounds i8, ptr [[A]], i64 1
 ; FNATTRS-NEXT:    ret ptr [[B]]
 ;
@@ -221,7 +220,7 @@ define ptr @test8(ptr %a) {
 
 define ptr @test9(ptr %a, i64 %n) {
 ; FNATTRS-LABEL: define ptr @test9(
-; FNATTRS-SAME: ptr readnone captures(ret: address, provenance) [[A:%.*]], i64 [[N:%.*]]) #[[ATTR0]] {
+; FNATTRS-SAME: ptr readnone [[A:%.*]], i64 [[N:%.*]]) #[[ATTR0]] {
 ; FNATTRS-NEXT:    [[B:%.*]] = getelementptr inbounds i8, ptr [[A]], i64 [[N]]
 ; FNATTRS-NEXT:    ret ptr [[B]]
 ;
@@ -238,7 +237,7 @@ declare void @llvm.assume(i1)
 ; FIXME: missing nonnull
 define ptr @test10(ptr %a, i64 %n) {
 ; FNATTRS-LABEL: define ptr @test10(
-; FNATTRS-SAME: ptr readnone captures(ret: address, provenance) [[A:%.*]], i64 [[N:%.*]]) #[[ATTR3:[0-9]+]] {
+; FNATTRS-SAME: ptr readnone [[A:%.*]], i64 [[N:%.*]]) #[[ATTR3:[0-9]+]] {
 ; FNATTRS-NEXT:    [[CMP:%.*]] = icmp ne i64 [[N]], 0
 ; FNATTRS-NEXT:    call void @llvm.assume(i1 [[CMP]])
 ; FNATTRS-NEXT:    [[B:%.*]] = getelementptr inbounds i8, ptr [[A]], i64 [[N]]
@@ -247,7 +246,7 @@ define ptr @test10(ptr %a, i64 %n) {
 ; ATTRIBUTOR-LABEL: define ptr @test10(
 ; ATTRIBUTOR-SAME: ptr nofree readnone [[A:%.*]], i64 [[N:%.*]]) #[[ATTR3:[0-9]+]] {
 ; ATTRIBUTOR-NEXT:    [[CMP:%.*]] = icmp ne i64 [[N]], 0
-; ATTRIBUTOR-NEXT:    call void @llvm.assume(i1 [[CMP]]) #[[ATTR13:[0-9]+]]
+; ATTRIBUTOR-NEXT:    call void @llvm.assume(i1 [[CMP]]) #[[ATTR14:[0-9]+]]
 ; ATTRIBUTOR-NEXT:    [[B:%.*]] = getelementptr inbounds i8, ptr [[A]], i64 [[N]]
 ; ATTRIBUTOR-NEXT:    ret ptr [[B]]
 ;
@@ -263,7 +262,7 @@ define ptr @test10(ptr %a, i64 %n) {
 ; }
 define ptr @test11(ptr) local_unnamed_addr {
 ; FNATTRS-LABEL: define nonnull ptr @test11(
-; FNATTRS-SAME: ptr readnone captures(address_is_null, ret: address, provenance) [[TMP0:%.*]]) local_unnamed_addr {
+; FNATTRS-SAME: ptr readnone [[TMP0:%.*]]) local_unnamed_addr {
 ; FNATTRS-NEXT:    [[TMP2:%.*]] = icmp eq ptr [[TMP0]], null
 ; FNATTRS-NEXT:    br i1 [[TMP2]], label [[TMP3:%.*]], label [[TMP5:%.*]]
 ; FNATTRS:       3:
@@ -323,8 +322,8 @@ define void @test13_helper() {
 ; ATTRIBUTOR-LABEL: define void @test13_helper() {
 ; ATTRIBUTOR-NEXT:    [[NONNULLPTR:%.*]] = tail call ptr @ret_nonnull()
 ; ATTRIBUTOR-NEXT:    [[MAYBENULLPTR:%.*]] = tail call ptr @unknown()
-; ATTRIBUTOR-NEXT:    tail call void @test13(ptr nofree nonnull readnone captures(none) [[NONNULLPTR]], ptr nofree nonnull readnone captures(none) [[NONNULLPTR]], ptr nofree readnone captures(none) [[MAYBENULLPTR]])
-; ATTRIBUTOR-NEXT:    tail call void @test13(ptr nofree nonnull readnone captures(none) [[NONNULLPTR]], ptr nofree readnone captures(none) [[MAYBENULLPTR]], ptr nofree nonnull readnone captures(none) [[NONNULLPTR]])
+; ATTRIBUTOR-NEXT:    tail call void @test13(ptr nocapture nofree nonnull readnone [[NONNULLPTR]], ptr nocapture nofree nonnull readnone [[NONNULLPTR]], ptr nocapture nofree readnone [[MAYBENULLPTR]])
+; ATTRIBUTOR-NEXT:    tail call void @test13(ptr nocapture nofree nonnull readnone [[NONNULLPTR]], ptr nocapture nofree readnone [[MAYBENULLPTR]], ptr nocapture nofree nonnull readnone [[NONNULLPTR]])
 ; ATTRIBUTOR-NEXT:    ret void
 ;
   %nonnullptr = tail call ptr @ret_nonnull()
@@ -335,11 +334,11 @@ define void @test13_helper() {
 }
 define internal void @test13(ptr %a, ptr %b, ptr %c) {
 ; FNATTRS-LABEL: define internal void @test13(
-; FNATTRS-SAME: ptr readnone captures(none) [[A:%.*]], ptr readnone captures(none) [[B:%.*]], ptr readnone captures(none) [[C:%.*]]) #[[ATTR0]] {
+; FNATTRS-SAME: ptr nocapture readnone [[A:%.*]], ptr nocapture readnone [[B:%.*]], ptr nocapture readnone [[C:%.*]]) #[[ATTR0]] {
 ; FNATTRS-NEXT:    ret void
 ;
 ; ATTRIBUTOR-LABEL: define internal void @test13(
-; ATTRIBUTOR-SAME: ptr nofree nonnull readnone captures(none) [[A:%.*]], ptr nofree readnone captures(none) [[B:%.*]], ptr nofree readnone captures(none) [[C:%.*]]) #[[ATTR0]] {
+; ATTRIBUTOR-SAME: ptr nocapture nofree readnone [[A:%.*]], ptr nocapture nofree readnone [[B:%.*]], ptr nocapture nofree readnone [[C:%.*]]) #[[ATTR4:[0-9]+]] {
 ; ATTRIBUTOR-NEXT:    ret void
 ;
   ret void
@@ -362,7 +361,7 @@ declare nonnull ptr @nonnull()
 define internal ptr @f1(ptr %arg) {
 ; FIXME: missing nonnull It should be nonnull @f1(ptr nonnull readonly %arg)
 ; FNATTRS-LABEL: define internal nonnull ptr @f1(
-; FNATTRS-SAME: ptr readonly captures(address_is_null) [[ARG:%.*]]) #[[ATTR4:[0-9]+]] {
+; FNATTRS-SAME: ptr readonly [[ARG:%.*]]) #[[ATTR4:[0-9]+]] {
 ; FNATTRS-NEXT:  bb:
 ; FNATTRS-NEXT:    [[TMP:%.*]] = icmp eq ptr [[ARG]], null
 ; FNATTRS-NEXT:    br i1 [[TMP]], label [[BB9:%.*]], label [[BB1:%.*]]
@@ -383,7 +382,7 @@ define internal ptr @f1(ptr %arg) {
 ; FNATTRS-NEXT:    ret ptr [[TMP10]]
 ;
 ; ATTRIBUTOR-LABEL: define internal ptr @f1(
-; ATTRIBUTOR-SAME: ptr nofree readonly [[ARG:%.*]]) #[[ATTR4:[0-9]+]] {
+; ATTRIBUTOR-SAME: ptr nofree readonly [[ARG:%.*]]) #[[ATTR5:[0-9]+]] {
 ; ATTRIBUTOR-NEXT:  bb:
 ; ATTRIBUTOR-NEXT:    [[TMP:%.*]] = icmp eq ptr [[ARG]], null
 ; ATTRIBUTOR-NEXT:    br i1 [[TMP]], label [[BB9:%.*]], label [[BB1:%.*]]
@@ -393,11 +392,11 @@ define internal ptr @f1(ptr %arg) {
 ; ATTRIBUTOR-NEXT:    br i1 [[TMP3]], label [[BB6:%.*]], label [[BB4:%.*]]
 ; ATTRIBUTOR:       bb4:
 ; ATTRIBUTOR-NEXT:    [[TMP5:%.*]] = getelementptr inbounds i32, ptr [[ARG]], i64 1
-; ATTRIBUTOR-NEXT:    [[TMP5B:%.*]] = tail call ptr @f3(ptr nofree nonnull readonly [[TMP5]]) #[[ATTR14:[0-9]+]]
+; ATTRIBUTOR-NEXT:    [[TMP5B:%.*]] = tail call ptr @f3(ptr readonly [[TMP5]]) #[[ATTR15:[0-9]+]]
 ; ATTRIBUTOR-NEXT:    [[TMP5C:%.*]] = getelementptr inbounds i32, ptr [[TMP5B]], i64 -1
 ; ATTRIBUTOR-NEXT:    br label [[BB9]]
 ; ATTRIBUTOR:       bb6:
-; ATTRIBUTOR-NEXT:    [[TMP7:%.*]] = tail call ptr @f2(ptr nofree nonnull readonly [[ARG]]) #[[ATTR14]]
+; ATTRIBUTOR-NEXT:    [[TMP7:%.*]] = tail call ptr @f2(ptr readonly [[ARG]]) #[[ATTR15]]
 ; ATTRIBUTOR-NEXT:    ret ptr [[TMP7]]
 ; ATTRIBUTOR:       bb9:
 ; ATTRIBUTOR-NEXT:    [[TMP10:%.*]] = phi ptr [ [[TMP5C]], [[BB4]] ], [ inttoptr (i64 4 to ptr), [[BB:%.*]] ]
@@ -431,15 +430,15 @@ bb9:                                              ; preds = %bb4, %bb
 define internal ptr @f2(ptr %arg) {
 ; FIXME: missing nonnull. It should be nonnull @f2(ptr nonnull %arg)
 ; FNATTRS-LABEL: define internal nonnull ptr @f2(
-; FNATTRS-SAME: ptr readonly captures(address_is_null) [[ARG:%.*]]) #[[ATTR4]] {
+; FNATTRS-SAME: ptr [[ARG:%.*]]) #[[ATTR4]] {
 ; FNATTRS-NEXT:  bb:
 ; FNATTRS-NEXT:    [[TMP:%.*]] = tail call ptr @f1(ptr [[ARG]])
 ; FNATTRS-NEXT:    ret ptr [[TMP]]
 ;
 ; ATTRIBUTOR-LABEL: define internal ptr @f2(
-; ATTRIBUTOR-SAME: ptr nofree nonnull readonly [[ARG:%.*]]) #[[ATTR4]] {
+; ATTRIBUTOR-SAME: ptr readonly [[ARG:%.*]]) #[[ATTR5]] {
 ; ATTRIBUTOR-NEXT:  bb:
-; ATTRIBUTOR-NEXT:    [[TMP:%.*]] = tail call ptr @f1(ptr nofree nonnull readonly [[ARG]]) #[[ATTR14]]
+; ATTRIBUTOR-NEXT:    [[TMP:%.*]] = tail call ptr @f1(ptr readonly [[ARG]]) #[[ATTR15]]
 ; ATTRIBUTOR-NEXT:    ret ptr [[TMP]]
 ;
 bb:
@@ -452,15 +451,15 @@ bb:
 define dso_local noalias ptr @f3(ptr %arg) {
 ; FIXME: missing nonnull. It should be nonnull @f3(ptr nonnull readonly %arg)
 ; FNATTRS-LABEL: define dso_local noalias nonnull ptr @f3(
-; FNATTRS-SAME: ptr readonly captures(address_is_null) [[ARG:%.*]]) #[[ATTR4]] {
+; FNATTRS-SAME: ptr [[ARG:%.*]]) #[[ATTR4]] {
 ; FNATTRS-NEXT:  bb:
 ; FNATTRS-NEXT:    [[TMP:%.*]] = call ptr @f1(ptr [[ARG]])
 ; FNATTRS-NEXT:    ret ptr [[TMP]]
 ;
 ; ATTRIBUTOR-LABEL: define dso_local noalias ptr @f3(
-; ATTRIBUTOR-SAME: ptr nofree readonly [[ARG:%.*]]) #[[ATTR4]] {
+; ATTRIBUTOR-SAME: ptr nofree readonly [[ARG:%.*]]) #[[ATTR5]] {
 ; ATTRIBUTOR-NEXT:  bb:
-; ATTRIBUTOR-NEXT:    [[TMP:%.*]] = call ptr @f1(ptr nofree readonly [[ARG]]) #[[ATTR14]]
+; ATTRIBUTOR-NEXT:    [[TMP:%.*]] = call ptr @f1(ptr nofree readonly [[ARG]]) #[[ATTR15]]
 ; ATTRIBUTOR-NEXT:    ret ptr [[TMP]]
 ;
 bb:
@@ -509,14 +508,14 @@ define void @f16(ptr %a, ptr %b, i8 %c) {
 ; FNATTRS-NEXT:    ret void
 ;
 ; ATTRIBUTOR-LABEL: define void @f16(
-; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]], ptr [[B:%.*]], i8 [[C:%.*]]) #[[ATTR6:[0-9]+]] {
+; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]], ptr [[B:%.*]], i8 [[C:%.*]]) #[[ATTR7:[0-9]+]] {
 ; ATTRIBUTOR-NEXT:    [[CMP:%.*]] = icmp eq i8 [[C]], 0
 ; ATTRIBUTOR-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_ELSE:%.*]]
 ; ATTRIBUTOR:       if.then:
-; ATTRIBUTOR-NEXT:    tail call void @fun2(ptr nonnull [[A]], ptr nonnull [[B]]) #[[ATTR15:[0-9]+]]
+; ATTRIBUTOR-NEXT:    tail call void @fun2(ptr nonnull [[A]], ptr nonnull [[B]]) #[[ATTR16:[0-9]+]]
 ; ATTRIBUTOR-NEXT:    ret void
 ; ATTRIBUTOR:       if.else:
-; ATTRIBUTOR-NEXT:    tail call void @fun2(ptr nonnull [[A]], ptr [[B]]) #[[ATTR15]]
+; ATTRIBUTOR-NEXT:    tail call void @fun2(ptr nonnull [[A]], ptr [[B]]) #[[ATTR16]]
 ; ATTRIBUTOR-NEXT:    ret void
 ;
   %cmp = icmp eq i8 %c, 0
@@ -551,17 +550,17 @@ define void @f17(ptr %a, i8 %c) {
 ; FNATTRS-NEXT:    ret void
 ;
 ; ATTRIBUTOR-LABEL: define void @f17(
-; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]], i8 [[C:%.*]]) #[[ATTR6]] {
+; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]], i8 [[C:%.*]]) #[[ATTR7]] {
 ; ATTRIBUTOR-NEXT:    [[CMP:%.*]] = icmp eq i8 [[C]], 0
 ; ATTRIBUTOR-NEXT:    br i1 [[CMP]], label [[IF_THEN:%.*]], label [[IF_ELSE:%.*]]
 ; ATTRIBUTOR:       if.then:
-; ATTRIBUTOR-NEXT:    tail call void @fun0() #[[ATTR15]]
+; ATTRIBUTOR-NEXT:    tail call void @fun0() #[[ATTR16]]
 ; ATTRIBUTOR-NEXT:    br label [[CONT:%.*]]
 ; ATTRIBUTOR:       if.else:
-; ATTRIBUTOR-NEXT:    tail call void @fun0() #[[ATTR15]]
+; ATTRIBUTOR-NEXT:    tail call void @fun0() #[[ATTR16]]
 ; ATTRIBUTOR-NEXT:    br label [[CONT]]
 ; ATTRIBUTOR:       cont:
-; ATTRIBUTOR-NEXT:    tail call void @fun1(ptr nonnull [[A]]) #[[ATTR15]]
+; ATTRIBUTOR-NEXT:    tail call void @fun1(ptr nonnull [[A]]) #[[ATTR16]]
 ; ATTRIBUTOR-NEXT:    ret void
 ;
   %cmp = icmp eq i8 %c, 0
@@ -612,26 +611,26 @@ define void @f18(ptr %a, ptr %b, i8 %c) {
 ; FNATTRS-NEXT:    ret void
 ;
 ; ATTRIBUTOR-LABEL: define void @f18(
-; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]], ptr [[B:%.*]], i8 [[C:%.*]]) #[[ATTR6]] {
+; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]], ptr [[B:%.*]], i8 [[C:%.*]]) #[[ATTR7]] {
 ; ATTRIBUTOR-NEXT:    [[CMP1:%.*]] = icmp eq i8 [[C]], 0
 ; ATTRIBUTOR-NEXT:    br i1 [[CMP1]], label [[IF_THEN:%.*]], label [[IF_ELSE:%.*]]
 ; ATTRIBUTOR:       if.then:
-; ATTRIBUTOR-NEXT:    tail call void @fun0() #[[ATTR15]]
+; ATTRIBUTOR-NEXT:    tail call void @fun0() #[[ATTR16]]
 ; ATTRIBUTOR-NEXT:    br label [[CONT:%.*]]
 ; ATTRIBUTOR:       if.else:
-; ATTRIBUTOR-NEXT:    tail call void @fun0() #[[ATTR15]]
+; ATTRIBUTOR-NEXT:    tail call void @fun0() #[[ATTR16]]
 ; ATTRIBUTOR-NEXT:    br label [[CONT]]
 ; ATTRIBUTOR:       cont:
 ; ATTRIBUTOR-NEXT:    [[CMP2:%.*]] = icmp eq i8 [[C]], 1
 ; ATTRIBUTOR-NEXT:    br i1 [[CMP2]], label [[CONT_THEN:%.*]], label [[CONT_ELSE:%.*]]
 ; ATTRIBUTOR:       cont.then:
-; ATTRIBUTOR-NEXT:    tail call void @fun1(ptr nonnull [[B]]) #[[ATTR15]]
+; ATTRIBUTOR-NEXT:    tail call void @fun1(ptr nonnull [[B]]) #[[ATTR16]]
 ; ATTRIBUTOR-NEXT:    br label [[CONT2:%.*]]
 ; ATTRIBUTOR:       cont.else:
-; ATTRIBUTOR-NEXT:    tail call void @fun0() #[[ATTR15]]
+; ATTRIBUTOR-NEXT:    tail call void @fun0() #[[ATTR16]]
 ; ATTRIBUTOR-NEXT:    br label [[CONT2]]
 ; ATTRIBUTOR:       cont2:
-; ATTRIBUTOR-NEXT:    tail call void @fun1(ptr nonnull [[A]]) #[[ATTR15]]
+; ATTRIBUTOR-NEXT:    tail call void @fun1(ptr nonnull [[A]]) #[[ATTR16]]
 ; ATTRIBUTOR-NEXT:    ret void
 ;
   %cmp1 = icmp eq i8 %c, 0
@@ -675,7 +674,7 @@ define void @f19(ptr %a, ptr %b, i8 %c) {
 ; FNATTRS-NEXT:    ret void
 ;
 ; ATTRIBUTOR-LABEL: define void @f19(
-; ATTRIBUTOR-SAME: ptr [[A:%.*]], ptr nonnull [[B:%.*]], i8 [[C:%.*]]) #[[ATTR7:[0-9]+]] {
+; ATTRIBUTOR-SAME: ptr [[A:%.*]], ptr nonnull [[B:%.*]], i8 [[C:%.*]]) #[[ATTR8:[0-9]+]] {
 ; ATTRIBUTOR-NEXT:    br label [[LOOP_HEADER:%.*]]
 ; ATTRIBUTOR:       loop.header:
 ; ATTRIBUTOR-NEXT:    [[CMP2:%.*]] = icmp eq i8 [[C]], 0
@@ -884,7 +883,7 @@ define i8 @parent7(ptr %a) {
 ;
 ; ATTRIBUTOR-LABEL: define i8 @parent7(
 ; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]]) {
-; ATTRIBUTOR-NEXT:    [[RET:%.*]] = call i8 @use1safecall(ptr nonnull [[A]]) #[[ATTR15]]
+; ATTRIBUTOR-NEXT:    [[RET:%.*]] = call i8 @use1safecall(ptr nonnull [[A]]) #[[ATTR16]]
 ; ATTRIBUTOR-NEXT:    call void @use1nonnull(ptr nonnull [[A]])
 ; ATTRIBUTOR-NEXT:    ret i8 [[RET]]
 ;
@@ -903,7 +902,7 @@ declare i32 @esfp(...)
 
 define i1 @parent8(ptr %a, ptr %bogus1, ptr %b) personality ptr @esfp{
 ; FNATTRS-LABEL: define noundef i1 @parent8(
-; FNATTRS-SAME: ptr nonnull [[A:%.*]], ptr readnone captures(none) [[BOGUS1:%.*]], ptr nonnull [[B:%.*]]) #[[ATTR7]] personality ptr @esfp {
+; FNATTRS-SAME: ptr nonnull [[A:%.*]], ptr nocapture readnone [[BOGUS1:%.*]], ptr nonnull [[B:%.*]]) #[[ATTR7]] personality ptr @esfp {
 ; FNATTRS-NEXT:  entry:
 ; FNATTRS-NEXT:    invoke void @use2nonnull(ptr [[A]], ptr [[B]])
 ; FNATTRS-NEXT:            to label [[CONT:%.*]] unwind label [[EXC:%.*]]
@@ -916,7 +915,7 @@ define i1 @parent8(ptr %a, ptr %bogus1, ptr %b) personality ptr @esfp{
 ; FNATTRS-NEXT:    unreachable
 ;
 ; ATTRIBUTOR-LABEL: define i1 @parent8(
-; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]], ptr nofree readnone captures(none) [[BOGUS1:%.*]], ptr nonnull [[B:%.*]]) #[[ATTR7]] personality ptr @esfp {
+; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]], ptr nocapture nofree readnone [[BOGUS1:%.*]], ptr nonnull [[B:%.*]]) #[[ATTR8]] personality ptr @esfp {
 ; ATTRIBUTOR-NEXT:  entry:
 ; ATTRIBUTOR-NEXT:    invoke void @use2nonnull(ptr nonnull [[A]], ptr nonnull [[B]])
 ; ATTRIBUTOR-NEXT:            to label [[CONT:%.*]] unwind label [[EXC:%.*]]
@@ -945,7 +944,7 @@ exc:
 
 define ptr @gep1(ptr %p) {
 ; FNATTRS-LABEL: define nonnull ptr @gep1(
-; FNATTRS-SAME: ptr readnone captures(ret: address, provenance) [[P:%.*]]) #[[ATTR0]] {
+; FNATTRS-SAME: ptr readnone [[P:%.*]]) #[[ATTR0]] {
 ; FNATTRS-NEXT:    [[Q:%.*]] = getelementptr inbounds i32, ptr [[P]], i32 1
 ; FNATTRS-NEXT:    ret ptr [[Q]]
 ;
@@ -961,12 +960,12 @@ define ptr @gep1(ptr %p) {
 define ptr @gep1_no_null_opt(ptr %p) #0 {
 ; Should't be able to derive nonnull based on gep.
 ; FNATTRS-LABEL: define ptr @gep1_no_null_opt(
-; FNATTRS-SAME: ptr readnone captures(ret: address, provenance) [[P:%.*]]) #[[ATTR8:[0-9]+]] {
+; FNATTRS-SAME: ptr readnone [[P:%.*]]) #[[ATTR8:[0-9]+]] {
 ; FNATTRS-NEXT:    [[Q:%.*]] = getelementptr inbounds i32, ptr [[P]], i32 1
 ; FNATTRS-NEXT:    ret ptr [[Q]]
 ;
 ; ATTRIBUTOR-LABEL: define ptr @gep1_no_null_opt(
-; ATTRIBUTOR-SAME: ptr nofree readnone [[P:%.*]]) #[[ATTR8:[0-9]+]] {
+; ATTRIBUTOR-SAME: ptr nofree readnone [[P:%.*]]) #[[ATTR9:[0-9]+]] {
 ; ATTRIBUTOR-NEXT:    [[Q:%.*]] = getelementptr inbounds i32, ptr [[P]], i32 1
 ; ATTRIBUTOR-NEXT:    ret ptr [[Q]]
 ;
@@ -976,7 +975,7 @@ define ptr @gep1_no_null_opt(ptr %p) #0 {
 
 define ptr addrspace(3) @gep2(ptr addrspace(3) %p) {
 ; FNATTRS-LABEL: define ptr addrspace(3) @gep2(
-; FNATTRS-SAME: ptr addrspace(3) readnone captures(ret: address, provenance) [[P:%.*]]) #[[ATTR0]] {
+; FNATTRS-SAME: ptr addrspace(3) readnone [[P:%.*]]) #[[ATTR0]] {
 ; FNATTRS-NEXT:    [[Q:%.*]] = getelementptr inbounds i32, ptr addrspace(3) [[P]], i32 1
 ; FNATTRS-NEXT:    ret ptr addrspace(3) [[Q]]
 ;
@@ -992,7 +991,7 @@ define ptr addrspace(3) @gep2(ptr addrspace(3) %p) {
 ; FIXME: We should propagate dereferenceable here but *not* nonnull
 define ptr addrspace(3) @as(ptr addrspace(3) dereferenceable(4) %p) {
 ; FNATTRS-LABEL: define noundef ptr addrspace(3) @as(
-; FNATTRS-SAME: ptr addrspace(3) readnone returned captures(ret: address, provenance) dereferenceable(4) [[P:%.*]]) #[[ATTR0]] {
+; FNATTRS-SAME: ptr addrspace(3) readnone returned dereferenceable(4) [[P:%.*]]) #[[ATTR0]] {
 ; FNATTRS-NEXT:    ret ptr addrspace(3) [[P]]
 ;
 ; ATTRIBUTOR-LABEL: define ptr addrspace(3) @as(
@@ -1007,8 +1006,8 @@ define internal ptr @g2() {
 ; FNATTRS-SAME: ) #[[ATTR0]] {
 ; FNATTRS-NEXT:    ret ptr inttoptr (i64 4 to ptr)
 ;
-; ATTRIBUTOR-LABEL: define internal nonnull ptr @g2(
-; ATTRIBUTOR-SAME: ) #[[ATTR0]] {
+; ATTRIBUTOR-LABEL: define internal ptr @g2(
+; ATTRIBUTOR-SAME: ) #[[ATTR10:[0-9]+]] {
 ; ATTRIBUTOR-NEXT:    ret ptr inttoptr (i64 4 to ptr)
 ;
   ret ptr inttoptr (i64 4 to ptr)
@@ -1022,23 +1021,23 @@ define  ptr @g1() {
 ;
 ; ATTRIBUTOR-LABEL: define ptr @g1(
 ; ATTRIBUTOR-SAME: ) #[[ATTR0]] {
-; ATTRIBUTOR-NEXT:    [[C:%.*]] = call ptr @g2() #[[ATTR16:[0-9]+]]
+; ATTRIBUTOR-NEXT:    [[C:%.*]] = call ptr @g2() #[[ATTR10]]
 ; ATTRIBUTOR-NEXT:    ret ptr [[C]]
 ;
   %c = call ptr @g2()
   ret ptr %c
 }
 
-declare void @use_i32_ptr(ptr) readnone nounwind willreturn
+declare void @use_i32_ptr(ptr) readnone nounwind
 define internal void @called_by_weak(ptr %a) {
 ; FNATTRS-LABEL: define internal void @called_by_weak(
-; FNATTRS-SAME: ptr readnone captures(address) [[A:%.*]]) #[[ATTR10:[0-9]+]] {
+; FNATTRS-SAME: ptr nocapture readnone [[A:%.*]]) #[[ATTR1]] {
 ; FNATTRS-NEXT:    call void @use_i32_ptr(ptr [[A]])
 ; FNATTRS-NEXT:    ret void
 ;
 ; ATTRIBUTOR-LABEL: define internal void @called_by_weak(
-; ATTRIBUTOR-SAME: ptr nonnull readnone captures(none) [[A:%.*]]) #[[ATTR10:[0-9]+]] {
-; ATTRIBUTOR-NEXT:    call void @use_i32_ptr(ptr nonnull [[A]]) #[[ATTR17:[0-9]+]]
+; ATTRIBUTOR-SAME: ptr nocapture readnone [[A:%.*]]) #[[ATTR11:[0-9]+]] {
+; ATTRIBUTOR-NEXT:    call void @use_i32_ptr(ptr [[A]])
 ; ATTRIBUTOR-NEXT:    ret void
 ;
   call void @use_i32_ptr(ptr %a)
@@ -1054,7 +1053,7 @@ define weak_odr void @weak_caller(ptr nonnull %a) {
 ;
 ; ATTRIBUTOR-LABEL: define weak_odr void @weak_caller(
 ; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]]) {
-; ATTRIBUTOR-NEXT:    call void @called_by_weak(ptr nonnull readnone captures(none) [[A]])
+; ATTRIBUTOR-NEXT:    call void @called_by_weak(ptr nocapture nonnull readnone [[A]])
 ; ATTRIBUTOR-NEXT:    ret void
 ;
   call void @called_by_weak(ptr %a)
@@ -1064,13 +1063,13 @@ define weak_odr void @weak_caller(ptr nonnull %a) {
 ; Expect nonnull
 define internal void @control(ptr dereferenceable(4) %a) {
 ; FNATTRS-LABEL: define internal void @control(
-; FNATTRS-SAME: ptr readnone captures(address) dereferenceable(4) [[A:%.*]]) #[[ATTR10]] {
+; FNATTRS-SAME: ptr nocapture readnone dereferenceable(4) [[A:%.*]]) #[[ATTR1]] {
 ; FNATTRS-NEXT:    call void @use_i32_ptr(ptr [[A]])
 ; FNATTRS-NEXT:    ret void
 ;
 ; ATTRIBUTOR-LABEL: define internal void @control(
-; ATTRIBUTOR-SAME: ptr nonnull readnone captures(none) dereferenceable(4) [[A:%.*]]) #[[ATTR10]] {
-; ATTRIBUTOR-NEXT:    call void @use_i32_ptr(ptr [[A]]) #[[ATTR17]]
+; ATTRIBUTOR-SAME: ptr nocapture readnone dereferenceable(4) [[A:%.*]]) #[[ATTR11]] {
+; ATTRIBUTOR-NEXT:    call void @use_i32_ptr(ptr [[A]])
 ; ATTRIBUTOR-NEXT:    ret void
 ;
   call void @use_i32_ptr(ptr %a)
@@ -1079,24 +1078,27 @@ define internal void @control(ptr dereferenceable(4) %a) {
 ; Avoid nonnull as we do not touch naked functions
 define internal void @naked(ptr dereferenceable(4) %a) naked {
 ; FNATTRS-LABEL: define internal void @naked(
-; FNATTRS-SAME: ptr dereferenceable(4) [[A:%.*]]) #[[ATTR11:[0-9]+]] {
+; FNATTRS-SAME: ptr dereferenceable(4) [[A:%.*]]) #[[ATTR10:[0-9]+]] {
+; FNATTRS-NEXT:    call void @use_i32_ptr(ptr [[A]])
 ; FNATTRS-NEXT:    ret void
 ;
 ; ATTRIBUTOR-LABEL: define internal void @naked(
-; ATTRIBUTOR-SAME: ptr nonnull dereferenceable(4) [[A:%.*]]) #[[ATTR11:[0-9]+]] {
+; ATTRIBUTOR-SAME: ptr dereferenceable(4) [[A:%.*]]) #[[ATTR12:[0-9]+]] {
+; ATTRIBUTOR-NEXT:    call void @use_i32_ptr(ptr [[A]])
 ; ATTRIBUTOR-NEXT:    ret void
 ;
+  call void @use_i32_ptr(ptr %a)
   ret void
 }
 ; Avoid nonnull as we do not touch optnone
 define internal void @optnone(ptr dereferenceable(4) %a) optnone noinline {
 ; FNATTRS-LABEL: define internal void @optnone(
-; FNATTRS-SAME: ptr dereferenceable(4) [[A:%.*]]) #[[ATTR12:[0-9]+]] {
+; FNATTRS-SAME: ptr dereferenceable(4) [[A:%.*]]) #[[ATTR11:[0-9]+]] {
 ; FNATTRS-NEXT:    call void @use_i32_ptr(ptr [[A]])
 ; FNATTRS-NEXT:    ret void
 ;
 ; ATTRIBUTOR-LABEL: define internal void @optnone(
-; ATTRIBUTOR-SAME: ptr nonnull dereferenceable(4) [[A:%.*]]) #[[ATTR12:[0-9]+]] {
+; ATTRIBUTOR-SAME: ptr dereferenceable(4) [[A:%.*]]) #[[ATTR13:[0-9]+]] {
 ; ATTRIBUTOR-NEXT:    call void @use_i32_ptr(ptr [[A]])
 ; ATTRIBUTOR-NEXT:    ret void
 ;
@@ -1114,7 +1116,7 @@ define void @make_live(ptr nonnull dereferenceable(8) %a) {
 ; ATTRIBUTOR-LABEL: define void @make_live(
 ; ATTRIBUTOR-SAME: ptr nonnull dereferenceable(8) [[A:%.*]]) {
 ; ATTRIBUTOR-NEXT:    call void @naked(ptr nonnull align 16 dereferenceable(8) [[A]])
-; ATTRIBUTOR-NEXT:    call void @control(ptr nonnull readnone align 16 captures(none) dereferenceable(8) [[A]])
+; ATTRIBUTOR-NEXT:    call void @control(ptr nocapture nonnull readnone align 16 dereferenceable(8) [[A]])
 ; ATTRIBUTOR-NEXT:    call void @optnone(ptr nonnull align 16 dereferenceable(8) [[A]])
 ; ATTRIBUTOR-NEXT:    ret void
 ;
@@ -1133,20 +1135,35 @@ define void @make_live(ptr nonnull dereferenceable(8) %a) {
 declare void @h(ptr) willreturn nounwind
 declare i32 @g(ptr) willreturn nounwind
 define i32 @nonnull_exec_ctx_1(ptr %a, i32 %b) {
-; COMMON-LABEL: define i32 @nonnull_exec_ctx_1(
-; COMMON-SAME: ptr [[A:%.*]], i32 [[B:%.*]]) #[[ATTR7:[0-9]+]] {
-; COMMON-NEXT:  en:
-; COMMON-NEXT:    [[TMP3:%.*]] = icmp eq i32 [[B]], 0
-; COMMON-NEXT:    br i1 [[TMP3]], label [[EX:%.*]], label [[HD:%.*]]
-; COMMON:       ex:
-; COMMON-NEXT:    [[TMP5:%.*]] = tail call i32 @g(ptr nonnull [[A]])
-; COMMON-NEXT:    ret i32 [[TMP5]]
-; COMMON:       hd:
-; COMMON-NEXT:    [[TMP7:%.*]] = phi i32 [ [[TMP8:%.*]], [[HD]] ], [ 0, [[EN:%.*]] ]
-; COMMON-NEXT:    tail call void @h(ptr [[A]])
-; COMMON-NEXT:    [[TMP8]] = add nuw i32 [[TMP7]], 1
-; COMMON-NEXT:    [[TMP9:%.*]] = icmp eq i32 [[TMP8]], [[B]]
-; COMMON-NEXT:    br i1 [[TMP9]], label [[EX]], label [[HD]]
+; FNATTRS-LABEL: define i32 @nonnull_exec_ctx_1(
+; FNATTRS-SAME: ptr [[A:%.*]], i32 [[B:%.*]]) #[[ATTR7]] {
+; FNATTRS-NEXT:  en:
+; FNATTRS-NEXT:    [[TMP3:%.*]] = icmp eq i32 [[B]], 0
+; FNATTRS-NEXT:    br i1 [[TMP3]], label [[EX:%.*]], label [[HD:%.*]]
+; FNATTRS:       ex:
+; FNATTRS-NEXT:    [[TMP5:%.*]] = tail call i32 @g(ptr nonnull [[A]])
+; FNATTRS-NEXT:    ret i32 [[TMP5]]
+; FNATTRS:       hd:
+; FNATTRS-NEXT:    [[TMP7:%.*]] = phi i32 [ [[TMP8:%.*]], [[HD]] ], [ 0, [[EN:%.*]] ]
+; FNATTRS-NEXT:    tail call void @h(ptr [[A]])
+; FNATTRS-NEXT:    [[TMP8]] = add nuw i32 [[TMP7]], 1
+; FNATTRS-NEXT:    [[TMP9:%.*]] = icmp eq i32 [[TMP8]], [[B]]
+; FNATTRS-NEXT:    br i1 [[TMP9]], label [[EX]], label [[HD]]
+;
+; ATTRIBUTOR-LABEL: define i32 @nonnull_exec_ctx_1(
+; ATTRIBUTOR-SAME: ptr [[A:%.*]], i32 [[B:%.*]]) #[[ATTR8]] {
+; ATTRIBUTOR-NEXT:  en:
+; ATTRIBUTOR-NEXT:    [[TMP3:%.*]] = icmp eq i32 [[B]], 0
+; ATTRIBUTOR-NEXT:    br i1 [[TMP3]], label [[EX:%.*]], label [[HD:%.*]]
+; ATTRIBUTOR:       ex:
+; ATTRIBUTOR-NEXT:    [[TMP5:%.*]] = tail call i32 @g(ptr nonnull [[A]])
+; ATTRIBUTOR-NEXT:    ret i32 [[TMP5]]
+; ATTRIBUTOR:       hd:
+; ATTRIBUTOR-NEXT:    [[TMP7:%.*]] = phi i32 [ [[TMP8:%.*]], [[HD]] ], [ 0, [[EN:%.*]] ]
+; ATTRIBUTOR-NEXT:    tail call void @h(ptr [[A]])
+; ATTRIBUTOR-NEXT:    [[TMP8]] = add nuw i32 [[TMP7]], 1
+; ATTRIBUTOR-NEXT:    [[TMP9:%.*]] = icmp eq i32 [[TMP8]], [[B]]
+; ATTRIBUTOR-NEXT:    br i1 [[TMP9]], label [[EX]], label [[HD]]
 ;
 en:
   %tmp3 = icmp eq i32 %b, 0
@@ -1165,22 +1182,39 @@ hd:
 }
 
 define i32 @nonnull_exec_ctx_1b(ptr %a, i32 %b) {
-; COMMON-LABEL: define i32 @nonnull_exec_ctx_1b(
-; COMMON-SAME: ptr [[A:%.*]], i32 [[B:%.*]]) #[[ATTR7]] {
-; COMMON-NEXT:  en:
-; COMMON-NEXT:    [[TMP3:%.*]] = icmp eq i32 [[B]], 0
-; COMMON-NEXT:    br i1 [[TMP3]], label [[EX:%.*]], label [[HD:%.*]]
-; COMMON:       ex:
-; COMMON-NEXT:    [[TMP5:%.*]] = tail call i32 @g(ptr nonnull [[A]])
-; COMMON-NEXT:    ret i32 [[TMP5]]
-; COMMON:       hd:
-; COMMON-NEXT:    [[TMP7:%.*]] = phi i32 [ [[TMP8:%.*]], [[HD2:%.*]] ], [ 0, [[EN:%.*]] ]
-; COMMON-NEXT:    tail call void @h(ptr [[A]])
-; COMMON-NEXT:    br label [[HD2]]
-; COMMON:       hd2:
-; COMMON-NEXT:    [[TMP8]] = add nuw i32 [[TMP7]], 1
-; COMMON-NEXT:    [[TMP9:%.*]] = icmp eq i32 [[TMP8]], [[B]]
-; COMMON-NEXT:    br i1 [[TMP9]], label [[EX]], label [[HD]]
+; FNATTRS-LABEL: define i32 @nonnull_exec_ctx_1b(
+; FNATTRS-SAME: ptr [[A:%.*]], i32 [[B:%.*]]) #[[ATTR7]] {
+; FNATTRS-NEXT:  en:
+; FNATTRS-NEXT:    [[TMP3:%.*]] = icmp eq i32 [[B]], 0
+; FNATTRS-NEXT:    br i1 [[TMP3]], label [[EX:%.*]], label [[HD:%.*]]
+; FNATTRS:       ex:
+; FNATTRS-NEXT:    [[TMP5:%.*]] = tail call i32 @g(ptr nonnull [[A]])
+; FNATTRS-NEXT:    ret i32 [[TMP5]]
+; FNATTRS:       hd:
+; FNATTRS-NEXT:    [[TMP7:%.*]] = phi i32 [ [[TMP8:%.*]], [[HD2:%.*]] ], [ 0, [[EN:%.*]] ]
+; FNATTRS-NEXT:    tail call void @h(ptr [[A]])
+; FNATTRS-NEXT:    br label [[HD2]]
+; FNATTRS:       hd2:
+; FNATTRS-NEXT:    [[TMP8]] = add nuw i32 [[TMP7]], 1
+; FNATTRS-NEXT:    [[TMP9:%.*]] = icmp eq i32 [[TMP8]], [[B]]
+; FNATTRS-NEXT:    br i1 [[TMP9]], label [[EX]], label [[HD]]
+;
+; ATTRIBUTOR-LABEL: define i32 @nonnull_exec_ctx_1b(
+; ATTRIBUTOR-SAME: ptr [[A:%.*]], i32 [[B:%.*]]) #[[ATTR8]] {
+; ATTRIBUTOR-NEXT:  en:
+; ATTRIBUTOR-NEXT:    [[TMP3:%.*]] = icmp eq i32 [[B]], 0
+; ATTRIBUTOR-NEXT:    br i1 [[TMP3]], label [[EX:%.*]], label [[HD:%.*]]
+; ATTRIBUTOR:       ex:
+; ATTRIBUTOR-NEXT:    [[TMP5:%.*]] = tail call i32 @g(ptr nonnull [[A]])
+; ATTRIBUTOR-NEXT:    ret i32 [[TMP5]]
+; ATTRIBUTOR:       hd:
+; ATTRIBUTOR-NEXT:    [[TMP7:%.*]] = phi i32 [ [[TMP8:%.*]], [[HD2:%.*]] ], [ 0, [[EN:%.*]] ]
+; ATTRIBUTOR-NEXT:    tail call void @h(ptr [[A]])
+; ATTRIBUTOR-NEXT:    br label [[HD2]]
+; ATTRIBUTOR:       hd2:
+; ATTRIBUTOR-NEXT:    [[TMP8]] = add nuw i32 [[TMP7]], 1
+; ATTRIBUTOR-NEXT:    [[TMP9:%.*]] = icmp eq i32 [[TMP8]], [[B]]
+; ATTRIBUTOR-NEXT:    br i1 [[TMP9]], label [[EX]], label [[HD]]
 ;
 en:
   %tmp3 = icmp eq i32 %b, 0
@@ -1218,7 +1252,7 @@ define i32 @nonnull_exec_ctx_2(ptr %a, i32 %b) willreturn nounwind {
 ; FNATTRS-NEXT:    br i1 [[TMP9]], label [[EX]], label [[HD]]
 ;
 ; ATTRIBUTOR-LABEL: define i32 @nonnull_exec_ctx_2(
-; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]], i32 [[B:%.*]]) #[[ATTR6]] {
+; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]], i32 [[B:%.*]]) #[[ATTR7]] {
 ; ATTRIBUTOR-NEXT:  en:
 ; ATTRIBUTOR-NEXT:    [[TMP3:%.*]] = icmp eq i32 [[B]], 0
 ; ATTRIBUTOR-NEXT:    br i1 [[TMP3]], label [[EX:%.*]], label [[HD:%.*]]
@@ -1267,7 +1301,7 @@ define i32 @nonnull_exec_ctx_2b(ptr %a, i32 %b) willreturn nounwind {
 ; FNATTRS-NEXT:    br i1 [[TMP9]], label [[EX]], label [[HD]]
 ;
 ; ATTRIBUTOR-LABEL: define i32 @nonnull_exec_ctx_2b(
-; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]], i32 [[B:%.*]]) #[[ATTR6]] {
+; ATTRIBUTOR-SAME: ptr nonnull [[A:%.*]], i32 [[B:%.*]]) #[[ATTR7]] {
 ; ATTRIBUTOR-NEXT:  en:
 ; ATTRIBUTOR-NEXT:    [[TMP3:%.*]] = icmp eq i32 [[B]], 0
 ; ATTRIBUTOR-NEXT:    br i1 [[TMP3]], label [[EX:%.*]], label [[HD:%.*]]
@@ -1383,7 +1417,7 @@ define void @PR43833_simple(ptr %0, i32 %1) {
 
 define ptr @pr91177_non_inbounds_gep(ptr nonnull %arg) {
 ; FNATTRS-LABEL: define ptr @pr91177_non_inbounds_gep(
-; FNATTRS-SAME: ptr nonnull readnone captures(ret: address, provenance) [[ARG:%.*]]) #[[ATTR0]] {
+; FNATTRS-SAME: ptr nonnull readnone [[ARG:%.*]]) #[[ATTR0]] {
 ; FNATTRS-NEXT:    [[RES:%.*]] = getelementptr i8, ptr [[ARG]], i64 -8
 ; FNATTRS-NEXT:    ret ptr [[RES]]
 ;
@@ -1393,36 +1427,6 @@ define ptr @pr91177_non_inbounds_gep(ptr nonnull %arg) {
 ; ATTRIBUTOR-NEXT:    ret ptr [[RES]]
 ;
   %res = getelementptr i8, ptr %arg, i64 -8
-  ret ptr %res
-}
-
-define ptr @unknown_func(ptr %fn) {
-; FNATTRS-LABEL: define ptr @unknown_func(
-; FNATTRS-SAME: ptr readonly captures(none) [[FN:%.*]]) {
-; FNATTRS-NEXT:    [[RES:%.*]] = call ptr [[FN]]()
-; FNATTRS-NEXT:    ret ptr [[RES]]
-;
-; ATTRIBUTOR-LABEL: define ptr @unknown_func(
-; ATTRIBUTOR-SAME: ptr nofree nonnull captures(none) [[FN:%.*]]) {
-; ATTRIBUTOR-NEXT:    [[RES:%.*]] = call ptr [[FN]]()
-; ATTRIBUTOR-NEXT:    ret ptr [[RES]]
-;
-  %res = call ptr %fn()
-  ret ptr %res
-}
-
-define ptr @unknown_nonnull_func(ptr %fn) {
-; FNATTRS-LABEL: define nonnull ptr @unknown_nonnull_func(
-; FNATTRS-SAME: ptr readonly captures(none) [[FN:%.*]]) {
-; FNATTRS-NEXT:    [[RES:%.*]] = call nonnull ptr [[FN]]()
-; FNATTRS-NEXT:    ret ptr [[RES]]
-;
-; ATTRIBUTOR-LABEL: define nonnull ptr @unknown_nonnull_func(
-; ATTRIBUTOR-SAME: ptr nofree nonnull captures(none) [[FN:%.*]]) {
-; ATTRIBUTOR-NEXT:    [[RES:%.*]] = call nonnull ptr [[FN]]()
-; ATTRIBUTOR-NEXT:    ret ptr [[RES]]
-;
-  %res = call nonnull ptr %fn()
   ret ptr %res
 }
 

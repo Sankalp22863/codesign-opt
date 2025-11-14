@@ -6,17 +6,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "src/__support/threads/thread.h"
-#include "src/__support/macros/config.h"
-#include "src/__support/threads/mutex.h"
+#include "thread.h"
+#include "mutex.h"
 
 #include "src/__support/CPP/array.h"
-#include "src/__support/CPP/mutex.h" // lock_guard
 #include "src/__support/CPP/optional.h"
 #include "src/__support/fixedvector.h"
 #include "src/__support/macros/attributes.h"
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
+
+LIBC_THREAD_LOCAL Thread self;
+
 namespace {
 
 using AtExitCallback = void(void *);
@@ -52,12 +53,10 @@ class TSSKeyMgr {
   cpp::array<TSSKeyUnit, TSS_KEY_COUNT> units;
 
 public:
-  constexpr TSSKeyMgr()
-      : mtx(/*timed=*/false, /*recursive=*/false, /*robust=*/false,
-            /*pshared=*/false) {}
+  constexpr TSSKeyMgr() : mtx(false, false, false) {}
 
   cpp::optional<unsigned int> new_key(TSSDtor *dtor) {
-    cpp::lock_guard lock(mtx);
+    MutexLock lock(&mtx);
     for (unsigned int i = 0; i < TSS_KEY_COUNT; ++i) {
       TSSKeyUnit &u = units[i];
       if (!u.active) {
@@ -71,20 +70,20 @@ public:
   TSSDtor *get_dtor(unsigned int key) {
     if (key >= TSS_KEY_COUNT)
       return nullptr;
-    cpp::lock_guard lock(mtx);
+    MutexLock lock(&mtx);
     return units[key].dtor;
   }
 
   bool remove_key(unsigned int key) {
     if (key >= TSS_KEY_COUNT)
       return false;
-    cpp::lock_guard lock(mtx);
+    MutexLock lock(&mtx);
     units[key].reset();
     return true;
   }
 
   bool is_valid_key(unsigned int key) {
-    cpp::lock_guard lock(mtx);
+    MutexLock lock(&mtx);
     return units[key].active;
   }
 };
@@ -111,15 +110,11 @@ class ThreadAtExitCallbackMgr {
   FixedVector<AtExitUnit, 1024> callback_list;
 
 public:
-  constexpr ThreadAtExitCallbackMgr()
-      : mtx(/*timed=*/false, /*recursive=*/false, /*robust=*/false,
-            /*pshared=*/false) {}
+  constexpr ThreadAtExitCallbackMgr() : mtx(false, false, false) {}
 
   int add_callback(AtExitCallback *callback, void *obj) {
-    cpp::lock_guard lock(mtx);
-    if (callback_list.push_back({callback, obj}))
-      return 0;
-    return -1;
+    MutexLock lock(&mtx);
+    return callback_list.push_back({callback, obj});
   }
 
   void call() {
@@ -163,8 +158,6 @@ void call_atexit_callbacks(ThreadAttributes *attrib) {
   }
 }
 
-extern "C" void __cxa_thread_finalize() { call_atexit_callbacks(self.attrib); }
-
 } // namespace internal
 
 cpp::optional<unsigned int> new_tss_key(TSSDtor *dtor) {
@@ -190,4 +183,4 @@ void *get_tss_value(unsigned int key) {
   return u.payload;
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

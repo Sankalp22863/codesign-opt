@@ -19,7 +19,6 @@
 
 #include "../../test/lib/Dialect/Test/TestAttributes.h"
 #include "../../test/lib/Dialect/Test/TestDialect.h"
-#include "../../test/lib/Dialect/Test/TestOps.h"
 #include "../../test/lib/Dialect/Test/TestTypes.h"
 #include "mlir/IR/OwningOpRef.h"
 
@@ -43,7 +42,7 @@ struct Model
 /// overrides default methods.
 struct OverridingModel
     : public TestExternalTypeInterface::ExternalModel<OverridingModel,
-                                                      Float32Type> {
+                                                      FloatType> {
   unsigned getBitwidthPlusArg(Type type, unsigned arg) const {
     return type.getIntOrFloatBitWidth() + arg;
   }
@@ -303,7 +302,7 @@ TEST(InterfaceAttachment, Operation) {
 
   // Initially, the operation doesn't have the interface.
   OwningOpRef<ModuleOp> moduleOp =
-      ModuleOp::create(builder, UnknownLoc::get(&context));
+      builder.create<ModuleOp>(UnknownLoc::get(&context));
   ASSERT_FALSE(isa<TestExternalOpInterface>(moduleOp->getOperation()));
 
   // We can attach an external interface and now the operaiton has it.
@@ -317,8 +316,8 @@ TEST(InterfaceAttachment, Operation) {
 
   // Default implementation can be overridden.
   OwningOpRef<UnrealizedConversionCastOp> castOp =
-      UnrealizedConversionCastOp::create(builder, UnknownLoc::get(&context),
-                                         TypeRange(), ValueRange());
+      builder.create<UnrealizedConversionCastOp>(UnknownLoc::get(&context),
+                                                 TypeRange(), ValueRange());
   ASSERT_FALSE(isa<TestExternalOpInterface>(castOp->getOperation()));
   UnrealizedConversionCastOp::attachInterface<TestExternalOpOverridingModel>(
       context);
@@ -368,11 +367,11 @@ TEST(InterfaceAttachment, OperationDelayedContextConstruct) {
   OwningOpRef<ModuleOp> module = ModuleOp::create(UnknownLoc::get(&context));
   OpBuilder builder(module->getBody(), module->getBody()->begin());
   auto opJ =
-      test::OpJ::create(builder, builder.getUnknownLoc(), builder.getI32Type());
+      builder.create<test::OpJ>(builder.getUnknownLoc(), builder.getI32Type());
   auto opH =
-      test::OpH::create(builder, builder.getUnknownLoc(), opJ.getResult());
+      builder.create<test::OpH>(builder.getUnknownLoc(), opJ.getResult());
   auto opI =
-      test::OpI::create(builder, builder.getUnknownLoc(), opJ.getResult());
+      builder.create<test::OpI>(builder.getUnknownLoc(), opJ.getResult());
 
   EXPECT_TRUE(isa<TestExternalOpInterface>(module->getOperation()));
   EXPECT_TRUE(isa<TestExternalOpInterface>(opJ.getOperation()));
@@ -399,11 +398,11 @@ TEST(InterfaceAttachment, OperationDelayedContextAppend) {
   OwningOpRef<ModuleOp> module = ModuleOp::create(UnknownLoc::get(&context));
   OpBuilder builder(module->getBody(), module->getBody()->begin());
   auto opJ =
-      test::OpJ::create(builder, builder.getUnknownLoc(), builder.getI32Type());
+      builder.create<test::OpJ>(builder.getUnknownLoc(), builder.getI32Type());
   auto opH =
-      test::OpH::create(builder, builder.getUnknownLoc(), opJ.getResult());
+      builder.create<test::OpH>(builder.getUnknownLoc(), opJ.getResult());
   auto opI =
-      test::OpI::create(builder, builder.getUnknownLoc(), opJ.getResult());
+      builder.create<test::OpI>(builder.getUnknownLoc(), opJ.getResult());
 
   EXPECT_FALSE(isa<TestExternalOpInterface>(module->getOperation()));
   EXPECT_FALSE(isa<TestExternalOpInterface>(opJ.getOperation()));
@@ -422,7 +421,7 @@ TEST(InterfaceAttachmentTest, PromisedInterfaces) {
   // Attribute interfaces use the exact same mechanism as types, so just check
   // that the promise mechanism works for attributes.
   MLIRContext context;
-  auto *testDialect = context.getOrLoadDialect<test::TestDialect>();
+  auto testDialect = context.getOrLoadDialect<test::TestDialect>();
   auto attr = test::SimpleAAttr::get(&context);
 
   // `SimpleAAttr` doesn't implement nor promises the
@@ -432,8 +431,8 @@ TEST(InterfaceAttachmentTest, PromisedInterfaces) {
       attr.hasPromiseOrImplementsInterface<TestExternalAttrInterface>());
 
   // Add a promise `TestExternalAttrInterface`.
-  testDialect->declarePromisedInterface<TestExternalAttrInterface,
-                                        test::SimpleAAttr>();
+  testDialect->declarePromisedInterface<test::SimpleAAttr,
+                                        TestExternalAttrInterface>();
   EXPECT_TRUE(
       attr.hasPromiseOrImplementsInterface<TestExternalAttrInterface>());
 

@@ -13,6 +13,7 @@
 #include "clang/Config/config.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendActions.h"
+#include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/Utils.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/PreprocessorOptions.h"
@@ -103,13 +104,12 @@ bool FixItAction::BeginSourceFileAction(CompilerInstance &CI) {
   }
   Rewriter.reset(new FixItRewriter(CI.getDiagnostics(), CI.getSourceManager(),
                                    CI.getLangOpts(), FixItOpts.get()));
-  return ASTFrontendAction::BeginSourceFileAction(CI);
+  return true;
 }
 
 void FixItAction::EndSourceFileAction() {
   // Otherwise rewrite all files.
   Rewriter->WriteFixedFiles();
-  ASTFrontendAction::EndSourceFileAction();
 }
 
 bool FixItRecompile::BeginInvocation(CompilerInstance &CI) {
@@ -213,7 +213,7 @@ public:
 
   void visitModuleFile(StringRef Filename,
                        serialization::ModuleKind Kind) override {
-    auto File = CI.getFileManager().getOptionalFileRef(Filename);
+    auto File = CI.getFileManager().getFile(Filename);
     assert(File && "missing file for loaded module?");
 
     // Only rewrite each module file once.
@@ -242,10 +242,10 @@ public:
     (*OS) << '\n';
 
     // Rewrite the contents of the module in a separate compiler instance.
-    CompilerInstance Instance(
-        std::make_shared<CompilerInvocation>(CI.getInvocation()),
-        CI.getPCHContainerOperations(), &CI.getModuleCache());
-    Instance.setVirtualFileSystem(CI.getVirtualFileSystemPtr());
+    CompilerInstance Instance(CI.getPCHContainerOperations(),
+                              &CI.getModuleCache());
+    Instance.setInvocation(
+        std::make_shared<CompilerInvocation>(CI.getInvocation()));
     Instance.createDiagnostics(
         new ForwardingDiagnosticConsumer(CI.getDiagnosticClient()),
         /*ShouldOwnClient=*/true);
@@ -299,7 +299,7 @@ bool RewriteIncludesAction::BeginSourceFileAction(CompilerInstance &CI) {
         std::make_unique<RewriteImportsListener>(CI, OutputStream));
   }
 
-  return PreprocessorFrontendAction::BeginSourceFileAction(CI);
+  return true;
 }
 
 void RewriteIncludesAction::ExecuteAction() {

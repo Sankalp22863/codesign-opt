@@ -40,9 +40,8 @@ protected:
 
     AT = ArrayType::get(PointerType::getUnqual(Ctx), 3);
 
-    GV =
-        new GlobalVariable(*M, AT, false /*=isConstant*/,
-                           GlobalValue::InternalLinkage, nullptr, "switch.bas");
+    GV = new GlobalVariable(*M.get(), AT, false /*=isConstant*/,
+                            GlobalValue::InternalLinkage, nullptr,"switch.bas");
 
     // Global Initializer
     std::vector<Constant *> Init;
@@ -73,7 +72,7 @@ protected:
   BasicBlock *ExitBB;
 };
 
-static void expectNoDiags(const DiagnosticInfo *DI, void *C) {
+static void expectNoDiags(const DiagnosticInfo &DI, void *C) {
   llvm_unreachable("expectNoDiags called!");
 }
 
@@ -160,7 +159,7 @@ static Module *getInternal(LLVMContext &Ctx) {
   IRBuilder<> Builder(BB);
   Builder.CreateRetVoid();
 
-  StructType *STy = StructType::create(Ctx, PointerType::get(Ctx, 0));
+  StructType *STy = StructType::create(Ctx, PointerType::get(FTy, 0));
 
   GlobalVariable *GV =
       new GlobalVariable(*InternalM, STy, false /*=isConstant*/,
@@ -358,7 +357,7 @@ TEST_F(LinkModuleTest, RemangleIntrinsics) {
   // types, so they must be uniquified by linker. Check that they use the same
   // intrinsic definition.
   Function *F = Foo->getFunction("llvm.ssa.copy.s_struct.rtx_defs");
-  ASSERT_TRUE(F->hasNUses(2));
+  ASSERT_EQ(F->getNumUses(), (unsigned)2);
 }
 
 } // end anonymous namespace

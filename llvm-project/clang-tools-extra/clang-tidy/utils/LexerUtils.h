@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- LexerUtils.h - clang-tidy-------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_UTILS_LEXERUTILS_H
-#define LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_UTILS_LEXERUTILS_H
+#ifndef LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_UTILS_LEXER_UTILS_H
+#define LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_UTILS_LEXER_UTILS_H
 
 #include "clang/AST/ASTContext.h"
 #include "clang/Basic/TokenKinds.h"
@@ -48,7 +48,7 @@ SourceLocation findPreviousAnyTokenKind(SourceLocation Start,
   if (Start.isInvalid() || Start.isMacroID())
     return {};
   while (true) {
-    const SourceLocation L = findPreviousTokenStart(Start, SM, LangOpts);
+    SourceLocation L = findPreviousTokenStart(Start, SM, LangOpts);
     if (L.isInvalid() || L.isMacroID())
       return {};
 
@@ -76,7 +76,7 @@ SourceLocation findNextAnyTokenKind(SourceLocation Start,
     if (!CurrentToken)
       return {};
 
-    const Token PotentialMatch = *CurrentToken;
+    Token PotentialMatch = *CurrentToken;
     if (PotentialMatch.isOneOf(TK, TKs...))
       return PotentialMatch.getLocation();
 
@@ -89,11 +89,9 @@ SourceLocation findNextAnyTokenKind(SourceLocation Start,
   }
 }
 
-inline std::optional<Token>
+std::optional<Token>
 findNextTokenIncludingComments(SourceLocation Start, const SourceManager &SM,
-                               const LangOptions &LangOpts) {
-  return Lexer::findNextToken(Start, SM, LangOpts, true);
-}
+                               const LangOptions &LangOpts);
 
 // Finds next token that's not a comment.
 std::optional<Token> findNextTokenSkippingComments(SourceLocation Start,
@@ -130,4 +128,4 @@ SourceLocation getLocationForNoexceptSpecifier(const FunctionDecl *FuncDecl,
 } // namespace tidy::utils::lexer
 } // namespace clang
 
-#endif // LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_UTILS_LEXERUTILS_H
+#endif // LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_UTILS_LEXER_UTILS_H

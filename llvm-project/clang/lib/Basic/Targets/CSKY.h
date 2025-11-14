@@ -71,11 +71,9 @@ public:
 
   bool isValidCPUName(StringRef Name) const override;
 
-  unsigned getMinGlobalAlign(uint64_t, bool HasNonWeakDef) const override;
+  unsigned getMinGlobalAlign(uint64_t) const override;
 
-  llvm::SmallVector<Builtin::InfosShard> getTargetBuiltins() const override {
-    return {};
-  }
+  ArrayRef<Builtin::Info> getTargetBuiltins() const override;
 
   BuiltinVaListKind getBuiltinVaListKind() const override {
     return VoidPtrBuiltinVaList;

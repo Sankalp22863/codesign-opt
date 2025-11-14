@@ -12,7 +12,6 @@
 
 #include "llvm/ObjectYAML/WasmYAML.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/BinaryFormat/Wasm.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/YAMLTraits.h"
@@ -59,7 +58,6 @@ static void sectionMapping(IO &IO, WasmYAML::DylinkSection &Section) {
   IO.mapRequired("Needed", Section.Needed);
   IO.mapOptional("ImportInfo", Section.ImportInfo);
   IO.mapOptional("ExportInfo", Section.ExportInfo);
-  IO.mapOptional("RuntimePath", Section.RuntimePath);
 }
 
 static void sectionMapping(IO &IO, WasmYAML::NameSection &Section) {
@@ -343,6 +341,7 @@ void ScalarEnumerationTraits<WasmYAML::FeaturePolicyPrefix>::enumeration(
     IO &IO, WasmYAML::FeaturePolicyPrefix &Kind) {
 #define ECase(X) IO.enumCase(Kind, #X, wasm::WASM_FEATURE_PREFIX_##X);
   ECase(USED);
+  ECase(REQUIRED);
   ECase(DISALLOWED);
 #undef ECase
 }
@@ -373,8 +372,6 @@ void MappingTraits<WasmYAML::Limits>::mapping(IO &IO,
   IO.mapRequired("Minimum", Limits.Minimum);
   if (!IO.outputting() || Limits.Flags & wasm::WASM_LIMITS_FLAG_HAS_MAX)
     IO.mapOptional("Maximum", Limits.Maximum);
-  if (!IO.outputting() || Limits.Flags & wasm::WASM_LIMITS_FLAG_HAS_PAGE_SIZE)
-    IO.mapOptional("PageSize", Limits.PageSize);
 }
 
 void MappingTraits<WasmYAML::ElemSegment>::mapping(
@@ -384,10 +381,8 @@ void MappingTraits<WasmYAML::ElemSegment>::mapping(
       Segment.Flags & wasm::WASM_ELEM_SEGMENT_HAS_TABLE_NUMBER)
     IO.mapOptional("TableNumber", Segment.TableNumber);
   if (!IO.outputting() ||
-      Segment.Flags & wasm::WASM_ELEM_SEGMENT_MASK_HAS_ELEM_DESC)
+      Segment.Flags & wasm::WASM_ELEM_SEGMENT_MASK_HAS_ELEM_KIND)
     IO.mapOptional("ElemKind", Segment.ElemKind);
-  // TODO: Omit "offset" for passive segments? It's neither meaningful nor
-  // encoded.
   IO.mapRequired("Offset", Segment.Offset);
   IO.mapRequired("Functions", Segment.Functions);
 }
@@ -555,7 +550,6 @@ void ScalarBitSetTraits<WasmYAML::LimitFlags>::bitset(
   BCase(HAS_MAX);
   BCase(IS_SHARED);
   BCase(IS_64);
-  BCase(HAS_PAGE_SIZE);
 #undef BCase
 }
 
@@ -564,7 +558,6 @@ void ScalarBitSetTraits<WasmYAML::SegmentFlags>::bitset(
 #define BCase(X) IO.bitSetCase(Value, #X, wasm::WASM_SEG_FLAG_##X)
   BCase(STRINGS);
   BCase(TLS);
-  BCase(RETAIN);
 #undef BCase
 }
 
@@ -600,8 +593,7 @@ void ScalarEnumerationTraits<WasmYAML::SymbolKind>::enumeration(
 
 void ScalarEnumerationTraits<WasmYAML::ValueType>::enumeration(
     IO &IO, WasmYAML::ValueType &Type) {
-#define CONCAT(X) (uint32_t) wasm::ValType::X
-#define ECase(X) IO.enumCase(Type, #X, CONCAT(X));
+#define ECase(X) IO.enumCase(Type, #X, wasm::WASM_TYPE_##X);
   ECase(I32);
   ECase(I64);
   ECase(F32);
@@ -609,8 +601,7 @@ void ScalarEnumerationTraits<WasmYAML::ValueType>::enumeration(
   ECase(V128);
   ECase(FUNCREF);
   ECase(EXTERNREF);
-  ECase(EXNREF);
-  ECase(OTHERREF);
+  ECase(FUNC);
 #undef ECase
 }
 
@@ -640,12 +631,9 @@ void ScalarEnumerationTraits<WasmYAML::Opcode>::enumeration(
 
 void ScalarEnumerationTraits<WasmYAML::TableType>::enumeration(
     IO &IO, WasmYAML::TableType &Type) {
-#define CONCAT(X) (uint32_t) wasm::ValType::X
-#define ECase(X) IO.enumCase(Type, #X, CONCAT(X));
+#define ECase(X) IO.enumCase(Type, #X, wasm::WASM_TYPE_##X);
   ECase(FUNCREF);
   ECase(EXTERNREF);
-  ECase(EXNREF);
-  ECase(OTHERREF);
 #undef ECase
 }
 

@@ -127,8 +127,7 @@ public:
       lldb_private::SymbolContextList &sc_list) override;
 
   void Dump(lldb_private::Stream &s) override;
-  void DumpClangAST(lldb_private::Stream &s, llvm::StringRef filter,
-                    bool show_color) override;
+  void DumpClangAST(lldb_private::Stream &s) override;
 
   void
   FindGlobalVariables(lldb_private::ConstString name,
@@ -179,17 +178,13 @@ public:
 
   void PreloadSymbols() override;
 
-  uint64_t GetDebugInfoSize(bool load_all_debug_info = false) override;
+  uint64_t GetDebugInfoSize() override;
   lldb_private::StatsDuration::Duration GetDebugInfoParseTime() override;
   lldb_private::StatsDuration::Duration GetDebugInfoIndexTime() override;
 
-  void ResetStatistics() override;
-
   uint32_t GetAbilities() override;
 
-  Symtab *GetSymtab(bool can_create = true) override {
-    return m_sym_file_impl->GetSymtab(can_create);
-  }
+  Symtab *GetSymtab() override { return m_sym_file_impl->GetSymtab(); }
 
   ObjectFile *GetObjectFile() override {
     return m_sym_file_impl->GetObjectFile();
@@ -224,10 +219,9 @@ public:
     return m_sym_file_impl->SetDebugInfoHadFrameVariableErrors();
   }
 
-  bool GetSeparateDebugInfo(StructuredData::Dictionary &d, bool errors_only,
-                            bool load_all_debug_info = false) override {
-    return m_sym_file_impl->GetSeparateDebugInfo(d, errors_only,
-                                                 load_all_debug_info);
+  bool GetSeparateDebugInfo(StructuredData::Dictionary &d,
+                            bool errors_only) override {
+    return m_sym_file_impl->GetSeparateDebugInfo(d, errors_only);
   }
 
   lldb::TypeSP MakeType(lldb::user_id_t uid, ConstString name,

@@ -12,7 +12,6 @@
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Interpreter/CommandCompletions.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
-#include "lldb/Interpreter/OptionValue.h"
 #include "lldb/Utility/Args.h"
 #include "lldb/Utility/State.h"
 
@@ -42,12 +41,7 @@ void OptionValueFileSpec::DumpValue(const ExecutionContext *exe_ctx,
       strm.PutCString(" = ");
 
     if (m_current_value) {
-      strm << '"' << m_current_value.GetPath() << '"';
-    }
-    if (dump_mask & eDumpOptionDefaultValue &&
-        m_current_value != m_default_value && m_default_value) {
-      DefaultValueFormat label(strm);
-      strm << '"' << m_default_value.GetPath() << '"';
+      strm << '"' << m_current_value.GetPath().c_str() << '"';
     }
   }
 }
@@ -73,7 +67,7 @@ Status OptionValueFileSpec::SetValueFromString(llvm::StringRef value,
       m_data_mod_time = llvm::sys::TimePoint<>();
       NotifyValueChanged();
     } else {
-      error = Status::FromErrorString("invalid value string");
+      error.SetErrorString("invalid value string");
     }
     break;
 

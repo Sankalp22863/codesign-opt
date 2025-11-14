@@ -40,9 +40,7 @@
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopNestAnalysis.h"
-#include "llvm/IR/PassInstrumentation.h"
 #include "llvm/IR/PassManager.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Transforms/Utils/LCSSA.h"
 #include "llvm/Transforms/Utils/LoopSimplify.h"
 #include "llvm/Transforms/Utils/LoopUtils.h"
@@ -92,39 +90,77 @@ public:
     return *this;
   }
 
-  LLVM_ABI PreservedAnalyses run(Loop &L, LoopAnalysisManager &AM,
-                                 LoopStandardAnalysisResults &AR,
-                                 LPMUpdater &U);
+  PreservedAnalyses run(Loop &L, LoopAnalysisManager &AM,
+                        LoopStandardAnalysisResults &AR, LPMUpdater &U);
 
-  LLVM_ABI void
-  printPipeline(raw_ostream &OS,
-                function_ref<StringRef(StringRef)> MapClassName2PassName);
+  void printPipeline(raw_ostream &OS,
+                     function_ref<StringRef(StringRef)> MapClassName2PassName);
   /// Add either a loop pass or a loop-nest pass to the pass manager. Append \p
   /// Pass to the list of loop passes if it has a dedicated \fn run() method for
   /// loops and to the list of loop-nest passes if the \fn run() method is for
   /// loop-nests instead. Also append whether \p Pass is loop-nest pass or not
   /// to the end of \var IsLoopNestPass so we can easily identify the types of
   /// passes in the pass manager later.
-  template <typename PassT> LLVM_ATTRIBUTE_MINSIZE void addPass(PassT &&Pass) {
-    if constexpr (is_detected<HasRunOnLoopT, PassT>::value) {
-      using LoopPassModelT =
-          detail::PassModel<Loop, PassT, LoopAnalysisManager,
-                            LoopStandardAnalysisResults &, LPMUpdater &>;
-      IsLoopNestPass.push_back(false);
-      // Do not use make_unique or emplace_back, they cause too many template
-      // instantiations, causing terrible compile times.
-      LoopPasses.push_back(std::unique_ptr<LoopPassConceptT>(
-          new LoopPassModelT(std::forward<PassT>(Pass))));
-    } else {
-      using LoopNestPassModelT =
-          detail::PassModel<LoopNest, PassT, LoopAnalysisManager,
-                            LoopStandardAnalysisResults &, LPMUpdater &>;
-      IsLoopNestPass.push_back(true);
-      // Do not use make_unique or emplace_back, they cause too many template
-      // instantiations, causing terrible compile times.
-      LoopNestPasses.push_back(std::unique_ptr<LoopNestPassConceptT>(
-          new LoopNestPassModelT(std::forward<PassT>(Pass))));
-    }
+  template <typename PassT>
+  LLVM_ATTRIBUTE_MINSIZE
+      std::enable_if_t<is_detected<HasRunOnLoopT, PassT>::value>
+      addPass(PassT &&Pass) {
+    using LoopPassModelT =
+        detail::PassModel<Loop, PassT, PreservedAnalyses, LoopAnalysisManager,
+                          LoopStandardAnalysisResults &, LPMUpdater &>;
+    IsLoopNestPass.push_back(false);
+    // Do not use make_unique or emplace_back, they cause too many template
+    // instantiations, causing terrible compile times.
+    LoopPasses.push_back(std::unique_ptr<LoopPassConceptT>(
+        new LoopPassModelT(std::forward<PassT>(Pass))));
+  }
+
+  template <typename PassT>
+  LLVM_ATTRIBUTE_MINSIZE
+      std::enable_if_t<!is_detected<HasRunOnLoopT, PassT>::value>
+      addPass(PassT &&Pass) {
+    using LoopNestPassModelT =
+        detail::PassModel<LoopNest, PassT, PreservedAnalyses,
+                          LoopAnalysisManager, LoopStandardAnalysisResults &,
+                          LPMUpdater &>;
+    IsLoopNestPass.push_back(true);
+    // Do not use make_unique or emplace_back, they cause too many template
+    // instantiations, causing terrible compile times.
+    LoopNestPasses.push_back(std::unique_ptr<LoopNestPassConceptT>(
+        new LoopNestPassModelT(std::forward<PassT>(Pass))));
+  }
+
+  // Specializations of `addPass` for `RepeatedPass`. These are necessary since
+  // `RepeatedPass` has a templated `run` method that will result in incorrect
+  // detection of `HasRunOnLoopT`.
+  template <typename PassT>
+  LLVM_ATTRIBUTE_MINSIZE
+      std::enable_if_t<is_detected<HasRunOnLoopT, PassT>::value>
+      addPass(RepeatedPass<PassT> &&Pass) {
+    using RepeatedLoopPassModelT =
+        detail::PassModel<Loop, RepeatedPass<PassT>, PreservedAnalyses,
+                          LoopAnalysisManager, LoopStandardAnalysisResults &,
+                          LPMUpdater &>;
+    IsLoopNestPass.push_back(false);
+    // Do not use make_unique or emplace_back, they cause too many template
+    // instantiations, causing terrible compile times.
+    LoopPasses.push_back(std::unique_ptr<LoopPassConceptT>(
+        new RepeatedLoopPassModelT(std::move(Pass))));
+  }
+
+  template <typename PassT>
+  LLVM_ATTRIBUTE_MINSIZE
+      std::enable_if_t<!is_detected<HasRunOnLoopT, PassT>::value>
+      addPass(RepeatedPass<PassT> &&Pass) {
+    using RepeatedLoopNestPassModelT =
+        detail::PassModel<LoopNest, RepeatedPass<PassT>, PreservedAnalyses,
+                          LoopAnalysisManager, LoopStandardAnalysisResults &,
+                          LPMUpdater &>;
+    IsLoopNestPass.push_back(true);
+    // Do not use make_unique or emplace_back, they cause too many template
+    // instantiations, causing terrible compile times.
+    LoopNestPasses.push_back(std::unique_ptr<LoopNestPassConceptT>(
+        new RepeatedLoopNestPassModelT(std::move(Pass))));
   }
 
   bool isEmpty() const { return LoopPasses.empty() && LoopNestPasses.empty(); }
@@ -157,12 +193,12 @@ protected:
                 LoopStandardAnalysisResults &AR, LPMUpdater &U,
                 PassInstrumentation &PI);
 
-  LLVM_ABI PreservedAnalyses
-  runWithLoopNestPasses(Loop &L, LoopAnalysisManager &AM,
-                        LoopStandardAnalysisResults &AR, LPMUpdater &U);
-  LLVM_ABI PreservedAnalyses
-  runWithoutLoopNestPasses(Loop &L, LoopAnalysisManager &AM,
-                           LoopStandardAnalysisResults &AR, LPMUpdater &U);
+  PreservedAnalyses runWithLoopNestPasses(Loop &L, LoopAnalysisManager &AM,
+                                          LoopStandardAnalysisResults &AR,
+                                          LPMUpdater &U);
+  PreservedAnalyses runWithoutLoopNestPasses(Loop &L, LoopAnalysisManager &AM,
+                                             LoopStandardAnalysisResults &AR,
+                                             LPMUpdater &U);
 
 private:
   static const Loop &getLoopFromIR(Loop &L) { return L; }
@@ -253,7 +289,7 @@ public:
   }
 
   void setParentLoop(Loop *L) {
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS
+#ifdef LLVM_ENABLE_ABI_BREAKING_CHECKS
     ParentL = L;
 #endif
   }
@@ -292,7 +328,7 @@ public:
   /// loops within them will be visited in postorder as usual for the loop pass
   /// manager.
   void addSiblingLoops(ArrayRef<Loop *> NewSibLoops) {
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS && !defined(NDEBUG)
+#if defined(LLVM_ENABLE_ABI_BREAKING_CHECKS) && !defined(NDEBUG)
     for (Loop *NewL : NewSibLoops)
       assert(NewL->getParentLoop() == ParentL &&
              "All of the new loops must be siblings of the current loop!");
@@ -344,7 +380,7 @@ private:
   const bool LoopNestMode;
   bool LoopNestChanged;
 
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS
+#ifdef LLVM_ENABLE_ABI_BREAKING_CHECKS
   // In debug builds we also track the parent loop to implement asserts even in
   // the face of loop deletion.
   Loop *ParentL;
@@ -404,18 +440,21 @@ public:
 
   explicit FunctionToLoopPassAdaptor(std::unique_ptr<PassConceptT> Pass,
                                      bool UseMemorySSA = false,
+                                     bool UseBlockFrequencyInfo = false,
+                                     bool UseBranchProbabilityInfo = false,
                                      bool LoopNestMode = false)
       : Pass(std::move(Pass)), UseMemorySSA(UseMemorySSA),
+        UseBlockFrequencyInfo(UseBlockFrequencyInfo),
+        UseBranchProbabilityInfo(UseBranchProbabilityInfo),
         LoopNestMode(LoopNestMode) {
     LoopCanonicalizationFPM.addPass(LoopSimplifyPass());
     LoopCanonicalizationFPM.addPass(LCSSAPass());
   }
 
   /// Runs the loop passes across every loop in the function.
-  LLVM_ABI PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
-  LLVM_ABI void
-  printPipeline(raw_ostream &OS,
-                function_ref<StringRef(StringRef)> MapClassName2PassName);
+  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
+  void printPipeline(raw_ostream &OS,
+                     function_ref<StringRef(StringRef)> MapClassName2PassName);
 
   static bool isRequired() { return true; }
 
@@ -427,6 +466,8 @@ private:
   FunctionPassManager LoopCanonicalizationFPM;
 
   bool UseMemorySSA = false;
+  bool UseBlockFrequencyInfo = false;
+  bool UseBranchProbabilityInfo = false;
   const bool LoopNestMode;
 };
 
@@ -434,55 +475,66 @@ private:
 /// adaptor.
 ///
 /// If \p Pass is a loop pass, the returned adaptor will be in loop mode.
-///
+template <typename LoopPassT>
+inline std::enable_if_t<is_detected<HasRunOnLoopT, LoopPassT>::value,
+                        FunctionToLoopPassAdaptor>
+createFunctionToLoopPassAdaptor(LoopPassT &&Pass, bool UseMemorySSA = false,
+                                bool UseBlockFrequencyInfo = false,
+                                bool UseBranchProbabilityInfo = false) {
+  using PassModelT =
+      detail::PassModel<Loop, LoopPassT, PreservedAnalyses, LoopAnalysisManager,
+                        LoopStandardAnalysisResults &, LPMUpdater &>;
+  // Do not use make_unique, it causes too many template instantiations,
+  // causing terrible compile times.
+  return FunctionToLoopPassAdaptor(
+      std::unique_ptr<FunctionToLoopPassAdaptor::PassConceptT>(
+          new PassModelT(std::forward<LoopPassT>(Pass))),
+      UseMemorySSA, UseBlockFrequencyInfo, UseBranchProbabilityInfo, false);
+}
+
 /// If \p Pass is a loop-nest pass, \p Pass will first be wrapped into a
 /// \c LoopPassManager and the returned adaptor will be in loop-nest mode.
-template <typename LoopPassT>
-inline FunctionToLoopPassAdaptor
-createFunctionToLoopPassAdaptor(LoopPassT &&Pass, bool UseMemorySSA = false) {
-  if constexpr (is_detected<HasRunOnLoopT, LoopPassT>::value) {
-    using PassModelT =
-        detail::PassModel<Loop, LoopPassT, LoopAnalysisManager,
-                          LoopStandardAnalysisResults &, LPMUpdater &>;
-    // Do not use make_unique, it causes too many template instantiations,
-    // causing terrible compile times.
-    return FunctionToLoopPassAdaptor(
-        std::unique_ptr<FunctionToLoopPassAdaptor::PassConceptT>(
-            new PassModelT(std::forward<LoopPassT>(Pass))),
-        UseMemorySSA, false);
-  } else {
-    LoopPassManager LPM;
-    LPM.addPass(std::forward<LoopPassT>(Pass));
-    using PassModelT =
-        detail::PassModel<Loop, LoopPassManager, LoopAnalysisManager,
-                          LoopStandardAnalysisResults &, LPMUpdater &>;
-    // Do not use make_unique, it causes too many template instantiations,
-    // causing terrible compile times.
-    return FunctionToLoopPassAdaptor(
-        std::unique_ptr<FunctionToLoopPassAdaptor::PassConceptT>(
-            new PassModelT(std::move(LPM))),
-        UseMemorySSA, true);
-  }
+template <typename LoopNestPassT>
+inline std::enable_if_t<!is_detected<HasRunOnLoopT, LoopNestPassT>::value,
+                        FunctionToLoopPassAdaptor>
+createFunctionToLoopPassAdaptor(LoopNestPassT &&Pass, bool UseMemorySSA = false,
+                                bool UseBlockFrequencyInfo = false,
+                                bool UseBranchProbabilityInfo = false) {
+  LoopPassManager LPM;
+  LPM.addPass(std::forward<LoopNestPassT>(Pass));
+  using PassModelT =
+      detail::PassModel<Loop, LoopPassManager, PreservedAnalyses,
+                        LoopAnalysisManager, LoopStandardAnalysisResults &,
+                        LPMUpdater &>;
+  // Do not use make_unique, it causes too many template instantiations,
+  // causing terrible compile times.
+  return FunctionToLoopPassAdaptor(
+      std::unique_ptr<FunctionToLoopPassAdaptor::PassConceptT>(
+          new PassModelT(std::move(LPM))),
+      UseMemorySSA, UseBlockFrequencyInfo, UseBranchProbabilityInfo, true);
 }
 
 /// If \p Pass is an instance of \c LoopPassManager, the returned adaptor will
 /// be in loop-nest mode if the pass manager contains only loop-nest passes.
 template <>
 inline FunctionToLoopPassAdaptor
-createFunctionToLoopPassAdaptor<LoopPassManager>(LoopPassManager &&LPM,
-                                                 bool UseMemorySSA) {
+createFunctionToLoopPassAdaptor<LoopPassManager>(
+    LoopPassManager &&LPM, bool UseMemorySSA, bool UseBlockFrequencyInfo,
+    bool UseBranchProbabilityInfo) {
   // Check if LPM contains any loop pass and if it does not, returns an adaptor
   // in loop-nest mode.
   using PassModelT =
-      detail::PassModel<Loop, LoopPassManager, LoopAnalysisManager,
-                        LoopStandardAnalysisResults &, LPMUpdater &>;
+      detail::PassModel<Loop, LoopPassManager, PreservedAnalyses,
+                        LoopAnalysisManager, LoopStandardAnalysisResults &,
+                        LPMUpdater &>;
   bool LoopNestMode = (LPM.getNumLoopPasses() == 0);
   // Do not use make_unique, it causes too many template instantiations,
   // causing terrible compile times.
   return FunctionToLoopPassAdaptor(
       std::unique_ptr<FunctionToLoopPassAdaptor::PassConceptT>(
           new PassModelT(std::move(LPM))),
-      UseMemorySSA, LoopNestMode);
+      UseMemorySSA, UseBlockFrequencyInfo, UseBranchProbabilityInfo,
+      LoopNestMode);
 }
 
 /// Pass for printing a loop's contents as textual IR.
@@ -491,11 +543,11 @@ class PrintLoopPass : public PassInfoMixin<PrintLoopPass> {
   std::string Banner;
 
 public:
-  LLVM_ABI PrintLoopPass();
-  LLVM_ABI PrintLoopPass(raw_ostream &OS, const std::string &Banner = "");
+  PrintLoopPass();
+  PrintLoopPass(raw_ostream &OS, const std::string &Banner = "");
 
-  LLVM_ABI PreservedAnalyses run(Loop &L, LoopAnalysisManager &,
-                                 LoopStandardAnalysisResults &, LPMUpdater &);
+  PreservedAnalyses run(Loop &L, LoopAnalysisManager &,
+                        LoopStandardAnalysisResults &, LPMUpdater &);
 };
 }
 

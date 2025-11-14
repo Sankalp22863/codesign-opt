@@ -12,16 +12,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Target/LLVMIR/Dialect/OpenACC/OpenACCToLLVMIRTranslation.h"
-#include "mlir/Analysis/TopologicalSortUtils.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/OpenACC/OpenACC.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Target/LLVMIR/Dialect/OpenMPCommon.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
+#include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Frontend/OpenMP/OMPConstants.h"
+#include "llvm/Support/FormatVariadic.h"
 
 using namespace mlir;
 
@@ -151,7 +153,8 @@ processDataOperands(llvm::IRBuilderBase &builder,
   // Copyin operands are handled as `to` call.
   llvm::SmallVector<mlir::Value> create, copyin;
   for (mlir::Value dataOp : op.getDataClauseOperands()) {
-    if (auto createOp = dataOp.getDefiningOp<acc::CreateOp>()) {
+    if (auto createOp =
+            mlir::dyn_cast_or_null<acc::CreateOp>(dataOp.getDefiningOp())) {
       create.push_back(createOp.getVarPtr());
     } else if (auto copyinOp = mlir::dyn_cast_or_null<acc::CopyinOp>(
                    dataOp.getDefiningOp())) {
@@ -389,7 +392,7 @@ static LogicalResult convertDataOp(acc::DataOp &op,
   llvm::BasicBlock *endDataBlock = llvm::BasicBlock::Create(
       ctx, "acc.end_data", builder.GetInsertBlock()->getParent());
 
-  SetVector<Block *> blocks = getBlocksSortedByDominance(op.getRegion());
+  SetVector<Block *> blocks = getTopologicallySortedBlocks(op.getRegion());
   for (Block *bb : blocks) {
     llvm::BasicBlock *llvmBB = moduleTranslation.lookupBlock(bb);
     if (bb->isEntryBlock()) {

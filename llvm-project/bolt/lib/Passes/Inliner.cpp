@@ -27,6 +27,7 @@
 #include "bolt/Passes/Inliner.h"
 #include "bolt/Core/MCPlus.h"
 #include "llvm/Support/CommandLine.h"
+#include <map>
 
 #define DEBUG_TYPE "bolt-inliner"
 
@@ -48,12 +49,6 @@ ForceInlineFunctions("force-inline",
   cl::value_desc("func1,func2,func3,..."),
   cl::Hidden,
   cl::cat(BoltOptCategory));
-
-static cl::list<std::string> SkipInlineFunctions(
-    "skip-inline", cl::CommaSeparated,
-    cl::desc("list of functions to never consider for inlining"),
-    cl::value_desc("func1,func2,func3,..."), cl::Hidden,
-    cl::cat(BoltOptCategory));
 
 static cl::opt<bool> InlineAll("inline-all", cl::desc("inline all functions"),
                                cl::cat(BoltOptCategory));
@@ -109,12 +104,6 @@ bool mustConsider(const llvm::bolt::BinaryFunction &Function) {
     if (Function.hasName(Name))
       return true;
   return false;
-}
-
-bool mustSkip(const llvm::bolt::BinaryFunction &Function) {
-  return llvm::any_of(opts::SkipInlineFunctions, [&](const std::string &Name) {
-    return Function.hasName(Name);
-  });
 }
 
 void syncOptions() {
@@ -235,7 +224,7 @@ InliningInfo getInliningInfo(const BinaryFunction &BF) {
 void Inliner::findInliningCandidates(BinaryContext &BC) {
   for (const auto &BFI : BC.getBinaryFunctions()) {
     const BinaryFunction &Function = BFI.second;
-    if (!shouldOptimize(Function) || opts::mustSkip(Function))
+    if (!shouldOptimize(Function))
       continue;
     const InliningInfo InlInfo = getInliningInfo(Function);
     if (InlInfo.Type != INL_NONE)
@@ -322,13 +311,13 @@ Inliner::inlineCall(BinaryBasicBlock &CallerBB,
       if (MIB.isPseudo(Inst))
         continue;
 
-      MIB.stripAnnotations(Inst, /*KeepTC=*/BC.isX86() || BC.isAArch64());
+      MIB.stripAnnotations(Inst, /*KeepTC=*/BC.isX86());
 
       // Fix branch target. Strictly speaking, we don't have to do this as
       // targets of direct branches will be fixed later and don't matter
       // in the CFG state. However, disassembly may look misleading, and
       // hence we do the fixing.
-      if (MIB.isBranch(Inst) && !MIB.isTailCall(Inst)) {
+      if (MIB.isBranch(Inst)) {
         assert(!MIB.isIndirectBranch(Inst) &&
                "unexpected indirect branch in callee");
         const BinaryBasicBlock *TargetBB =
@@ -367,9 +356,7 @@ Inliner::inlineCall(BinaryBasicBlock &CallerBB,
     std::vector<BinaryBasicBlock *> Successors(BB.succ_size());
     llvm::transform(BB.successors(), Successors.begin(),
                     [&InlinedBBMap](const BinaryBasicBlock *BB) {
-                      auto It = InlinedBBMap.find(BB);
-                      assert(It != InlinedBBMap.end());
-                      return It->second;
+                      return InlinedBBMap.at(BB);
                     });
 
     if (CallerFunction.hasValidProfile() && Callee.hasValidProfile())
@@ -509,11 +496,11 @@ bool Inliner::inlineCallsInFunction(BinaryFunction &Function) {
   return DidInlining;
 }
 
-Error Inliner::runOnFunctions(BinaryContext &BC) {
+void Inliner::runOnFunctions(BinaryContext &BC) {
   opts::syncOptions();
 
   if (!opts::inliningEnabled())
-    return Error::success();
+    return;
 
   bool InlinedOnce;
   unsigned NumIters = 0;
@@ -553,11 +540,10 @@ Error Inliner::runOnFunctions(BinaryContext &BC) {
   } while (InlinedOnce && NumIters < opts::InlineMaxIters);
 
   if (NumInlinedCallSites)
-    BC.outs() << "BOLT-INFO: inlined " << NumInlinedDynamicCalls << " calls at "
-              << NumInlinedCallSites << " call sites in " << NumIters
-              << " iteration(s). Change in binary size: " << TotalInlinedBytes
-              << " bytes.\n";
-  return Error::success();
+    outs() << "BOLT-INFO: inlined " << NumInlinedDynamicCalls << " calls at "
+           << NumInlinedCallSites << " call sites in " << NumIters
+           << " iteration(s). Change in binary size: " << TotalInlinedBytes
+           << " bytes.\n";
 }
 
 } // namespace bolt

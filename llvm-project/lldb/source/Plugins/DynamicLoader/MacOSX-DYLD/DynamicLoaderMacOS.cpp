@@ -55,9 +55,8 @@ DynamicLoader *DynamicLoaderMacOS::CreateInstance(Process *process,
       case llvm::Triple::IOS:
       case llvm::Triple::TvOS:
       case llvm::Triple::WatchOS:
-      case llvm::Triple::BridgeOS:
-      case llvm::Triple::DriverKit:
       case llvm::Triple::XROS:
+      // NEED_BRIDGEOS_TRIPLE case llvm::Triple::BridgeOS:
         create = triple_ref.getVendor() == llvm::Triple::Apple;
         break;
       default:
@@ -216,9 +215,8 @@ void DynamicLoaderMacOS::DoInitialImageFetch() {
       LLDB_LOGF(log, "Initial module fetch:  Adding %" PRId64 " modules.\n",
                 (uint64_t)image_infos.size());
 
-      auto images = PreloadModulesFromImageInfos(image_infos);
-      UpdateSpecialBinariesFromPreloadedModules(images);
-      AddModulesUsingPreloadedModules(images);
+      UpdateSpecialBinariesFromNewImageInfos(image_infos);
+      AddModulesUsingImageInfos(image_infos);
     }
   }
 
@@ -369,7 +367,7 @@ bool DynamicLoaderMacOS::NotifyBreakpointHit(void *baton,
               dyld_instance->UnloadAllImages();
               dyld_instance->ClearDYLDModule();
               process->GetTarget().GetImages().Clear();
-              process->GetTarget().ClearSectionLoadList();
+              process->GetTarget().GetSectionLoadList().Clear();
 
               addr_t all_image_infos = process->GetImageInfoAddress();
               int addr_size =
@@ -427,9 +425,8 @@ void DynamicLoaderMacOS::AddBinaries(
               ->GetAsArray()
               ->GetSize() == load_addresses.size()) {
     if (JSONImageInformationIntoImageInfo(binaries_info_sp, image_infos)) {
-      auto images = PreloadModulesFromImageInfos(image_infos);
-      UpdateSpecialBinariesFromPreloadedModules(images);
-      AddModulesUsingPreloadedModules(images);
+      UpdateSpecialBinariesFromNewImageInfos(image_infos);
+      AddModulesUsingImageInfos(image_infos);
     }
     m_dyld_image_infos_stop_id = m_process->GetStopID();
   }
@@ -530,7 +527,7 @@ bool DynamicLoaderMacOS::SetNotificationBreakpoint() {
           m_process->GetTarget()
               .CreateBreakpoint(&dyld_filelist, source_files,
                                 "lldb_image_notifier", eFunctionNameTypeFull,
-                                eLanguageTypeUnknown, 0, false, skip_prologue,
+                                eLanguageTypeUnknown, 0, skip_prologue,
                                 internal, hardware)
               .get();
       breakpoint->SetCallback(DynamicLoaderMacOS::NotifyBreakpointHit, this,
@@ -546,9 +543,8 @@ bool DynamicLoaderMacOS::SetNotificationBreakpoint() {
             m_process->GetTarget()
                 .CreateBreakpoint(&dyld_filelist, source_files,
                                   "gdb_image_notifier", eFunctionNameTypeFull,
-                                  eLanguageTypeUnknown, 0,
-                                  /*offset_is_insn_count = */ false,
-                                  skip_prologue, internal, hardware)
+                                  eLanguageTypeUnknown, 0, skip_prologue,
+                                  internal, hardware)
                 .get();
         breakpoint->SetCallback(DynamicLoaderMacOS::NotifyBreakpointHit, this,
                                 true);
@@ -672,8 +668,7 @@ Status DynamicLoaderMacOS::CanLoadImage() {
       int lock_held =
           m_process->ReadUnsignedIntegerFromMemory(symbol_address, 4, 0, error);
       if (lock_held != 0) {
-        error =
-            Status::FromErrorString("dyld lock held - unsafe to load images.");
+        error.SetErrorString("dyld lock held - unsafe to load images.");
       }
     }
   } else {
@@ -683,8 +678,8 @@ Status DynamicLoaderMacOS::CanLoadImage() {
     // than one module then we are clearly past _dyld_start so in that case
     // we'll default to "it's safe".
     if (target.GetImages().GetSize() <= 1)
-      error = Status::FromErrorString("could not find the dyld library or "
-                                      "the dyld lock symbol");
+      error.SetErrorString("could not find the dyld library or "
+                           "the dyld lock symbol");
   }
   return error;
 }

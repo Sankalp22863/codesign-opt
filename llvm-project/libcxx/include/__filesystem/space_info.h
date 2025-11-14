@@ -10,6 +10,7 @@
 #ifndef _LIBCPP___FILESYSTEM_SPACE_INFO_H
 #define _LIBCPP___FILESYSTEM_SPACE_INFO_H
 
+#include <__availability>
 #include <__config>
 #include <cstdint>
 
@@ -21,7 +22,7 @@
 
 _LIBCPP_BEGIN_NAMESPACE_FILESYSTEM
 
-struct space_info {
+struct _LIBCPP_EXPORTED_FROM_ABI space_info {
   uintmax_t capacity;
   uintmax_t free;
   uintmax_t available;

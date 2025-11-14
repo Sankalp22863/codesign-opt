@@ -19,6 +19,8 @@
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
@@ -209,9 +211,9 @@ public:
           continue;
 
         const TypeSourceInfo *TSI = nullptr;
-        if (const auto *VD =
-                dyn_cast<const VarDecl *>(CallRec.CastedExprParent)) {
-          TSI = VD->getTypeSourceInfo();
+        if (CallRec.CastedExprParent.is<const VarDecl *>()) {
+          TSI = CallRec.CastedExprParent.get<const VarDecl *>()
+                    ->getTypeSourceInfo();
         } else {
           TSI = CallRec.ExplicitCastType;
         }

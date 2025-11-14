@@ -9,6 +9,7 @@
 #include "MipsABIInfo.h"
 #include "Mips.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/CodeGen/LowLevelType.h"
 #include "llvm/MC/MCTargetOptions.h"
 #include "llvm/Support/CommandLine.h"
 
@@ -37,13 +38,9 @@ ArrayRef<MCPhysReg> MipsABIInfo::GetByValArgRegs() const {
   llvm_unreachable("Unhandled ABI");
 }
 
-ArrayRef<MCPhysReg> MipsABIInfo::getVarArgRegs(bool isGP64bit) const {
-  if (IsO32()) {
-    if (isGP64bit)
-      return ArrayRef(Mips64IntRegs);
-    else
-      return ArrayRef(O32IntRegs);
-  }
+ArrayRef<MCPhysReg> MipsABIInfo::GetVarArgRegs() const {
+  if (IsO32())
+    return ArrayRef(O32IntRegs);
   if (IsN32() || IsN64())
     return ArrayRef(Mips64IntRegs);
   llvm_unreachable("Unhandled ABI");
@@ -57,16 +54,17 @@ unsigned MipsABIInfo::GetCalleeAllocdArgSizeInBytes(CallingConv::ID CC) const {
   llvm_unreachable("Unhandled ABI");
 }
 
-MipsABIInfo MipsABIInfo::computeTargetABI(const Triple &TT, StringRef ABIName) {
-  if (ABIName.starts_with("o32"))
+MipsABIInfo MipsABIInfo::computeTargetABI(const Triple &TT, StringRef CPU,
+                                          const MCTargetOptions &Options) {
+  if (Options.getABIName().starts_with("o32"))
     return MipsABIInfo::O32();
-  if (ABIName.starts_with("n32"))
+  if (Options.getABIName().starts_with("n32"))
     return MipsABIInfo::N32();
-  if (ABIName.starts_with("n64"))
+  if (Options.getABIName().starts_with("n64"))
     return MipsABIInfo::N64();
-  if (TT.isABIN32())
+  if (TT.getEnvironment() == llvm::Triple::GNUABIN32)
     return MipsABIInfo::N32();
-  assert(ABIName.empty() && "Unknown ABI option for MIPS");
+  assert(Options.getABIName().empty() && "Unknown ABI option for MIPS");
 
   if (TT.isMIPS64())
     return MipsABIInfo::N64();
@@ -127,3 +125,4 @@ unsigned MipsABIInfo::GetEhDataReg(unsigned I) const {
 
   return IsN64() ? EhDataReg64[I] : EhDataReg[I];
 }
+

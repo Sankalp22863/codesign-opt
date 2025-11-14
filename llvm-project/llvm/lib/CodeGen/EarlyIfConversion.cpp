@@ -15,9 +15,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/CodeGen/EarlyIfConversion.h"
 #include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SparseSet.h"
@@ -32,7 +30,6 @@
 #include "llvm/CodeGen/MachineOptimizationRemarkEmitter.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/MachineTraceMetrics.h"
-#include "llvm/CodeGen/Register.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
@@ -113,7 +110,7 @@ public:
   /// Information about each phi in the Tail block.
   struct PHIInfo {
     MachineInstr *PHI;
-    Register TReg, FReg;
+    unsigned TReg = 0, FReg = 0;
     // Latencies from Cond+Branch, TReg, and FReg to DstReg.
     int CondCycles = 0, TCycles = 0, FCycles = 0;
 
@@ -134,7 +131,7 @@ private:
   BitVector ClobberedRegUnits;
 
   // Scratch pad for findInsertionPoint.
-  SparseSet<MCRegUnit> LiveRegUnits;
+  SparseSet<unsigned> LiveRegUnits;
 
   /// Insertion point in Head for speculatively executed instructions form TBB
   /// and FBB.
@@ -165,14 +162,9 @@ private:
   /// Insert selects and rewrite PHI operands to use them.
   void rewritePHIOperands();
 
-  /// If virtual register has "killed" flag in TBB and FBB basic blocks, remove
-  /// the flag in TBB instruction.
-  void clearRepeatedKillFlagsFromTBB(MachineBasicBlock *TBB,
-                                     MachineBasicBlock *FBB);
-
 public:
-  /// init - Initialize per-function data structures.
-  void init(MachineFunction &MF) {
+  /// runOnMachineFunction - Initialize per-function data structures.
+  void runOnMachineFunction(MachineFunction &MF) {
     TII = MF.getSubtarget().getInstrInfo();
     TRI = MF.getSubtarget().getRegisterInfo();
     MRI = &MF.getRegInfo();
@@ -189,11 +181,12 @@ public:
   bool canConvertIf(MachineBasicBlock *MBB, bool Predicate = false);
 
   /// convertIf - If-convert the last block passed to canConvertIf(), assuming
-  /// it is possible. Add any blocks that are to be erased to RemoveBlocks.
-  void convertIf(SmallVectorImpl<MachineBasicBlock *> &RemoveBlocks,
+  /// it is possible. Add any erased blocks to RemovedBlocks.
+  void convertIf(SmallVectorImpl<MachineBasicBlock *> &RemovedBlocks,
                  bool Predicate = false);
 };
 } // end anonymous namespace
+
 
 /// canSpeculateInstrs - Returns true if all the instructions in MBB can safely
 /// be speculated. The terminators are not considered.
@@ -242,7 +235,7 @@ bool SSAIfConv::canSpeculateInstrs(MachineBasicBlock *MBB) {
 
     // We never speculate stores, so an AA pointer isn't necessary.
     bool DontMoveAcrossStore = true;
-    if (!MI.isSafeToMove(DontMoveAcrossStore)) {
+    if (!MI.isSafeToMove(nullptr, DontMoveAcrossStore)) {
       LLVM_DEBUG(dbgs() << "Can't speculate: " << MI);
       return false;
     }
@@ -421,7 +414,7 @@ bool SSAIfConv::findInsertionPoint() {
     if (!LiveRegUnits.empty()) {
       LLVM_DEBUG({
         dbgs() << "Would clobber";
-        for (MCRegUnit LRU : LiveRegUnits)
+        for (unsigned LRU : LiveRegUnits)
           dbgs() << ' ' << printRegUnit(LRU, TRI);
         dbgs() << " live before " << *I;
       });
@@ -529,8 +522,8 @@ bool SSAIfConv::canConvertIf(MachineBasicBlock *MBB, bool Predicate) {
       if (PI.PHI->getOperand(i+1).getMBB() == FPred)
         PI.FReg = PI.PHI->getOperand(i).getReg();
     }
-    assert(PI.TReg.isVirtual() && "Bad PHI");
-    assert(PI.FReg.isVirtual() && "Bad PHI");
+    assert(Register::isVirtualRegister(PI.TReg) && "Bad PHI");
+    assert(Register::isVirtualRegister(PI.FReg) && "Bad PHI");
 
     // Get target information.
     if (!TII->canInsertSelect(*Head, Cond, PI.PHI->getOperand(0).getReg(),
@@ -606,8 +599,8 @@ static bool hasSameValue(const MachineRegisterInfo &MRI,
     return false;
 
   // Further, check that the two defs come from corresponding operands.
-  int TIdx = TDef->findRegisterDefOperandIdx(TReg, /*TRI=*/nullptr);
-  int FIdx = FDef->findRegisterDefOperandIdx(FReg, /*TRI=*/nullptr);
+  int TIdx = TDef->findRegisterDefOperandIdx(TReg);
+  int FIdx = FDef->findRegisterDefOperandIdx(FReg);
   if (TIdx == -1 || FIdx == -1)
     return false;
 
@@ -624,7 +617,8 @@ void SSAIfConv::replacePHIInstrs() {
   DebugLoc HeadDL = FirstTerm->getDebugLoc();
 
   // Convert all PHIs to select instructions inserted before FirstTerm.
-  for (PHIInfo &PI : PHIs) {
+  for (unsigned i = 0, e = PHIs.size(); i != e; ++i) {
+    PHIInfo &PI = PHIs[i];
     LLVM_DEBUG(dbgs() << "If-converting " << *PI.PHI);
     Register DstReg = PI.PHI->getOperand(0).getReg();
     if (hasSameValue(*MRI, TII, PI.TReg, PI.FReg)) {
@@ -651,8 +645,9 @@ void SSAIfConv::rewritePHIOperands() {
   DebugLoc HeadDL = FirstTerm->getDebugLoc();
 
   // Convert all PHIs to select instructions inserted before FirstTerm.
-  for (PHIInfo &PI : PHIs) {
-    Register DstReg;
+  for (unsigned i = 0, e = PHIs.size(); i != e; ++i) {
+    PHIInfo &PI = PHIs[i];
+    unsigned DstReg = 0;
 
     LLVM_DEBUG(dbgs() << "If-converting " << *PI.PHI);
     if (hasSameValue(*MRI, TII, PI.TReg, PI.FReg)) {
@@ -682,37 +677,12 @@ void SSAIfConv::rewritePHIOperands() {
   }
 }
 
-void SSAIfConv::clearRepeatedKillFlagsFromTBB(MachineBasicBlock *TBB,
-                                              MachineBasicBlock *FBB) {
-  assert(TBB != FBB);
-
-  // Collect virtual registers killed in FBB.
-  SmallDenseSet<Register> FBBKilledRegs;
-  for (MachineInstr &MI : FBB->instrs()) {
-    for (MachineOperand &MO : MI.operands()) {
-      if (MO.isReg() && MO.isKill() && MO.getReg().isVirtual())
-        FBBKilledRegs.insert(MO.getReg());
-    }
-  }
-
-  if (FBBKilledRegs.empty())
-    return;
-
-  // Find the same killed registers in TBB and clear kill flags for them.
-  for (MachineInstr &MI : TBB->instrs()) {
-    for (MachineOperand &MO : MI.operands()) {
-      if (MO.isReg() && MO.isKill() && FBBKilledRegs.contains(MO.getReg()))
-        MO.setIsKill(false);
-    }
-  }
-}
-
 /// convertIf - Execute the if conversion after canConvertIf has determined the
 /// feasibility.
 ///
-/// Any basic blocks that need to be erased will be added to RemoveBlocks.
+/// Any basic blocks erased will be added to RemovedBlocks.
 ///
-void SSAIfConv::convertIf(SmallVectorImpl<MachineBasicBlock *> &RemoveBlocks,
+void SSAIfConv::convertIf(SmallVectorImpl<MachineBasicBlock *> &RemovedBlocks,
                           bool Predicate) {
   assert(Head && Tail && TBB && FBB && "Call canConvertIf first.");
 
@@ -721,13 +691,6 @@ void SSAIfConv::convertIf(SmallVectorImpl<MachineBasicBlock *> &RemoveBlocks,
     ++NumTrianglesConv;
   else
     ++NumDiamondsConv;
-
-  // If both blocks are going to be merged into Head, remove "killed" flag in
-  // TBB for registers, which are killed in TBB and FBB. Otherwise, register
-  // will be killed twice in Head after splice. Register killed twice is an
-  // incorrect MIR.
-  if (TBB != Tail && FBB != Tail)
-    clearRepeatedKillFlagsFromTBB(TBB, FBB);
 
   // Move all instructions into Head, except for the terminators.
   if (TBB != Tail) {
@@ -760,18 +723,15 @@ void SSAIfConv::convertIf(SmallVectorImpl<MachineBasicBlock *> &RemoveBlocks,
   DebugLoc HeadDL = Head->getFirstTerminator()->getDebugLoc();
   TII->removeBranch(*Head);
 
-  // Mark the now empty conditional blocks for removal and move them to the end.
-  // It is likely that Head can fall
+  // Erase the now empty conditional blocks. It is likely that Head can fall
   // through to Tail, and we can join the two blocks.
   if (TBB != Tail) {
-    RemoveBlocks.push_back(TBB);
-    if (TBB != &TBB->getParent()->back())
-      TBB->moveAfter(&TBB->getParent()->back());
+    RemovedBlocks.push_back(TBB);
+    TBB->eraseFromParent();
   }
   if (FBB != Tail) {
-    RemoveBlocks.push_back(FBB);
-    if (FBB != &FBB->getParent()->back())
-      FBB->moveAfter(&FBB->getParent()->back());
+    RemovedBlocks.push_back(FBB);
+    FBB->eraseFromParent();
   }
 
   assert(Head->succ_empty() && "Additional head successors?");
@@ -782,9 +742,8 @@ void SSAIfConv::convertIf(SmallVectorImpl<MachineBasicBlock *> &RemoveBlocks,
     Head->splice(Head->end(), Tail,
                      Tail->begin(), Tail->end());
     Head->transferSuccessorsAndUpdatePHIs(Tail);
-    RemoveBlocks.push_back(Tail);
-    if (Tail != &Tail->getParent()->back())
-      Tail->moveAfter(&Tail->getParent()->back());
+    RemovedBlocks.push_back(Tail);
+    Tail->eraseFromParent();
   } else {
     // We need a branch to Tail, let code placement work it out later.
     LLVM_DEBUG(dbgs() << "Converting to unconditional branch.\n");
@@ -800,7 +759,7 @@ void SSAIfConv::convertIf(SmallVectorImpl<MachineBasicBlock *> &RemoveBlocks,
 //===----------------------------------------------------------------------===//
 
 namespace {
-class EarlyIfConverter {
+class EarlyIfConverter : public MachineFunctionPass {
   const TargetInstrInfo *TII = nullptr;
   const TargetRegisterInfo *TRI = nullptr;
   MCSchedModel SchedModel;
@@ -812,48 +771,38 @@ class EarlyIfConverter {
   SSAIfConv IfConv;
 
 public:
-  EarlyIfConverter(MachineDominatorTree &DT, MachineLoopInfo &LI,
-                   MachineTraceMetrics &MTM)
-      : DomTree(&DT), Loops(&LI), Traces(&MTM) {}
-  EarlyIfConverter() = delete;
-
-  bool run(MachineFunction &MF);
-
-private:
-  bool tryConvertIf(MachineBasicBlock *);
-  void invalidateTraces();
-  bool shouldConvertIf();
-};
-
-class EarlyIfConverterLegacy : public MachineFunctionPass {
-public:
   static char ID;
-  EarlyIfConverterLegacy() : MachineFunctionPass(ID) {}
+  EarlyIfConverter() : MachineFunctionPass(ID) {}
   void getAnalysisUsage(AnalysisUsage &AU) const override;
   bool runOnMachineFunction(MachineFunction &MF) override;
   StringRef getPassName() const override { return "Early If-Conversion"; }
+
+private:
+  bool tryConvertIf(MachineBasicBlock*);
+  void invalidateTraces();
+  bool shouldConvertIf();
 };
 } // end anonymous namespace
 
-char EarlyIfConverterLegacy::ID = 0;
-char &llvm::EarlyIfConverterLegacyID = EarlyIfConverterLegacy::ID;
+char EarlyIfConverter::ID = 0;
+char &llvm::EarlyIfConverterID = EarlyIfConverter::ID;
 
-INITIALIZE_PASS_BEGIN(EarlyIfConverterLegacy, DEBUG_TYPE, "Early If Converter",
-                      false, false)
-INITIALIZE_PASS_DEPENDENCY(MachineBranchProbabilityInfoWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(MachineDominatorTreeWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(MachineTraceMetricsWrapperPass)
-INITIALIZE_PASS_END(EarlyIfConverterLegacy, DEBUG_TYPE, "Early If Converter",
-                    false, false)
+INITIALIZE_PASS_BEGIN(EarlyIfConverter, DEBUG_TYPE,
+                      "Early If Converter", false, false)
+INITIALIZE_PASS_DEPENDENCY(MachineBranchProbabilityInfo)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
+INITIALIZE_PASS_DEPENDENCY(MachineTraceMetrics)
+INITIALIZE_PASS_END(EarlyIfConverter, DEBUG_TYPE,
+                    "Early If Converter", false, false)
 
-void EarlyIfConverterLegacy::getAnalysisUsage(AnalysisUsage &AU) const {
-  AU.addRequired<MachineBranchProbabilityInfoWrapperPass>();
-  AU.addRequired<MachineDominatorTreeWrapperPass>();
-  AU.addPreserved<MachineDominatorTreeWrapperPass>();
-  AU.addRequired<MachineLoopInfoWrapperPass>();
-  AU.addPreserved<MachineLoopInfoWrapperPass>();
-  AU.addRequired<MachineTraceMetricsWrapperPass>();
-  AU.addPreserved<MachineTraceMetricsWrapperPass>();
+void EarlyIfConverter::getAnalysisUsage(AnalysisUsage &AU) const {
+  AU.addRequired<MachineBranchProbabilityInfo>();
+  AU.addRequired<MachineDominatorTree>();
+  AU.addPreserved<MachineDominatorTree>();
+  AU.addRequired<MachineLoopInfo>();
+  AU.addPreserved<MachineLoopInfo>();
+  AU.addRequired<MachineTraceMetrics>();
+  AU.addPreserved<MachineTraceMetrics>();
   MachineFunctionPass::getAnalysisUsage(AU);
 }
 
@@ -934,7 +883,7 @@ bool EarlyIfConverter::shouldConvertIf() {
         if (!MO.isReg() || !MO.isUse())
           return false;
         Register Reg = MO.getReg();
-        if (Reg.isPhysical())
+        if (Register::isPhysicalRegister(Reg))
           return false;
 
         MachineInstr *Def = MRI->getVRegDef(Reg);
@@ -945,7 +894,7 @@ bool EarlyIfConverter::shouldConvertIf() {
                  if (!MO.isReg() || !MO.isUse())
                    return false;
                  Register Reg = MO.getReg();
-                 if (Reg.isPhysical())
+                 if (Register::isPhysicalRegister(Reg))
                    return false;
 
                  MachineInstr *Def = MRI->getVRegDef(Reg);
@@ -1013,7 +962,8 @@ bool EarlyIfConverter::shouldConvertIf() {
   CriticalPathInfo TBlock{};
   CriticalPathInfo FBlock{};
   bool ShouldConvert = true;
-  for (SSAIfConv::PHIInfo &PI : IfConv.PHIs) {
+  for (unsigned i = 0, e = IfConv.PHIs.size(); i != e; ++i) {
+    SSAIfConv::PHIInfo &PI = IfConv.PHIs[i];
     unsigned Slack = TailTrace.getInstrSlack(*PI.PHI);
     unsigned MaxDepth = Slack + TailTrace.getInstrCycles(*PI.PHI).Depth;
     LLVM_DEBUG(dbgs() << "Slack " << Slack << ":\t" << *PI.PHI);
@@ -1115,20 +1065,20 @@ bool EarlyIfConverter::tryConvertIf(MachineBasicBlock *MBB) {
   while (IfConv.canConvertIf(MBB) && shouldConvertIf()) {
     // If-convert MBB and update analyses.
     invalidateTraces();
-    SmallVector<MachineBasicBlock *, 4> RemoveBlocks;
-    IfConv.convertIf(RemoveBlocks);
+    SmallVector<MachineBasicBlock*, 4> RemovedBlocks;
+    IfConv.convertIf(RemovedBlocks);
     Changed = true;
-    updateDomTree(DomTree, IfConv, RemoveBlocks);
-    for (MachineBasicBlock *MBB : RemoveBlocks)
-      MBB->eraseFromParent();
-    updateLoops(Loops, RemoveBlocks);
+    updateDomTree(DomTree, IfConv, RemovedBlocks);
+    updateLoops(Loops, RemovedBlocks);
   }
   return Changed;
 }
 
-bool EarlyIfConverter::run(MachineFunction &MF) {
+bool EarlyIfConverter::runOnMachineFunction(MachineFunction &MF) {
   LLVM_DEBUG(dbgs() << "********** EARLY IF-CONVERSION **********\n"
                     << "********** Function: " << MF.getName() << '\n');
+  if (skipFunction(MF.getFunction()))
+    return false;
 
   // Only run if conversion if the target wants it.
   const TargetSubtargetInfo &STI = MF.getSubtarget();
@@ -1139,10 +1089,13 @@ bool EarlyIfConverter::run(MachineFunction &MF) {
   TRI = STI.getRegisterInfo();
   SchedModel = STI.getSchedModel();
   MRI = &MF.getRegInfo();
+  DomTree = &getAnalysis<MachineDominatorTree>();
+  Loops = &getAnalysis<MachineLoopInfo>();
+  Traces = &getAnalysis<MachineTraceMetrics>();
   MinInstr = nullptr;
 
   bool Changed = false;
-  IfConv.init(MF);
+  IfConv.runOnMachineFunction(MF);
 
   // Visit blocks in dominator tree post-order. The post-order enables nested
   // if-conversion in a single pass. The tryConvertIf() function may erase
@@ -1153,38 +1106,6 @@ bool EarlyIfConverter::run(MachineFunction &MF) {
       Changed = true;
 
   return Changed;
-}
-
-PreservedAnalyses
-EarlyIfConverterPass::run(MachineFunction &MF,
-                          MachineFunctionAnalysisManager &MFAM) {
-  MachineDominatorTree &MDT = MFAM.getResult<MachineDominatorTreeAnalysis>(MF);
-  MachineLoopInfo &LI = MFAM.getResult<MachineLoopAnalysis>(MF);
-  MachineTraceMetrics &MTM = MFAM.getResult<MachineTraceMetricsAnalysis>(MF);
-
-  EarlyIfConverter Impl(MDT, LI, MTM);
-  bool Changed = Impl.run(MF);
-  if (!Changed)
-    return PreservedAnalyses::all();
-
-  auto PA = getMachineFunctionPassPreservedAnalyses();
-  PA.preserve<MachineDominatorTreeAnalysis>();
-  PA.preserve<MachineLoopAnalysis>();
-  PA.preserve<MachineTraceMetricsAnalysis>();
-  return PA;
-}
-
-bool EarlyIfConverterLegacy::runOnMachineFunction(MachineFunction &MF) {
-  if (skipFunction(MF.getFunction()))
-    return false;
-
-  MachineDominatorTree &MDT =
-      getAnalysis<MachineDominatorTreeWrapperPass>().getDomTree();
-  MachineLoopInfo &LI = getAnalysis<MachineLoopInfoWrapperPass>().getLI();
-  MachineTraceMetrics &MTM =
-      getAnalysis<MachineTraceMetricsWrapperPass>().getMTM();
-
-  return EarlyIfConverter(MDT, LI, MTM).run(MF);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1223,17 +1144,17 @@ char &llvm::EarlyIfPredicatorID = EarlyIfPredicator::ID;
 
 INITIALIZE_PASS_BEGIN(EarlyIfPredicator, DEBUG_TYPE, "Early If Predicator",
                       false, false)
-INITIALIZE_PASS_DEPENDENCY(MachineDominatorTreeWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(MachineBranchProbabilityInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
+INITIALIZE_PASS_DEPENDENCY(MachineBranchProbabilityInfo)
 INITIALIZE_PASS_END(EarlyIfPredicator, DEBUG_TYPE, "Early If Predicator", false,
                     false)
 
 void EarlyIfPredicator::getAnalysisUsage(AnalysisUsage &AU) const {
-  AU.addRequired<MachineBranchProbabilityInfoWrapperPass>();
-  AU.addRequired<MachineDominatorTreeWrapperPass>();
-  AU.addPreserved<MachineDominatorTreeWrapperPass>();
-  AU.addRequired<MachineLoopInfoWrapperPass>();
-  AU.addPreserved<MachineLoopInfoWrapperPass>();
+  AU.addRequired<MachineBranchProbabilityInfo>();
+  AU.addRequired<MachineDominatorTree>();
+  AU.addPreserved<MachineDominatorTree>();
+  AU.addRequired<MachineLoopInfo>();
+  AU.addPreserved<MachineLoopInfo>();
   MachineFunctionPass::getAnalysisUsage(AU);
 }
 
@@ -1282,13 +1203,11 @@ bool EarlyIfPredicator::tryConvertIf(MachineBasicBlock *MBB) {
   bool Changed = false;
   while (IfConv.canConvertIf(MBB, /*Predicate*/ true) && shouldConvertIf()) {
     // If-convert MBB and update analyses.
-    SmallVector<MachineBasicBlock *, 4> RemoveBlocks;
-    IfConv.convertIf(RemoveBlocks, /*Predicate*/ true);
+    SmallVector<MachineBasicBlock *, 4> RemovedBlocks;
+    IfConv.convertIf(RemovedBlocks, /*Predicate*/ true);
     Changed = true;
-    updateDomTree(DomTree, IfConv, RemoveBlocks);
-    for (MachineBasicBlock *MBB : RemoveBlocks)
-      MBB->eraseFromParent();
-    updateLoops(Loops, RemoveBlocks);
+    updateDomTree(DomTree, IfConv, RemovedBlocks);
+    updateLoops(Loops, RemovedBlocks);
   }
   return Changed;
 }
@@ -1304,12 +1223,12 @@ bool EarlyIfPredicator::runOnMachineFunction(MachineFunction &MF) {
   TRI = STI.getRegisterInfo();
   MRI = &MF.getRegInfo();
   SchedModel.init(&STI);
-  DomTree = &getAnalysis<MachineDominatorTreeWrapperPass>().getDomTree();
-  Loops = &getAnalysis<MachineLoopInfoWrapperPass>().getLI();
-  MBPI = &getAnalysis<MachineBranchProbabilityInfoWrapperPass>().getMBPI();
+  DomTree = &getAnalysis<MachineDominatorTree>();
+  Loops = &getAnalysis<MachineLoopInfo>();
+  MBPI = &getAnalysis<MachineBranchProbabilityInfo>();
 
   bool Changed = false;
-  IfConv.init(MF);
+  IfConv.runOnMachineFunction(MF);
 
   // Visit blocks in dominator tree post-order. The post-order enables nested
   // if-conversion in a single pass. The tryConvertIf() function may erase

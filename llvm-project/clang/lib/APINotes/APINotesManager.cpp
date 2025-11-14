@@ -12,10 +12,11 @@
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/LangOptions.h"
-#include "clang/Basic/Module.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/SourceMgrAdapter.h"
+#include "clang/Basic/Version.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -49,13 +50,12 @@ public:
 } // namespace
 
 APINotesManager::APINotesManager(SourceManager &SM, const LangOptions &LangOpts)
-    : SM(SM), ImplicitAPINotes(LangOpts.APINotes),
-      VersionIndependentSwift(LangOpts.SwiftVersionIndependentAPINotes) {}
+    : SM(SM), ImplicitAPINotes(LangOpts.APINotes) {}
 
 APINotesManager::~APINotesManager() {
   // Free the API notes readers.
   for (const auto &Entry : Readers) {
-    if (auto Reader = dyn_cast_if_present<APINotesReader *>(Entry.second))
+    if (auto Reader = Entry.second.dyn_cast<APINotesReader *>())
       delete Reader;
   }
 
@@ -221,11 +221,10 @@ APINotesManager::getCurrentModuleAPINotes(Module *M, bool LookInModule,
                                           ArrayRef<std::string> SearchPaths) {
   FileManager &FM = SM.getFileManager();
   auto ModuleName = M->getTopLevelModuleName();
-  auto ExportedModuleName = M->getTopLevelModule()->ExportAsModule;
   llvm::SmallVector<FileEntryRef, 2> APINotes;
 
   // First, look relative to the module itself.
-  if (LookInModule && M->Directory) {
+  if (LookInModule) {
     // Local function to try loading an API notes file in the given directory.
     auto tryAPINotes = [&](DirectoryEntryRef Dir, bool WantPublic) {
       if (auto File = findAPINotesFile(Dir, ModuleName, WantPublic)) {
@@ -234,10 +233,6 @@ APINotesManager::getCurrentModuleAPINotes(Module *M, bool LookInModule,
 
         APINotes.push_back(*File);
       }
-      // If module FooCore is re-exported through module Foo, try Foo.apinotes.
-      if (!ExportedModuleName.empty())
-        if (auto File = findAPINotesFile(Dir, ExportedModuleName, WantPublic))
-          APINotes.push_back(*File);
     };
 
     if (M->IsFramework) {
@@ -373,14 +368,14 @@ APINotesManager::findAPINotes(SourceLocation Loc) {
       ++NumDirectoryCacheHits;
 
       // We've been redirected to another directory for answers. Follow it.
-      if (Known->second && isa<DirectoryEntryRef>(Known->second)) {
+      if (Known->second && Known->second.is<DirectoryEntryRef>()) {
         DirsVisited.insert(*Dir);
-        Dir = cast<DirectoryEntryRef>(Known->second);
+        Dir = Known->second.get<DirectoryEntryRef>();
         continue;
       }
 
       // We have the answer.
-      if (auto Reader = dyn_cast_if_present<APINotesReader *>(Known->second))
+      if (auto Reader = Known->second.dyn_cast<APINotesReader *>())
         Results.push_back(Reader);
       break;
     }

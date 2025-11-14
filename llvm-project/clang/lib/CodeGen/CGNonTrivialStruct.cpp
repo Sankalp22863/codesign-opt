@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CGDebugInfo.h"
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
 #include "clang/AST/NonTrivialTypeVisitor.h"
@@ -26,7 +25,7 @@ using namespace CodeGen;
 static uint64_t getFieldSize(const FieldDecl *FD, QualType FT,
                              ASTContext &Ctx) {
   if (FD && FD->isBitField())
-    return FD->getBitWidthValue();
+    return FD->getBitWidthValue(Ctx);
   return Ctx.getTypeSize(FT);
 }
 
@@ -39,7 +38,7 @@ template <class Derived> struct StructVisitor {
 
   template <class... Ts>
   void visitStructFields(QualType QT, CharUnits CurStructOffset, Ts... Args) {
-    const auto *RD = QT->castAsRecordDecl();
+    const RecordDecl *RD = QT->castAs<RecordType>()->getDecl();
 
     // Iterate over the fields of the struct.
     for (const FieldDecl *FD : RD->fields()) {
@@ -256,7 +255,7 @@ struct GenBinaryFuncName : CopyStructVisitor<GenBinaryFuncName<IsMove>, IsMove>,
   void visitVolatileTrivial(QualType FT, const FieldDecl *FD,
                             CharUnits CurStructOffset) {
     // Zero-length bit-fields don't need to be copied/assigned.
-    if (FD && FD->isZeroLengthBitField())
+    if (FD && FD->isZeroLengthBitField(this->Ctx))
       return;
 
     // Because volatile fields can be bit-fields and are individually copied,
@@ -265,18 +264,6 @@ struct GenBinaryFuncName : CopyStructVisitor<GenBinaryFuncName<IsMove>, IsMove>,
         this->Ctx.toBits(CurStructOffset) + this->getFieldOffsetInBits(FD);
     this->appendStr("_tv" + llvm::to_string(OffsetInBits) + "w" +
                     llvm::to_string(getFieldSize(FD, FT, this->Ctx)));
-  }
-
-  void visitPtrAuth(QualType FT, const FieldDecl *FD,
-                    CharUnits CurStructOffset) {
-    this->appendStr("_pa");
-    PointerAuthQualifier PtrAuth = FT.getPointerAuth().withoutKeyNone();
-    this->appendStr(llvm::to_string(PtrAuth.getKey()) + "_");
-    this->appendStr(llvm::to_string(PtrAuth.getExtraDiscriminator()) + "_");
-    if (PtrAuth.authenticatesNullValues())
-      this->appendStr("anv_");
-    CharUnits FieldOffset = CurStructOffset + this->getFieldOffset(FD);
-    this->appendStr(llvm::to_string(FieldOffset.getQuantity()));
   }
 };
 
@@ -379,7 +366,7 @@ template <class Derived> struct GenFuncBase {
     llvm::Value *SizeInBytes =
         CGF.Builder.CreateNUWMul(BaseEltSizeVal, NumElts);
     llvm::Value *DstArrayEnd = CGF.Builder.CreateInBoundsGEP(
-        CGF.Int8Ty, DstAddr.emitRawPointer(CGF), SizeInBytes);
+        CGF.Int8Ty, DstAddr.getPointer(), SizeInBytes);
     llvm::BasicBlock *PreheaderBB = CGF.Builder.GetInsertBlock();
 
     // Create the header block and insert the phi instructions.
@@ -389,7 +376,7 @@ template <class Derived> struct GenFuncBase {
 
     for (unsigned I = 0; I < N; ++I) {
       PHIs[I] = CGF.Builder.CreatePHI(CGF.CGM.Int8PtrPtrTy, 2, "addr.cur");
-      PHIs[I]->addIncoming(StartAddrs[I].emitRawPointer(CGF), PreheaderBB);
+      PHIs[I]->addIncoming(StartAddrs[I].getPointer(), PreheaderBB);
     }
 
     // Create the exit and loop body blocks.
@@ -423,7 +410,7 @@ template <class Derived> struct GenFuncBase {
       // Instrs to update the destination and source addresses.
       // Update phi instructions.
       NewAddrs[I] = getAddrWithOffset(NewAddrs[I], EltSize);
-      PHIs[I]->addIncoming(NewAddrs[I].emitRawPointer(CGF), LoopBB);
+      PHIs[I]->addIncoming(NewAddrs[I].getPointer(), LoopBB);
     }
 
     // Insert an unconditional branch to the header block.
@@ -501,7 +488,7 @@ template <class Derived> struct GenFuncBase {
 
     for (unsigned I = 0; I < N; ++I) {
       Alignments[I] = Addrs[I].getAlignment();
-      Ptrs[I] = Addrs[I].emitRawPointer(CallerCGF);
+      Ptrs[I] = Addrs[I].getPointer();
     }
 
     if (llvm::Function *F =
@@ -557,11 +544,10 @@ struct GenBinaryFunc : CopyStructVisitor<Derived, IsMove>,
     LValue DstLV, SrcLV;
     if (FD) {
       // No need to copy zero-length bit-fields.
-      if (FD->isZeroLengthBitField())
+      if (FD->isZeroLengthBitField(this->CGF->getContext()))
         return;
 
-      CanQualType RT =
-          this->CGF->getContext().getCanonicalTagType(FD->getParent());
+      QualType RT = QualType(FD->getParent()->getTypeForDecl(), 0);
       llvm::Type *Ty = this->CGF->ConvertType(RT);
       Address DstAddr = this->getAddrWithOffset(Addrs[DstIdx], Offset);
       LValue DstBase =
@@ -580,13 +566,6 @@ struct GenBinaryFunc : CopyStructVisitor<Derived, IsMove>,
     }
     RValue SrcVal = this->CGF->EmitLoadOfLValue(SrcLV, SourceLocation());
     this->CGF->EmitStoreThroughLValue(SrcVal, DstLV);
-  }
-  void visitPtrAuth(QualType FT, const FieldDecl *FD, CharUnits CurStackOffset,
-                    std::array<Address, 2> Addrs) {
-    PointerAuthQualifier PtrAuth = FT.getPointerAuth().withoutKeyNone();
-    Addrs[DstIdx] = this->getAddrWithOffset(Addrs[DstIdx], CurStackOffset, FD);
-    Addrs[SrcIdx] = this->getAddrWithOffset(Addrs[SrcIdx], CurStackOffset, FD);
-    this->CGF->EmitPointerAuthCopy(PtrAuth, FT, Addrs[DstIdx], Addrs[SrcIdx]);
   }
 };
 
@@ -672,8 +651,7 @@ struct GenDefaultInitialize
     CharUnits Size = Ctx.getTypeSizeInChars(QualType(AT, 0));
     QualType EltTy = Ctx.getBaseElementType(QualType(AT, 0));
 
-    if (Size < CharUnits::fromQuantity(16) ||
-        EltTy->getAsCanonical<RecordType>()) {
+    if (Size < CharUnits::fromQuantity(16) || EltTy->getAs<RecordType>()) {
       GenFuncBaseTy::visitArray(FK, AT, IsVolatile, FD, CurStructOffset, Addrs);
       return;
     }
@@ -733,7 +711,7 @@ struct GenMoveConstructor : GenBinaryFunc<GenMoveConstructor, true> {
     LValue SrcLV = CGF->MakeAddrLValue(Addrs[SrcIdx], QT);
     llvm::Value *SrcVal =
         CGF->EmitLoadOfLValue(SrcLV, SourceLocation()).getScalarVal();
-    CGF->EmitStoreOfScalar(getNullForVariable(SrcLV.getAddress()), SrcLV);
+    CGF->EmitStoreOfScalar(getNullForVariable(SrcLV.getAddress(*CGF)), SrcLV);
     CGF->EmitStoreOfScalar(SrcVal, CGF->MakeAddrLValue(Addrs[DstIdx], QT),
                            /* isInitialization */ true);
   }
@@ -796,7 +774,7 @@ struct GenMoveAssignment : GenBinaryFunc<GenMoveAssignment, true> {
     LValue SrcLV = CGF->MakeAddrLValue(Addrs[SrcIdx], QT);
     llvm::Value *SrcVal =
         CGF->EmitLoadOfLValue(SrcLV, SourceLocation()).getScalarVal();
-    CGF->EmitStoreOfScalar(getNullForVariable(SrcLV.getAddress()), SrcLV);
+    CGF->EmitStoreOfScalar(getNullForVariable(SrcLV.getAddress(*CGF)), SrcLV);
     LValue DstLV = CGF->MakeAddrLValue(Addrs[DstIdx], QT);
     llvm::Value *DstVal =
         CGF->EmitLoadOfLValue(DstLV, SourceLocation()).getScalarVal();
@@ -832,7 +810,7 @@ void CodeGenFunction::destroyNonTrivialCStruct(CodeGenFunction &CGF,
 // such structure.
 void CodeGenFunction::defaultInitNonTrivialCStructVar(LValue Dst) {
   GenDefaultInitialize Gen(getContext());
-  Address DstPtr = Dst.getAddress().withElementType(CGM.Int8PtrTy);
+  Address DstPtr = Dst.getAddress(*this).withElementType(CGM.Int8PtrTy);
   Gen.setCGF(this);
   QualType QT = Dst.getType();
   QT = Dst.isVolatile() ? QT.withVolatile() : QT;
@@ -864,7 +842,7 @@ getSpecialFunction(G &&Gen, StringRef FuncName, QualType QT, bool IsVolatile,
 // Functions to emit calls to the special functions of a non-trivial C struct.
 void CodeGenFunction::callCStructDefaultConstructor(LValue Dst) {
   bool IsVolatile = Dst.isVolatile();
-  Address DstPtr = Dst.getAddress();
+  Address DstPtr = Dst.getAddress(*this);
   QualType QT = Dst.getType();
   GenDefaultInitializeFuncName GenName(DstPtr.getAlignment(), getContext());
   std::string FuncName = GenName.getName(QT, IsVolatile);
@@ -888,7 +866,7 @@ std::string CodeGenFunction::getNonTrivialDestructorStr(QualType QT,
 
 void CodeGenFunction::callCStructDestructor(LValue Dst) {
   bool IsVolatile = Dst.isVolatile();
-  Address DstPtr = Dst.getAddress();
+  Address DstPtr = Dst.getAddress(*this);
   QualType QT = Dst.getType();
   GenDestructorFuncName GenName("__destructor_", DstPtr.getAlignment(),
                                 getContext());
@@ -899,7 +877,7 @@ void CodeGenFunction::callCStructDestructor(LValue Dst) {
 
 void CodeGenFunction::callCStructCopyConstructor(LValue Dst, LValue Src) {
   bool IsVolatile = Dst.isVolatile() || Src.isVolatile();
-  Address DstPtr = Dst.getAddress(), SrcPtr = Src.getAddress();
+  Address DstPtr = Dst.getAddress(*this), SrcPtr = Src.getAddress(*this);
   QualType QT = Dst.getType();
   GenBinaryFuncName<false> GenName("__copy_constructor_", DstPtr.getAlignment(),
                                    SrcPtr.getAlignment(), getContext());
@@ -913,7 +891,7 @@ void CodeGenFunction::callCStructCopyAssignmentOperator(LValue Dst, LValue Src
 
 ) {
   bool IsVolatile = Dst.isVolatile() || Src.isVolatile();
-  Address DstPtr = Dst.getAddress(), SrcPtr = Src.getAddress();
+  Address DstPtr = Dst.getAddress(*this), SrcPtr = Src.getAddress(*this);
   QualType QT = Dst.getType();
   GenBinaryFuncName<false> GenName("__copy_assignment_", DstPtr.getAlignment(),
                                    SrcPtr.getAlignment(), getContext());
@@ -924,7 +902,7 @@ void CodeGenFunction::callCStructCopyAssignmentOperator(LValue Dst, LValue Src
 
 void CodeGenFunction::callCStructMoveConstructor(LValue Dst, LValue Src) {
   bool IsVolatile = Dst.isVolatile() || Src.isVolatile();
-  Address DstPtr = Dst.getAddress(), SrcPtr = Src.getAddress();
+  Address DstPtr = Dst.getAddress(*this), SrcPtr = Src.getAddress(*this);
   QualType QT = Dst.getType();
   GenBinaryFuncName<true> GenName("__move_constructor_", DstPtr.getAlignment(),
                                   SrcPtr.getAlignment(), getContext());
@@ -938,7 +916,7 @@ void CodeGenFunction::callCStructMoveAssignmentOperator(LValue Dst, LValue Src
 
 ) {
   bool IsVolatile = Dst.isVolatile() || Src.isVolatile();
-  Address DstPtr = Dst.getAddress(), SrcPtr = Src.getAddress();
+  Address DstPtr = Dst.getAddress(*this), SrcPtr = Src.getAddress(*this);
   QualType QT = Dst.getType();
   GenBinaryFuncName<true> GenName("__move_assignment_", DstPtr.getAlignment(),
                                   SrcPtr.getAlignment(), getContext());

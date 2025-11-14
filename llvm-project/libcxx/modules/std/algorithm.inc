@@ -20,9 +20,7 @@ export namespace std {
     using std::ranges::in_value_result;
 #endif
     using std::ranges::min_max_result;
-#if _LIBCPP_STD_VER >= 23
-    using std::ranges::out_value_result;
-#endif
+    // using std::ranges::out_value_result;
   } // namespace ranges
 
   // [alg.nonmodifying], non-modifying sequence operations
@@ -48,7 +46,9 @@ export namespace std {
   // [alg.contains], contains
   namespace ranges {
     using std::ranges::contains;
+#if 0
     using std::ranges::contains_subrange;
+#endif
   } // namespace ranges
 #endif // _LIBCPP_STD_VER >= 23
 
@@ -79,14 +79,13 @@ export namespace std {
     using std::ranges::find_if_not;
   } // namespace ranges
 
-#if _LIBCPP_STD_VER >= 23
-  // [alg.find.last], find last
   namespace ranges {
+#if 0
     using std::ranges::find_last;
     using std::ranges::find_last_if;
     using std::ranges::find_last_if_not;
-  } // namespace ranges
 #endif
+  } // namespace ranges
 
   // [alg.find.end], find end
   using std::find_end;

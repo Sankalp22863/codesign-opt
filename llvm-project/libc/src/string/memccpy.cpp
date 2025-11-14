@@ -9,19 +9,13 @@
 #include "src/string/memccpy.h"
 
 #include "src/__support/common.h"
-#include "src/__support/macros/config.h"
-#include "src/__support/macros/null_check.h"
 #include <stddef.h> // For size_t.
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
 LLVM_LIBC_FUNCTION(void *, memccpy,
                    (void *__restrict dest, const void *__restrict src, int c,
                     size_t count)) {
-  if (count) {
-    LIBC_CRASH_ON_NULLPTR(dest);
-    LIBC_CRASH_ON_NULLPTR(src);
-  }
   unsigned char end = static_cast<unsigned char>(c);
   const unsigned char *uc_src = static_cast<const unsigned char *>(src);
   unsigned char *uc_dest = static_cast<unsigned char *>(dest);
@@ -38,4 +32,4 @@ LLVM_LIBC_FUNCTION(void *, memccpy,
   return nullptr;
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

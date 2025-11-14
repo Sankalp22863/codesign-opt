@@ -19,10 +19,10 @@ export namespace std {
   using std::operator/;
 
   using std::operator==;
-#if _LIBCPP_HAS_LOCALIZATION
+#ifndef _LIBCPP_HAS_NO_LOCALIZATION
   using std::operator>>;
   using std::operator<<;
-#endif // _LIBCPP_HAS_LOCALIZATION
+#endif // _LIBCPP_HAS_NO_LOCALIZATION
 
   // [complex.value.ops], values
   using std::imag;
@@ -58,13 +58,6 @@ export namespace std {
   using std::sqrt;
   using std::tan;
   using std::tanh;
-
-#if _LIBCPP_STD_VER >= 26
-  // [complex.tuple], tuple interface
-  using std::get;
-  using std::tuple_element;
-  using std::tuple_size;
-#endif
 
   // [complex.literals], complex literals
   inline namespace literals {

@@ -223,32 +223,26 @@ public:
   }
 };
 
-struct CoverageDataSummary {
+/// A summary of function's code coverage.
+struct FunctionCoverageSummary {
+  std::string Name;
+  uint64_t ExecutionCount;
   RegionCoverageInfo RegionCoverage;
   LineCoverageInfo LineCoverage;
   BranchCoverageInfo BranchCoverage;
   MCDCCoverageInfo MCDCCoverage;
 
-  CoverageDataSummary() = default;
-  CoverageDataSummary(const coverage::CoverageData &CD,
-                      ArrayRef<coverage::CountedRegion> CodeRegions);
+  FunctionCoverageSummary(const std::string &Name)
+      : Name(Name), ExecutionCount(0) {}
 
-  auto &operator+=(const CoverageDataSummary &RHS) {
-    RegionCoverage += RHS.RegionCoverage;
-    LineCoverage += RHS.LineCoverage;
-    BranchCoverage += RHS.BranchCoverage;
-    MCDCCoverage += RHS.MCDCCoverage;
-    return *this;
-  }
-};
-
-/// A summary of function's code coverage.
-struct FunctionCoverageSummary : CoverageDataSummary {
-  std::string Name;
-  uint64_t ExecutionCount;
-
-  FunctionCoverageSummary(const std::string &Name, uint64_t ExecutionCount = 0)
-      : Name(Name), ExecutionCount(ExecutionCount) {}
+  FunctionCoverageSummary(const std::string &Name, uint64_t ExecutionCount,
+                          const RegionCoverageInfo &RegionCoverage,
+                          const LineCoverageInfo &LineCoverage,
+                          const BranchCoverageInfo &BranchCoverage,
+                          const MCDCCoverageInfo &MCDCCoverage)
+      : Name(Name), ExecutionCount(ExecutionCount),
+        RegionCoverage(RegionCoverage), LineCoverage(LineCoverage),
+        BranchCoverage(BranchCoverage), MCDCCoverage(MCDCCoverage) {}
 
   /// Compute the code coverage summary for the given function coverage
   /// mapping record.
@@ -263,8 +257,12 @@ struct FunctionCoverageSummary : CoverageDataSummary {
 };
 
 /// A summary of file's code coverage.
-struct FileCoverageSummary : CoverageDataSummary {
+struct FileCoverageSummary {
   StringRef Name;
+  RegionCoverageInfo RegionCoverage;
+  LineCoverageInfo LineCoverage;
+  BranchCoverageInfo BranchCoverage;
+  MCDCCoverageInfo MCDCCoverage;
   FunctionCoverageInfo FunctionCoverage;
   FunctionCoverageInfo InstantiationCoverage;
 
@@ -272,8 +270,11 @@ struct FileCoverageSummary : CoverageDataSummary {
   FileCoverageSummary(StringRef Name) : Name(Name) {}
 
   FileCoverageSummary &operator+=(const FileCoverageSummary &RHS) {
-    *static_cast<CoverageDataSummary *>(this) += RHS;
+    RegionCoverage += RHS.RegionCoverage;
+    LineCoverage += RHS.LineCoverage;
     FunctionCoverage += RHS.FunctionCoverage;
+    BranchCoverage += RHS.BranchCoverage;
+    MCDCCoverage += RHS.MCDCCoverage;
     InstantiationCoverage += RHS.InstantiationCoverage;
     return *this;
   }

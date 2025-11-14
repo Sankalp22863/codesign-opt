@@ -20,12 +20,6 @@ using namespace CodeGen;
 
 CGCXXABI::~CGCXXABI() { }
 
-Address CGCXXABI::getThisAddress(CodeGenFunction &CGF) {
-  return CGF.makeNaturalAddressForPointer(
-      CGF.CXXABIThisValue, CGF.CXXABIThisDecl->getType()->getPointeeType(),
-      CGF.CXXABIThisAlignment);
-}
-
 void CGCXXABI::ErrorUnsupportedABI(CodeGenFunction &CGF, StringRef S) {
   DiagnosticsEngine &Diags = CGF.CGM.getDiags();
   unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
@@ -50,19 +44,17 @@ CGCallee CGCXXABI::EmitLoadOfMemberFunctionPointer(
     llvm::Value *MemPtr, const MemberPointerType *MPT) {
   ErrorUnsupportedABI(CGF, "calls through member pointers");
 
-  const auto *RD = MPT->getMostRecentCXXRecordDecl();
-  ThisPtrForCall =
-      CGF.getAsNaturalPointerTo(This, CGF.getContext().getCanonicalTagType(RD));
-  const FunctionProtoType *FPT =
-      MPT->getPointeeType()->getAs<FunctionProtoType>();
+  ThisPtrForCall = This.getPointer();
+  const auto *FPT = MPT->getPointeeType()->castAs<FunctionProtoType>();
   llvm::Constant *FnPtr = llvm::Constant::getNullValue(
       llvm::PointerType::getUnqual(CGM.getLLVMContext()));
   return CGCallee::forDirect(FnPtr, FPT);
 }
 
-llvm::Value *CGCXXABI::EmitMemberDataPointerAddress(
-    CodeGenFunction &CGF, const Expr *E, Address Base, llvm::Value *MemPtr,
-    const MemberPointerType *MPT, bool IsInBounds) {
+llvm::Value *
+CGCXXABI::EmitMemberDataPointerAddress(CodeGenFunction &CGF, const Expr *E,
+                                       Address Base, llvm::Value *MemPtr,
+                                       const MemberPointerType *MPT) {
   ErrorUnsupportedABI(CGF, "loads of member pointers");
   llvm::Type *Ty =
       llvm::PointerType::get(CGF.getLLVMContext(), Base.getAddressSpace());
@@ -106,7 +98,7 @@ CGCXXABI::EmitNullMemberPointer(const MemberPointerType *MPT) {
 
 llvm::Constant *CGCXXABI::EmitMemberFunctionPointer(const CXXMethodDecl *MD) {
   return GetBogusMemberPointer(CGM.getContext().getMemberPointerType(
-      MD->getType(), /*Qualifier=*/std::nullopt, MD->getParent()));
+      MD->getType(), MD->getParent()->getTypeForDecl()));
 }
 
 llvm::Constant *CGCXXABI::EmitMemberDataPointer(const MemberPointerType *MPT,
@@ -165,7 +157,10 @@ bool CGCXXABI::mayNeedDestruction(const VarDecl *VD) const {
   // If the variable has an incomplete class type (or array thereof), it
   // might need destruction.
   const Type *T = VD->getType()->getBaseElementTypeUnsafe();
-  return T->isRecordType() && T->isIncompleteType();
+  if (T->getAs<RecordType>() && T->isIncompleteType())
+    return true;
+
+  return false;
 }
 
 bool CGCXXABI::isEmittedWithConstantInitializer(
@@ -256,29 +251,16 @@ void CGCXXABI::ReadArrayCookie(CodeGenFunction &CGF, Address ptr,
 
   // If we don't need an array cookie, bail out early.
   if (!requiresArrayCookie(expr, eltTy)) {
-    allocPtr = ptr.emitRawPointer(CGF);
+    allocPtr = ptr.getPointer();
     numElements = nullptr;
     cookieSize = CharUnits::Zero();
     return;
   }
 
   cookieSize = getArrayCookieSizeImpl(eltTy);
-  Address allocAddr = CGF.Builder.CreateConstInBoundsByteGEP(ptr, -cookieSize);
-  allocPtr = allocAddr.emitRawPointer(CGF);
-  numElements = readArrayCookieImpl(CGF, allocAddr, cookieSize);
-}
-
-void CGCXXABI::ReadArrayCookie(CodeGenFunction &CGF, Address ptr,
-                               QualType eltTy, llvm::Value *&numElements,
-                               llvm::Value *&allocPtr, CharUnits &cookieSize) {
-  assert(eltTy.isDestructedType());
-
-  // Derive a char* in the same address space as the pointer.
-  ptr = ptr.withElementType(CGF.Int8Ty);
-
-  cookieSize = getArrayCookieSizeImpl(eltTy);
-  Address allocAddr = CGF.Builder.CreateConstInBoundsByteGEP(ptr, -cookieSize);
-  allocPtr = allocAddr.emitRawPointer(CGF);
+  Address allocAddr =
+    CGF.Builder.CreateConstInBoundsByteGEP(ptr, -cookieSize);
+  allocPtr = allocAddr.getPointer();
   numElements = readArrayCookieImpl(CGF, allocAddr, cookieSize);
 }
 
@@ -303,7 +285,7 @@ llvm::Constant *CGCXXABI::getMemberPointerAdjustment(const CastExpr *E) {
     derivedType = E->getType();
 
   const CXXRecordDecl *derivedClass =
-      derivedType->castAs<MemberPointerType>()->getMostRecentCXXRecordDecl();
+    derivedType->castAs<MemberPointerType>()->getClass()->getAsCXXRecordDecl();
 
   return CGM.GetNonVirtualBaseClassOffset(derivedClass,
                                           E->path_begin(),

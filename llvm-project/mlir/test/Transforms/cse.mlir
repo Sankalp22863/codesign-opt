@@ -1,4 +1,7 @@
-// RUN: mlir-opt -allow-unregistered-dialect %s -pass-pipeline='builtin.module(func.func(cse))' -split-input-file | FileCheck %s
+// RUN: mlir-opt -allow-unregistered-dialect %s -pass-pipeline='builtin.module(func.func(cse))' | FileCheck %s
+
+// CHECK-DAG: #[[$MAP:.*]] = affine_map<(d0) -> (d0 mod 2)>
+#map0 = affine_map<(d0) -> (d0 mod 2)>
 
 // CHECK-LABEL: @simple_constant
 func.func @simple_constant() -> (i32, i32) {
@@ -9,11 +12,6 @@ func.func @simple_constant() -> (i32, i32) {
   %1 = arith.constant 1 : i32
   return %0, %1 : i32, i32
 }
-
-// -----
-
-// CHECK: #[[$MAP:.*]] = affine_map<(d0) -> (d0 mod 2)>
-#map0 = affine_map<(d0) -> (d0 mod 2)>
 
 // CHECK-LABEL: @basic
 func.func @basic() -> (index, index) {
@@ -28,8 +26,6 @@ func.func @basic() -> (index, index) {
   // CHECK-NEXT: return %[[VAR_0]], %[[VAR_0]] : index, index
   return %0, %1 : index, index
 }
-
-// -----
 
 // CHECK-LABEL: @many
 func.func @many(f32, f32) -> (f32) {
@@ -56,8 +52,6 @@ func.func @many(f32, f32) -> (f32) {
   return %l : f32
 }
 
-// -----
-
 /// Check that operations are not eliminated if they have different operands.
 // CHECK-LABEL: @different_ops
 func.func @different_ops() -> (i32, i32) {
@@ -69,8 +63,6 @@ func.func @different_ops() -> (i32, i32) {
   // CHECK-NEXT: return %[[VAR_c0_i32]], %[[VAR_c1_i32]] : i32, i32
   return %0, %1 : i32, i32
 }
-
-// -----
 
 /// Check that operations are not eliminated if they have different result
 /// types.
@@ -84,8 +76,6 @@ func.func @different_results(%arg0: tensor<*xf32>) -> (tensor<?x?xf32>, tensor<4
   // CHECK-NEXT: return %[[VAR_0]], %[[VAR_1]] : tensor<?x?xf32>, tensor<4x?xf32>
   return %0, %1 : tensor<?x?xf32>, tensor<4x?xf32>
 }
-
-// -----
 
 /// Check that operations are not eliminated if they have different attributes.
 // CHECK-LABEL: @different_attributes
@@ -103,8 +93,6 @@ func.func @different_attributes(index, index) -> (i1, i1, i1) {
   return %0, %1, %2 : i1, i1, i1
 }
 
-// -----
-
 /// Check that operations with side effects are not eliminated.
 // CHECK-LABEL: @side_effect
 func.func @side_effect() -> (memref<2x1xf32>, memref<2x1xf32>) {
@@ -117,8 +105,6 @@ func.func @side_effect() -> (memref<2x1xf32>, memref<2x1xf32>) {
   // CHECK-NEXT: return %[[VAR_0]], %[[VAR_1]] : memref<2x1xf32>, memref<2x1xf32>
   return %0, %1 : memref<2x1xf32>, memref<2x1xf32>
 }
-
-// -----
 
 /// Check that operation definitions are properly propagated down the dominance
 /// tree.
@@ -135,8 +121,6 @@ func.func @down_propagate_for() {
   }
   return
 }
-
-// -----
 
 // CHECK-LABEL: @down_propagate
 func.func @down_propagate() -> i32 {
@@ -158,8 +142,6 @@ func.func @down_propagate() -> i32 {
   return %arg : i32
 }
 
-// -----
-
 /// Check that operation definitions are NOT propagated up the dominance tree.
 // CHECK-LABEL: @up_propagate_for
 func.func @up_propagate_for() -> i32 {
@@ -176,8 +158,6 @@ func.func @up_propagate_for() -> i32 {
   %1 = arith.constant 1 : i32
   return %1 : i32
 }
-
-// -----
 
 // CHECK-LABEL: func @up_propagate
 func.func @up_propagate() -> i32 {
@@ -207,8 +187,6 @@ func.func @up_propagate() -> i32 {
   // CHECK-NEXT: return %[[VAR_1]] : i32
   return %add : i32
 }
-
-// -----
 
 /// The same test as above except that we are testing on a cfg embedded within
 /// an operation region.
@@ -243,8 +221,6 @@ func.func @up_propagate_region() -> i32 {
   return %0 : i32
 }
 
-// -----
-
 /// This test checks that nested regions that are isolated from above are
 /// properly handled.
 // CHECK-LABEL: @nested_isolated
@@ -252,14 +228,11 @@ func.func @nested_isolated() -> i32 {
   // CHECK-NEXT: arith.constant 1
   %0 = arith.constant 1 : i32
 
-  // CHECK-NEXT: builtin.module
   // CHECK-NEXT: @nested_func
-  builtin.module {
-    func.func @nested_func() {
-      // CHECK-NEXT: arith.constant 1
-      %foo = arith.constant 1 : i32
-      "foo.yield"(%foo) : (i32) -> ()
-    }
+  func.func @nested_func() {
+    // CHECK-NEXT: arith.constant 1
+    %foo = arith.constant 1 : i32
+    "foo.yield"(%foo) : (i32) -> ()
   }
 
   // CHECK: "foo.region"
@@ -271,8 +244,6 @@ func.func @nested_isolated() -> i32 {
 
   return %0 : i32
 }
-
-// -----
 
 /// This test is checking that CSE gracefully handles values in graph regions
 /// where the use occurs before the def, and one of the defs could be CSE'd with
@@ -295,8 +266,6 @@ func.func @use_before_def() {
   return
 }
 
-// -----
-
 /// This test is checking that CSE is removing duplicated read op that follow
 /// other.
 // CHECK-LABEL: @remove_direct_duplicated_read_op
@@ -308,8 +277,6 @@ func.func @remove_direct_duplicated_read_op() -> i32 {
   %2 = arith.addi %0, %1 : i32
   return %2 : i32
 }
-
-// -----
 
 /// This test is checking that CSE is removing duplicated read op that follow
 /// other.
@@ -330,8 +297,6 @@ func.func @remove_multiple_duplicated_read_op() -> i64 {
   return %6 : i64
 }
 
-// -----
-
 /// This test is checking that CSE is not removing duplicated read op that
 /// have write op in between.
 // CHECK-LABEL: @dont_remove_duplicated_read_op_with_sideeffecting
@@ -345,8 +310,6 @@ func.func @dont_remove_duplicated_read_op_with_sideeffecting() -> i32 {
   %2 = arith.addi %0, %1 : i32
   return %2 : i32
 }
-
-// -----
 
 // Check that an operation with a single region can CSE.
 func.func @cse_single_block_ops(%a : tensor<?x?xf32>, %b : tensor<?x?xf32>)
@@ -366,8 +329,6 @@ func.func @cse_single_block_ops(%a : tensor<?x?xf32>, %b : tensor<?x?xf32>)
 //   CHECK-NOT:   test.cse_of_single_block_op
 //       CHECK:   return %[[OP]], %[[OP]]
 
-// -----
-
 // Operations with different number of bbArgs dont CSE.
 func.func @no_cse_varied_bbargs(%a : tensor<?x?xf32>, %b : tensor<?x?xf32>)
   -> (tensor<?x?xf32>, tensor<?x?xf32>) {
@@ -386,8 +347,6 @@ func.func @no_cse_varied_bbargs(%a : tensor<?x?xf32>, %b : tensor<?x?xf32>)
 //       CHECK:   %[[OP1:.+]] = test.cse_of_single_block_op
 //       CHECK:   return %[[OP0]], %[[OP1]]
 
-// -----
-
 // Operations with different regions dont CSE
 func.func @no_cse_region_difference_simple(%a : tensor<?x?xf32>, %b : tensor<?x?xf32>)
   -> (tensor<?x?xf32>, tensor<?x?xf32>) {
@@ -405,8 +364,6 @@ func.func @no_cse_region_difference_simple(%a : tensor<?x?xf32>, %b : tensor<?x?
 //       CHECK:   %[[OP0:.+]] = test.cse_of_single_block_op
 //       CHECK:   %[[OP1:.+]] = test.cse_of_single_block_op
 //       CHECK:   return %[[OP0]], %[[OP1]]
-
-// -----
 
 // Operation with identical region with multiple statements CSE.
 func.func @cse_single_block_ops_identical_bodies(%a : tensor<?x?xf32>, %b : tensor<?x?xf32>, %c : f32, %d : i1)
@@ -432,8 +389,6 @@ func.func @cse_single_block_ops_identical_bodies(%a : tensor<?x?xf32>, %b : tens
 //   CHECK-NOT:   test.cse_of_single_block_op
 //       CHECK:   return %[[OP]], %[[OP]]
 
-// -----
-
 // Operation with non-identical regions dont CSE.
 func.func @no_cse_single_block_ops_different_bodies(%a : tensor<?x?xf32>, %b : tensor<?x?xf32>, %c : f32, %d : i1)
   -> (tensor<?x?xf32>, tensor<?x?xf32>) {
@@ -458,8 +413,6 @@ func.func @no_cse_single_block_ops_different_bodies(%a : tensor<?x?xf32>, %b : t
 //       CHECK:   %[[OP1:.+]] = test.cse_of_single_block_op
 //       CHECK:   return %[[OP0]], %[[OP1]]
 
-// -----
-
 func.func @failing_issue_59135(%arg0: tensor<2x2xi1>, %arg1: f32, %arg2 : tensor<2xi1>) -> (tensor<2xi1>, tensor<2xi1>) {
   %false_2 = arith.constant false
   %true_5 = arith.constant true
@@ -481,8 +434,6 @@ func.func @failing_issue_59135(%arg0: tensor<2x2xi1>, %arg1: f32, %arg2 : tensor
 //       CHECK:   %[[OP:.+]] = test.cse_of_single_block_op
 //       CHECK:     test.region_yield %[[TRUE]]
 //       CHECK:   return %[[OP]], %[[OP]]
-
-// -----
 
 func.func @cse_multiple_regions(%c: i1, %t: tensor<5xf32>) -> (tensor<5xf32>, tensor<5xf32>) {
   %r1 = scf.if %c -> (tensor<5xf32>) {
@@ -508,8 +459,6 @@ func.func @cse_multiple_regions(%c: i1, %t: tensor<5xf32>) -> (tensor<5xf32>, te
 //       CHECK:   }
 //   CHECK-NOT:   scf.if
 //       CHECK:   return %[[if]], %[[if]]
-
-// -----
 
 // CHECK-LABEL: @cse_recursive_effects_success
 func.func @cse_recursive_effects_success() -> (i32, i32, i32) {
@@ -539,8 +488,6 @@ func.func @cse_recursive_effects_success() -> (i32, i32, i32) {
   %2 = "test.op_with_memread"() : () -> (i32)
   return %0, %2, %1 : i32, i32, i32
 }
-
-// -----
 
 // CHECK-LABEL: @cse_recursive_effects_failure
 func.func @cse_recursive_effects_failure() -> (i32, i32, i32) {

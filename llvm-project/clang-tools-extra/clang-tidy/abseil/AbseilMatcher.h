@@ -6,9 +6,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_ABSEIL_ABSEILMATCHER_H
-#define LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_ABSEIL_ABSEILMATCHER_H
-
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include <algorithm>
@@ -34,7 +31,7 @@ AST_POLYMORPHIC_MATCHER(
     isInAbseilFile, AST_POLYMORPHIC_SUPPORTED_TYPES(Decl, Stmt, TypeLoc,
                                                     NestedNameSpecifierLoc)) {
   auto &SourceManager = Finder->getASTContext().getSourceManager();
-  const SourceLocation Loc = SourceManager.getSpellingLoc(Node.getBeginLoc());
+  SourceLocation Loc = SourceManager.getSpellingLoc(Node.getBeginLoc());
   if (Loc.isInvalid())
     return false;
   OptionalFileEntryRef FileEntry =
@@ -45,20 +42,18 @@ AST_POLYMORPHIC_MATCHER(
   // [absl-library] is AbseilLibraries list entry.
   StringRef Path = FileEntry->getName();
   static constexpr llvm::StringLiteral AbslPrefix("absl/");
-  const size_t PrefixPosition = Path.find(AbslPrefix);
+  size_t PrefixPosition = Path.find(AbslPrefix);
   if (PrefixPosition == StringRef::npos)
     return false;
   Path = Path.drop_front(PrefixPosition + AbslPrefix.size());
-  static constexpr llvm::StringLiteral AbseilLibraries[] = {
+  static const char *AbseilLibraries[] = {
       "algorithm", "base",     "container", "debugging", "flags",
       "hash",      "iterator", "memory",    "meta",      "numeric",
       "profiling", "random",   "status",    "strings",   "synchronization",
       "time",      "types",    "utility"};
-  return llvm::any_of(AbseilLibraries, [&](llvm::StringLiteral Library) {
+  return llvm::any_of(AbseilLibraries, [&](const char *Library) {
     return Path.starts_with(Library);
   });
 }
 
 } // namespace clang::ast_matchers
-
-#endif // LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_ABSEIL_ABSEILMATCHER_H

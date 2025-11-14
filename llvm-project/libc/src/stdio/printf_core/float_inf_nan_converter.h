@@ -10,8 +10,6 @@
 #define LLVM_LIBC_SRC_STDIO_PRINTF_CORE_FLOAT_INF_NAN_CONVERTER_H
 
 #include "src/__support/FPUtil/FPBits.h"
-#include "src/__support/ctype_utils.h"
-#include "src/__support/macros/config.h"
 #include "src/stdio/printf_core/converter_utils.h"
 #include "src/stdio/printf_core/core_structs.h"
 #include "src/stdio/printf_core/writer.h"
@@ -19,16 +17,16 @@
 #include <inttypes.h>
 #include <stddef.h>
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 namespace printf_core {
 
 using StorageType = fputil::FPBits<long double>::StorageType;
 
-template <WriteMode write_mode>
-LIBC_INLINE int convert_inf_nan(Writer<write_mode> *writer,
-                                const FormatSection &to_conv) {
+LIBC_INLINE int convert_inf_nan(Writer *writer, const FormatSection &to_conv) {
   // All of the letters will be defined relative to variable a, which will be
   // the appropriate case based on the case of the conversion.
+  const char a = (to_conv.conv_name & 32) | 'A';
+
   bool is_negative;
   StorageType mantissa;
   if (to_conv.length_modifier == LengthModifier::L) {
@@ -67,11 +65,9 @@ LIBC_INLINE int convert_inf_nan(Writer<write_mode> *writer,
   if (sign_char)
     RET_IF_RESULT_NEGATIVE(writer->write(sign_char));
   if (mantissa == 0) { // inf
-    RET_IF_RESULT_NEGATIVE(
-        writer->write(internal::islower(to_conv.conv_name) ? "inf" : "INF"));
+    RET_IF_RESULT_NEGATIVE(writer->write(a == 'a' ? "inf" : "INF"));
   } else { // nan
-    RET_IF_RESULT_NEGATIVE(
-        writer->write(internal::islower(to_conv.conv_name) ? "nan" : "NAN"));
+    RET_IF_RESULT_NEGATIVE(writer->write(a == 'a' ? "nan" : "NAN"));
   }
 
   if (padding > 0 && ((to_conv.flags & FormatFlags::LEFT_JUSTIFIED) ==
@@ -82,6 +78,6 @@ LIBC_INLINE int convert_inf_nan(Writer<write_mode> *writer,
 }
 
 } // namespace printf_core
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE
 
 #endif // LLVM_LIBC_SRC_STDIO_PRINTF_CORE_FLOAT_INF_NAN_CONVERTER_H

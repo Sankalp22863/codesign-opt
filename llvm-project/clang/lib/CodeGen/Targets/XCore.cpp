@@ -113,8 +113,8 @@ public:
 class XCoreABIInfo : public DefaultABIInfo {
 public:
   XCoreABIInfo(CodeGen::CodeGenTypes &CGT) : DefaultABIInfo(CGT) {}
-  RValue EmitVAArg(CodeGenFunction &CGF, Address VAListAddr, QualType Ty,
-                   AggValueSlot Slot) const override;
+  Address EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
+                    QualType Ty) const override;
 };
 
 class XCoreTargetCodeGenInfo : public TargetCodeGenInfo {
@@ -134,8 +134,8 @@ public:
 
 // TODO: this implementation is likely now redundant with the default
 // EmitVAArg.
-RValue XCoreABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
-                               QualType Ty, AggValueSlot Slot) const {
+Address XCoreABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
+                                QualType Ty) const {
   CGBuilderTy &Builder = CGF.Builder;
 
   // Get the VAList.
@@ -149,7 +149,7 @@ RValue XCoreABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
   llvm::Type *ArgTy = CGT.ConvertType(Ty);
   if (AI.canHaveCoerceToType() && !AI.getCoerceToType())
     AI.setCoerceToType(ArgTy);
-  llvm::Type *ArgPtrTy = llvm::PointerType::getUnqual(ArgTy->getContext());
+  llvm::Type *ArgPtrTy = llvm::PointerType::getUnqual(ArgTy);
 
   Address Val = Address::invalid();
   CharUnits ArgSize = CharUnits::Zero();
@@ -157,7 +157,6 @@ RValue XCoreABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
   case ABIArgInfo::Expand:
   case ABIArgInfo::CoerceAndExpand:
   case ABIArgInfo::InAlloca:
-  case ABIArgInfo::TargetSpecific:
     llvm_unreachable("Unsupported ABI kind for va_arg");
   case ABIArgInfo::Ignore:
     Val = Address(llvm::UndefValue::get(ArgPtrTy), ArgTy, TypeAlign);
@@ -181,10 +180,10 @@ RValue XCoreABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
   // Increment the VAList.
   if (!ArgSize.isZero()) {
     Address APN = Builder.CreateConstInBoundsByteGEP(AP, ArgSize);
-    Builder.CreateStore(APN.emitRawPointer(CGF), VAListAddr);
+    Builder.CreateStore(APN.getPointer(), VAListAddr);
   }
 
-  return CGF.EmitLoadOfAnyValue(CGF.MakeAddrLValue(Val, Ty), Slot);
+  return Val;
 }
 
 /// During the expansion of a RecordType, an incomplete TypeString is placed
@@ -344,7 +343,7 @@ static bool extractFieldType(SmallVectorImpl<FieldEncoding> &FE,
     if (Field->isBitField()) {
       Enc += "b(";
       llvm::raw_svector_ostream OS(Enc);
-      OS << Field->getBitWidthValue();
+      OS << Field->getBitWidthValue(CGM.getContext());
       Enc += ':';
     }
     if (!appendType(Enc, Field->getType(), CGM, TSC))
@@ -615,10 +614,13 @@ static bool appendType(SmallStringEnc &Enc, QualType QType,
   if (const PointerType *PT = QT->getAs<PointerType>())
     return appendPointerType(Enc, PT, CGM, TSC);
 
-  if (const EnumType *ET = QT->getAsCanonical<EnumType>())
+  if (const EnumType *ET = QT->getAs<EnumType>())
     return appendEnumType(Enc, ET, TSC, QT.getBaseTypeIdentifier());
 
-  if (const RecordType *RT = QT->getAsCanonical<RecordType>())
+  if (const RecordType *RT = QT->getAsStructureType())
+    return appendRecordType(Enc, RT, CGM, TSC, QT.getBaseTypeIdentifier());
+
+  if (const RecordType *RT = QT->getAsUnionType())
     return appendRecordType(Enc, RT, CGM, TSC, QT.getBaseTypeIdentifier());
 
   if (const FunctionType *FT = QT->getAs<FunctionType>())

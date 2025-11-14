@@ -19,5 +19,4 @@ void *f(void)
 {
   if (a.a)
     return v;
-  return 0;
 }

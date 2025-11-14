@@ -1,4 +1,4 @@
-//===- BufferizationOps.td - Bufferization op definitions --*- tablegen -*-===//
+//===- BufferizationOps.td - Bufferization op definitions ----------*- tablegen -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -10,14 +10,13 @@
 #define BUFFERIZATION_OPS
 
 include "mlir/Dialect/Bufferization/IR/AllocationOpInterface.td"
-include "mlir/Dialect/Bufferization/IR/BufferViewFlowOpInterface.td"
 include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.td"
-include "mlir/Dialect/Bufferization/IR/BufferizationTypeInterfaces.td"
 include "mlir/Dialect/Bufferization/IR/BufferizationBase.td"
 include "mlir/Interfaces/DestinationStyleOpInterface.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/SubsetOpInterface.td"
+include "mlir/Interfaces/CopyOpInterface.td"
 
 class Bufferization_Op<string mnemonic, list<Trait> traits = []>
     : Op<Bufferization_Dialect, mnemonic, traits>;
@@ -28,8 +27,7 @@ class Bufferization_Op<string mnemonic, list<Trait> traits = []>
 
 def Bufferization_AllocTensorOp : Bufferization_Op<"alloc_tensor",
     [AttrSizedOperandSegments, BufferizableOpInterface,
-     DeclareOpInterfaceMethods<ReifyRankedShapedTypeOpInterface, [
-       "reifyResultShapes"]>]> {
+     DeclareOpInterfaceMethods<ReifyRankedShapedTypeOpInterface>]> {
   let summary = "allocate buffer for a tensor";
 
   let description = [{
@@ -94,8 +92,7 @@ def Bufferization_AllocTensorOp : Bufferization_Op<"alloc_tensor",
 
   let extraClassDeclaration = [{
     LogicalResult bufferize(RewriterBase &rewriter,
-                            const BufferizationOptions &options,
-                            BufferizationState &state);
+                            const BufferizationOptions &options);
 
     bool resultBufferizesToMemoryWrite(OpResult opResult,
                                        const AnalysisState &state);
@@ -111,9 +108,8 @@ def Bufferization_AllocTensorOp : Bufferization_Op<"alloc_tensor",
     AliasingValueList getAliasingValues(
         OpOperand &opOperand, const AnalysisState &state);
 
-    FailureOr<BufferLikeType> getBufferType(
+    FailureOr<BaseMemRefType> getBufferType(
         Value value, const BufferizationOptions &options,
-        const BufferizationState &state,
         SmallVector<Value> &invocationStack);
 
     RankedTensorType getType() {
@@ -132,8 +128,9 @@ def Bufferization_AllocTensorOp : Bufferization_Op<"alloc_tensor",
       assert(!getCopy() && "no dim sizes specified when copying a tensor");
       assert(isDynamicDim(idx) && "expected dynamic size");
       ArrayRef<int64_t> shape = getType().getShape();
-      return std::count_if(shape.begin(), shape.begin() + idx,
-                           ShapedType::isDynamic);
+      return std::count_if(
+          shape.begin(), shape.begin() + idx,
+          [&](int64_t size) { return ShapedType::isDynamic(size); });
     }
 
     // Return the Value of the dynamic size of the tensor at dimension
@@ -171,6 +168,7 @@ def Bufferization_AllocTensorOp : Bufferization_Op<"alloc_tensor",
 //===----------------------------------------------------------------------===//
 
 def Bufferization_CloneOp : Bufferization_Op<"clone", [
+    CopyOpInterface,
     MemoryEffectsOpInterface,
     DeclareOpInterfaceMethods<AllocationOpInterface, ["buildDealloc", "buildClone"]>
   ]> {
@@ -218,10 +216,10 @@ def Bufferization_CloneOp : Bufferization_Op<"clone", [
 
 def Bufferization_MaterializeInDestinationOp
     : Bufferization_Op<"materialize_in_destination",
-        [AllElementTypesMatch<["source", "dest"]>,
+        [AllShapesMatch<["source", "dest"]>,
+         AllElementTypesMatch<["source", "dest"]>,
          BufferizableOpInterface, DestinationStyleOpInterface,
-         DeclareOpInterfaceMethods<ReifyRankedShapedTypeOpInterface, [
-           "reifyResultShapes"]>,
+         DeclareOpInterfaceMethods<ReifyRankedShapedTypeOpInterface>,
          DeclareOpInterfaceMethods<SubsetOpInterface,
             ["operatesOnEquivalentSubset", "operatesOnDisjointSubset"]>,
          DeclareOpInterfaceMethods<SubsetInsertionOpInterface,
@@ -240,9 +238,9 @@ def Bufferization_MaterializeInDestinationOp
     memref, `source` materializes in `dest`, which is already a buffer. The op
     has no results in that case.
 
-    `source`, `dest` and `result` (if present) must have the same runtime shape
-    and element type. If the op has a result, the types of `result` and `dest`
-    must match exactly (e.g., including any tensor encodings).
+    `source`, `dest` and `result` (if present) must have the same shape and
+    element type. If the op has a result, the types of `result` and `dest` must
+    match exactly (e.g., including any tensor encodings).
 
     By default, this op bufferizes to a memcpy from the future buffer of the
     `source` tensor to the future buffer of the `dest` tensor or to the `dest`
@@ -284,8 +282,7 @@ def Bufferization_MaterializeInDestinationOp
 
   let extraClassDeclaration = [{
     LogicalResult bufferize(RewriterBase &rewriter,
-                            const BufferizationOptions &options,
-                            BufferizationState &state);
+                            const BufferizationOptions &options);
 
     bool bufferizesToMemoryRead(OpOperand &opOperand,
                                 const AnalysisState &state);
@@ -378,8 +375,7 @@ def Bufferization_DeallocTensorOp : Bufferization_Op<"dealloc_tensor",
     }
 
     LogicalResult bufferize(RewriterBase &rewriter,
-                            const BufferizationOptions &options,
-                            BufferizationState &state);
+                            const BufferizationOptions &options);
   }];
 }
 
@@ -387,37 +383,28 @@ def Bufferization_DeallocTensorOp : Bufferization_Op<"dealloc_tensor",
 // ToTensorOp
 //===----------------------------------------------------------------------===//
 
-class Bufferization_TensorAndBufferMatch<string tensor, string buffer> : PredOpTrait<
-  "specified tensor and buffer types match",
-  CPred<
-    "::mlir::bufferization::detail::typesMatchAfterBufferization("
-        "$_op, $" # tensor # ", $" # buffer #")"
-  >
->;
-
 def Bufferization_ToTensorOp : Bufferization_Op<"to_tensor", [
     BufferizableOpInterface,
     SameOperandsAndResultShape,
     SameOperandsAndResultElementType,
-    Bufferization_TensorAndBufferMatch<"result", "buffer">
+    TypesMatchWith<"result type matches tensor equivalent of 'memref'",
+                   "memref", "result",
+                   "memref::getTensorTypeFromMemRefType($_self)">
   ]> {
-  let summary = "create a tensor-like type from a buffer-like type";
+  let summary = "create a tensor from a `memref`";
   let description = [{
-    An operation that creates a tensor from a buffer. The result value is a
-    tensor-like type that must match the corresponding buffer-like operand as
-    per TensorLikeType::verifyCompatibleBufferType(). For builtins (TensorType
-    and BaseMemRefType), this means that shapes and element types match between
-    the tensor and the buffer.
+    An operation that creates a tensor from a `memref`. The result value is a
+    tensor whose shape and element type match the memref operand.
 
-    The opposite of this op is `to_buffer`. Together, these two ops are
+    The opposite of this op is `to_memref`. Together, these two ops are
     useful for source/target materializations when doing type conversions
-    involving tensors and buffers.
+    involving tensors and memrefs.
 
     Example:
 
     ```mlir
     // Produces a value of tensor<4x?xf32> type.
-    %t = bufferization.to_tensor %m : memref<4x?xf32, #layout, 0> to tensor<4x?xf32>
+    %t = bufferization.to_tensor %m : memref<4x?xf32, #layout, 0>
     ```
 
     If the `writable` unit attribute is set, the produced tensor is considered
@@ -440,7 +427,7 @@ def Bufferization_ToTensorOp : Bufferization_Op<"to_tensor", [
     Example:
 
     ```
-    %t = bufferization.to_tensor %m restrict writable : memref<4xf32> to tensor<4xf32>
+    %t = bufferization.to_tensor %m restrict writable : memref<4xf32>
 
     // %t is writable, so the tensor.insert may bufferize in-place in the
     // absence of other conflicts.
@@ -453,16 +440,19 @@ def Bufferization_ToTensorOp : Bufferization_Op<"to_tensor", [
     away. However, such IR is no longer bufferizable with One-Shot Bufferize.
   }];
 
-  let arguments = (ins Arg<Bufferization_BufferLikeTypeInterface,
+  let arguments = (ins Arg<AnyRankedOrUnrankedMemRef,
                            "the reference to load from",
-                           [MemReadAt<0, FullEffect>]>:$buffer,
+                           [MemReadAt<0, FullEffect>]>:$memref,
                        UnitAttr:$restrict, UnitAttr:$writable);
-  let results = (outs Bufferization_TensorLikeTypeInterface:$result);
+  let results = (outs AnyTensor:$result);
 
   let extraClassDeclaration = [{
     /// The result of a to_tensor is always a tensor.
-    ::mlir::bufferization::TensorLikeType getType() {
-      return getResult().getType();
+    TensorType getType() {
+      Type resultType = getResult().getType();
+      if (::llvm::isa<TensorType>(resultType))
+        return ::llvm::cast<TensorType>(resultType);
+      return {};
     }
 
     //===------------------------------------------------------------------===//
@@ -470,24 +460,23 @@ def Bufferization_ToTensorOp : Bufferization_Op<"to_tensor", [
     //===------------------------------------------------------------------===//
 
     LogicalResult bufferize(RewriterBase &rewriter,
-                            const BufferizationOptions &options,
-                            BufferizationState &state) const {
-      // to_tensor/to_buffer pairs fold away after bufferization.
+                            const BufferizationOptions &options) const {
+      // to_tensor/to_memref pairs fold away after bufferization.
       return success();
     }
 
     bool isWritable(Value value, const AnalysisState &state);
 
-    FailureOr<BufferLikeType> getBufferType(
+    FailureOr<BaseMemRefType> getBufferType(
         Value value, const BufferizationOptions &options,
-        const BufferizationState &state, SmallVector<Value> &invocationStack) {
-      return getBuffer().getType();
+        SmallVector<Value> &invocationStack) {
+      return ::llvm::cast<BaseMemRefType>(getMemref().getType());
     }
   }];
 
   let assemblyFormat = [{
-    $buffer (`restrict` $restrict^)? (`writable` $writable^)? attr-dict
-      `:` type($buffer) `to` type($result)
+    $memref (`restrict` $restrict^)? (`writable` $writable^)? attr-dict
+      `:` type($memref)
   }];
 
   let hasCanonicalizer = 1;
@@ -496,23 +485,25 @@ def Bufferization_ToTensorOp : Bufferization_Op<"to_tensor", [
 
 
 //===----------------------------------------------------------------------===//
-// ToBufferOp
+// ToMemrefOp
 //===----------------------------------------------------------------------===//
 
-def Bufferization_ToBufferOp : Bufferization_Op<"to_buffer", [
+def Bufferization_ToMemrefOp : Bufferization_Op<"to_memref", [
     BufferizableOpInterface,
     SameOperandsAndResultShape,
     SameOperandsAndResultElementType,
     Pure,
-    Bufferization_TensorAndBufferMatch<"tensor", "buffer">
+    TypesMatchWith<"type of 'tensor' is the tensor equivalent of 'memref'",
+                   "memref", "tensor",
+                   "memref::getTensorTypeFromMemRefType($_self)">
   ]> {
-  let summary = "cast a tensor-like type to buffer-like type";
+  let summary = "cast a tensor to memref";
   let description = [{
     An operation that returns the future buffer of a `tensor`.
 
     ```mlir
     // Result type is memref<4x?xf32, #layout, 0>
-    %m = bufferization.to_buffer %t : tensor<4x?xf32> to memref<4x?xf32, #layout, 0>
+    %m = bufferization.to_memref %t : memref<4x?xf32, #layout, 0>
     ```
 
     This operation is a specialized variant of the built-in
@@ -524,15 +515,15 @@ def Bufferization_ToBufferOp : Bufferization_Op<"to_buffer", [
     the returned buffer) will not be written to.
   }];
 
-  let arguments = (ins Bufferization_TensorLikeTypeInterface:$tensor, UnitAttr:$read_only);
-  let results = (outs Bufferization_BufferLikeTypeInterface:$buffer);
+  let arguments = (ins AnyTensor:$tensor, UnitAttr:$read_only);
+  let results = (outs AnyRankedOrUnrankedMemRef:$memref);
 
   let extraClassDeclaration = [{
     //===------------------------------------------------------------------===//
     // BufferizableOpInterface implementation
     //===------------------------------------------------------------------===//
 
-    // Note: ToBufferOp / ToTensorOp are temporary ops that are inserted at the
+    // Note: ToMemrefOp / ToTensorOp are temporary ops that are inserted at the
     // bufferization boundary. When One-Shot bufferization is complete, there
     // should be no such ops left over. If `allowUnknownOps` (or after running a
     // partial bufferization pass), such ops may be part of the resulting IR,
@@ -555,12 +546,11 @@ def Bufferization_ToBufferOp : Bufferization_Op<"to_buffer", [
     }
 
     LogicalResult bufferize(RewriterBase &rewriter,
-                            const BufferizationOptions &options,
-                            BufferizationState &state);
+                            const BufferizationOptions &options);
   }];
 
   let assemblyFormat = [{
-    $tensor (`read_only` $read_only^)? attr-dict `:` type($tensor) `to` type($buffer)
+    $tensor (`read_only` $read_only^)? attr-dict `:` type($memref)
   }];
 
   let hasFolder = 1;
@@ -612,7 +602,7 @@ def Bufferization_DeallocOp : Bufferization_Op<"dealloc", [
     ```
     Deallocation will be called on `%a0` if `%cond0` is 'true' and neither
     `%r0`, `%r1`, or `%r2` are aliases of `%a0`. `%a1` will be deallocated when
-    `%cond1` is set to 'true' and none of `%r0`, `%r1`, `%r2`, and `%a0` are
+    `%cond1` is set to 'true' and none of `%r0`, %r1`, `%r2`, and `%a0` are
     aliases.
 
     Note that this can be an expensive operation if there are many operands that

@@ -76,19 +76,19 @@ public:
   // This gets passed the short option as an integer...
   void OptionSeen(int short_option);
 
-  llvm::Error VerifyOptions();
+  bool VerifyOptions(CommandReturnObject &result);
 
   // Verify that the options given are in the options table and can be used
   // together, but there may be some required options that are missing (used to
   // verify options that get folded into command aliases).
-  llvm::Error VerifyPartialOptions();
+  bool VerifyPartialOptions(CommandReturnObject &result);
 
   void OutputFormattedUsageText(Stream &strm,
                                 const OptionDefinition &option_def,
-                                uint32_t output_max_columns, bool use_color);
+                                uint32_t output_max_columns);
 
   void GenerateOptionUsage(Stream &strm, CommandObject &cmd,
-                           uint32_t screen_width, bool use_color);
+                           uint32_t screen_width);
 
   bool SupportsLongOption(const char *long_option);
 
@@ -335,41 +335,6 @@ public:
   OptionInfos m_option_infos;
   bool m_did_finalize = false;
 };
-
-/// Creates an error that represents the failure to parse an command line option
-/// argument. This creates an error containing all information needed to show
-/// the developer what went wrong when parsing their command. It is recommended
-/// to use this instead of writing an error by hand.
-///
-/// \param[in] option_arg
-///   The argument that was attempted to be parsed.
-///
-/// \param[in] short_option
-///   The short form of the option. For example, if the flag is -f, the short
-///   option is "f".
-///
-/// \param[in] long_option
-///   The long form of the option. This field is optional. If the flag is
-///   --force, then the long option is "force".
-///
-/// \param[in] additional_context
-///   This is extra context that will get included in the error. This field is
-///   optional.
-///
-/// \return
-///   An llvm::Error that contains a standardized format for what went wrong
-///   when parsing and why.
-llvm::Error CreateOptionParsingError(llvm::StringRef option_arg,
-                                     const char short_option,
-                                     llvm::StringRef long_option = {},
-                                     llvm::StringRef additional_context = {});
-
-static constexpr llvm::StringLiteral g_bool_parsing_error_message =
-    "Failed to parse as boolean";
-static constexpr llvm::StringLiteral g_int_parsing_error_message =
-    "Failed to parse as integer";
-static constexpr llvm::StringLiteral g_language_parsing_error_message =
-    "Unknown language";
 
 } // namespace lldb_private
 

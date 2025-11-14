@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- AvoidUnconditionalPreprocessorIfCheck.cpp - clang-tidy -----------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -40,7 +40,7 @@ struct AvoidUnconditionalPreprocessorIfPPCallbacks : public PPCallbacks {
 
   bool isImmutable(SourceManager &SM, const LangOptions &LangOpts,
                    SourceRange ConditionRange) {
-    const SourceLocation Loc = ConditionRange.getBegin();
+    SourceLocation Loc = ConditionRange.getBegin();
     if (Loc.isMacroID())
       return false;
 
@@ -84,8 +84,7 @@ struct AvoidUnconditionalPreprocessorIfPPCallbacks : public PPCallbacks {
       return (Tok.getRawIdentifier() == "true" ||
               Tok.getRawIdentifier() == "false");
     default:
-      return Tok.getKind() >= tok::l_square &&
-             Tok.getKind() <= tok::greatergreatergreater;
+      return Tok.getKind() >= tok::l_square && Tok.getKind() <= tok::caretcaret;
     }
   }
 

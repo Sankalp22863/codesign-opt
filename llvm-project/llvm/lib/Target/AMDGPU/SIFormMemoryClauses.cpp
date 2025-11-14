@@ -14,7 +14,6 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "SIFormMemoryClauses.h"
 #include "AMDGPU.h"
 #include "GCNRegPressure.h"
 #include "SIMachineFunctionInfo.h"
@@ -32,9 +31,35 @@ MaxClause("amdgpu-max-memory-clause", cl::Hidden, cl::init(15),
 
 namespace {
 
-class SIFormMemoryClausesImpl {
-  using RegUse = DenseMap<unsigned, std::pair<unsigned, LaneBitmask>>;
+class SIFormMemoryClauses : public MachineFunctionPass {
+  typedef DenseMap<unsigned, std::pair<unsigned, LaneBitmask>> RegUse;
 
+public:
+  static char ID;
+
+public:
+  SIFormMemoryClauses() : MachineFunctionPass(ID) {
+    initializeSIFormMemoryClausesPass(*PassRegistry::getPassRegistry());
+  }
+
+  bool runOnMachineFunction(MachineFunction &MF) override;
+
+  StringRef getPassName() const override {
+    return "SI Form memory clauses";
+  }
+
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.addRequired<LiveIntervals>();
+    AU.setPreservesAll();
+    MachineFunctionPass::getAnalysisUsage(AU);
+  }
+
+  MachineFunctionProperties getClearedProperties() const override {
+    return MachineFunctionProperties().set(
+        MachineFunctionProperties::Property::IsSSA);
+  }
+
+private:
   bool canBundle(const MachineInstr &MI, const RegUse &Defs,
                  const RegUse &Uses) const;
   bool checkPressure(const MachineInstr &MI, GCNDownwardRPTracker &RPT);
@@ -46,60 +71,31 @@ class SIFormMemoryClausesImpl {
   const SIRegisterInfo *TRI;
   const MachineRegisterInfo *MRI;
   SIMachineFunctionInfo *MFI;
-  LiveIntervals *LIS;
 
   unsigned LastRecordedOccupancy;
   unsigned MaxVGPRs;
   unsigned MaxSGPRs;
-
-public:
-  SIFormMemoryClausesImpl(LiveIntervals *LS) : LIS(LS) {}
-  bool run(MachineFunction &MF);
-};
-
-class SIFormMemoryClausesLegacy : public MachineFunctionPass {
-public:
-  static char ID;
-
-  SIFormMemoryClausesLegacy() : MachineFunctionPass(ID) {
-    initializeSIFormMemoryClausesLegacyPass(*PassRegistry::getPassRegistry());
-  }
-
-  bool runOnMachineFunction(MachineFunction &MF) override;
-
-  StringRef getPassName() const override {
-    return "SI Form memory clauses";
-  }
-
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
-    AU.addRequired<LiveIntervalsWrapperPass>();
-    AU.setPreservesAll();
-    MachineFunctionPass::getAnalysisUsage(AU);
-  }
-
-  MachineFunctionProperties getClearedProperties() const override {
-    return MachineFunctionProperties().setIsSSA();
-  }
 };
 
 } // End anonymous namespace.
 
-INITIALIZE_PASS_BEGIN(SIFormMemoryClausesLegacy, DEBUG_TYPE,
+INITIALIZE_PASS_BEGIN(SIFormMemoryClauses, DEBUG_TYPE,
                       "SI Form memory clauses", false, false)
-INITIALIZE_PASS_DEPENDENCY(LiveIntervalsWrapperPass)
-INITIALIZE_PASS_END(SIFormMemoryClausesLegacy, DEBUG_TYPE,
+INITIALIZE_PASS_DEPENDENCY(LiveIntervals)
+INITIALIZE_PASS_END(SIFormMemoryClauses, DEBUG_TYPE,
                     "SI Form memory clauses", false, false)
 
-char SIFormMemoryClausesLegacy::ID = 0;
 
-char &llvm::SIFormMemoryClausesID = SIFormMemoryClausesLegacy::ID;
+char SIFormMemoryClauses::ID = 0;
 
-FunctionPass *llvm::createSIFormMemoryClausesLegacyPass() {
-  return new SIFormMemoryClausesLegacy();
+char &llvm::SIFormMemoryClausesID = SIFormMemoryClauses::ID;
+
+FunctionPass *llvm::createSIFormMemoryClausesPass() {
+  return new SIFormMemoryClauses();
 }
 
 static bool isVMEMClauseInst(const MachineInstr &MI) {
-  return SIInstrInfo::isVMEM(MI);
+  return SIInstrInfo::isFLAT(MI) || SIInstrInfo::isVMEM(MI);
 }
 
 static bool isSMEMClauseInst(const MachineInstr &MI) {
@@ -151,9 +147,8 @@ static unsigned getMopState(const MachineOperand &MO) {
 
 // Returns false if there is a use of a def already in the map.
 // In this case we must break the clause.
-bool SIFormMemoryClausesImpl::canBundle(const MachineInstr &MI,
-                                        const RegUse &Defs,
-                                        const RegUse &Uses) const {
+bool SIFormMemoryClauses::canBundle(const MachineInstr &MI, const RegUse &Defs,
+                                    const RegUse &Uses) const {
   // Check interference with defs.
   for (const MachineOperand &MO : MI.operands()) {
     // TODO: Prologue/Epilogue Insertion pass does not process bundled
@@ -189,17 +184,15 @@ bool SIFormMemoryClausesImpl::canBundle(const MachineInstr &MI,
 // Since all defs in the clause are early clobber we can run out of registers.
 // Function returns false if pressure would hit the limit if instruction is
 // bundled into a memory clause.
-bool SIFormMemoryClausesImpl::checkPressure(const MachineInstr &MI,
-                                            GCNDownwardRPTracker &RPT) {
+bool SIFormMemoryClauses::checkPressure(const MachineInstr &MI,
+                                        GCNDownwardRPTracker &RPT) {
   // NB: skip advanceBeforeNext() call. Since all defs will be marked
   // early-clobber they will all stay alive at least to the end of the
   // clause. Therefor we should not decrease pressure even if load
   // pointer becomes dead and could otherwise be reused for destination.
   RPT.advanceToNext();
   GCNRegPressure MaxPressure = RPT.moveMaxPressure();
-  unsigned Occupancy = MaxPressure.getOccupancy(
-      *ST,
-      MI.getMF()->getInfo<SIMachineFunctionInfo>()->getDynamicVGPRBlockSize());
+  unsigned Occupancy = MaxPressure.getOccupancy(*ST);
 
   // Don't push over half the register budget. We don't want to introduce
   // spilling just to form a soft clause.
@@ -220,8 +213,8 @@ bool SIFormMemoryClausesImpl::checkPressure(const MachineInstr &MI,
 }
 
 // Collect register defs and uses along with their lane masks and states.
-void SIFormMemoryClausesImpl::collectRegUses(const MachineInstr &MI,
-                                             RegUse &Defs, RegUse &Uses) const {
+void SIFormMemoryClauses::collectRegUses(const MachineInstr &MI,
+                                         RegUse &Defs, RegUse &Uses) const {
   for (const MachineOperand &MO : MI.operands()) {
     if (!MO.isReg())
       continue;
@@ -234,9 +227,11 @@ void SIFormMemoryClausesImpl::collectRegUses(const MachineInstr &MI,
                            : LaneBitmask::getAll();
     RegUse &Map = MO.isDef() ? Defs : Uses;
 
+    auto Loc = Map.find(Reg);
     unsigned State = getMopState(MO);
-    auto [Loc, Inserted] = Map.try_emplace(Reg, State, Mask);
-    if (!Inserted) {
+    if (Loc == Map.end()) {
+      Map[Reg] = std::pair(State, Mask);
+    } else {
       Loc->second.first |= State;
       Loc->second.second |= Mask;
     }
@@ -246,9 +241,9 @@ void SIFormMemoryClausesImpl::collectRegUses(const MachineInstr &MI,
 // Check register def/use conflicts, occupancy limits and collect def/use maps.
 // Return true if instruction can be bundled with previous. If it cannot
 // def/use maps are not updated.
-bool SIFormMemoryClausesImpl::processRegUses(const MachineInstr &MI,
-                                             RegUse &Defs, RegUse &Uses,
-                                             GCNDownwardRPTracker &RPT) {
+bool SIFormMemoryClauses::processRegUses(const MachineInstr &MI,
+                                         RegUse &Defs, RegUse &Uses,
+                                         GCNDownwardRPTracker &RPT) {
   if (!canBundle(MI, Defs, Uses))
     return false;
 
@@ -259,7 +254,10 @@ bool SIFormMemoryClausesImpl::processRegUses(const MachineInstr &MI,
   return true;
 }
 
-bool SIFormMemoryClausesImpl::run(MachineFunction &MF) {
+bool SIFormMemoryClauses::runOnMachineFunction(MachineFunction &MF) {
+  if (skipFunction(MF.getFunction()))
+    return false;
+
   ST = &MF.getSubtarget<GCNSubtarget>();
   if (!ST->isXNACKEnabled())
     return false;
@@ -268,6 +266,7 @@ bool SIFormMemoryClausesImpl::run(MachineFunction &MF) {
   TRI = ST->getRegisterInfo();
   MRI = &MF.getRegInfo();
   MFI = MF.getInfo<SIMachineFunctionInfo>();
+  LiveIntervals *LIS = &getAnalysis<LiveIntervals>();
   SlotIndexes *Ind = LIS->getSlotIndexes();
   bool Changed = false;
 
@@ -369,7 +368,7 @@ bool SIFormMemoryClausesImpl::run(MachineFunction &MF) {
 
           SmallVector<unsigned> KilledIndexes;
           bool Success = TRI->getCoveringSubRegIndexes(
-              MRI->getRegClass(Reg), KilledMask, KilledIndexes);
+              *MRI, MRI->getRegClass(Reg), KilledMask, KilledIndexes);
           (void)Success;
           assert(Success && "Failed to find subregister mask to cover lanes");
           for (unsigned SubReg : KilledIndexes) {
@@ -418,20 +417,4 @@ bool SIFormMemoryClausesImpl::run(MachineFunction &MF) {
   }
 
   return Changed;
-}
-
-bool SIFormMemoryClausesLegacy::runOnMachineFunction(MachineFunction &MF) {
-  if (skipFunction(MF.getFunction()))
-    return false;
-
-  LiveIntervals *LIS = &getAnalysis<LiveIntervalsWrapperPass>().getLIS();
-  return SIFormMemoryClausesImpl(LIS).run(MF);
-}
-
-PreservedAnalyses
-SIFormMemoryClausesPass::run(MachineFunction &MF,
-                             MachineFunctionAnalysisManager &MFAM) {
-  LiveIntervals &LIS = MFAM.getResult<LiveIntervalsAnalysis>(MF);
-  SIFormMemoryClausesImpl(&LIS).run(MF);
-  return PreservedAnalyses::all();
 }

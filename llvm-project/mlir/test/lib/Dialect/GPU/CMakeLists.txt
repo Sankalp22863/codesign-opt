@@ -29,8 +29,6 @@ set(LIBS
   MLIRTranslateLib
   MLIRVectorDialect
   MLIRVectorToLLVMPass
-  MLIRXeVMDialect
-  MLIRXeVMToLLVMIRTranslation
   )
 
 add_mlir_library(MLIRGPUTestPasses
@@ -38,8 +36,8 @@ add_mlir_library(MLIRGPUTestPasses
   TestGpuRewrite.cpp
 
   EXCLUDE_FROM_LIBMLIR
-  )
-mlir_target_link_libraries(MLIRGPUTestPasses PUBLIC
+
+  LINK_LIBS PUBLIC
   ${LIBS}
   )
 

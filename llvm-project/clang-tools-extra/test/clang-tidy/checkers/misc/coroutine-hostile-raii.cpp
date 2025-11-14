@@ -1,8 +1,7 @@
 // RUN: %check_clang_tidy -std=c++20 %s misc-coroutine-hostile-raii %t \
 // RUN:   -config="{CheckOptions: {\
 // RUN:             misc-coroutine-hostile-raii.RAIITypesList: 'my::Mutex; ::my::other::Mutex', \
-// RUN:             misc-coroutine-hostile-raii.AllowedAwaitablesList: 'safe::awaitable; ::transformable::awaitable', \
-// RUN:             misc-coroutine-hostile-raii.AllowedCallees: 'safe::AwaitFunc; ::safe::Obj::AwaitMethod' \
+// RUN:             misc-coroutine-hostile-raii.AllowedAwaitablesList: 'safe::awaitable; ::transformable::awaitable' \
 // RUN:             }}"
 
 namespace std {
@@ -146,18 +145,12 @@ namespace safe {
   void await_suspend(std::coroutine_handle<>) noexcept {}
   void await_resume() noexcept {}
 };
-  std::suspend_always AwaitFunc();
-  struct Obj {
-    std::suspend_always AwaitMethod();
-  };
 } // namespace safe
 ReturnObject RAIISafeSuspendTest() {
   absl::Mutex a;
   co_await safe::awaitable{};
   using other = safe::awaitable;
   co_await other{};
-  co_await safe::AwaitFunc();
-  co_await safe::Obj().AwaitMethod();
 } 
 
 // ================================================================================

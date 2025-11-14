@@ -1,5 +1,4 @@
 //===----------------------------------------------------------------------===//
-//
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
@@ -24,8 +23,6 @@ void format_tests(TestFunction check, ExceptionTest check_exception) {
   /***** Test the type specific part *****/
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
   check(SV("0"), SV("{}"), input);
-  check(SV("0^42"), SV("{}^42"), input);
-  check(SV("0^42"), SV("{:}^42"), input);
 
   // *** align-fill & width ***
   check(SV("    0"), SV("{:5}"), input);
@@ -39,8 +36,6 @@ void format_tests(TestFunction check, ExceptionTest check_exception) {
   check(SV("####0"), SV("{:#>{}}"), input, 5);
 #else  // !defined(__APPLE__) && !defined(__FreeBSD__)
   check(SV("0x0"), SV("{}"), input);
-  check(SV("0x0^42"), SV("{}^42"), input);
-  check(SV("0x0^42"), SV("{:}^42"), input);
 
   // *** align-fill & width ***
   check(SV("    0x0"), SV("{:7}"), input);
@@ -55,7 +50,7 @@ void format_tests(TestFunction check, ExceptionTest check_exception) {
 #endif // !defined(__APPLE__) && !defined(__FreeBSD__)
 
   /***** Test the type generic part *****/
-  check_exception("The format string contains an invalid escape sequence", SV("{:}<}"), input);
+  check_exception("The fill option contains an invalid value", SV("{:}<}"), input);
   check_exception("The fill option contains an invalid value", SV("{:{<}"), input);
 
   // *** sign ***

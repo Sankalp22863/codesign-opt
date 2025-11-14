@@ -20,7 +20,6 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "llvm/CodeGen/FixupStatepointCallerSaved.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -59,18 +58,14 @@ static cl::opt<unsigned> MaxStatepointsWithRegs(
 
 namespace {
 
-struct FixupStatepointCallerSavedImpl {
-  bool run(MachineFunction &MF);
-};
-
-class FixupStatepointCallerSavedLegacy : public MachineFunctionPass {
+class FixupStatepointCallerSaved : public MachineFunctionPass {
 public:
   static char ID;
 
-  FixupStatepointCallerSavedLegacy() : MachineFunctionPass(ID) {
-    initializeFixupStatepointCallerSavedLegacyPass(
-        *PassRegistry::getPassRegistry());
+  FixupStatepointCallerSaved() : MachineFunctionPass(ID) {
+    initializeFixupStatepointCallerSavedPass(*PassRegistry::getPassRegistry());
   }
+
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
     MachineFunctionPass::getAnalysisUsage(AU);
@@ -85,12 +80,12 @@ public:
 
 } // End anonymous namespace.
 
-char FixupStatepointCallerSavedLegacy::ID = 0;
-char &llvm::FixupStatepointCallerSavedID = FixupStatepointCallerSavedLegacy::ID;
+char FixupStatepointCallerSaved::ID = 0;
+char &llvm::FixupStatepointCallerSavedID = FixupStatepointCallerSaved::ID;
 
-INITIALIZE_PASS_BEGIN(FixupStatepointCallerSavedLegacy, DEBUG_TYPE,
+INITIALIZE_PASS_BEGIN(FixupStatepointCallerSaved, DEBUG_TYPE,
                       "Fixup Statepoint Caller Saved", false, false)
-INITIALIZE_PASS_END(FixupStatepointCallerSavedLegacy, DEBUG_TYPE,
+INITIALIZE_PASS_END(FixupStatepointCallerSaved, DEBUG_TYPE,
                     "Fixup Statepoint Caller Saved", false, false)
 
 // Utility function to get size of the register.
@@ -117,7 +112,7 @@ static Register performCopyPropagation(Register Reg,
                                        bool &IsKill, const TargetInstrInfo &TII,
                                        const TargetRegisterInfo &TRI) {
   // First check if statepoint itself uses Reg in non-meta operands.
-  int Idx = RI->findRegisterUseOperandIdx(Reg, &TRI, false);
+  int Idx = RI->findRegisterUseOperandIdx(Reg, false, &TRI);
   if (Idx >= 0 && (unsigned)Idx < StatepointOpers(&*RI).getNumDeoptArgsIdx()) {
     IsKill = false;
     return Reg;
@@ -184,11 +179,18 @@ class RegReloadCache {
 public:
   RegReloadCache() = default;
 
-  // Record reload of Reg from FI in block MBB if not present yet.
-  // Return true if the reload is successfully recorded.
-  bool tryRecordReload(Register Reg, int FI, const MachineBasicBlock *MBB) {
+  // Record reload of Reg from FI in block MBB
+  void recordReload(Register Reg, int FI, const MachineBasicBlock *MBB) {
     RegSlotPair RSP(Reg, FI);
-    return Reloads[MBB].insert(RSP).second;
+    auto Res = Reloads[MBB].insert(RSP);
+    (void)Res;
+    assert(Res.second && "reload already exists");
+  }
+
+  // Does basic block MBB contains reload of Reg from FI?
+  bool hasReload(Register Reg, int FI, const MachineBasicBlock *MBB) {
+    RegSlotPair RSP(Reg, FI);
+    return Reloads.count(MBB) && Reloads[MBB].count(RSP);
   }
 };
 
@@ -240,9 +242,9 @@ public:
       It.second.Index = 0;
 
     ReservedSlots.clear();
-    if (EHPad)
-      if (auto It = GlobalIndices.find(EHPad); It != GlobalIndices.end())
-        ReservedSlots.insert_range(llvm::make_second_range(It->second));
+    if (EHPad && GlobalIndices.count(EHPad))
+      for (auto &RSP : GlobalIndices[EHPad])
+        ReservedSlots.insert(RSP.second);
   }
 
   // Get frame index to spill the register.
@@ -362,9 +364,7 @@ public:
   MachineBasicBlock *getEHPad() const { return EHPad; }
 
   // Return true if register is callee saved.
-  bool isCalleeSaved(Register Reg) {
-    return (Mask[Reg.id() / 32] >> (Reg.id() % 32)) & 1;
-  }
+  bool isCalleeSaved(Register Reg) { return (Mask[Reg / 32] >> Reg % 32) & 1; }
 
   // Iterates over statepoint meta args to find caller saver registers.
   // Also cache the size of found registers.
@@ -381,6 +381,8 @@ public:
                   EndIdx = MI.getNumOperands();
          Idx < EndIdx; ++Idx) {
       MachineOperand &MO = MI.getOperand(Idx);
+      // Leave `undef` operands as is, StackMaps will rewrite them
+      // into a constant.
       if (!MO.isReg() || MO.isImplicit() || MO.isUndef())
         continue;
       Register Reg = MO.getReg();
@@ -420,16 +422,16 @@ public:
 
       LLVM_DEBUG(dbgs() << "Insert spill before " << *InsertBefore);
       TII.storeRegToStackSlot(*MI.getParent(), InsertBefore, Reg, IsKill, FI,
-                              RC, Register());
+                              RC, &TRI, Register());
     }
   }
 
-  void insertReloadBefore(Register Reg, MachineBasicBlock::iterator It,
+  void insertReloadBefore(unsigned Reg, MachineBasicBlock::iterator It,
                           MachineBasicBlock *MBB) {
     const TargetRegisterClass *RC = TRI.getMinimalPhysRegClass(Reg);
     int FI = RegToSlotIdx[Reg];
     if (It != MBB->end()) {
-      TII.loadRegFromStackSlot(*MBB, It, Reg, FI, RC, Register());
+      TII.loadRegFromStackSlot(*MBB, It, Reg, FI, RC, &TRI, Register());
       return;
     }
 
@@ -437,7 +439,7 @@ public:
     // and then swap them.
     assert(!MBB->empty() && "Empty block");
     --It;
-    TII.loadRegFromStackSlot(*MBB, It, Reg, FI, RC, Register());
+    TII.loadRegFromStackSlot(*MBB, It, Reg, FI, RC, &TRI, Register());
     MachineInstr *Reload = It->getPrevNode();
     int Dummy = 0;
     (void)Dummy;
@@ -457,7 +459,8 @@ public:
       LLVM_DEBUG(dbgs() << "Reloading " << printReg(Reg, &TRI) << " from FI "
                         << RegToSlotIdx[Reg] << " after statepoint\n");
 
-      if (EHPad && RC.tryRecordReload(Reg, RegToSlotIdx[Reg], EHPad)) {
+      if (EHPad && !RC.hasReload(Reg, RegToSlotIdx[Reg], EHPad)) {
+        RC.recordReload(Reg, RegToSlotIdx[Reg], EHPad);
         auto EHPadInsertPoint =
             EHPad->SkipPHIsLabelsAndDebug(EHPad->begin(), Reg);
         insertReloadBefore(Reg, EHPadInsertPoint, EHPad);
@@ -594,7 +597,10 @@ public:
 };
 } // namespace
 
-bool FixupStatepointCallerSavedImpl::run(MachineFunction &MF) {
+bool FixupStatepointCallerSaved::runOnMachineFunction(MachineFunction &MF) {
+  if (skipFunction(MF.getFunction()))
+    return false;
+
   const Function &F = MF.getFunction();
   if (!F.hasGC())
     return false;
@@ -620,24 +626,4 @@ bool FixupStatepointCallerSavedImpl::run(MachineFunction &MF) {
     Changed |= SPP.process(*I, AllowGCPtrInCSR);
   }
   return Changed;
-}
-
-bool FixupStatepointCallerSavedLegacy::runOnMachineFunction(
-    MachineFunction &MF) {
-  if (skipFunction(MF.getFunction()))
-    return false;
-
-  return FixupStatepointCallerSavedImpl().run(MF);
-}
-
-PreservedAnalyses
-FixupStatepointCallerSavedPass::run(MachineFunction &MF,
-                                    MachineFunctionAnalysisManager &MFAM) {
-
-  if (!FixupStatepointCallerSavedImpl().run(MF))
-    return PreservedAnalyses::all();
-
-  auto PA = getMachineFunctionPassPreservedAnalyses();
-  PA.preserveSet<CFGAnalyses>();
-  return PA;
 }

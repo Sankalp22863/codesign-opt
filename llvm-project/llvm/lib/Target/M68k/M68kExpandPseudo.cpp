@@ -53,7 +53,8 @@ public:
   bool runOnMachineFunction(MachineFunction &Fn) override;
 
   MachineFunctionProperties getRequiredProperties() const override {
-    return MachineFunctionProperties().setNoVRegs();
+    return MachineFunctionProperties().set(
+        MachineFunctionProperties::Property::NoVRegs);
   }
 
 private:
@@ -78,13 +79,6 @@ bool M68kExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
   switch (Opcode) {
   default:
     return false;
-
-  case M68k::MOVI8di:
-    return TII->ExpandMOVI(MIB, MVT::i8);
-  case M68k::MOVI16ri:
-    return TII->ExpandMOVI(MIB, MVT::i16);
-  case M68k::MOVI32ri:
-    return TII->ExpandMOVI(MIB, MVT::i32);
 
   case M68k::MOVXd16d8:
     return TII->ExpandMOVX_RR(MIB, MVT::i16, MVT::i8);
@@ -192,23 +186,31 @@ bool M68kExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
   case M68k::MOV8dc:
     return TII->ExpandCCR(MIB, /*IsToCCR=*/false);
 
+  case M68k::MOVM8jm_P:
+    return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM32jm), /*IsRM=*/false);
   case M68k::MOVM16jm_P:
-    return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM16jm), /*IsRM=*/false);
+    return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM32jm), /*IsRM=*/false);
   case M68k::MOVM32jm_P:
     return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM32jm), /*IsRM=*/false);
 
+  case M68k::MOVM8pm_P:
+    return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM32pm), /*IsRM=*/false);
   case M68k::MOVM16pm_P:
-    return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM16pm), /*IsRM=*/false);
+    return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM32pm), /*IsRM=*/false);
   case M68k::MOVM32pm_P:
     return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM32pm), /*IsRM=*/false);
 
+  case M68k::MOVM8mj_P:
+    return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM32mj), /*IsRM=*/true);
   case M68k::MOVM16mj_P:
-    return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM16mj), /*IsRM=*/true);
+    return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM32mj), /*IsRM=*/true);
   case M68k::MOVM32mj_P:
     return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM32mj), /*IsRM=*/true);
 
+  case M68k::MOVM8mp_P:
+    return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM32mp), /*IsRM=*/true);
   case M68k::MOVM16mp_P:
-    return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM16mp), /*IsRM=*/true);
+    return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM32mp), /*IsRM=*/true);
   case M68k::MOVM32mp_P:
     return TII->ExpandMOVEM(MIB, TII->get(M68k::MOVM32mp), /*IsRM=*/true);
 

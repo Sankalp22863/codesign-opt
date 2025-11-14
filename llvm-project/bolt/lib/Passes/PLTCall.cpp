@@ -22,28 +22,34 @@ namespace opts {
 
 extern cl::OptionCategory BoltOptCategory;
 
-static cl::opt<bolt::PLTCall::OptType>
-    PLT("plt", cl::desc("optimize PLT calls (requires linking with -znow)"),
-        cl::init(bolt::PLTCall::OT_NONE),
-        cl::values(clEnumValN(bolt::PLTCall::OT_NONE, "none",
-                              "do not optimize PLT calls"),
-                   clEnumValN(bolt::PLTCall::OT_HOT, "hot",
-                              "optimize executed (hot) PLT calls"),
-                   clEnumValN(bolt::PLTCall::OT_ALL, "all",
-                              "optimize all PLT calls")),
-        cl::ZeroOrMore, cl::cat(BoltOptCategory));
+cl::opt<bolt::PLTCall::OptType>
+PLT("plt",
+  cl::desc("optimize PLT calls (requires linking with -znow)"),
+  cl::init(bolt::PLTCall::OT_NONE),
+  cl::values(clEnumValN(bolt::PLTCall::OT_NONE,
+      "none",
+      "do not optimize PLT calls"),
+    clEnumValN(bolt::PLTCall::OT_HOT,
+      "hot",
+      "optimize executed (hot) PLT calls"),
+    clEnumValN(bolt::PLTCall::OT_ALL,
+      "all",
+      "optimize all PLT calls")),
+  cl::ZeroOrMore,
+  cl::cat(BoltOptCategory));
+
 }
 
 namespace llvm {
 namespace bolt {
 
-Error PLTCall::runOnFunctions(BinaryContext &BC) {
+void PLTCall::runOnFunctions(BinaryContext &BC) {
   if (opts::PLT == OT_NONE)
-    return Error::success();
+    return;
 
   uint64_t NumCallsOptimized = 0;
-  for (auto &BFI : BC.getBinaryFunctions()) {
-    BinaryFunction &Function = BFI.second;
+  for (auto &It : BC.getBinaryFunctions()) {
+    BinaryFunction &Function = It.second;
     if (!shouldOptimize(Function))
       continue;
 
@@ -55,21 +61,18 @@ Error PLTCall::runOnFunctions(BinaryContext &BC) {
       if (opts::PLT == OT_HOT && !BB.getKnownExecutionCount())
         continue;
 
-      for (auto II = BB.begin(); II != BB.end(); II++) {
-        if (!BC.MIB->isCall(*II))
+      for (MCInst &Instr : BB) {
+        if (!BC.MIB->isCall(Instr))
           continue;
-        const MCSymbol *CallSymbol = BC.MIB->getTargetSymbol(*II);
+        const MCSymbol *CallSymbol = BC.MIB->getTargetSymbol(Instr);
         if (!CallSymbol)
           continue;
         const BinaryFunction *CalleeBF = BC.getFunctionForSymbol(CallSymbol);
         if (!CalleeBF || !CalleeBF->isPLTFunction())
           continue;
-        const InstructionListType NewCode = BC.MIB->createIndirectPLTCall(
-            std::move(*II), CalleeBF->getPLTSymbol(), BC.Ctx.get());
-        II = BB.replaceInstruction(II, NewCode);
-        assert(!NewCode.empty() && "PLT Call replacement must be non-empty");
-        std::advance(II, NewCode.size() - 1);
-        BC.MIB->addAnnotation(*II, "PLTCall", true);
+        BC.MIB->convertCallToIndirectCall(Instr, CalleeBF->getPLTSymbol(),
+                                          BC.Ctx.get());
+        BC.MIB->addAnnotation(Instr, "PLTCall", true);
         ++NumCallsOptimized;
       }
     }
@@ -77,10 +80,9 @@ Error PLTCall::runOnFunctions(BinaryContext &BC) {
 
   if (NumCallsOptimized) {
     BC.RequiresZNow = true;
-    BC.outs() << "BOLT-INFO: " << NumCallsOptimized
-              << " PLT calls in the binary were optimized.\n";
+    outs() << "BOLT-INFO: " << NumCallsOptimized
+           << " PLT calls in the binary were optimized.\n";
   }
-  return Error::success();
 }
 
 } // namespace bolt

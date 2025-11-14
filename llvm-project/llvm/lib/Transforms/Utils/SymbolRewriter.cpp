@@ -308,11 +308,11 @@ bool RewriteMapParser::parseEntry(yaml::Stream &YS, yaml::KeyValueNode &Entry,
   }
 
   RewriteType = Key->getValue(KeyStorage);
-  if (RewriteType == "function")
+  if (RewriteType.equals("function"))
     return parseRewriteFunctionDescriptor(YS, Key, Value, DL);
-  else if (RewriteType == "global variable")
+  else if (RewriteType.equals("global variable"))
     return parseRewriteGlobalVariableDescriptor(YS, Key, Value, DL);
-  else if (RewriteType == "global alias")
+  else if (RewriteType.equals("global alias"))
     return parseRewriteGlobalAliasDescriptor(YS, Key, Value, DL);
 
   YS.printError(Entry.getKey(), "unknown rewrite type");
@@ -348,13 +348,19 @@ parseRewriteFunctionDescriptor(yaml::Stream &YS, yaml::ScalarNode *K,
     }
 
     KeyValue = Key->getValue(KeyStorage);
-    if (KeyValue == "source") {
+    if (KeyValue.equals("source")) {
+      std::string Error;
+
       Source = std::string(Value->getValue(ValueStorage));
-    } else if (KeyValue == "target") {
+      if (!Regex(Source).isValid(Error)) {
+        YS.printError(Field.getKey(), "invalid regex: " + Error);
+        return false;
+      }
+    } else if (KeyValue.equals("target")) {
       Target = std::string(Value->getValue(ValueStorage));
-    } else if (KeyValue == "transform") {
+    } else if (KeyValue.equals("transform")) {
       Transform = std::string(Value->getValue(ValueStorage));
-    } else if (KeyValue == "naked") {
+    } else if (KeyValue.equals("naked")) {
       std::string Undecorated;
 
       Undecorated = std::string(Value->getValue(ValueStorage));
@@ -373,22 +379,12 @@ parseRewriteFunctionDescriptor(yaml::Stream &YS, yaml::ScalarNode *K,
 
   // TODO see if there is a more elegant solution to selecting the rewrite
   // descriptor type
-  if (!Target.empty()) {
+  if (!Target.empty())
     DL->push_back(std::make_unique<ExplicitRewriteFunctionDescriptor>(
         Source, Target, Naked));
-    return true;
-  }
-
-  {
-    std::string Error;
-    if (!Regex(Source).isValid(Error)) {
-      YS.printError(Descriptor, "invalid Source regex: " + Error);
-      return false;
-    }
-  }
-
-  DL->push_back(
-      std::make_unique<PatternRewriteFunctionDescriptor>(Source, Transform));
+  else
+    DL->push_back(
+        std::make_unique<PatternRewriteFunctionDescriptor>(Source, Transform));
 
   return true;
 }
@@ -421,11 +417,17 @@ parseRewriteGlobalVariableDescriptor(yaml::Stream &YS, yaml::ScalarNode *K,
     }
 
     KeyValue = Key->getValue(KeyStorage);
-    if (KeyValue == "source") {
+    if (KeyValue.equals("source")) {
+      std::string Error;
+
       Source = std::string(Value->getValue(ValueStorage));
-    } else if (KeyValue == "target") {
+      if (!Regex(Source).isValid(Error)) {
+        YS.printError(Field.getKey(), "invalid regex: " + Error);
+        return false;
+      }
+    } else if (KeyValue.equals("target")) {
       Target = std::string(Value->getValue(ValueStorage));
-    } else if (KeyValue == "transform") {
+    } else if (KeyValue.equals("transform")) {
       Transform = std::string(Value->getValue(ValueStorage));
     } else {
       YS.printError(Field.getKey(), "unknown Key for Global Variable");
@@ -439,23 +441,13 @@ parseRewriteGlobalVariableDescriptor(yaml::Stream &YS, yaml::ScalarNode *K,
     return false;
   }
 
-  if (!Target.empty()) {
+  if (!Target.empty())
     DL->push_back(std::make_unique<ExplicitRewriteGlobalVariableDescriptor>(
         Source, Target,
         /*Naked*/ false));
-    return true;
-  }
-
-  {
-    std::string Error;
-    if (!Regex(Source).isValid(Error)) {
-      YS.printError(Descriptor, "invalid Source regex: " + Error);
-      return false;
-    }
-  }
-
-  DL->push_back(std::make_unique<PatternRewriteGlobalVariableDescriptor>(
-      Source, Transform));
+  else
+    DL->push_back(std::make_unique<PatternRewriteGlobalVariableDescriptor>(
+        Source, Transform));
 
   return true;
 }
@@ -488,11 +480,17 @@ parseRewriteGlobalAliasDescriptor(yaml::Stream &YS, yaml::ScalarNode *K,
     }
 
     KeyValue = Key->getValue(KeyStorage);
-    if (KeyValue == "source") {
+    if (KeyValue.equals("source")) {
+      std::string Error;
+
       Source = std::string(Value->getValue(ValueStorage));
-    } else if (KeyValue == "target") {
+      if (!Regex(Source).isValid(Error)) {
+        YS.printError(Field.getKey(), "invalid regex: " + Error);
+        return false;
+      }
+    } else if (KeyValue.equals("target")) {
       Target = std::string(Value->getValue(ValueStorage));
-    } else if (KeyValue == "transform") {
+    } else if (KeyValue.equals("transform")) {
       Transform = std::string(Value->getValue(ValueStorage));
     } else {
       YS.printError(Field.getKey(), "unknown key for Global Alias");
@@ -506,23 +504,13 @@ parseRewriteGlobalAliasDescriptor(yaml::Stream &YS, yaml::ScalarNode *K,
     return false;
   }
 
-  if (!Target.empty()) {
+  if (!Target.empty())
     DL->push_back(std::make_unique<ExplicitRewriteNamedAliasDescriptor>(
         Source, Target,
         /*Naked*/ false));
-    return true;
-  }
-
-  {
-    std::string Error;
-    if (!Regex(Source).isValid(Error)) {
-      YS.printError(Descriptor, "invalid Source regex: " + Error);
-      return false;
-    }
-  }
-
-  DL->push_back(
-      std::make_unique<PatternRewriteNamedAliasDescriptor>(Source, Transform));
+  else
+    DL->push_back(std::make_unique<PatternRewriteNamedAliasDescriptor>(
+        Source, Transform));
 
   return true;
 }

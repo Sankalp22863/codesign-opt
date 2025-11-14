@@ -9,16 +9,12 @@
 #ifndef LLVM_LIBC_SRC_SCHED_SCHED_GETAFFINITY_H
 #define LLVM_LIBC_SRC_SCHED_SCHED_GETAFFINITY_H
 
-#include "src/__support/macros/config.h"
+#include <sched.h>
 
-#include "hdr/types/cpu_set_t.h"
-#include "hdr/types/pid_t.h"
-#include "hdr/types/size_t.h"
-
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
 int sched_getaffinity(pid_t tid, size_t cpuset_size, cpu_set_t *mask);
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE
 
 #endif // LLVM_LIBC_SRC_SCHED_SCHED_GETAFFINITY_H

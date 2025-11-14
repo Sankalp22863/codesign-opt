@@ -13,7 +13,7 @@
 #include "flang/Optimizer/Support/InternalNames.h"
 #include "llvm/ADT/ArrayRef.h"
 
-mlir::Value fir::runtime::genEnvironmentDefaults(
+void fir::runtime::genEnvironmentDefaults(
     fir::FirOpBuilder &builder, mlir::Location loc,
     const std::vector<Fortran::lower::EnvironmentDefault> &envDefaults) {
   std::string envDefaultListPtrName =
@@ -34,8 +34,14 @@ mlir::Value fir::runtime::genEnvironmentDefaults(
 
   // If no defaults were specified, initialize with a null pointer.
   if (envDefaults.empty()) {
-    mlir::Value nullVal = builder.createNullConstant(loc, envDefaultListRefTy);
-    return nullVal;
+    builder.createGlobalConstant(
+        loc, envDefaultListRefTy, envDefaultListPtrName,
+        [&](fir::FirOpBuilder &builder) {
+          mlir::Value nullVal =
+              builder.createNullConstant(loc, envDefaultListRefTy);
+          builder.create<fir::HasValueOp>(loc, nullVal);
+        });
+    return;
   }
 
   // Create the Item list.
@@ -44,7 +50,7 @@ mlir::Value fir::runtime::genEnvironmentDefaults(
   mlir::IntegerAttr one = builder.getIntegerAttr(idxTy, 1);
   std::string itemListName = envDefaultListPtrName + ".items";
   auto listBuilder = [&](fir::FirOpBuilder &builder) {
-    mlir::Value list = fir::UndefOp::create(builder, loc, itemListTy);
+    mlir::Value list = builder.create<fir::UndefOp>(loc, itemListTy);
     llvm::SmallVector<mlir::Attribute, 2> idx = {mlir::Attribute{},
                                                  mlir::Attribute{}};
     auto insertStringField = [&](const std::string &s,
@@ -52,8 +58,8 @@ mlir::Value fir::runtime::genEnvironmentDefaults(
       mlir::Value stringAddress = fir::getBase(
           fir::factory::createStringLiteral(builder, loc, s + '\0'));
       mlir::Value addr = builder.createConvert(loc, charRefTy, stringAddress);
-      return fir::InsertValueOp::create(builder, loc, itemListTy, list, addr,
-                                        builder.getArrayAttr(idx));
+      return builder.create<fir::InsertValueOp>(loc, itemListTy, list, addr,
+                                                builder.getArrayAttr(idx));
     };
 
     size_t n = 0;
@@ -65,7 +71,7 @@ mlir::Value fir::runtime::genEnvironmentDefaults(
       list = insertStringField(def.defaultValue, idx);
       ++n;
     }
-    fir::HasValueOp::create(builder, loc, list);
+    builder.create<fir::HasValueOp>(loc, list);
   };
   builder.createGlobalConstant(loc, itemListTy, itemListName, listBuilder,
                                linkOnce);
@@ -73,27 +79,31 @@ mlir::Value fir::runtime::genEnvironmentDefaults(
   // Define the EnviornmentDefaultList object.
   auto envDefaultListBuilder = [&](fir::FirOpBuilder &builder) {
     mlir::Value envDefaultList =
-        fir::UndefOp::create(builder, loc, envDefaultListTy);
+        builder.create<fir::UndefOp>(loc, envDefaultListTy);
     mlir::Value numItems =
         builder.createIntegerConstant(loc, intTy, envDefaults.size());
-    envDefaultList = fir::InsertValueOp::create(builder, loc, envDefaultListTy,
-                                                envDefaultList, numItems,
-                                                builder.getArrayAttr(zero));
+    envDefaultList = builder.create<fir::InsertValueOp>(
+        loc, envDefaultListTy, envDefaultList, numItems,
+        builder.getArrayAttr(zero));
     fir::GlobalOp itemList = builder.getNamedGlobal(itemListName);
     assert(itemList && "missing environment default list");
-    mlir::Value listAddr = fir::AddrOfOp::create(
-        builder, loc, itemList.resultType(), itemList.getSymbol());
-    envDefaultList = fir::InsertValueOp::create(builder, loc, envDefaultListTy,
-                                                envDefaultList, listAddr,
-                                                builder.getArrayAttr(one));
-    fir::HasValueOp::create(builder, loc, envDefaultList);
+    mlir::Value listAddr = builder.create<fir::AddrOfOp>(
+        loc, itemList.resultType(), itemList.getSymbol());
+    envDefaultList = builder.create<fir::InsertValueOp>(
+        loc, envDefaultListTy, envDefaultList, listAddr,
+        builder.getArrayAttr(one));
+    builder.create<fir::HasValueOp>(loc, envDefaultList);
   };
   fir::GlobalOp envDefaultList = builder.createGlobalConstant(
       loc, envDefaultListTy, envDefaultListPtrName + ".list",
       envDefaultListBuilder, linkOnce);
 
   // Define the pointer to the list used by the runtime.
-  mlir::Value addr = fir::AddrOfOp::create(
-      builder, loc, envDefaultList.resultType(), envDefaultList.getSymbol());
-  return addr;
+  builder.createGlobalConstant(
+      loc, envDefaultListRefTy, envDefaultListPtrName,
+      [&](fir::FirOpBuilder &builder) {
+        mlir::Value addr = builder.create<fir::AddrOfOp>(
+            loc, envDefaultList.resultType(), envDefaultList.getSymbol());
+        builder.create<fir::HasValueOp>(loc, addr);
+      });
 }

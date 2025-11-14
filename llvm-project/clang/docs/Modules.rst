@@ -115,7 +115,7 @@ Objective-C provides syntax for importing a module via an *@import declaration*,
 
   @import std;
 
-The ``@import`` declaration above imports the entire contents of the ``std`` module (which would contain, e.g., the entire C or C++ standard library) and make its API available within the current translation unit. To import only part of a module, one may use dot syntax to specify a particular submodule, e.g.,
+The ``@import`` declaration above imports the entire contents of the ``std`` module (which would contain, e.g., the entire C or C++ standard library) and make its API available within the current translation unit. To import only part of a module, one may use dot syntax to specific a particular submodule, e.g.,
 
 .. parsed-literal::
 
@@ -152,7 +152,7 @@ first include path that would refer to the current file. ``#include_next`` is
 interpreted as if the current file had been found in that path.
 If this search finds a file named by a module map, the ``#include_next``
 directive is translated into an import, just like for a ``#include``
-directive.
+directive.``
 
 Module maps
 -----------
@@ -421,7 +421,13 @@ As an example, the module map file for the C standard library might look a bit l
 
 .. parsed-literal::
 
-  module std [system] {
+  module std [system] [extern_c] {
+    module assert {
+      textual header "assert.h"
+      header "bits/assert-decls.h"
+      export *
+    }
+
     module complex {
       header "complex.h"
       export *
@@ -434,6 +440,7 @@ As an example, the module map file for the C standard library might look a bit l
 
     module errno {
       header "errno.h"
+      header "sys/errno.h"
       export *
     }
 
@@ -606,10 +613,10 @@ tls
   A specific target feature (e.g., ``sse4``, ``avx``, ``neon``) is available.
 
 *platform/os*
-  An os/platform variant (e.g. ``freebsd``, ``win32``, ``windows``, ``linux``, ``ios``, ``macos``, ``iossimulator``) is available.
+  A os/platform variant (e.g. ``freebsd``, ``win32``, ``windows``, ``linux``, ``ios``, ``macos``, ``iossimulator``) is available.
 
 *environment*
-  An environment variant (e.g. ``gnu``, ``gnueabi``, ``android``, ``msvc``) is available.
+  A environment variant (e.g. ``gnu``, ``gnueabi``, ``android``, ``msvc``) is available.
 
 **Example:** The ``std`` module can be extended to also include C++ and C++11 headers using a *requires-declaration*:
 
@@ -666,14 +673,14 @@ of checking *use-declaration*\s, and must still be a lexically-valid header
 file. In the future, we intend to pre-tokenize such headers and include the
 token sequence within the prebuilt module representation.
 
-A header with the ``exclude`` specifier is excluded from the module. It will not be included when the module is built, nor will it be considered to be part of the module, even if an ``umbrella`` directory would otherwise make it part of the module.
+A header with the ``exclude`` specifier is excluded from the module. It will not be included when the module is built, nor will it be considered to be part of the module, even if an ``umbrella`` header or directory would otherwise make it part of the module.
 
-**Example:** A "X macro" header is an excellent candidate for a textual header, because it is can't be compiled standalone, and by itself does not contain any declarations.
+**Example:** The C header ``assert.h`` is an excellent candidate for a textual header, because it is meant to be included multiple times (possibly with different ``NDEBUG`` settings). However, declarations within it should typically be split into a separate modular header.
 
 .. parsed-literal::
 
-  module MyLib [system] {
-    textual header "xmacros.h"
+  module std [system] {
+    textual header "assert.h"
   }
 
 A given header shall not be referenced by more than one *header-declaration*.

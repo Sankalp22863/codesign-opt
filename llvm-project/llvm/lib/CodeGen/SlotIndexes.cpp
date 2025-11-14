@@ -18,43 +18,28 @@ using namespace llvm;
 
 #define DEBUG_TYPE "slotindexes"
 
-AnalysisKey SlotIndexesAnalysis::Key;
+char SlotIndexes::ID = 0;
 
-SlotIndexesAnalysis::Result
-SlotIndexesAnalysis::run(MachineFunction &MF,
-                         MachineFunctionAnalysisManager &) {
-  return Result(MF);
-}
-
-PreservedAnalyses
-SlotIndexesPrinterPass::run(MachineFunction &MF,
-                            MachineFunctionAnalysisManager &MFAM) {
-  OS << "Slot indexes in machine function: " << MF.getName() << '\n';
-  MFAM.getResult<SlotIndexesAnalysis>(MF).print(OS);
-  return PreservedAnalyses::all();
-}
-char SlotIndexesWrapperPass::ID = 0;
-
-SlotIndexesWrapperPass::SlotIndexesWrapperPass() : MachineFunctionPass(ID) {
-  initializeSlotIndexesWrapperPassPass(*PassRegistry::getPassRegistry());
+SlotIndexes::SlotIndexes() : MachineFunctionPass(ID) {
+  initializeSlotIndexesPass(*PassRegistry::getPassRegistry());
 }
 
 SlotIndexes::~SlotIndexes() {
   // The indexList's nodes are all allocated in the BumpPtrAllocator.
-  indexList.clear();
+  indexList.clearAndLeakNodesUnsafely();
 }
 
-INITIALIZE_PASS(SlotIndexesWrapperPass, DEBUG_TYPE, "Slot index numbering",
-                false, false)
+INITIALIZE_PASS(SlotIndexes, DEBUG_TYPE,
+                "Slot index numbering", false, false)
 
 STATISTIC(NumLocalRenum,  "Number of local renumberings");
 
-void SlotIndexesWrapperPass::getAnalysisUsage(AnalysisUsage &au) const {
+void SlotIndexes::getAnalysisUsage(AnalysisUsage &au) const {
   au.setPreservesAll();
   MachineFunctionPass::getAnalysisUsage(au);
 }
 
-void SlotIndexes::clear() {
+void SlotIndexes::releaseMemory() {
   mi2iMap.clear();
   MBBRanges.clear();
   idx2MBBMap.clear();
@@ -62,7 +47,7 @@ void SlotIndexes::clear() {
   ileAllocator.Reset();
 }
 
-void SlotIndexes::analyze(MachineFunction &fn) {
+bool SlotIndexes::runOnMachineFunction(MachineFunction &fn) {
 
   // Compute numbering as follows:
   // Grab an iterator to the start of the index list.
@@ -90,7 +75,7 @@ void SlotIndexes::analyze(MachineFunction &fn) {
   MBBRanges.resize(mf->getNumBlockIDs());
   idx2MBBMap.reserve(mf->size());
 
-  indexList.push_back(*createEntry(nullptr, index));
+  indexList.push_back(createEntry(nullptr, index));
 
   // Iterate over the function.
   for (MachineBasicBlock &MBB : *mf) {
@@ -102,7 +87,7 @@ void SlotIndexes::analyze(MachineFunction &fn) {
         continue;
 
       // Insert a store index for the instr.
-      indexList.push_back(*createEntry(&MI, index += SlotIndex::InstrDist));
+      indexList.push_back(createEntry(&MI, index += SlotIndex::InstrDist));
 
       // Save this base index in the maps.
       mi2iMap.insert(std::make_pair(
@@ -110,7 +95,7 @@ void SlotIndexes::analyze(MachineFunction &fn) {
     }
 
     // We insert one blank instructions between basic blocks.
-    indexList.push_back(*createEntry(nullptr, index += SlotIndex::InstrDist));
+    indexList.push_back(createEntry(nullptr, index += SlotIndex::InstrDist));
 
     MBBRanges[MBB.getNumber()].first = blockStartIndex;
     MBBRanges[MBB.getNumber()].second = SlotIndex(&indexList.back(),
@@ -122,6 +107,9 @@ void SlotIndexes::analyze(MachineFunction &fn) {
   llvm::sort(idx2MBBMap, less_first());
 
   LLVM_DEBUG(mf->print(dbgs(), this));
+
+  // And we're done!
+  return false;
 }
 
 void SlotIndexes::removeMachineInstrFromMaps(MachineInstr &MI,
@@ -212,7 +200,6 @@ void SlotIndexes::repairIndexesInRange(MachineBasicBlock *MBB,
   IndexList::iterator ListI = endIdx.listEntry()->getIterator();
   MachineBasicBlock::iterator MBBI = End;
   bool pastStart = false;
-  bool OldIndexesRemoved = false;
   while (ListI != ListB || MBBI != Begin || (includeStart && !pastStart)) {
     assert(ListI->getIndex() >= startIdx.getIndex() &&
            (includeStart || !pastStart) &&
@@ -221,8 +208,6 @@ void SlotIndexes::repairIndexesInRange(MachineBasicBlock *MBB,
     MachineInstr *SlotMI = ListI->getInstr();
     MachineInstr *MI = (MBBI != MBB->end() && !pastStart) ? &*MBBI : nullptr;
     bool MBBIAtBegin = MBBI == Begin && (!includeStart || pastStart);
-    bool MIIndexNotFound = MI && !mi2iMap.contains(MI);
-    bool SlotMIRemoved = false;
 
     if (SlotMI == MI && !MBBIAtBegin) {
       --ListI;
@@ -230,31 +215,25 @@ void SlotIndexes::repairIndexesInRange(MachineBasicBlock *MBB,
         --MBBI;
       else
         pastStart = true;
-    } else if (MIIndexNotFound || OldIndexesRemoved) {
+    } else if (MI && !mi2iMap.contains(MI)) {
       if (MBBI != Begin)
         --MBBI;
       else
         pastStart = true;
     } else {
-      // We ran through all the indexes on the interval
-      //   -> The only thing left is to go through all the
-      //   remaining MBB instructions and update their indexes
-      if (ListI == ListB)
-        OldIndexesRemoved = true;
-      else
-        --ListI;
-      if (SlotMI) {
+      --ListI;
+      if (SlotMI)
         removeMachineInstrFromMaps(*SlotMI);
-        SlotMIRemoved = true;
-      }
     }
+  }
 
-    MachineInstr *InstrToInsert = SlotMIRemoved ? SlotMI : MI;
-
-    // Insert instruction back into the maps after passing it/removing the index
-    if ((MIIndexNotFound || SlotMIRemoved) && InstrToInsert->getParent() &&
-        !InstrToInsert->isDebugOrPseudoInstr())
-      insertMachineInstrInMaps(*InstrToInsert);
+  // In theory this could be combined with the previous loop, but it is tricky
+  // to update the IndexList while we are iterating it.
+  for (MachineBasicBlock::iterator I = End; I != Begin;) {
+    --I;
+    MachineInstr &MI = *I;
+    if (!MI.isDebugOrPseudoInstr() && !mi2iMap.contains(&MI))
+      insertMachineInstrInMaps(MI);
   }
 }
 
@@ -263,23 +242,22 @@ void SlotIndexes::packIndexes() {
     Entry.setIndex(Index * SlotIndex::InstrDist);
 }
 
-void SlotIndexes::print(raw_ostream &OS) const {
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+LLVM_DUMP_METHOD void SlotIndexes::dump() const {
   for (const IndexListEntry &ILE : indexList) {
-    OS << ILE.getIndex() << ' ';
+    dbgs() << ILE.getIndex() << " ";
 
-    if (ILE.getInstr())
-      OS << *ILE.getInstr();
-    else
-      OS << '\n';
+    if (ILE.getInstr()) {
+      dbgs() << *ILE.getInstr();
+    } else {
+      dbgs() << "\n";
+    }
   }
 
   for (unsigned i = 0, e = MBBRanges.size(); i != e; ++i)
-    OS << "%bb." << i << "\t[" << MBBRanges[i].first << ';'
-       << MBBRanges[i].second << ")\n";
+    dbgs() << "%bb." << i << "\t[" << MBBRanges[i].first << ';'
+           << MBBRanges[i].second << ")\n";
 }
-
-#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-LLVM_DUMP_METHOD void SlotIndexes::dump() const { print(dbgs()); }
 #endif
 
 // Print a SlotIndex to a raw_ostream.

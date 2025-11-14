@@ -31,6 +31,9 @@
 using namespace mlir;
 
 using llvm::yaml::Input;
+using llvm::yaml::MappingTraits;
+using llvm::yaml::ScalarEnumerationTraits;
+using llvm::yaml::ScalarTraits;
 
 #define DEBUG_TYPE "linalg-ods-gen"
 
@@ -67,7 +70,6 @@ enum class LinalgOperandDefKind {
   IndexAttr,
   UnaryFnAttr,
   BinaryFnAttr,
-  TernaryFnAttr,
   TypeFnAttr
 };
 
@@ -92,7 +94,7 @@ struct LinalgIndexingMapsConfig {
 
 struct ScalarExpression;
 
-enum class ScalarFnKind { Unary, Binary, Ternary, Type };
+enum class ScalarFnKind { Unary, Binary, Type };
 
 struct ScalarFn {
   ScalarFnKind kind;
@@ -117,9 +119,9 @@ struct ScalarAssign {
 };
 
 struct LinalgStructuredOpConfig {
-  SmallVector<LinalgOperandDef, 4> args;
+  SmallVector<LinalgOperandDef> args;
   LinalgIndexingMapsConfig indexingMaps;
-  SmallVector<LinalgIteratorTypeDef, 4> iteratorTypes;
+  SmallVector<LinalgIteratorTypeDef> iteratorTypes;
   std::vector<ScalarAssign> assignments;
 };
 
@@ -212,7 +214,6 @@ struct ScalarEnumerationTraits<LinalgOperandDefKind> {
     io.enumCase(value, "index_attr", LinalgOperandDefKind::IndexAttr);
     io.enumCase(value, "unary_fn_attr", LinalgOperandDefKind::UnaryFnAttr);
     io.enumCase(value, "binary_fn_attr", LinalgOperandDefKind::BinaryFnAttr);
-    io.enumCase(value, "ternary_fn_attr", LinalgOperandDefKind::TernaryFnAttr);
     io.enumCase(value, "type_fn_attr", LinalgOperandDefKind::TypeFnAttr);
   }
 };
@@ -283,7 +284,6 @@ struct ScalarEnumerationTraits<ScalarFnKind> {
   static void enumeration(IO &io, ScalarFnKind &value) {
     io.enumCase(value, "unary", ScalarFnKind::Unary);
     io.enumCase(value, "binary", ScalarFnKind::Binary);
-    io.enumCase(value, "ternary", ScalarFnKind::Ternary);
     io.enumCase(value, "type", ScalarFnKind::Type);
   }
 };
@@ -375,6 +375,7 @@ static std::string generateCppExpression(SerializedAffineMap self,
   std::string printedStr;
   llvm::raw_string_ostream printedSs(printedStr);
   self.affineMapAttr.print(printedSs);
+  printedSs.flush();
 
   static const char exprFormat[] =
       R"FMT(llvm::cast<AffineMapAttr>(mlir::parseAttribute("{0}", {1})).getValue())FMT";
@@ -387,6 +388,7 @@ static std::string interleaveToString(Container &container,
   std::string result;
   llvm::raw_string_ostream ss(result);
   llvm::interleave(container, ss, separator);
+  ss.flush();
   return result;
 }
 
@@ -439,7 +441,6 @@ static ScalarAssign *findAssignment(StringRef name,
 static bool isFunctionAttribute(LinalgOperandDefKind kind) {
   return kind == LinalgOperandDefKind::UnaryFnAttr ||
          kind == LinalgOperandDefKind::BinaryFnAttr ||
-         kind == LinalgOperandDefKind::TernaryFnAttr ||
          kind == LinalgOperandDefKind::TypeFnAttr;
 }
 
@@ -449,14 +450,12 @@ static bool isAttribute(LinalgOperandDefKind kind) {
 }
 
 // Get the enum name for the given operand kind.
-static std::string convertOperandKindToEnumName(LinalgOperandDefKind kind) {
+std::string convertOperandKindToEnumName(LinalgOperandDefKind kind) {
   switch (kind) {
   case LinalgOperandDefKind::UnaryFnAttr:
     return std::string("UnaryFn");
   case LinalgOperandDefKind::BinaryFnAttr:
     return std::string("BinaryFn");
-  case LinalgOperandDefKind::TernaryFnAttr:
-    return std::string("TernaryFn");
   case LinalgOperandDefKind::TypeFnAttr:
     return std::string("TypeFn");
   default:
@@ -466,14 +465,12 @@ static std::string convertOperandKindToEnumName(LinalgOperandDefKind kind) {
 }
 
 // Get the enum name for the given function kind.
-static std::string convertFunctionKindToEnumName(ScalarFnKind kind) {
+std::string convertFunctionKindToEnumName(ScalarFnKind kind) {
   switch (kind) {
   case ScalarFnKind::Unary:
     return std::string("UnaryFn");
   case ScalarFnKind::Binary:
     return std::string("BinaryFn");
-  case ScalarFnKind::Ternary:
-    return std::string("TernaryFn");
   case ScalarFnKind::Type:
     return std::string("TypeFn");
   }
@@ -559,10 +556,9 @@ def {0} : LinalgStructuredBase_Op<"{1}", !listconcat([AttrSizedOperandSegments],
       SmallVector<utils::IteratorType> getIteratorTypesArray();
       ArrayAttr getIndexingMaps();
       static void regionBuilder(ImplicitLocOpBuilder &b,
-                                Block &block, ArrayRef<NamedAttribute> attrs,
-                                function_ref<InFlightDiagnostic()> emitError);
+                                Block &block, ArrayRef<NamedAttribute> attrs);
       static std::function<void(ImplicitLocOpBuilder &,
-                                Block &, ArrayRef<NamedAttribute>, function_ref<InFlightDiagnostic()> emitError)>
+                                Block &, ArrayRef<NamedAttribute>)>
       getRegionBuilder() {{
         return regionBuilder;
       }
@@ -630,7 +626,7 @@ ArrayAttr {0}::getIndexingMaps() {{
   MLIRContext *context = getContext();
   auto symbolBindings = getSymbolBindings(*this);
   SmallVector<AffineMap> maps;
-  {1}
+  {2}
   cached = Builder(context).getAffineMapArrayAttr(maps);
   getOperation()->setAttr(memoizeAttr, cached);
   return cached;
@@ -652,7 +648,7 @@ ArrayAttr {0}::getIndexingMaps() {{
 }
 )FMT";
 
-// Implementations of fold, getEffects and getSpeculatability.
+// Implementations of fold and getEffects.
 // Parameters:
 // {0}: Class name
 const char structuredOpFoldersFormat[] = R"FMT(
@@ -663,10 +659,8 @@ LogicalResult {0}::fold(FoldAdaptor,
 void {0}::getEffects(SmallVectorImpl<
     SideEffects::EffectInstance<MemoryEffects::Effect> >&effects) {{
       if (hasPureTensorSemantics()) return;
-      getGenericEffectsImpl(effects, cast<LinalgOp>(getOperation()));
-}
-Speculation::Speculatability {0}::getSpeculatability() {{
-  return getGenericSpeculatabilityImpl(cast<LinalgOp>(getOperation()));
+      getGenericEffectsImpl(effects,
+        getOperation()->getResults(), getDpsInputs(), getDpsInits());
 }
 )FMT";
 
@@ -679,10 +673,7 @@ ParseResult {0}::parse(OpAsmParser &parser, OperationState &result) {{
     {0}::getNumRegionArgs(), {0}::getRegionBuilder());
 }
 void {0}::print(OpAsmPrinter &p) {{
-  SmallVector<StringRef, 3> elidedAttrs = {{"operandSegmentSizes",
-                                           "linalg.memoized_indexing_maps"};
-  ::printNamedStructuredOp(p, getOperation(), getInputs(), getOutputs(),
-                           elidedAttrs);
+  ::printNamedStructuredOp(p, getOperation(), getInputs(), getOutputs());
 }
 )FMT";
 
@@ -826,6 +817,7 @@ generateNamedGenericOpDefns(LinalgOpConfig &opConfig,
                               break;
                             }
                           });
+    ss.flush();
     os << llvm::formatv(structuredOpIteratorTypesFormat, className,
                         iteratorsStr);
   } else {
@@ -890,6 +882,7 @@ exprs.push_back(getAffineConstantExpr(cst{1}, context));
         std::string symbolBindingsStr;
         llvm::raw_string_ostream symbolBindingsSs(symbolBindingsStr);
         llvm::interleave(symbolBindings, symbolBindingsSs, "\n");
+        symbolBindingsSs.flush();
 
         os << llvm::formatv(structuredOpSymbolBindingsFormat, className,
                             symbolBindingsStr);
@@ -910,6 +903,7 @@ exprs.push_back(getAffineConstantExpr(cst{1}, context));
         llvm::raw_string_ostream dimIdentsSs(dimIdentsStr);
         llvm::interleaveComma(dimIndices, dimIdentsSs,
                               [&](unsigned i) { dimIdentsSs << "d" << i; });
+        dimIdentsSs.flush();
 
         // Statements to add and simplify each affine map.
         SmallVector<std::string> stmts;
@@ -928,7 +922,7 @@ exprs.push_back(getAffineConstantExpr(cst{1}, context));
         // TODO: This needs to be memoized and/or converted to non-parser based
         // C++ codegen prior to real use.
         os << llvm::formatv(structuredOpIndexingMapsFormat, className,
-                            interleaveToString(stmts, "\n  "));
+                            dimIdentsStr, interleaveToString(stmts, "\n  "));
       }
     } else {
       os << llvm::formatv(rankPolyStructuredOpIndexingMapsFormat, className);
@@ -1011,11 +1005,10 @@ LogicalResult {0}::verifyIndexingMapRequiredAttributes() {{
     // {3}: Statements
     static const char structuredOpRegionBuilderFormat[] = R"FMT(
 void {0}::regionBuilder(ImplicitLocOpBuilder &b,
-                        Block &block, ArrayRef<NamedAttribute> attrs,
-                        function_ref<InFlightDiagnostic()> emitError) {{
+                        Block &block, ArrayRef<NamedAttribute> attrs) {{
   assert({1} > 0 && block.getNumArguments() == {1} &&
          "{0} regionBuilder expects {1} (>=0) args");
-  RegionBuilderHelper helper(b, block);
+  RegionBuilderHelper helper(block.getArgument(0).getContext(), block);
   SmallVector<Value> yields;
   {2}
   {3}
@@ -1139,13 +1132,8 @@ void {0}::regionBuilder(ImplicitLocOpBuilder &b,
           // Call the function builder.
           std::string cppIdent = llvm::formatv("value{0}", ++localCounter);
           stmts.push_back(llvm::formatv(
-              R"mlir(
-              Value {0} = helper.build{1}({2}, {3}, emitError);
-              if (!{0})
-                return;
-              )mlir",
-              cppIdent, enumName, funcType,
-              interleaveToString(operandCppValues, ", ")));
+              "Value {0} = helper.build{1}({2}, {3});", cppIdent, enumName,
+              funcType, interleaveToString(operandCppValues, ", ")));
           return cppIdent;
         }
         emitError(genContext.getLoc()) << "unknown ScalarExpression type";

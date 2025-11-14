@@ -9,20 +9,17 @@
 #ifndef FORTRAN_EVALUATE_COMMON_H_
 #define FORTRAN_EVALUATE_COMMON_H_
 
-#include "flang/Common/api-attrs.h"
+#include "flang/Common/Fortran-features.h"
+#include "flang/Common/Fortran.h"
+#include "flang/Common/default-kinds.h"
 #include "flang/Common/enum-set.h"
 #include "flang/Common/idioms.h"
 #include "flang/Common/indirection.h"
 #include "flang/Common/restorer.h"
-#include "flang/Common/target-rounding.h"
 #include "flang/Parser/char-block.h"
 #include "flang/Parser/message.h"
-#include "flang/Support/Fortran-features.h"
-#include "flang/Support/Fortran.h"
-#include "flang/Support/default-kinds.h"
 #include <cinttypes>
 #include <map>
-#include <set>
 #include <string>
 
 namespace Fortran::semantics {
@@ -34,8 +31,6 @@ class IntrinsicProcTable;
 class TargetCharacteristics;
 
 using common::ConstantSubscript;
-using common::RealFlag;
-using common::RealFlags;
 using common::RelationalOperator;
 
 // Integers are always ordered; reals may not be.
@@ -132,6 +127,11 @@ static constexpr bool Satisfies(RelationalOperator op, Relation relation) {
   return false; // silence g++ warning
 }
 
+ENUM_CLASS(
+    RealFlag, Overflow, DivideByZero, InvalidArgument, Underflow, Inexact)
+
+using RealFlags = common::EnumSet<RealFlag, RealFlag_enumSize>;
+
 template <typename A> struct ValueWithRealFlags {
   A AccumulateFlags(RealFlags &f) {
     f |= flags;
@@ -217,36 +217,26 @@ class FoldingContext {
 public:
   FoldingContext(const common::IntrinsicTypeDefaultKinds &d,
       const IntrinsicProcTable &t, const TargetCharacteristics &c,
-      const common::LanguageFeatureControl &lfc,
-      std::set<std::string> &tempNames)
+      const common::LanguageFeatureControl &lfc)
       : defaults_{d}, intrinsics_{t}, targetCharacteristics_{c},
-        languageFeatures_{lfc}, tempNames_{tempNames} {}
+        languageFeatures_{lfc} {}
   FoldingContext(const parser::ContextualMessages &m,
       const common::IntrinsicTypeDefaultKinds &d, const IntrinsicProcTable &t,
-      const TargetCharacteristics &c, const common::LanguageFeatureControl &lfc,
-      std::set<std::string> &tempNames)
+      const TargetCharacteristics &c, const common::LanguageFeatureControl &lfc)
       : messages_{m}, defaults_{d}, intrinsics_{t}, targetCharacteristics_{c},
-        languageFeatures_{lfc}, tempNames_{tempNames} {}
+        languageFeatures_{lfc} {}
   FoldingContext(const FoldingContext &that)
       : messages_{that.messages_}, defaults_{that.defaults_},
         intrinsics_{that.intrinsics_},
         targetCharacteristics_{that.targetCharacteristics_},
-        pdtInstance_{that.pdtInstance_},
-        analyzingPDTComponentKindSelector_{
-            that.analyzingPDTComponentKindSelector_},
-        impliedDos_{that.impliedDos_},
-        languageFeatures_{that.languageFeatures_}, tempNames_{that.tempNames_} {
-  }
+        pdtInstance_{that.pdtInstance_}, impliedDos_{that.impliedDos_},
+        languageFeatures_{that.languageFeatures_} {}
   FoldingContext(
       const FoldingContext &that, const parser::ContextualMessages &m)
       : messages_{m}, defaults_{that.defaults_}, intrinsics_{that.intrinsics_},
         targetCharacteristics_{that.targetCharacteristics_},
-        pdtInstance_{that.pdtInstance_},
-        analyzingPDTComponentKindSelector_{
-            that.analyzingPDTComponentKindSelector_},
-        impliedDos_{that.impliedDos_},
-        languageFeatures_{that.languageFeatures_}, tempNames_{that.tempNames_} {
-  }
+        pdtInstance_{that.pdtInstance_}, impliedDos_{that.impliedDos_},
+        languageFeatures_{that.languageFeatures_} {}
 
   parser::ContextualMessages &messages() { return messages_; }
   const parser::ContextualMessages &messages() const { return messages_; }
@@ -254,9 +244,6 @@ public:
     return defaults_;
   }
   const semantics::DerivedTypeSpec *pdtInstance() const { return pdtInstance_; }
-  bool analyzingPDTComponentKindSelector() const {
-    return analyzingPDTComponentKindSelector_;
-  }
   const IntrinsicProcTable &intrinsics() const { return intrinsics_; }
   const TargetCharacteristics &targetCharacteristics() const {
     return targetCharacteristics_;
@@ -264,24 +251,11 @@ public:
   const common::LanguageFeatureControl &languageFeatures() const {
     return languageFeatures_;
   }
-  template <typename... A>
-  parser::Message *Warn(common::LanguageFeature feature, A &&...args) {
-    return messages_.Warn(
-        IsInModuleFile(), languageFeatures_, feature, std::forward<A>(args)...);
-  }
-  template <typename... A>
-  parser::Message *Warn(common::UsageWarning warning, A &&...args) {
-    return messages_.Warn(
-        IsInModuleFile(), languageFeatures_, warning, std::forward<A>(args)...);
-  }
-  std::optional<parser::CharBlock> moduleFileName() const {
-    return moduleFileName_;
-  }
-  FoldingContext &set_moduleFileName(std::optional<parser::CharBlock> n) {
-    moduleFileName_ = n;
+  bool inModuleFile() const { return inModuleFile_; }
+  FoldingContext &set_inModuleFile(bool yes = true) {
+    inModuleFile_ = yes;
     return *this;
   }
-  bool IsInModuleFile() const { return moduleFileName_.has_value(); }
 
   ConstantSubscript &StartImpliedDo(parser::CharBlock, ConstantSubscript = 1);
   std::optional<ConstantSubscript> GetImpliedDo(parser::CharBlock) const;
@@ -299,33 +273,17 @@ public:
     return common::ScopedSet(pdtInstance_, nullptr);
   }
 
-  common::Restorer<bool> AnalyzingPDTComponentKindSelector() {
-    return common::ScopedSet(analyzingPDTComponentKindSelector_, true);
-  }
-
-  common::Restorer<std::string> SetRealFlagWarningContext(std::string str) {
-    return common::ScopedSet(realFlagWarningContext_, str);
-  }
-
-  parser::CharBlock SaveTempName(std::string &&name) {
-    return {*tempNames_.emplace(std::move(name)).first};
-  }
-
-  void RealFlagWarnings(const RealFlags &, const char *op);
-
 private:
   parser::ContextualMessages messages_;
   const common::IntrinsicTypeDefaultKinds &defaults_;
   const IntrinsicProcTable &intrinsics_;
   const TargetCharacteristics &targetCharacteristics_;
   const semantics::DerivedTypeSpec *pdtInstance_{nullptr};
-  bool analyzingPDTComponentKindSelector_{false};
-  std::optional<parser::CharBlock> moduleFileName_;
+  bool inModuleFile_{false};
   std::map<parser::CharBlock, ConstantSubscript> impliedDos_;
   const common::LanguageFeatureControl &languageFeatures_;
-  std::set<std::string> &tempNames_;
-  std::string realFlagWarningContext_;
 };
 
+void RealFlagWarnings(FoldingContext &, const RealFlags &, const char *op);
 } // namespace Fortran::evaluate
 #endif // FORTRAN_EVALUATE_COMMON_H_

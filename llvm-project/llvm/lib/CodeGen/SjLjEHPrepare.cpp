@@ -150,7 +150,10 @@ static void MarkBlocksLiveIn(BasicBlock *BB,
   if (!LiveBBs.insert(BB).second)
     return; // already been here.
 
-  LiveBBs.insert_range(inverse_depth_first(BB));
+  df_iterator_default_set<BasicBlock*> Visited;
+
+  for (BasicBlock *B : inverse_depth_first_ext(BB, Visited))
+    LiveBBs.insert(B);
 }
 
 /// substituteLPadValues - Substitute the values returned by the landingpad
@@ -198,10 +201,10 @@ SjLjEHPrepareImpl::setupFunctionContext(Function &F,
   // Create an alloca for the incoming jump buffer ptr and the new jump buffer
   // that needs to be restored on all exits from the function. This is an alloca
   // because the value needs to be added to the global context list.
-  auto &DL = F.getDataLayout();
+  auto &DL = F.getParent()->getDataLayout();
   const Align Alignment = DL.getPrefTypeAlign(FunctionContextTy);
   FuncCtx = new AllocaInst(FunctionContextTy, DL.getAllocaAddrSpace(), nullptr,
-                           Alignment, "fn_context", EntryBB->begin());
+                           Alignment, "fn_context", &EntryBB->front());
 
   // Fill in the function context structure.
   for (LandingPadInst *LPI : LPads) {
@@ -266,11 +269,11 @@ void SjLjEHPrepareImpl::lowerIncomingArguments(Function &F) {
 
     Type *Ty = AI.getType();
 
-    // Use 'select i8 true, %arg, poison' to simulate a 'no-op' instruction.
+    // Use 'select i8 true, %arg, undef' to simulate a 'no-op' instruction.
     Value *TrueValue = ConstantInt::getTrue(F.getContext());
-    Value *PoisonValue = PoisonValue::get(Ty);
+    Value *UndefValue = UndefValue::get(Ty);
     Instruction *SI = SelectInst::Create(
-        TrueValue, &AI, PoisonValue, AI.getName() + ".tmp", AfterAllocaInsPt);
+        TrueValue, &AI, UndefValue, AI.getName() + ".tmp", &*AfterAllocaInsPt);
     AI.replaceAllUsesWith(SI);
 
     // Reset the operand, because it  was clobbered by the RAUW above.
@@ -367,7 +370,7 @@ void SjLjEHPrepareImpl::lowerAcrossUnwindEdges(Function &F,
       DemotePHIToStack(PN);
 
     // Move the landingpad instruction back to the top of the landing pad block.
-    LPI->moveBefore(UnwindBlock->begin());
+    LPI->moveBefore(&UnwindBlock->front());
   }
 }
 
@@ -385,7 +388,7 @@ bool SjLjEHPrepareImpl::setupEntryBlockAndCallSites(Function &F) {
       if (Function *Callee = II->getCalledFunction())
         if (Callee->getIntrinsicID() == Intrinsic::donothing) {
           // Remove the NOP invoke.
-          BranchInst::Create(II->getNormalDest(), II->getIterator());
+          BranchInst::Create(II->getNormalDest(), II);
           II->eraseFromParent();
           continue;
         }
@@ -434,10 +437,6 @@ bool SjLjEHPrepareImpl::setupEntryBlockAndCallSites(Function &F) {
   // where to look for it.
   Builder.CreateCall(FuncCtxFn, FuncCtx);
 
-  // Register the function context and make sure it's known to not throw.
-  CallInst *Register = Builder.CreateCall(RegisterFn, FuncCtx, "");
-  Register->setDoesNotThrow();
-
   // At this point, we are all set up, update the invoke instructions to mark
   // their call_site values.
   for (unsigned I = 0, E = Invokes.size(); I != E; ++I) {
@@ -448,7 +447,7 @@ bool SjLjEHPrepareImpl::setupEntryBlockAndCallSites(Function &F) {
 
     // Record the call site value for the back end so it stays associated with
     // the invoke.
-    CallInst::Create(CallSiteFn, CallSiteNum, "", Invokes[I]->getIterator());
+    CallInst::Create(CallSiteFn, CallSiteNum, "", Invokes[I]);
   }
 
   // Mark call instructions that aren't nounwind as no-action (call_site ==
@@ -460,9 +459,14 @@ bool SjLjEHPrepareImpl::setupEntryBlockAndCallSites(Function &F) {
     if (&BB == &F.front())
       continue;
     for (Instruction &I : BB)
-      if (!isa<InvokeInst>(I) && I.mayThrow())
+      if (I.mayThrow())
         insertCallSiteStore(&I, -1);
   }
+
+  // Register the function context and make sure it's known to not throw
+  CallInst *Register =
+      CallInst::Create(RegisterFn, FuncCtx, "", EntryBB->getTerminator());
+  Register->setDoesNotThrow();
 
   // Following any allocas not in the entry block, update the saved SP in the
   // jmpbuf to the new value.
@@ -477,9 +481,8 @@ bool SjLjEHPrepareImpl::setupEntryBlockAndCallSites(Function &F) {
         continue;
       }
       Instruction *StackAddr = CallInst::Create(StackAddrFn, "sp");
-      StackAddr->insertAfter(I.getIterator());
-      new StoreInst(StackAddr, StackPtr, true,
-                    std::next(StackAddr->getIterator()));
+      StackAddr->insertAfter(&I);
+      new StoreInst(StackAddr, StackPtr, true, StackAddr->getNextNode());
     }
   }
 
@@ -489,7 +492,7 @@ bool SjLjEHPrepareImpl::setupEntryBlockAndCallSites(Function &F) {
     Instruction *InsertPoint = Return;
     if (CallInst *CI = Return->getParent()->getTerminatingMustTailCall())
       InsertPoint = CI;
-    CallInst::Create(UnregisterFn, FuncCtx, "", InsertPoint->getIterator());
+    CallInst::Create(UnregisterFn, FuncCtx, "", InsertPoint);
   }
 
   return true;
@@ -499,26 +502,24 @@ bool SjLjEHPrepareImpl::runOnFunction(Function &F) {
   Module &M = *F.getParent();
   RegisterFn = M.getOrInsertFunction(
       "_Unwind_SjLj_Register", Type::getVoidTy(M.getContext()),
-      PointerType::getUnqual(FunctionContextTy->getContext()));
+      PointerType::getUnqual(FunctionContextTy));
   UnregisterFn = M.getOrInsertFunction(
       "_Unwind_SjLj_Unregister", Type::getVoidTy(M.getContext()),
-      PointerType::getUnqual(FunctionContextTy->getContext()));
+      PointerType::getUnqual(FunctionContextTy));
 
   PointerType *AllocaPtrTy = M.getDataLayout().getAllocaPtrType(M.getContext());
 
-  FrameAddrFn = Intrinsic::getOrInsertDeclaration(&M, Intrinsic::frameaddress,
-                                                  {AllocaPtrTy});
-  StackAddrFn = Intrinsic::getOrInsertDeclaration(&M, Intrinsic::stacksave,
-                                                  {AllocaPtrTy});
-  StackRestoreFn = Intrinsic::getOrInsertDeclaration(
-      &M, Intrinsic::stackrestore, {AllocaPtrTy});
+  FrameAddrFn =
+      Intrinsic::getDeclaration(&M, Intrinsic::frameaddress, {AllocaPtrTy});
+  StackAddrFn =
+      Intrinsic::getDeclaration(&M, Intrinsic::stacksave, {AllocaPtrTy});
+  StackRestoreFn =
+      Intrinsic::getDeclaration(&M, Intrinsic::stackrestore, {AllocaPtrTy});
   BuiltinSetupDispatchFn =
-      Intrinsic::getOrInsertDeclaration(&M, Intrinsic::eh_sjlj_setup_dispatch);
-  LSDAAddrFn = Intrinsic::getOrInsertDeclaration(&M, Intrinsic::eh_sjlj_lsda);
-  CallSiteFn =
-      Intrinsic::getOrInsertDeclaration(&M, Intrinsic::eh_sjlj_callsite);
-  FuncCtxFn =
-      Intrinsic::getOrInsertDeclaration(&M, Intrinsic::eh_sjlj_functioncontext);
+    Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_setup_dispatch);
+  LSDAAddrFn = Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_lsda);
+  CallSiteFn = Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_callsite);
+  FuncCtxFn = Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_functioncontext);
 
   bool Res = setupEntryBlockAndCallSites(F);
   return Res;

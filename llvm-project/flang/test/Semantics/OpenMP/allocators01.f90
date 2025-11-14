@@ -1,6 +1,4 @@
-! REQUIRES: openmp_runtime
-
-! RUN: %python %S/../test_errors.py %s %flang_fc1 %openmp_flags -fopenmp-version=50
+! RUN: %python %S/../test_errors.py %s %flang_fc1 -fopenmp
 ! OpenMP Version 5.2
 ! 6.7 allocators construct
 ! A list item that appears in an allocate clause must appear as
@@ -16,7 +14,7 @@ use omp_lib
     allocate(arr3(3), arr4(4, 4))
   !$omp end allocators
 
-  !ERROR: A list item in an ALLOCATORS construct must be specified on the associated ALLOCATE statement
+  !ERROR: Object 'arr1' in ALLOCATORS directive not found in corresponding ALLOCATE statement
   !$omp allocators allocate(omp_default_mem_alloc: arr1, arr2)
     allocate(arr2(2, 2))
 

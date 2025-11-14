@@ -17,12 +17,11 @@ Contents
 
    clang-tidy/index
    clang-include-fixer
-   clang-change-namespace
    modularize
    pp-trace
+   clang-rename
    clangd <https://clangd.llvm.org/>
    clang-doc
-   Maintainers
 
 
 Doxygen Documentation

@@ -11,7 +11,6 @@
 #include "llvm-c/OrcEE.h"
 #include "llvm-c/TargetMachine.h"
 
-#include "llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
 #include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/ExecutionEngine/Orc/ObjectTransformLayer.h"
@@ -92,7 +91,7 @@ public:
         Name(std::move(Name)), Ctx(Ctx), Materialize(Materialize),
         Discard(Discard), Destroy(Destroy) {}
 
-  ~OrcCAPIMaterializationUnit() override {
+  ~OrcCAPIMaterializationUnit() {
     if (Ctx)
       Destroy(Ctx);
   }
@@ -149,14 +148,6 @@ static LLVMJITSymbolFlags fromJITSymbolFlags(JITSymbolFlags JSF) {
   F.TargetFlags = JSF.getTargetFlags();
 
   return F;
-}
-
-static SymbolNameSet toSymbolNameSet(LLVMOrcCSymbolsList Symbols) {
-  SymbolNameSet Result;
-  Result.reserve(Symbols.Length);
-  for (size_t I = 0; I != Symbols.Length; ++I)
-    Result.insert(unwrap(Symbols.Symbols[I]).moveToSymbolStringPtr());
-  return Result;
 }
 
 static SymbolMap toSymbolMap(LLVMOrcCSymbolMapPairs Syms, size_t NumPairs) {
@@ -264,7 +255,7 @@ public:
       LLVMOrcCAPIDefinitionGeneratorTryToGenerateFunction TryToGenerate)
       : Dispose(Dispose), Ctx(Ctx), TryToGenerate(TryToGenerate) {}
 
-  ~CAPIDefinitionGenerator() override {
+  ~CAPIDefinitionGenerator() {
     if (Dispose)
       Dispose(Ctx);
   }
@@ -531,24 +522,14 @@ void LLVMOrcDisposeSymbols(LLVMOrcSymbolStringPoolEntryRef *Symbols) {
 
 LLVMErrorRef LLVMOrcMaterializationResponsibilityNotifyResolved(
     LLVMOrcMaterializationResponsibilityRef MR, LLVMOrcCSymbolMapPairs Symbols,
-    size_t NumSymbols) {
-  SymbolMap SM = toSymbolMap(Symbols, NumSymbols);
+    size_t NumPairs) {
+  SymbolMap SM = toSymbolMap(Symbols, NumPairs);
   return wrap(unwrap(MR)->notifyResolved(std::move(SM)));
 }
 
 LLVMErrorRef LLVMOrcMaterializationResponsibilityNotifyEmitted(
-    LLVMOrcMaterializationResponsibilityRef MR,
-    LLVMOrcCSymbolDependenceGroup *SymbolDepGroups, size_t NumSymbolDepGroups) {
-  std::vector<SymbolDependenceGroup> SDGs;
-  SDGs.reserve(NumSymbolDepGroups);
-  for (size_t I = 0; I != NumSymbolDepGroups; ++I) {
-    SDGs.push_back(SymbolDependenceGroup());
-    auto &SDG = SDGs.back();
-    SDG.Symbols = toSymbolNameSet(SymbolDepGroups[I].Symbols);
-    SDG.Dependencies = toSymbolDependenceMap(
-        SymbolDepGroups[I].Dependencies, SymbolDepGroups[I].NumDependencies);
-  }
-  return wrap(unwrap(MR)->notifyEmitted(SDGs));
+    LLVMOrcMaterializationResponsibilityRef MR) {
+  return wrap(unwrap(MR)->notifyEmitted());
 }
 
 LLVMErrorRef LLVMOrcMaterializationResponsibilityDefineMaterializing(
@@ -584,6 +565,24 @@ LLVMErrorRef LLVMOrcMaterializationResponsibilityDelegate(
   }
   *Result = wrap(OtherMR->release());
   return LLVMErrorSuccess;
+}
+
+void LLVMOrcMaterializationResponsibilityAddDependencies(
+    LLVMOrcMaterializationResponsibilityRef MR,
+    LLVMOrcSymbolStringPoolEntryRef Name,
+    LLVMOrcCDependenceMapPairs Dependencies, size_t NumPairs) {
+
+  SymbolDependenceMap SDM = toSymbolDependenceMap(Dependencies, NumPairs);
+  auto Sym = unwrap(Name).moveToSymbolStringPtr();
+  unwrap(MR)->addDependencies(Sym, SDM);
+}
+
+void LLVMOrcMaterializationResponsibilityAddDependenciesForAll(
+    LLVMOrcMaterializationResponsibilityRef MR,
+    LLVMOrcCDependenceMapPairs Dependencies, size_t NumPairs) {
+
+  SymbolDependenceMap SDM = toSymbolDependenceMap(Dependencies, NumPairs);
+  unwrap(MR)->addDependenciesForAll(SDM);
 }
 
 void LLVMOrcMaterializationResponsibilityFailMaterialization(
@@ -729,9 +728,9 @@ LLVMOrcThreadSafeContextRef LLVMOrcCreateNewThreadSafeContext(void) {
   return wrap(new ThreadSafeContext(std::make_unique<LLVMContext>()));
 }
 
-LLVMOrcThreadSafeContextRef
-LLVMOrcCreateNewThreadSafeContextFromLLVMContext(LLVMContextRef Ctx) {
-  return wrap(new ThreadSafeContext(std::unique_ptr<LLVMContext>(unwrap(Ctx))));
+LLVMContextRef
+LLVMOrcThreadSafeContextGetContext(LLVMOrcThreadSafeContextRef TSCtx) {
+  return wrap(unwrap(TSCtx)->getContext());
 }
 
 void LLVMOrcDisposeThreadSafeContext(LLVMOrcThreadSafeContextRef TSCtx) {
@@ -911,11 +910,12 @@ void LLVMOrcLLJITBuilderSetJITTargetMachineBuilder(
 void LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator(
     LLVMOrcLLJITBuilderRef Builder,
     LLVMOrcLLJITBuilderObjectLinkingLayerCreatorFunction F, void *Ctx) {
-  unwrap(Builder)->setObjectLinkingLayerCreator([=](ExecutionSession &ES) {
-    auto TTStr = ES.getTargetTriple().str();
-    return std::unique_ptr<ObjectLayer>(
-        unwrap(F(Ctx, wrap(&ES), TTStr.c_str())));
-  });
+  unwrap(Builder)->setObjectLinkingLayerCreator(
+      [=](ExecutionSession &ES, const Triple &TT) {
+        auto TTStr = TT.str();
+        return std::unique_ptr<ObjectLayer>(
+            unwrap(F(Ctx, wrap(&ES), TTStr.c_str())));
+      });
 }
 
 LLVMErrorRef LLVMOrcCreateLLJIT(LLVMOrcLLJITRef *Result,
@@ -1021,10 +1021,8 @@ LLVMOrcObjectLayerRef
 LLVMOrcCreateRTDyldObjectLinkingLayerWithSectionMemoryManager(
     LLVMOrcExecutionSessionRef ES) {
   assert(ES && "ES must not be null");
-  return wrap(
-      new RTDyldObjectLinkingLayer(*unwrap(ES), [](const MemoryBuffer &) {
-        return std::make_unique<SectionMemoryManager>();
-      }));
+  return wrap(new RTDyldObjectLinkingLayer(
+      *unwrap(ES), [] { return std::make_unique<SectionMemoryManager>(); }));
 }
 
 LLVMOrcObjectLayerRef
@@ -1130,10 +1128,9 @@ LLVMOrcCreateRTDyldObjectLinkingLayerWithMCJITMemoryManagerLikeCallbacks(
       CreateContextCtx, CreateContext, NotifyTerminating, AllocateCodeSection,
       AllocateDataSection, FinalizeMemory, Destroy);
 
-  return wrap(new RTDyldObjectLinkingLayer(
-      *unwrap(ES), [CBs = std::move(CBs)](const MemoryBuffer &) {
-        return std::make_unique<MCJITMemoryManagerLikeCallbacksMemMgr>(CBs);
-      }));
+  return wrap(new RTDyldObjectLinkingLayer(*unwrap(ES), [CBs = std::move(CBs)] {
+    return std::make_unique<MCJITMemoryManagerLikeCallbacksMemMgr>(CBs);
+  }));
 
   return nullptr;
 }

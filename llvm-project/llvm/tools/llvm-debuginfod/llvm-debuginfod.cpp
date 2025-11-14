@@ -36,13 +36,12 @@ enum ID {
 #undef OPTION
 };
 
-#define OPTTABLE_STR_TABLE_CODE
+#define PREFIX(NAME, VALUE)                                                    \
+  static constexpr StringLiteral NAME##_init[] = VALUE;                        \
+  static constexpr ArrayRef<StringLiteral> NAME(NAME##_init,                   \
+                                                std::size(NAME##_init) - 1);
 #include "Opts.inc"
-#undef OPTTABLE_STR_TABLE_CODE
-
-#define OPTTABLE_PREFIXES_TABLE_CODE
-#include "Opts.inc"
-#undef OPTTABLE_PREFIXES_TABLE_CODE
+#undef PREFIX
 
 using namespace llvm::opt;
 static constexpr opt::OptTable::Info InfoTable[] = {
@@ -53,8 +52,7 @@ static constexpr opt::OptTable::Info InfoTable[] = {
 
 class DebuginfodOptTable : public opt::GenericOptTable {
 public:
-  DebuginfodOptTable()
-      : GenericOptTable(OptionStrTable, OptionPrefixesTable, InfoTable) {}
+  DebuginfodOptTable() : GenericOptTable(InfoTable) {}
 };
 } // end anonymous namespace
 
@@ -126,9 +124,10 @@ int llvm_debuginfod_main(int argc, char **argv, const llvm::ToolContext &) {
   parseArgs(argc, argv);
 
   SmallVector<StringRef, 1> Paths;
-  llvm::append_range(Paths, ScanPaths);
+  for (const std::string &Path : ScanPaths)
+    Paths.push_back(Path);
 
-  DefaultThreadPool Pool(hardware_concurrency(MaxConcurrency));
+  ThreadPool Pool(hardware_concurrency(MaxConcurrency));
   DebuginfodLog Log;
   DebuginfodCollection Collection(Paths, Log, Pool, MinInterval);
   DebuginfodServer Server(Log, Collection);

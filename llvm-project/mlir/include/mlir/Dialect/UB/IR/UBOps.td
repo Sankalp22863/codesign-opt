@@ -12,7 +12,7 @@
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
 
-include "mlir/Dialect/UB/IR/UBOpsInterfaces.td"
+include "UBOpsInterfaces.td"
 
 def UB_Dialect : Dialect {
   let name = "ub";

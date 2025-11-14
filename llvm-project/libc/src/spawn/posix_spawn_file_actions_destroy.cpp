@@ -9,15 +9,13 @@
 #include "posix_spawn_file_actions_destroy.h"
 
 #include "file_actions.h"
-
 #include "src/__support/CPP/new.h"
 #include "src/__support/common.h"
-#include "src/__support/libc_errno.h"
-#include "src/__support/macros/config.h"
 
+#include <errno.h>
 #include <spawn.h>
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
 LLVM_LIBC_FUNCTION(int, posix_spawn_file_actions_destroy,
                    (posix_spawn_file_actions_t * actions)) {
@@ -51,4 +49,4 @@ LLVM_LIBC_FUNCTION(int, posix_spawn_file_actions_destroy,
   return 0;
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

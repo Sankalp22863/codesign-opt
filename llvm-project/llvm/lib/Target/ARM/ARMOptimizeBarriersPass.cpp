@@ -9,6 +9,7 @@
 
 #include "ARM.h"
 #include "ARMInstrInfo.h"
+#include "ARMMachineFunctionInfo.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 using namespace llvm;
@@ -26,7 +27,8 @@ public:
   bool runOnMachineFunction(MachineFunction &Fn) override;
 
   MachineFunctionProperties getRequiredProperties() const override {
-    return MachineFunctionProperties().setNoVRegs();
+    return MachineFunctionProperties().set(
+        MachineFunctionProperties::Property::NoVRegs);
   }
 
   StringRef getPassName() const override { return "optimise barriers pass"; }

@@ -15,9 +15,11 @@
 #include "clang/AST/ExternalASTSource.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclarationName.h"
-#include "clang/Basic/ASTSourceDescriptor.h"
+#include "clang/Basic/FileManager.h"
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/LLVM.h"
+#include "clang/Basic/Module.h"
+#include "clang/Basic/SourceManager.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cstdint>
 #include <optional>
@@ -36,10 +38,6 @@ ExternalASTSource::getSourceDescriptor(unsigned ID) {
 ExternalASTSource::ExtKind
 ExternalASTSource::hasExternalDefinitions(const Decl *D) {
   return EK_ReplyHazy;
-}
-
-bool ExternalASTSource::wasThisDeclarationADefinition(const FunctionDecl *FD) {
-  return false;
 }
 
 void ExternalASTSource::FindFileRegionDecls(FileID File, unsigned Offset,
@@ -70,7 +68,9 @@ bool ExternalASTSource::layoutRecordType(
   return false;
 }
 
-Decl *ExternalASTSource::GetExternalDecl(GlobalDeclID ID) { return nullptr; }
+Decl *ExternalASTSource::GetExternalDecl(uint32_t ID) {
+  return nullptr;
+}
 
 Selector ExternalASTSource::GetExternalSelector(uint32_t ID) {
   return Selector();
@@ -94,18 +94,9 @@ ExternalASTSource::GetExternalCXXBaseSpecifiers(uint64_t Offset) {
   return nullptr;
 }
 
-bool ExternalASTSource::FindExternalVisibleDeclsByName(
-    const DeclContext *DC, DeclarationName Name,
-    const DeclContext *OriginalDC) {
-  return false;
-}
-
-bool ExternalASTSource::LoadExternalSpecializations(const Decl *D, bool) {
-  return false;
-}
-
-bool ExternalASTSource::LoadExternalSpecializations(
-    const Decl *D, ArrayRef<TemplateArgument>) {
+bool
+ExternalASTSource::FindExternalVisibleDeclsByName(const DeclContext *DC,
+                                                  DeclarationName Name) {
   return false;
 }
 
@@ -129,7 +120,7 @@ uint32_t ExternalASTSource::incrementGeneration(ASTContext &C) {
     // FIXME: Only bump the generation counter if the current generation number
     // has been observed?
     if (!++CurrentGeneration)
-      llvm::reportFatalUsageError("generation counter overflowed");
+      llvm::report_fatal_error("generation counter overflowed", false);
   }
 
   return OldGeneration;

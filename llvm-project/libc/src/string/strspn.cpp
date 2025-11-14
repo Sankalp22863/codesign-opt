@@ -10,15 +10,11 @@
 
 #include "src/__support/CPP/bitset.h"
 #include "src/__support/common.h"
-#include "src/__support/macros/config.h"
-#include "src/__support/macros/null_check.h"
 #include <stddef.h>
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
 LLVM_LIBC_FUNCTION(size_t, strspn, (const char *src, const char *segment)) {
-  LIBC_CRASH_ON_NULLPTR(src);
-  LIBC_CRASH_ON_NULLPTR(segment);
   const char *initial = src;
   cpp::bitset<256> bitset;
 
@@ -30,4 +26,4 @@ LLVM_LIBC_FUNCTION(size_t, strspn, (const char *src, const char *segment)) {
   return src - initial;
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

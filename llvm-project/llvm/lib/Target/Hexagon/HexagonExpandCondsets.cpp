@@ -85,7 +85,6 @@
 // however, is that finding the locations where the implicit uses need
 // to be added, and updating the live ranges will be more involved.
 
-#include "Hexagon.h"
 #include "HexagonInstrInfo.h"
 #include "HexagonRegisterInfo.h"
 #include "llvm/ADT/DenseMap.h"
@@ -129,6 +128,13 @@ static cl::opt<unsigned> OptTfrLimit("expand-condsets-tfr-limit",
 static cl::opt<unsigned> OptCoaLimit("expand-condsets-coa-limit",
   cl::init(~0U), cl::Hidden, cl::desc("Max number of segment coalescings"));
 
+namespace llvm {
+
+  void initializeHexagonExpandCondsetsPass(PassRegistry&);
+  FunctionPass *createHexagonExpandCondsets();
+
+} // end namespace llvm
+
 namespace {
 
   class HexagonExpandCondsets : public MachineFunctionPass {
@@ -140,16 +146,17 @@ namespace {
         CoaLimitActive = true, CoaLimit = OptCoaLimit;
       if (OptTfrLimit.getPosition())
         TfrLimitActive = true, TfrLimit = OptTfrLimit;
+      initializeHexagonExpandCondsetsPass(*PassRegistry::getPassRegistry());
     }
 
     StringRef getPassName() const override { return "Hexagon Expand Condsets"; }
 
     void getAnalysisUsage(AnalysisUsage &AU) const override {
-      AU.addRequired<LiveIntervalsWrapperPass>();
-      AU.addPreserved<LiveIntervalsWrapperPass>();
-      AU.addPreserved<SlotIndexesWrapperPass>();
-      AU.addRequired<MachineDominatorTreeWrapperPass>();
-      AU.addPreserved<MachineDominatorTreeWrapperPass>();
+      AU.addRequired<LiveIntervals>();
+      AU.addPreserved<LiveIntervals>();
+      AU.addPreserved<SlotIndexes>();
+      AU.addRequired<MachineDominatorTree>();
+      AU.addPreserved<MachineDominatorTree>();
       MachineFunctionPass::getAnalysisUsage(AU);
     }
 
@@ -238,13 +245,18 @@ namespace {
 } // end anonymous namespace
 
 char HexagonExpandCondsets::ID = 0;
-char &llvm::HexagonExpandCondsetsID = HexagonExpandCondsets::ID;
+
+namespace llvm {
+
+  char &HexagonExpandCondsetsID = HexagonExpandCondsets::ID;
+
+} // end namespace llvm
 
 INITIALIZE_PASS_BEGIN(HexagonExpandCondsets, "expand-condsets",
   "Hexagon Expand Condsets", false, false)
-INITIALIZE_PASS_DEPENDENCY(MachineDominatorTreeWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(SlotIndexesWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(LiveIntervalsWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
+INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
+INITIALIZE_PASS_DEPENDENCY(LiveIntervals)
 INITIALIZE_PASS_END(HexagonExpandCondsets, "expand-condsets",
   "Hexagon Expand Condsets", false, false)
 
@@ -285,7 +297,11 @@ LaneBitmask HexagonExpandCondsets::getLaneMask(Register Reg, unsigned Sub) {
 void HexagonExpandCondsets::addRefToMap(RegisterRef RR, ReferenceMap &Map,
       unsigned Exec) {
   unsigned Mask = getMaskForSub(RR.Sub) | Exec;
-  Map[RR.Reg] |= Mask;
+  ReferenceMap::iterator F = Map.find(RR.Reg);
+  if (F == Map.end())
+    Map.insert(std::make_pair(RR.Reg, Mask));
+  else
+    F->second |= Mask;
 }
 
 bool HexagonExpandCondsets::isRefInMap(RegisterRef RR, ReferenceMap &Map,
@@ -382,14 +398,15 @@ void HexagonExpandCondsets::updateDeadsInRange(Register Reg, LaneBitmask LM,
         return true;
     }
     MachineBasicBlock *Entry = &Dest->getParent()->front();
-    SetVector<MachineBasicBlock *> Work(llvm::from_range, Dest->predecessors());
+    SetVector<MachineBasicBlock*> Work(Dest->pred_begin(), Dest->pred_end());
     for (unsigned i = 0; i < Work.size(); ++i) {
       MachineBasicBlock *B = Work[i];
       if (Defs.count(B))
         continue;
       if (B == Entry)
         return false;
-      Work.insert_range(B->predecessors());
+      for (auto *P : B->predecessors())
+        Work.insert(P);
     }
     return true;
   };
@@ -555,7 +572,7 @@ void HexagonExpandCondsets::updateLiveness(const std::set<Register> &RegSet,
     // after that.
     if (UpdateKills)
       updateKillFlags(R);
-    assert(LIS->getInterval(R).verify());
+    LIS->getInterval(R).verify();
   }
 }
 
@@ -707,7 +724,7 @@ bool HexagonExpandCondsets::split(MachineInstr &MI,
     }
   }
 
-  // First, create the two individual conditional transfers, and add each
+  // First, create the two invididual conditional transfers, and add each
   // of them to the live intervals information. Do that first and then remove
   // the old instruction from live intervals.
   MachineInstr *TfrT =
@@ -762,8 +779,7 @@ MachineInstr *HexagonExpandCondsets::getReachingDefForPred(RegisterRef RD,
     // Check if this instruction can be ignored, i.e. if it is predicated
     // on the complementary condition.
     if (PredValid && HII->isPredicated(*MI)) {
-      if (MI->readsRegister(PredR, /*TRI=*/nullptr) &&
-          (Cond != HII->isPredicatedTrue(*MI)))
+      if (MI->readsRegister(PredR) && (Cond != HII->isPredicatedTrue(*MI)))
         continue;
     }
 
@@ -921,8 +937,7 @@ void HexagonExpandCondsets::renameInRange(RegisterRef RO, RegisterRef RN,
     // on the opposite condition.
     if (!HII->isPredicated(MI))
       continue;
-    if (!MI.readsRegister(PredR, /*TRI=*/nullptr) ||
-        (Cond != HII->isPredicatedTrue(MI)))
+    if (!MI.readsRegister(PredR) || (Cond != HII->isPredicatedTrue(MI)))
       continue;
 
     for (auto &Op : MI.operands()) {
@@ -992,8 +1007,7 @@ bool HexagonExpandCondsets::predicate(MachineInstr &TfrI, bool Cond,
     // By default assume that the instruction executes on the same condition
     // as TfrI (Exec_Then), and also on the opposite one (Exec_Else).
     unsigned Exec = Exec_Then | Exec_Else;
-    if (PredValid && HII->isPredicated(MI) &&
-        MI.readsRegister(PredR, /*TRI=*/nullptr))
+    if (PredValid && HII->isPredicated(MI) && MI.readsRegister(PredR))
       Exec = (Cond == HII->isPredicatedTrue(MI)) ? Exec_Then : Exec_Else;
 
     for (auto &Op : MI.operands()) {
@@ -1184,7 +1198,7 @@ bool HexagonExpandCondsets::coalesceRegisters(RegisterRef R1, RegisterRef R2) {
 
   updateKillFlags(R1.Reg);
   LLVM_DEBUG(dbgs() << "coalesced: " << L1 << "\n");
-  assert(L1.verify());
+  L1.verify();
 
   return true;
 }
@@ -1260,11 +1274,12 @@ bool HexagonExpandCondsets::runOnMachineFunction(MachineFunction &MF) {
 
   HII = static_cast<const HexagonInstrInfo*>(MF.getSubtarget().getInstrInfo());
   TRI = MF.getSubtarget().getRegisterInfo();
-  MDT = &getAnalysis<MachineDominatorTreeWrapperPass>().getDomTree();
-  LIS = &getAnalysis<LiveIntervalsWrapperPass>().getLIS();
+  MDT = &getAnalysis<MachineDominatorTree>();
+  LIS = &getAnalysis<LiveIntervals>();
   MRI = &MF.getRegInfo();
 
-  LLVM_DEBUG(LIS->print(dbgs() << "Before expand-condsets\n"));
+  LLVM_DEBUG(LIS->print(dbgs() << "Before expand-condsets\n",
+                        MF.getFunction().getParent()));
 
   bool Changed = false;
   std::set<Register> CoalUpd, PredUpd;
@@ -1296,7 +1311,8 @@ bool HexagonExpandCondsets::runOnMachineFunction(MachineFunction &MF) {
     }
   }
   updateLiveness(KillUpd, false, true, false);
-  LLVM_DEBUG(LIS->print(dbgs() << "After coalescing\n"));
+  LLVM_DEBUG(
+      LIS->print(dbgs() << "After coalescing\n", MF.getFunction().getParent()));
 
   // First, simply split all muxes into a pair of conditional transfers
   // and update the live intervals to reflect the new arrangement. The
@@ -1312,7 +1328,8 @@ bool HexagonExpandCondsets::runOnMachineFunction(MachineFunction &MF) {
   // predication, and after splitting they are difficult to recalculate
   // (because of predicated defs), so make sure they are left untouched.
   // Predication does not use live intervals.
-  LLVM_DEBUG(LIS->print(dbgs() << "After splitting\n"));
+  LLVM_DEBUG(
+      LIS->print(dbgs() << "After splitting\n", MF.getFunction().getParent()));
 
   // Traverse all blocks and collapse predicable instructions feeding
   // conditional transfers into predicated instructions.
@@ -1320,7 +1337,8 @@ bool HexagonExpandCondsets::runOnMachineFunction(MachineFunction &MF) {
   // cases that were not created in the previous step.
   for (auto &B : MF)
     Changed |= predicateInBlock(B, PredUpd);
-  LLVM_DEBUG(LIS->print(dbgs() << "After predicating\n"));
+  LLVM_DEBUG(LIS->print(dbgs() << "After predicating\n",
+                        MF.getFunction().getParent()));
 
   PredUpd.insert(CoalUpd.begin(), CoalUpd.end());
   updateLiveness(PredUpd, true, true, true);
@@ -1330,7 +1348,8 @@ bool HexagonExpandCondsets::runOnMachineFunction(MachineFunction &MF) {
 
   LLVM_DEBUG({
     if (Changed)
-      LIS->print(dbgs() << "After expand-condsets\n");
+      LIS->print(dbgs() << "After expand-condsets\n",
+                 MF.getFunction().getParent());
   });
 
   return Changed;

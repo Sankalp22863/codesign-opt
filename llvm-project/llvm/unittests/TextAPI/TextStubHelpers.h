@@ -8,6 +8,7 @@
 
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/TextAPI/InterfaceFile.h"
+#include <algorithm>
 #include <string>
 
 #ifndef TEXT_STUB_HELPERS_H
@@ -15,7 +16,7 @@
 
 namespace llvm {
 struct ExportedSymbol {
-  MachO::EncodeKind Kind = MachO::EncodeKind::GlobalSymbol;
+  MachO::SymbolKind Kind = MachO::SymbolKind::GlobalSymbol;
   std::string Name = {};
   bool Weak = false;
   bool ThreadLocalValue = false;
@@ -38,7 +39,7 @@ inline bool operator==(const ExportedSymbol &LHS, const ExportedSymbol &RHS) {
 }
 
 inline std::string stripWhitespace(std::string S) {
-  llvm::erase_if(S, ::isspace);
+  S.erase(std::remove_if(S.begin(), S.end(), ::isspace), S.end());
   return S;
 }
 

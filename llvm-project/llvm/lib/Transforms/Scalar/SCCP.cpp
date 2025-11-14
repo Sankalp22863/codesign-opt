@@ -17,31 +17,36 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar/SCCP.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/DomTreeUpdater.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/Analysis/ValueLatticeUtils.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constant.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
+#include "llvm/IR/User.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/SCCPSolver.h"
+#include <utility>
 
 using namespace llvm;
 
@@ -55,26 +60,18 @@ STATISTIC(NumInstReplaced,
 // runSCCP() - Run the Sparse Conditional Constant Propagation algorithm,
 // and return true if the function was modified.
 static bool runSCCP(Function &F, const DataLayout &DL,
-                    const TargetLibraryInfo *TLI, DominatorTree &DT,
-                    AssumptionCache &AC) {
+                    const TargetLibraryInfo *TLI, DomTreeUpdater &DTU) {
   LLVM_DEBUG(dbgs() << "SCCP on function '" << F.getName() << "'\n");
   SCCPSolver Solver(
       DL, [TLI](Function &F) -> const TargetLibraryInfo & { return *TLI; },
       F.getContext());
 
-  Solver.addPredicateInfo(F, DT, AC);
-
-  // While we don't do any actual inter-procedural analysis, still track
-  // return values so we can infer attributes.
-  if (canTrackReturnsInterprocedurally(&F))
-    Solver.addTrackedFunction(&F);
-
   // Mark the first block of the function as being executable.
   Solver.markBlockExecutable(&F.front());
 
-  // Initialize arguments based on attributes.
+  // Mark all arguments to the function as being overdefined.
   for (Argument &AI : F.args())
-    Solver.trackValueOfArgument(&AI);
+    Solver.markOverdefined(&AI);
 
   // Solve for constants.
   bool ResolvedUndefs = true;
@@ -106,9 +103,8 @@ static bool runSCCP(Function &F, const DataLayout &DL,
   }
 
   // Remove unreachable blocks and non-feasible edges.
-  DomTreeUpdater DTU(DT, DomTreeUpdater::UpdateStrategy::Lazy);
   for (BasicBlock *DeadBB : BlocksToErase)
-    NumInstRemoved += changeToUnreachable(&*DeadBB->getFirstNonPHIIt(),
+    NumInstRemoved += changeToUnreachable(DeadBB->getFirstNonPHI(),
                                           /*PreserveLCSSA=*/false, &DTU);
 
   BasicBlock *NewUnreachableBB = nullptr;
@@ -119,19 +115,15 @@ static bool runSCCP(Function &F, const DataLayout &DL,
     if (!DeadBB->hasAddressTaken())
       DTU.deleteBB(DeadBB);
 
-  Solver.removeSSACopies(F);
-
-  Solver.inferReturnAttributes();
-
   return MadeChanges;
 }
 
 PreservedAnalyses SCCPPass::run(Function &F, FunctionAnalysisManager &AM) {
-  const DataLayout &DL = F.getDataLayout();
+  const DataLayout &DL = F.getParent()->getDataLayout();
   auto &TLI = AM.getResult<TargetLibraryAnalysis>(F);
-  auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
-  auto &AC = AM.getResult<AssumptionAnalysis>(F);
-  if (!runSCCP(F, DL, &TLI, DT, AC))
+  auto *DT = AM.getCachedResult<DominatorTreeAnalysis>(F);
+  DomTreeUpdater DTU(DT, DomTreeUpdater::UpdateStrategy::Lazy);
+  if (!runSCCP(F, DL, &TLI, DTU))
     return PreservedAnalyses::all();
 
   auto PA = PreservedAnalyses();

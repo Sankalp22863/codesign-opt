@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- InitVariablesCheck.cpp - clang-tidy ------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,10 +8,9 @@
 
 #include "InitVariablesCheck.h"
 
-#include "../utils/LexerUtils.h"
 #include "clang/AST/ASTContext.h"
-#include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
 #include <optional>
 
@@ -37,7 +36,7 @@ void InitVariablesCheck::storeOptions(ClangTidyOptions::OptionMap &Opts) {
 }
 
 void InitVariablesCheck::registerMatchers(MatchFinder *Finder) {
-  const std::string BadDecl = "badDecl";
+  std::string BadDecl = "badDecl";
   Finder->addMatcher(
       varDecl(unless(hasInitializer(anything())), unless(isInstantiated()),
               isLocalVarDecl(), unless(isStaticLocal()), isDefinition(),
@@ -82,7 +81,7 @@ void InitVariablesCheck::check(const MatchFinder::MatchResult &Result) {
   if (MatchedDecl->getEndLoc().isMacroID())
     return;
 
-  const QualType TypePtr = MatchedDecl->getType();
+  QualType TypePtr = MatchedDecl->getType();
   std::optional<const char *> InitializationString;
   bool AddMathInclude = false;
 
@@ -108,9 +107,8 @@ void InitVariablesCheck::check(const MatchFinder::MatchResult &Result) {
         << MatchedDecl;
     if (*InitializationString != nullptr)
       Diagnostic << FixItHint::CreateInsertion(
-          utils::lexer::findNextTerminator(MatchedDecl->getEndLoc(),
-                                           *Result.SourceManager,
-                                           Result.Context->getLangOpts()),
+          MatchedDecl->getLocation().getLocWithOffset(
+              MatchedDecl->getName().size()),
           *InitializationString);
     if (AddMathInclude) {
       Diagnostic << IncludeInserter.createIncludeInsertion(

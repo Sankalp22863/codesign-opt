@@ -1,14 +1,13 @@
-; RUN: llvm-link -S -o - %p/pr22807.ll %p/Inputs/pr22807.ll 2>&1 | FileCheck %s
+; RUN: llvm-link -S -o - %p/pr22807.ll %p/Inputs/pr22807-1.ll %p/Inputs/pr22807-2.ll | FileCheck %s
 
+; CHECK-NOT: type
 ; CHECK: %struct.B = type { %struct.A }
-; CHECK: %struct.A = type opaque
-; CHECK: @g = external global %struct.B
+; CHECK-NEXT: %struct.A = type { %struct.B }
+; CHECK-NOT: type
 
 %struct.B = type { %struct.A }
 %struct.A = type opaque
 
-@g = external global %struct.B
-
-define ptr @test() {
-  ret ptr @g
+define i32 @baz(%struct.B %BB) {
+  ret i32 0
 }

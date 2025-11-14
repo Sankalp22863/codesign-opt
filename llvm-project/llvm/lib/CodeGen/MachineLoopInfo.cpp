@@ -22,70 +22,39 @@
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/PassRegistry.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/GenericLoopInfoImpl.h"
 
 using namespace llvm;
 
 // Explicitly instantiate methods in LoopInfoImpl.h for MI-level Loops.
-template class LLVM_EXPORT_TEMPLATE
-    llvm::LoopBase<MachineBasicBlock, MachineLoop>;
-template class LLVM_EXPORT_TEMPLATE
-    llvm::LoopInfoBase<MachineBasicBlock, MachineLoop>;
+template class llvm::LoopBase<MachineBasicBlock, MachineLoop>;
+template class llvm::LoopInfoBase<MachineBasicBlock, MachineLoop>;
 
-AnalysisKey MachineLoopAnalysis::Key;
-
-MachineLoopAnalysis::Result
-MachineLoopAnalysis::run(MachineFunction &MF,
-                         MachineFunctionAnalysisManager &MFAM) {
-  return MachineLoopInfo(MFAM.getResult<MachineDominatorTreeAnalysis>(MF));
+char MachineLoopInfo::ID = 0;
+MachineLoopInfo::MachineLoopInfo() : MachineFunctionPass(ID) {
+  initializeMachineLoopInfoPass(*PassRegistry::getPassRegistry());
 }
+INITIALIZE_PASS_BEGIN(MachineLoopInfo, "machine-loops",
+                "Machine Natural Loop Construction", true, true)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
+INITIALIZE_PASS_END(MachineLoopInfo, "machine-loops",
+                "Machine Natural Loop Construction", true, true)
 
-PreservedAnalyses
-MachineLoopPrinterPass::run(MachineFunction &MF,
-                            MachineFunctionAnalysisManager &MFAM) {
-  OS << "Machine loop info for machine function '" << MF.getName() << "':\n";
-  MFAM.getResult<MachineLoopAnalysis>(MF).print(OS);
-  return PreservedAnalyses::all();
-}
+char &llvm::MachineLoopInfoID = MachineLoopInfo::ID;
 
-char MachineLoopInfoWrapperPass::ID = 0;
-MachineLoopInfoWrapperPass::MachineLoopInfoWrapperPass()
-    : MachineFunctionPass(ID) {
-  initializeMachineLoopInfoWrapperPassPass(*PassRegistry::getPassRegistry());
-}
-INITIALIZE_PASS_BEGIN(MachineLoopInfoWrapperPass, "machine-loops",
-                      "Machine Natural Loop Construction", true, true)
-INITIALIZE_PASS_DEPENDENCY(MachineDominatorTreeWrapperPass)
-INITIALIZE_PASS_END(MachineLoopInfoWrapperPass, "machine-loops",
-                    "Machine Natural Loop Construction", true, true)
-
-char &llvm::MachineLoopInfoID = MachineLoopInfoWrapperPass::ID;
-
-bool MachineLoopInfoWrapperPass::runOnMachineFunction(MachineFunction &) {
-  LI.calculate(getAnalysis<MachineDominatorTreeWrapperPass>().getDomTree());
+bool MachineLoopInfo::runOnMachineFunction(MachineFunction &) {
+  calculate(getAnalysis<MachineDominatorTree>());
   return false;
-}
-
-bool MachineLoopInfo::invalidate(
-    MachineFunction &, const PreservedAnalyses &PA,
-    MachineFunctionAnalysisManager::Invalidator &) {
-  // Check whether the analysis, all analyses on functions, or the function's
-  // CFG have been preserved.
-  auto PAC = PA.getChecker<MachineLoopAnalysis>();
-  return !PAC.preserved() &&
-         !PAC.preservedSet<AllAnalysesOn<MachineFunction>>() &&
-         !PAC.preservedSet<CFGAnalyses>();
 }
 
 void MachineLoopInfo::calculate(MachineDominatorTree &MDT) {
   releaseMemory();
-  analyze(MDT);
+  LI.analyze(MDT.getBase());
 }
 
-void MachineLoopInfoWrapperPass::getAnalysisUsage(AnalysisUsage &AU) const {
+void MachineLoopInfo::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
-  AU.addRequired<MachineDominatorTreeWrapperPass>();
+  AU.addRequired<MachineDominatorTree>();
   MachineFunctionPass::getAnalysisUsage(AU);
 }
 
@@ -184,54 +153,52 @@ MachineLoopInfo::findLoopPreheader(MachineLoop *L, bool SpeculativePreheader,
 
 MDNode *MachineLoop::getLoopID() const {
   MDNode *LoopID = nullptr;
-
-  // Go through the latch blocks and check the terminator for the metadata
-  SmallVector<MachineBasicBlock *, 4> LatchesBlocks;
-  getLoopLatches(LatchesBlocks);
-  for (const auto *MBB : LatchesBlocks) {
+  if (const auto *MBB = findLoopControlBlock()) {
+    // If there is a single latch block, then the metadata
+    // node is attached to its terminating instruction.
     const auto *BB = MBB->getBasicBlock();
     if (!BB)
       return nullptr;
-    const auto *TI = BB->getTerminator();
-    if (!TI)
-      return nullptr;
-
-    MDNode *MD = TI->getMetadata(LLVMContext::MD_loop);
-    if (!MD)
-      return nullptr;
-
-    if (!LoopID)
-      LoopID = MD;
-    else if (MD != LoopID)
-      return nullptr;
+    if (const auto *TI = BB->getTerminator())
+      LoopID = TI->getMetadata(LLVMContext::MD_loop);
+  } else if (const auto *MBB = getHeader()) {
+    // There seem to be multiple latch blocks, so we have to
+    // visit all predecessors of the loop header and check
+    // their terminating instructions for the metadata.
+    if (const auto *Header = MBB->getBasicBlock()) {
+      // Walk over all blocks in the loop.
+      for (const auto *MBB : this->blocks()) {
+        const auto *BB = MBB->getBasicBlock();
+        if (!BB)
+          return nullptr;
+        const auto *TI = BB->getTerminator();
+        if (!TI)
+          return nullptr;
+        MDNode *MD = nullptr;
+        // Check if this terminating instruction jumps to the loop header.
+        for (const auto *Succ : successors(TI)) {
+          if (Succ == Header) {
+            // This is a jump to the header - gather the metadata from it.
+            MD = TI->getMetadata(LLVMContext::MD_loop);
+            break;
+          }
+        }
+        if (!MD)
+          return nullptr;
+        if (!LoopID)
+          LoopID = MD;
+        else if (MD != LoopID)
+          return nullptr;
+      }
+    }
   }
-
-  if (!LoopID || LoopID->getNumOperands() == 0 ||
-      LoopID->getOperand(0) != LoopID)
-    return nullptr;
-
+  if (LoopID &&
+      (LoopID->getNumOperands() == 0 || LoopID->getOperand(0) != LoopID))
+    LoopID = nullptr;
   return LoopID;
 }
 
-bool MachineLoop::isLoopInvariantImplicitPhysReg(Register Reg) const {
-  MachineFunction *MF = getHeader()->getParent();
-  MachineRegisterInfo *MRI = &MF->getRegInfo();
-
-  if (MRI->isConstantPhysReg(Reg))
-    return true;
-
-  if (!MF->getSubtarget()
-           .getRegisterInfo()
-           ->shouldAnalyzePhysregInMachineLoopInfo(Reg))
-    return false;
-
-  return !llvm::any_of(
-      MRI->def_instructions(Reg),
-      [this](const MachineInstr &MI) { return this->contains(&MI); });
-}
-
-bool MachineLoop::isLoopInvariant(MachineInstr &I,
-                                  const Register ExcludeReg) const {
+bool MachineLoop::isLoopInvariant(MachineInstr &I) const {
   MachineFunction *MF = I.getParent()->getParent();
   MachineRegisterInfo *MRI = &MF->getRegInfo();
   const TargetSubtargetInfo &ST = MF->getSubtarget();
@@ -246,9 +213,6 @@ bool MachineLoop::isLoopInvariant(MachineInstr &I,
     Register Reg = MO.getReg();
     if (Reg == 0) continue;
 
-    if (ExcludeReg == Reg)
-      continue;
-
     // An instruction that uses or defines a physical register can't e.g. be
     // hoisted, so mark this as not invariant.
     if (Reg.isPhysical()) {
@@ -258,7 +222,7 @@ bool MachineLoop::isLoopInvariant(MachineInstr &I,
         // it could get allocated to something with a def during allocation.
         // However, if the physreg is known to always be caller saved/restored
         // then this use is safe to hoist.
-        if (!isLoopInvariantImplicitPhysReg(Reg) &&
+        if (!MRI->isConstantPhysReg(Reg) &&
             !(TRI->isCallerPreservedPhysReg(Reg.asMCReg(), *I.getMF())) &&
             !TII->isIgnorableUse(MO))
           return false;
@@ -274,7 +238,7 @@ bool MachineLoop::isLoopInvariant(MachineInstr &I,
       }
     }
 
-    if (!MO.readsReg())
+    if (!MO.isUse())
       continue;
 
     assert(MRI->getVRegDef(Reg) &&

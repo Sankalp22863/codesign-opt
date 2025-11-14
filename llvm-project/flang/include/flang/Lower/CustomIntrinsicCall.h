@@ -98,7 +98,7 @@ lowerCustomIntrinsic(fir::FirOpBuilder &builder, mlir::Location loc,
                      const OperandGetter &getOperand, std::size_t numOperands,
                      Fortran::lower::StatementContext &stmtCtx);
 
-/// DEPRECATED: NEW CODE SHOULD USE THE VERSION OF genIntrinsicCall WITHOUT A
+/// DEPRICATED: NEW CODE SHOULD USE THE VERSION OF genIntrinsicCall WITHOUT A
 /// StatementContext, DECLARED IN IntrinsicCall.h
 /// Generate the FIR+MLIR operations for the generic intrinsic \p name
 /// with argument \p args and expected result type \p resultType.

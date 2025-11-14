@@ -24,6 +24,7 @@
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/TargetInfo.h"
+#include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/iterator.h"
 #include <optional>
 
@@ -42,9 +43,10 @@ namespace {
 ///
 /// Returns the name of anonymous union VarDecl or nullptr if it is not found.
 static const IdentifierInfo *findAnonymousUnionVarDeclName(const VarDecl& VD) {
-  const auto *RD = VD.getType()->castAsRecordDecl();
-  assert(RD->isUnion() && "RecordType is expected to be a union.");
-  if (const FieldDecl *FD = RD->findFirstNamedDataMember()) {
+  const RecordType *RT = VD.getType()->getAs<RecordType>();
+  assert(RT && "type of VarDecl is expected to be RecordType.");
+  assert(RT->getDecl()->isUnion() && "RecordType is expected to be a union.");
+  if (const FieldDecl *FD = RT->getDecl()->findFirstNamedDataMember()) {
     return FD->getIdentifier();
   }
 
@@ -74,17 +76,17 @@ struct DecompositionDeclName {
 }
 
 namespace llvm {
-template <typename T> static bool isDenseMapKeyEmpty(T V) {
+template<typename T> bool isDenseMapKeyEmpty(T V) {
   return llvm::DenseMapInfo<T>::isEqual(
       V, llvm::DenseMapInfo<T>::getEmptyKey());
 }
-template <typename T> static bool isDenseMapKeyTombstone(T V) {
+template<typename T> bool isDenseMapKeyTombstone(T V) {
   return llvm::DenseMapInfo<T>::isEqual(
       V, llvm::DenseMapInfo<T>::getTombstoneKey());
 }
 
 template <typename T>
-static std::optional<bool> areDenseMapKeysEqualSpecialValues(T LHS, T RHS) {
+std::optional<bool> areDenseMapKeysEqualSpecialValues(T LHS, T RHS) {
   bool LHSEmpty = isDenseMapKeyEmpty(LHS);
   bool RHSEmpty = isDenseMapKeyEmpty(RHS);
   if (LHSEmpty || RHSEmpty)
@@ -109,7 +111,7 @@ struct DenseMapInfo<DecompositionDeclName> {
   }
   static unsigned getHashValue(DecompositionDeclName Key) {
     assert(!isEqual(Key, getEmptyKey()) && !isEqual(Key, getTombstoneKey()));
-    return llvm::hash_combine_range(Key);
+    return llvm::hash_combine_range(Key.begin(), Key.end());
   }
   static bool isEqual(DecompositionDeclName LHS, DecompositionDeclName RHS) {
     if (std::optional<bool> Result =

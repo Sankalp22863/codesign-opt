@@ -54,24 +54,20 @@ std::vector<Hinted<SymbolLocation>> locateDecl(const Decl &D) {
   return Result;
 }
 
-std::vector<Hinted<SymbolLocation>> locateMacro(const Macro &M,
-                                                const tooling::stdlib::Lang L) {
+std::vector<Hinted<SymbolLocation>> locateMacro(const Macro &M) {
   // FIXME: Should we also provide physical locations?
-  if (auto SS = tooling::stdlib::Symbol::named("", M.Name->getName(), L))
+  if (auto SS = tooling::stdlib::Symbol::named("", M.Name->getName()))
     return {{*SS, Hints::CompleteSymbol}};
   return {{M.Definition, Hints::CompleteSymbol}};
 }
 } // namespace
 
-std::vector<Hinted<SymbolLocation>> locateSymbol(const Symbol &S,
-                                                 const LangOptions &LO) {
-  const auto L = !LO.CPlusPlus && LO.C99 ? tooling::stdlib::Lang::C
-                                         : tooling::stdlib::Lang::CXX;
+std::vector<Hinted<SymbolLocation>> locateSymbol(const Symbol &S) {
   switch (S.kind()) {
   case Symbol::Declaration:
     return locateDecl(S.declaration());
   case Symbol::Macro:
-    return locateMacro(S.macro(), L);
+    return locateMacro(S.macro());
   }
   llvm_unreachable("Unknown Symbol::Kind enum");
 }

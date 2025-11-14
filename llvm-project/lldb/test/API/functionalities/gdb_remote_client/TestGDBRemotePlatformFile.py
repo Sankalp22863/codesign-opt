@@ -30,7 +30,7 @@ class TestGDBRemotePlatformFile(GDBPlatformClientTestBase):
         )
         self.match("platform file write 16 -o 11 -d teststring", [r"Return = 10"])
         self.match("platform file close 16", [r"file 16 closed."])
-        self.assertPacketLogReceived(
+        self.assertPacketLogContains(
             [
                 "vFile:open:2f736f6d652f66696c652e747874,00000202,000001ed",
                 "vFile:pread:10,d,b",
@@ -49,24 +49,26 @@ class TestGDBRemotePlatformFile(GDBPlatformClientTestBase):
                 return "F-1,58"
 
         self.server.responder = Responder()
-        enosys_regex = r"error: (Function not implemented|function not supported)"
+
         self.match(
             "platform file open /some/file.txt -v 0755",
-            [enosys_regex],
+            [r"error: Function not implemented"],
             error=True,
         )
         self.match(
             "platform file read 16 -o 11 -c 13",
-            [enosys_regex],
+            [r"error: Function not implemented"],
             error=True,
         )
         self.match(
             "platform file write 16 -o 11 -d teststring",
-            [enosys_regex],
+            [r"error: Function not implemented"],
             error=True,
         )
-        self.match("platform file close 16", [enosys_regex], error=True)
-        self.assertPacketLogReceived(
+        self.match(
+            "platform file close 16", [r"error: Function not implemented"], error=True
+        )
+        self.assertPacketLogContains(
             [
                 "vFile:open:2f736f6d652f66696c652e747874,00000202,000001ed",
                 "vFile:pread:10,d,b",
@@ -88,7 +90,7 @@ class TestGDBRemotePlatformFile(GDBPlatformClientTestBase):
             "platform get-size /some/file.txt",
             [r"File size of /some/file\.txt \(remote\): 4096"],
         )
-        self.assertPacketLogReceived(
+        self.assertPacketLogContains(
             [
                 "vFile:size:2f736f6d652f66696c652e747874",
             ]
@@ -113,7 +115,7 @@ class TestGDBRemotePlatformFile(GDBPlatformClientTestBase):
             "platform get-size /some/file.txt",
             [r"File size of /some/file\.txt \(remote\): 66051"],
         )
-        self.assertPacketLogReceived(
+        self.assertPacketLogContains(
             [
                 "vFile:size:2f736f6d652f66696c652e747874",
                 "vFile:open:2f736f6d652f66696c652e747874,00000000,00000000",
@@ -135,7 +137,7 @@ class TestGDBRemotePlatformFile(GDBPlatformClientTestBase):
             [r"File size of /other/file\.txt \(remote\): 66051"],
         )
 
-        self.assertPacketLogReceived(
+        self.assertPacketLogContains(
             [
                 "vFile:size:2f6f746865722f66696c652e747874",
                 "vFile:open:2f6f746865722f66696c652e747874,00000000,00000000",
@@ -145,9 +147,7 @@ class TestGDBRemotePlatformFile(GDBPlatformClientTestBase):
             log=server2.responder.packetLog,
         )
 
-    @expectedFailureAll(
-        hostoslist=["windows"], bugnumber="github.com/llvm/llvm-project/issues/92255"
-    )
+    @skipIfWindows
     def test_file_permissions(self):
         """Test 'platform get-permissions'"""
 
@@ -161,15 +161,13 @@ class TestGDBRemotePlatformFile(GDBPlatformClientTestBase):
             "platform get-permissions /some/file.txt",
             [r"File permissions of /some/file\.txt \(remote\): 0o0644"],
         )
-        self.assertPacketLogReceived(
+        self.assertPacketLogContains(
             [
                 "vFile:mode:2f736f6d652f66696c652e747874",
             ]
         )
 
-    @expectedFailureAll(
-        hostoslist=["windows"], bugnumber="github.com/llvm/llvm-project/issues/92255"
-    )
+    @skipIfWindows
     def test_file_permissions_fallback(self):
         """Test 'platform get-permissions' fallback to fstat"""
 
@@ -190,7 +188,7 @@ class TestGDBRemotePlatformFile(GDBPlatformClientTestBase):
                 "platform get-permissions /some/file.txt",
                 [r"File permissions of /some/file\.txt \(remote\): 0o0644"],
             )
-            self.assertPacketLogReceived(
+            self.assertPacketLogContains(
                 [
                     "vFile:mode:2f736f6d652f66696c652e747874",
                     "vFile:open:2f736f6d652f66696c652e747874,00000000,00000000",
@@ -214,7 +212,7 @@ class TestGDBRemotePlatformFile(GDBPlatformClientTestBase):
             "platform file-exists /some/file.txt",
             [r"File /some/file\.txt \(remote\) exists"],
         )
-        self.assertPacketLogReceived(
+        self.assertPacketLogContains(
             [
                 "vFile:exists:2f736f6d652f66696c652e747874",
             ]
@@ -233,7 +231,7 @@ class TestGDBRemotePlatformFile(GDBPlatformClientTestBase):
             "platform file-exists /some/file.txt",
             [r"File /some/file\.txt \(remote\) does not exist"],
         )
-        self.assertPacketLogReceived(
+        self.assertPacketLogContains(
             [
                 "vFile:exists:2f736f6d652f66696c652e747874",
             ]
@@ -256,7 +254,7 @@ class TestGDBRemotePlatformFile(GDBPlatformClientTestBase):
             "platform file-exists /some/file.txt",
             [r"File /some/file\.txt \(remote\) exists"],
         )
-        self.assertPacketLogReceived(
+        self.assertPacketLogContains(
             [
                 "vFile:exists:2f736f6d652f66696c652e747874",
                 "vFile:open:2f736f6d652f66696c652e747874,00000000,00000000",
@@ -279,7 +277,7 @@ class TestGDBRemotePlatformFile(GDBPlatformClientTestBase):
             "platform file-exists /some/file.txt",
             [r"File /some/file\.txt \(remote\) does not exist"],
         )
-        self.assertPacketLogReceived(
+        self.assertPacketLogContains(
             [
                 "vFile:exists:2f736f6d652f66696c652e747874",
                 "vFile:open:2f736f6d652f66696c652e747874,00000000,00000000",

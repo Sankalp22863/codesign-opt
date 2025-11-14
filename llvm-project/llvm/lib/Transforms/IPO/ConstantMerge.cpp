@@ -29,7 +29,6 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Casting.h"
-#include "llvm/Support/Debug.h"
 #include "llvm/Transforms/IPO.h"
 #include <algorithm>
 #include <cassert>
@@ -85,7 +84,7 @@ static void copyDebugLocMetadata(const GlobalVariable *From,
 
 static Align getAlign(GlobalVariable *GV) {
   return GV->getAlign().value_or(
-      GV->getDataLayout().getPreferredAlign(GV));
+      GV->getParent()->getDataLayout().getPreferredAlign(GV));
 }
 
 static bool
@@ -226,7 +225,9 @@ static bool mergeConstants(Module &M) {
     // Now that we have figured out which replacements must be made, do them all
     // now.  This avoid invalidating the pointers in CMap, which are unneeded
     // now.
-    for (const auto &[Old, New] : SameContentReplacements) {
+    for (unsigned i = 0, e = SameContentReplacements.size(); i != e; ++i) {
+      GlobalVariable *Old = SameContentReplacements[i].first;
+      GlobalVariable *New = SameContentReplacements[i].second;
       replace(M, Old, New);
       ++ChangesMade;
       ++NumIdenticalMerged;

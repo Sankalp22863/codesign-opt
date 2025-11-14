@@ -13,7 +13,6 @@
 #include "mlir/Dialect/Arith/Transforms/Passes.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Arith/Utils/Utils.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Location.h"
@@ -41,32 +40,53 @@ struct EmulateUnsupportedFloatsPass
 };
 
 struct EmulateFloatPattern final : ConversionPattern {
-  EmulateFloatPattern(const TypeConverter &converter, MLIRContext *ctx)
-      : ConversionPattern::ConversionPattern(
-            converter, Pattern::MatchAnyOpTypeTag(), 1, ctx) {}
+  EmulateFloatPattern(TypeConverter &converter, MLIRContext *ctx)
+      : ConversionPattern(converter, Pattern::MatchAnyOpTypeTag(), 1, ctx) {}
 
-  LogicalResult
-  matchAndRewrite(Operation *op, ArrayRef<Value> operands,
-                  ConversionPatternRewriter &rewriter) const override;
+  LogicalResult match(Operation *op) const override;
+  void rewrite(Operation *op, ArrayRef<Value> operands,
+               ConversionPatternRewriter &rewriter) const override;
 };
 } // end namespace
 
-LogicalResult EmulateFloatPattern::matchAndRewrite(
-    Operation *op, ArrayRef<Value> operands,
-    ConversionPatternRewriter &rewriter) const {
+/// Map strings to float types. This function is here because no one else needs
+/// it yet, feel free to abstract it out.
+static std::optional<FloatType> parseFloatType(MLIRContext *ctx,
+                                               StringRef name) {
+  Builder b(ctx);
+  return llvm::StringSwitch<std::optional<FloatType>>(name)
+      .Case("f8E5M2", b.getFloat8E5M2Type())
+      .Case("f8E4M3FN", b.getFloat8E4M3FNType())
+      .Case("f8E5M2FNUZ", b.getFloat8E5M2FNUZType())
+      .Case("f8E4M3FNUZ", b.getFloat8E4M3FNUZType())
+      .Case("bf16", b.getBF16Type())
+      .Case("f16", b.getF16Type())
+      .Case("f32", b.getF32Type())
+      .Case("f64", b.getF64Type())
+      .Case("f80", b.getF80Type())
+      .Case("f128", b.getF128Type())
+      .Default(std::nullopt);
+}
+
+LogicalResult EmulateFloatPattern::match(Operation *op) const {
   if (getTypeConverter()->isLegal(op))
     return failure();
   // The rewrite doesn't handle cloning regions.
   if (op->getNumRegions() != 0)
     return failure();
+  return success();
+}
 
+void EmulateFloatPattern::rewrite(Operation *op, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const {
   Location loc = op->getLoc();
   const TypeConverter *converter = getTypeConverter();
   SmallVector<Type> resultTypes;
   if (failed(converter->convertTypes(op->getResultTypes(), resultTypes))) {
     // Note to anyone looking for this error message: this is a "can't happen".
     // If you're seeing it, there's a bug.
-    return op->emitOpError("type conversion failed in float emulation");
+    op->emitOpError("type conversion failed in float emulation");
+    return;
   }
   Operation *expandedOp =
       rewriter.create(loc, op->getName().getIdentifier(), operands, resultTypes,
@@ -74,14 +94,10 @@ LogicalResult EmulateFloatPattern::matchAndRewrite(
   SmallVector<Value> newResults(expandedOp->getResults());
   for (auto [res, oldType, newType] : llvm::zip_equal(
            MutableArrayRef{newResults}, op->getResultTypes(), resultTypes)) {
-    if (oldType != newType) {
-      auto truncFOp = arith::TruncFOp::create(rewriter, loc, oldType, res);
-      truncFOp.setFastmath(arith::FastMathFlags::contract);
-      res = truncFOp.getResult();
-    }
+    if (oldType != newType)
+      res = rewriter.create<arith::TruncFOp>(loc, oldType, res);
   }
   rewriter.replaceOp(op, newResults);
-  return success();
 }
 
 void mlir::arith::populateEmulateUnsupportedFloatsConversions(
@@ -90,7 +106,7 @@ void mlir::arith::populateEmulateUnsupportedFloatsConversions(
                            targetType](Type type) -> std::optional<Type> {
     if (llvm::is_contained(sourceTypes, type))
       return targetType;
-    if (auto shaped = dyn_cast<ShapedType>(type))
+    if (auto shaped = type.dyn_cast<ShapedType>())
       if (llvm::is_contained(sourceTypes, shaped.getElementType()))
         return shaped.clone(targetType);
     // All other types legal
@@ -98,19 +114,17 @@ void mlir::arith::populateEmulateUnsupportedFloatsConversions(
   });
   converter.addTargetMaterialization(
       [](OpBuilder &b, Type target, ValueRange input, Location loc) {
-        auto extFOp = arith::ExtFOp::create(b, loc, target, input);
-        extFOp.setFastmath(arith::FastMathFlags::contract);
-        return extFOp;
+        return b.create<arith::ExtFOp>(loc, target, input);
       });
 }
 
 void mlir::arith::populateEmulateUnsupportedFloatsPatterns(
-    RewritePatternSet &patterns, const TypeConverter &converter) {
+    RewritePatternSet &patterns, TypeConverter &converter) {
   patterns.add<EmulateFloatPattern>(converter, patterns.getContext());
 }
 
 void mlir::arith::populateEmulateUnsupportedFloatsLegality(
-    ConversionTarget &target, const TypeConverter &converter) {
+    ConversionTarget &target, TypeConverter &converter) {
   // Don't try to legalize functions and other ops that don't need expansion.
   target.markUnknownOpDynamicallyLegal([](Operation *op) { return true; });
   target.addDynamicallyLegalDialect<arith::ArithDialect>(
@@ -118,12 +132,12 @@ void mlir::arith::populateEmulateUnsupportedFloatsLegality(
         return converter.isLegal(op);
       });
   // Manually mark arithmetic-performing vector instructions.
-  target.addDynamicallyLegalOp<vector::ContractionOp, vector::ReductionOp,
-                               vector::MultiDimReductionOp, vector::FMAOp,
-                               vector::OuterProductOp, vector::ScanOp>(
+  target.addDynamicallyLegalOp<
+      vector::ContractionOp, vector::ReductionOp, vector::MultiDimReductionOp,
+      vector::FMAOp, vector::OuterProductOp, vector::MatmulOp, vector::ScanOp>(
       [&](Operation *op) { return converter.isLegal(op); });
   target.addLegalOp<arith::BitcastOp, arith::ExtFOp, arith::TruncFOp,
-                    arith::ConstantOp, arith::SelectOp, vector::BroadcastOp>();
+                    arith::ConstantOp, vector::SplatOp>();
 }
 
 void EmulateUnsupportedFloatsPass::runOnOperation() {
@@ -132,8 +146,7 @@ void EmulateUnsupportedFloatsPass::runOnOperation() {
   SmallVector<Type> sourceTypes;
   Type targetType;
 
-  std::optional<FloatType> maybeTargetType =
-      arith::parseFloatType(ctx, targetTypeStr);
+  std::optional<FloatType> maybeTargetType = parseFloatType(ctx, targetTypeStr);
   if (!maybeTargetType) {
     emitError(UnknownLoc::get(ctx), "could not map target type '" +
                                         targetTypeStr +
@@ -143,7 +156,7 @@ void EmulateUnsupportedFloatsPass::runOnOperation() {
   targetType = *maybeTargetType;
   for (StringRef sourceTypeStr : sourceTypeStrs) {
     std::optional<FloatType> maybeSourceType =
-        arith::parseFloatType(ctx, sourceTypeStr);
+        parseFloatType(ctx, sourceTypeStr);
     if (!maybeSourceType) {
       emitError(UnknownLoc::get(ctx), "could not map source type '" +
                                           sourceTypeStr +

@@ -39,7 +39,7 @@ class WebAssemblyExplicitLocals final : public MachineFunctionPass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
-    AU.addPreserved<MachineBlockFrequencyInfoWrapperPass>();
+    AU.addPreserved<MachineBlockFrequencyInfo>();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 
@@ -65,7 +65,7 @@ static void checkFrameBase(WebAssemblyFunctionInfo &MFI, unsigned Local,
   if (MFI.isFrameBaseVirtual() && Reg == MFI.getFrameBaseVreg()) {
     LLVM_DEBUG({
       dbgs() << "Allocating local " << Local << "for VReg "
-             << Register(Reg).virtRegIndex() << '\n';
+             << Register::virtReg2Index(Reg) << '\n';
     });
     MFI.setFrameBaseLocal(Local);
   }
@@ -100,8 +100,6 @@ static unsigned getDropOpcode(const TargetRegisterClass *RC) {
     return WebAssembly::DROP_FUNCREF;
   if (RC == &WebAssembly::EXTERNREFRegClass)
     return WebAssembly::DROP_EXTERNREF;
-  if (RC == &WebAssembly::EXNREFRegClass)
-    return WebAssembly::DROP_EXNREF;
   llvm_unreachable("Unexpected register class");
 }
 
@@ -121,8 +119,6 @@ static unsigned getLocalGetOpcode(const TargetRegisterClass *RC) {
     return WebAssembly::LOCAL_GET_FUNCREF;
   if (RC == &WebAssembly::EXTERNREFRegClass)
     return WebAssembly::LOCAL_GET_EXTERNREF;
-  if (RC == &WebAssembly::EXNREFRegClass)
-    return WebAssembly::LOCAL_GET_EXNREF;
   llvm_unreachable("Unexpected register class");
 }
 
@@ -142,8 +138,6 @@ static unsigned getLocalSetOpcode(const TargetRegisterClass *RC) {
     return WebAssembly::LOCAL_SET_FUNCREF;
   if (RC == &WebAssembly::EXTERNREFRegClass)
     return WebAssembly::LOCAL_SET_EXTERNREF;
-  if (RC == &WebAssembly::EXNREFRegClass)
-    return WebAssembly::LOCAL_SET_EXNREF;
   llvm_unreachable("Unexpected register class");
 }
 
@@ -163,8 +157,6 @@ static unsigned getLocalTeeOpcode(const TargetRegisterClass *RC) {
     return WebAssembly::LOCAL_TEE_FUNCREF;
   if (RC == &WebAssembly::EXTERNREFRegClass)
     return WebAssembly::LOCAL_TEE_EXTERNREF;
-  if (RC == &WebAssembly::EXNREFRegClass)
-    return WebAssembly::LOCAL_TEE_EXNREF;
   llvm_unreachable("Unexpected register class");
 }
 
@@ -184,8 +176,6 @@ static MVT typeForRegClass(const TargetRegisterClass *RC) {
     return MVT::funcref;
   if (RC == &WebAssembly::EXTERNREFRegClass)
     return MVT::externref;
-  if (RC == &WebAssembly::EXNREFRegClass)
-    return MVT::exnref;
   llvm_unreachable("unrecognized register class");
 }
 
@@ -216,18 +206,6 @@ static MachineInstr *findStartOfTree(MachineOperand &MO,
   return Def;
 }
 
-// FAKE_USEs are no-ops, so remove them here so that the values used by them
-// will be correctly dropped later.
-static void removeFakeUses(MachineFunction &MF) {
-  SmallVector<MachineInstr *> ToDelete;
-  for (auto &MBB : MF)
-    for (auto &MI : MBB)
-      if (MI.isFakeUse())
-        ToDelete.push_back(&MI);
-  for (auto *MI : ToDelete)
-    MI->eraseFromParent();
-}
-
 bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
   LLVM_DEBUG(dbgs() << "********** Make Locals Explicit **********\n"
                        "********** Function: "
@@ -237,8 +215,6 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
   MachineRegisterInfo &MRI = MF.getRegInfo();
   WebAssemblyFunctionInfo &MFI = *MF.getInfo<WebAssemblyFunctionInfo>();
   const auto *TII = MF.getSubtarget<WebAssemblySubtarget>().getInstrInfo();
-
-  removeFakeUses(MF);
 
   // Map non-stackified virtual registers to their local ids.
   DenseMap<unsigned, unsigned> Reg2Local;
@@ -270,17 +246,9 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
 
   // Precompute the set of registers that are unused, so that we can insert
   // drops to their defs.
-  // And unstackify any stackified registers that don't have any uses, so that
-  // they can be dropped later. This can happen when transformations after
-  // RegStackify remove instructions using stackified registers.
   BitVector UseEmpty(MRI.getNumVirtRegs());
-  for (unsigned I = 0, E = MRI.getNumVirtRegs(); I < E; ++I) {
-    Register Reg = Register::index2VirtReg(I);
-    if (MRI.use_empty(Reg)) {
-      UseEmpty[I] = true;
-      MFI.unstackifyVReg(Reg);
-    }
-  }
+  for (unsigned I = 0, E = MRI.getNumVirtRegs(); I < E; ++I)
+    UseEmpty[I] = MRI.use_empty(Register::index2VirtReg(I));
 
   // Visit each instruction in the function.
   for (MachineBasicBlock &MBB : MF) {
@@ -366,7 +334,7 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
           const TargetRegisterClass *RC = MRI.getRegClass(OldReg);
           Register NewReg = MRI.createVirtualRegister(RC);
           auto InsertPt = std::next(MI.getIterator());
-          if (UseEmpty[OldReg.virtRegIndex()]) {
+          if (UseEmpty[Register::virtReg2Index(OldReg)]) {
             unsigned Opc = getDropOpcode(RC);
             MachineInstr *Drop =
                 BuildMI(MBB, InsertPt, MI.getDebugLoc(), TII->get(Opc))

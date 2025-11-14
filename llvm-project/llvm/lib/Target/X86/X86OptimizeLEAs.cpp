@@ -294,8 +294,8 @@ private:
   /// Replace debug value MI with a new debug value instruction using register
   /// VReg with an appropriate offset and DIExpression to incorporate the
   /// address displacement AddrDispShift. Return new debug value instruction.
-  MachineInstr *replaceDebugValue(MachineInstr &MI, Register OldReg,
-                                  Register NewReg, int64_t AddrDispShift);
+  MachineInstr *replaceDebugValue(MachineInstr &MI, unsigned OldReg,
+                                  unsigned NewReg, int64_t AddrDispShift);
 
   /// Removes LEAs which calculate similar addresses.
   bool removeRedundantLEAs(MemOpMap &LEAs);
@@ -339,6 +339,7 @@ int X86OptimizeLEAPass::calcInstrDist(const MachineInstr &First,
 bool X86OptimizeLEAPass::chooseBestLEA(
     const SmallVectorImpl<MachineInstr *> &List, const MachineInstr &MI,
     MachineInstr *&BestLEA, int64_t &AddrDispShift, int &Dist) {
+  const MachineFunction *MF = MI.getParent()->getParent();
   const MCInstrDesc &Desc = MI.getDesc();
   int MemOpNo = X86II::getMemoryOperandNo(Desc.TSFlags) +
                 X86II::getOperandBias(Desc);
@@ -359,7 +360,7 @@ bool X86OptimizeLEAPass::chooseBestLEA(
     // example MOV8mr_NOREX. We could constrain the register class of the LEA
     // def to suit MI, however since this case is very rare and hard to
     // reproduce in a test it's just more reliable to skip the LEA.
-    if (TII->getRegClass(Desc, MemOpNo + X86::AddrBaseReg) !=
+    if (TII->getRegClass(Desc, MemOpNo + X86::AddrBaseReg, TRI, *MF) !=
         MRI->getRegClass(DefMI->getOperand(0).getReg()))
       continue;
 
@@ -571,8 +572,8 @@ bool X86OptimizeLEAPass::removeRedundantAddrCalc(MemOpMap &LEAs) {
 }
 
 MachineInstr *X86OptimizeLEAPass::replaceDebugValue(MachineInstr &MI,
-                                                    Register OldReg,
-                                                    Register NewReg,
+                                                    unsigned OldReg,
+                                                    unsigned NewReg,
                                                     int64_t AddrDispShift) {
   const DIExpression *Expr = MI.getDebugExpression();
   if (AddrDispShift != 0) {
@@ -740,7 +741,9 @@ bool X86OptimizeLEAPass::runOnMachineFunction(MachineFunction &MF) {
 
     // Remove redundant address calculations. Do it only for -Os/-Oz since only
     // a code size gain is expected from this part of the pass.
-    if (llvm::shouldOptimizeForSize(&MBB, PSI, MBFI))
+    bool OptForSize = MF.getFunction().hasOptSize() ||
+                      llvm::shouldOptimizeForSize(&MBB, PSI, MBFI);
+    if (OptForSize)
       Changed |= removeRedundantAddrCalc(LEAs);
   }
 

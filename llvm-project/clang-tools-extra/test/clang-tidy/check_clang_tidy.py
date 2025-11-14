@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# ===-----------------------------------------------------------------------===#
+# ===- check_clang_tidy.py - ClangTidy Test Helper ------------*- python -*--===#
 #
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
@@ -8,35 +8,25 @@
 #
 # ===------------------------------------------------------------------------===#
 
-"""
+r"""
 ClangTidy Test Helper
 =====================
 
-This script is used to simplify writing, running, and debugging tests compatible
-with llvm-lit. By default it runs clang-tidy in fix mode and uses FileCheck to
-verify messages and/or fixes.
+This script runs clang-tidy in fix mode and verify fixes, messages or both.
 
-For debugging, with --export-fixes, the tool simply exports fixes to a provided
-file and does not run FileCheck.
+Usage:
+  check_clang_tidy.py [-resource-dir=<resource-dir>] \
+    [-assume-filename=<file-with-source-extension>] \
+    [-check-suffix=<comma-separated-file-check-suffixes>] \
+    [-check-suffixes=<comma-separated-file-check-suffixes>] \
+    [-std=c++(98|11|14|17|20)[-or-later]] \
+    <source-file> <check-name> <temp-file> \
+    -- [optional clang-tidy arguments]
 
-Extra arguments, those after the first -- if any, are passed to either
-clang-tidy or clang:
-* Arguments between the first -- and second -- are clang-tidy arguments.
-  * May be only whitespace if there are no clang-tidy arguments.
-  * clang-tidy's --config would go here.
-* Arguments after the second -- are clang arguments
-
-Examples
---------
-
+Example:
   // RUN: %check_clang_tidy %s llvm-include-order %t -- -- -isystem %S/Inputs
 
-or
-
-  // RUN: %check_clang_tidy %s llvm-include-order --export-fixes=fixes.yaml %t -std=c++20
-
-Notes
------
+Notes:
   -std=c++(98|11|14|17|20)-or-later:
     This flag will cause multiple runs within the same check_clang_tidy
     execution. Make sure you don't have shared state across these runs.
@@ -44,21 +34,18 @@ Notes
 
 import argparse
 import os
-import pathlib
-import platform
 import re
 import subprocess
 import sys
-from typing import List, Tuple
 
 
-def write_file(file_name: str, text: str) -> None:
+def write_file(file_name, text):
     with open(file_name, "w", encoding="utf-8") as f:
         f.write(text)
         f.truncate()
 
 
-def try_run(args: List[str], raise_error: bool = True) -> str:
+def try_run(args, raise_error=True):
     try:
         process_output = subprocess.check_output(args, stderr=subprocess.STDOUT).decode(
             errors="ignore"
@@ -73,12 +60,12 @@ def try_run(args: List[str], raise_error: bool = True) -> str:
 
 # This class represents the appearance of a message prefix in a file.
 class MessagePrefix:
-    def __init__(self, label: str) -> None:
+    def __init__(self, label):
         self.has_message = False
-        self.prefixes: List[str] = []
+        self.prefixes = []
         self.label = label
 
-    def check(self, file_check_suffix: str, input_text: str) -> bool:
+    def check(self, file_check_suffix, input_text):
         self.prefix = self.label + file_check_suffix
         self.has_message = self.prefix in input_text
         if self.has_message:
@@ -87,7 +74,7 @@ class MessagePrefix:
 
 
 class CheckRunner:
-    def __init__(self, args: argparse.Namespace, extra_args: List[str]) -> None:
+    def __init__(self, args, extra_args):
         self.resource_dir = args.resource_dir
         self.assume_file_name = args.assume_filename
         self.input_file_name = args.input_file_name
@@ -101,12 +88,9 @@ class CheckRunner:
         self.has_check_fixes = False
         self.has_check_messages = False
         self.has_check_notes = False
-        self.expect_no_diagnosis = False
-        self.export_fixes = args.export_fixes
         self.fixes = MessagePrefix("CHECK-FIXES")
         self.messages = MessagePrefix("CHECK-MESSAGES")
         self.notes = MessagePrefix("CHECK-NOTES")
-        self.match_partial_fixes = args.match_partial_fixes
 
         file_name_with_extension = self.assume_file_name or self.input_file_name
         _, extension = os.path.splitext(file_name_with_extension)
@@ -136,7 +120,8 @@ class CheckRunner:
                 "-fblocks",
             ] + self.clang_extra_args
 
-        self.clang_extra_args.append("-std=" + self.std)
+        if extension in [".cpp", ".hpp", ".mm"]:
+            self.clang_extra_args.append("-std=" + self.std)
 
         # Tests should not rely on STL being available, and instead provide mock
         # implementations of relevant APIs.
@@ -145,16 +130,11 @@ class CheckRunner:
         if self.resource_dir is not None:
             self.clang_extra_args.append("-resource-dir=%s" % self.resource_dir)
 
-    def read_input(self) -> None:
-        # Use a "\\?\" prefix on Windows to handle long file paths transparently:
-        # https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
-        file_name = self.input_file_name
-        if platform.system() == "Windows":
-            file_name = "\\\\?\\" + os.path.abspath(file_name)
-        with open(file_name, "r", encoding="utf-8") as input_file:
+    def read_input(self):
+        with open(self.input_file_name, "r", encoding="utf-8") as input_file:
             self.input_text = input_file.read()
 
-    def get_prefixes(self) -> None:
+    def get_prefixes(self):
         for suffix in self.check_suffix:
             if suffix and not re.match("^[A-Z0-9\\-]+$", suffix):
                 sys.exit(
@@ -180,23 +160,14 @@ class CheckRunner:
                 )
 
             if not has_check_fix and not has_check_message and not has_check_note:
-                self.expect_no_diagnosis = True
-
-        expect_diagnosis = (
-            self.has_check_fixes or self.has_check_messages or self.has_check_notes
-        )
-        if self.expect_no_diagnosis and expect_diagnosis:
-            sys.exit(
-                "%s, %s or %s not found in the input"
-                % (
-                    self.fixes.prefix,
-                    self.messages.prefix,
-                    self.notes.prefix,
+                sys.exit(
+                    "%s, %s or %s not found in the input"
+                    % (self.fixes.prefix, self.messages.prefix, self.notes.prefix)
                 )
-            )
-        assert expect_diagnosis or self.expect_no_diagnosis
 
-    def prepare_test_inputs(self) -> None:
+        assert self.has_check_fixes or self.has_check_messages or self.has_check_notes
+
+    def prepare_test_inputs(self):
         # Remove the contents of the CHECK lines to avoid CHECKs matching on
         # themselves.  We need to keep the comments to preserve line numbers while
         # avoiding empty lines which could potentially trigger formatting-related
@@ -205,21 +176,12 @@ class CheckRunner:
         write_file(self.temp_file_name, cleaned_test)
         write_file(self.original_file_name, cleaned_test)
 
-    def run_clang_tidy(self) -> str:
+    def run_clang_tidy(self):
         args = (
             [
                 "clang-tidy",
-                "--experimental-custom-checks",
                 self.temp_file_name,
-            ]
-            + [
-                (
-                    "-fix"
-                    if self.export_fixes is None
-                    else "--export-fixes=" + self.export_fixes
-                )
-            ]
-            + [
+                "-fix",
                 "--checks=-*," + self.check_name,
             ]
             + self.clang_tidy_extra_args
@@ -246,27 +208,19 @@ class CheckRunner:
         print("------------------------------------------------------------------")
         return clang_tidy_output
 
-    def check_no_diagnosis(self, clang_tidy_output: str) -> None:
-        if clang_tidy_output != "":
-            sys.exit("No diagnostics were expected, but found the ones above")
-
-    def check_fixes(self) -> None:
+    def check_fixes(self):
         if self.has_check_fixes:
             try_run(
                 [
                     "FileCheck",
-                    "--input-file=" + self.temp_file_name,
+                    "-input-file=" + self.temp_file_name,
                     self.input_file_name,
-                    "--check-prefixes=" + ",".join(self.fixes.prefixes),
-                    (
-                        "--match-full-lines"
-                        if not self.match_partial_fixes
-                        else "--strict-whitespace"  # Keeping past behavior.
-                    ),
+                    "-check-prefixes=" + ",".join(self.fixes.prefixes),
+                    "-strict-whitespace",
                 ]
             )
 
-    def check_messages(self, clang_tidy_output: str) -> None:
+    def check_messages(self, clang_tidy_output):
         if self.has_check_messages:
             messages_file = self.temp_file_name + ".msg"
             write_file(messages_file, clang_tidy_output)
@@ -280,7 +234,7 @@ class CheckRunner:
                 ]
             )
 
-    def check_notes(self, clang_tidy_output: str) -> None:
+    def check_notes(self, clang_tidy_output):
         if self.has_check_notes:
             notes_file = self.temp_file_name + ".notes"
             filtered_output = [
@@ -299,64 +253,38 @@ class CheckRunner:
                 ]
             )
 
-    def run(self) -> None:
+    def run(self):
         self.read_input()
-        if self.export_fixes is None:
-            self.get_prefixes()
+        self.get_prefixes()
         self.prepare_test_inputs()
         clang_tidy_output = self.run_clang_tidy()
-        if self.expect_no_diagnosis:
-            self.check_no_diagnosis(clang_tidy_output)
-        elif self.export_fixes is None:
-            self.check_fixes()
-            self.check_messages(clang_tidy_output)
-            self.check_notes(clang_tidy_output)
+        self.check_fixes()
+        self.check_messages(clang_tidy_output)
+        self.check_notes(clang_tidy_output)
 
 
-CPP_STANDARDS = [
-    "c++98",
-    "c++11",
-    ("c++14", "c++1y"),
-    ("c++17", "c++1z"),
-    ("c++20", "c++2a"),
-    ("c++23", "c++2b"),
-    ("c++26", "c++2c"),
-]
-C_STANDARDS = ["c99", ("c11", "c1x"), "c17", ("c23", "c2x"), "c2y"]
-
-
-def expand_std(std: str) -> List[str]:
-    split_std, or_later, _ = std.partition("-or-later")
-
-    if not or_later:
-        return [split_std]
-
-    for standard_list in (CPP_STANDARDS, C_STANDARDS):
-        item = next(
-            (
-                i
-                for i, v in enumerate(standard_list)
-                if (split_std in v if isinstance(v, (list, tuple)) else split_std == v)
-            ),
-            None,
-        )
-        if item is not None:
-            return [split_std] + [
-                x if isinstance(x, str) else x[0] for x in standard_list[item + 1 :]
-            ]
+def expand_std(std):
+    if std == "c++98-or-later":
+        return ["c++98", "c++11", "c++14", "c++17", "c++20", "c++23", "c++2c"]
+    if std == "c++11-or-later":
+        return ["c++11", "c++14", "c++17", "c++20", "c++23", "c++2c"]
+    if std == "c++14-or-later":
+        return ["c++14", "c++17", "c++20", "c++23", "c++2c"]
+    if std == "c++17-or-later":
+        return ["c++17", "c++20", "c++23", "c++2c"]
+    if std == "c++20-or-later":
+        return ["c++20", "c++23", "c++2c"]
+    if std == "c++23-or-later":
+        return ["c++23", "c++2c"]
     return [std]
 
 
-def csv(string: str) -> List[str]:
+def csv(string):
     return string.split(",")
 
 
-def parse_arguments() -> Tuple[argparse.Namespace, List[str]]:
-    parser = argparse.ArgumentParser(
-        prog=pathlib.Path(__file__).stem,
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+def parse_arguments():
+    parser = argparse.ArgumentParser()
     parser.add_argument("-expect-clang-tidy-error", action="store_true")
     parser.add_argument("-resource-dir")
     parser.add_argument("-assume-filename")
@@ -370,34 +298,11 @@ def parse_arguments() -> Tuple[argparse.Namespace, List[str]]:
         type=csv,
         help="comma-separated list of FileCheck suffixes",
     )
-    parser.add_argument(
-        "-export-fixes",
-        default=None,
-        type=str,
-        metavar="file",
-        help="A file to export fixes into instead of fixing.",
-    )
-    parser.add_argument(
-        "-std",
-        type=csv,
-        default=None,
-        help="Passed to clang. Special -or-later values are expanded.",
-    )
-    parser.add_argument(
-        "--match-partial-fixes",
-        action="store_true",
-        help="allow partial line matches for fixes",
-    )
-
-    args, extra_args = parser.parse_known_args()
-    if args.std is None:
-        _, extension = os.path.splitext(args.assume_filename or args.input_file_name)
-        args.std = ["c99-or-later" if extension in [".c", ".m"] else "c++11-or-later"]
-
-    return (args, extra_args)
+    parser.add_argument("-std", type=csv, default=["c++11-or-later"])
+    return parser.parse_known_args()
 
 
-def main() -> None:
+def main():
     args, extra_args = parse_arguments()
 
     abbreviated_stds = args.std

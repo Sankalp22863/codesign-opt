@@ -30,11 +30,13 @@
 #include "llvm/CodeGen/Register.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Support/AtomicOrdering.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
 #include <algorithm>
 
 #define DEBUG_TYPE "loadstore-opt"
@@ -66,7 +68,8 @@ void LoadStoreOpt::init(MachineFunction &MF) {
   TLI = MF.getSubtarget().getTargetLowering();
   LI = MF.getSubtarget().getLegalizerInfo();
   Builder.setMF(MF);
-  IsPreLegalizer = !MF.getProperties().hasLegalized();
+  IsPreLegalizer = !MF.getProperties().hasProperty(
+      MachineFunctionProperties::Property::Legalized);
   InstsToErase.clear();
 }
 
@@ -113,8 +116,8 @@ bool GISelAddressing::aliasIsKnownForLoadStore(const MachineInstr &MI1,
   if (!BasePtr0.getBase().isValid() || !BasePtr1.getBase().isValid())
     return false;
 
-  LocationSize Size1 = LdSt1->getMemSize();
-  LocationSize Size2 = LdSt2->getMemSize();
+  int64_t Size1 = LdSt1->getMemSize();
+  int64_t Size2 = LdSt2->getMemSize();
 
   int64_t PtrDiff;
   if (BasePtr0.getBase() == BasePtr1.getBase() && BasePtr0.hasValidOffset() &&
@@ -125,18 +128,20 @@ bool GISelAddressing::aliasIsKnownForLoadStore(const MachineInstr &MI1,
     // vector objects on the stack.
     // BasePtr1 is PtrDiff away from BasePtr0. They alias if none of the
     // following situations arise:
-    if (PtrDiff >= 0 && Size1.hasValue() && !Size1.isScalable()) {
+    if (PtrDiff >= 0 &&
+        Size1 != static_cast<int64_t>(MemoryLocation::UnknownSize)) {
       // [----BasePtr0----]
       //                         [---BasePtr1--]
       // ========PtrDiff========>
-      IsAlias = !((int64_t)Size1.getValue() <= PtrDiff);
+      IsAlias = !(Size1 <= PtrDiff);
       return true;
     }
-    if (PtrDiff < 0 && Size2.hasValue() && !Size2.isScalable()) {
+    if (PtrDiff < 0 &&
+        Size2 != static_cast<int64_t>(MemoryLocation::UnknownSize)) {
       //                     [----BasePtr0----]
       // [---BasePtr1--]
       // =====(-PtrDiff)====>
-      IsAlias = !((PtrDiff + (int64_t)Size2.getValue()) <= 0);
+      IsAlias = !((PtrDiff + Size2) <= 0);
       return true;
     }
     return false;
@@ -191,7 +196,7 @@ bool GISelAddressing::instMayAlias(const MachineInstr &MI,
     bool IsAtomic;
     Register BasePtr;
     int64_t Offset;
-    LocationSize NumBytes;
+    uint64_t NumBytes;
     MachineMemOperand *MMO;
   };
 
@@ -207,17 +212,16 @@ bool GISelAddressing::instMayAlias(const MachineInstr &MI,
         Offset = 0;
       }
 
-      LocationSize Size = LS->getMMO().getSize();
-      return {LS->isVolatile(),       LS->isAtomic(), BaseReg,
-              Offset /*base offset*/, Size,           &LS->getMMO()};
+      uint64_t Size = MemoryLocation::getSizeOrUnknown(
+          LS->getMMO().getMemoryType().getSizeInBytes());
+      return {LS->isVolatile(),       LS->isAtomic(),          BaseReg,
+              Offset /*base offset*/, Size, &LS->getMMO()};
     }
     // FIXME: support recognizing lifetime instructions.
     // Default.
     return {false /*isvolatile*/,
-            /*isAtomic*/ false,
-            Register(),
-            (int64_t)0 /*offset*/,
-            LocationSize::beforeOrAfterPointer() /*size*/,
+            /*isAtomic*/ false,          Register(),
+            (int64_t)0 /*offset*/,       0 /*size*/,
             (MachineMemOperand *)nullptr};
   };
   MemUseCharacteristics MUC0 = getCharacteristics(&MI),
@@ -245,20 +249,10 @@ bool GISelAddressing::instMayAlias(const MachineInstr &MI,
       return false;
   }
 
-  // If NumBytes is scalable and offset is not 0, conservatively return may
-  // alias
-  if ((MUC0.NumBytes.isScalable() && MUC0.Offset != 0) ||
-      (MUC1.NumBytes.isScalable() && MUC1.Offset != 0))
-    return true;
-
-  const bool BothNotScalable =
-      !MUC0.NumBytes.isScalable() && !MUC1.NumBytes.isScalable();
-
   // Try to prove that there is aliasing, or that there is no aliasing. Either
   // way, we can return now. If nothing can be proved, proceed with more tests.
   bool IsAlias;
-  if (BothNotScalable &&
-      GISelAddressing::aliasIsKnownForLoadStore(MI, Other, IsAlias, MRI))
+  if (GISelAddressing::aliasIsKnownForLoadStore(MI, Other, IsAlias, MRI))
     return IsAlias;
 
   // The following all rely on MMO0 and MMO1 being valid.
@@ -268,24 +262,19 @@ bool GISelAddressing::instMayAlias(const MachineInstr &MI,
   // FIXME: port the alignment based alias analysis from SDAG's isAlias().
   int64_t SrcValOffset0 = MUC0.MMO->getOffset();
   int64_t SrcValOffset1 = MUC1.MMO->getOffset();
-  LocationSize Size0 = MUC0.NumBytes;
-  LocationSize Size1 = MUC1.NumBytes;
-  if (AA && MUC0.MMO->getValue() && MUC1.MMO->getValue() && Size0.hasValue() &&
-      Size1.hasValue()) {
+  uint64_t Size0 = MUC0.NumBytes;
+  uint64_t Size1 = MUC1.NumBytes;
+  if (AA && MUC0.MMO->getValue() && MUC1.MMO->getValue() &&
+      Size0 != MemoryLocation::UnknownSize &&
+      Size1 != MemoryLocation::UnknownSize) {
     // Use alias analysis information.
     int64_t MinOffset = std::min(SrcValOffset0, SrcValOffset1);
-    int64_t Overlap0 =
-        Size0.getValue().getKnownMinValue() + SrcValOffset0 - MinOffset;
-    int64_t Overlap1 =
-        Size1.getValue().getKnownMinValue() + SrcValOffset1 - MinOffset;
-    LocationSize Loc0 =
-        Size0.isScalable() ? Size0 : LocationSize::precise(Overlap0);
-    LocationSize Loc1 =
-        Size1.isScalable() ? Size1 : LocationSize::precise(Overlap1);
-
-    if (AA->isNoAlias(
-            MemoryLocation(MUC0.MMO->getValue(), Loc0, MUC0.MMO->getAAInfo()),
-            MemoryLocation(MUC1.MMO->getValue(), Loc1, MUC1.MMO->getAAInfo())))
+    int64_t Overlap0 = Size0 + SrcValOffset0 - MinOffset;
+    int64_t Overlap1 = Size1 + SrcValOffset1 - MinOffset;
+    if (AA->isNoAlias(MemoryLocation(MUC0.MMO->getValue(), Overlap0,
+                                     MUC0.MMO->getAAInfo()),
+                      MemoryLocation(MUC1.MMO->getValue(), Overlap1,
+                                     MUC1.MMO->getAAInfo())))
       return false;
   }
 
@@ -315,6 +304,7 @@ bool LoadStoreOpt::mergeStores(SmallVectorImpl<GStore *> &StoresToMerge) {
     assert(MRI->getType(StoreMI->getValueReg()) == OrigTy);
 #endif
 
+  const auto &DL = MF->getFunction().getParent()->getDataLayout();
   bool AnyMerged = false;
   do {
     unsigned NumPow2 = llvm::bit_floor(StoresToMerge.size());
@@ -324,7 +314,7 @@ bool LoadStoreOpt::mergeStores(SmallVectorImpl<GStore *> &StoresToMerge) {
     for (MergeSizeBits = MaxSizeBits; MergeSizeBits > 1; MergeSizeBits /= 2) {
       LLT StoreTy = LLT::scalar(MergeSizeBits);
       EVT StoreEVT =
-          getApproximateEVTForLLT(StoreTy, MF->getFunction().getContext());
+          getApproximateEVTForLLT(StoreTy, DL, MF->getFunction().getContext());
       if (LegalSizes.size() > MergeSizeBits && LegalSizes[MergeSizeBits] &&
           TLI->canMergeStoresTo(AS, StoreEVT, *MF) &&
           (TLI->isTypeLegal(StoreEVT)))
@@ -369,7 +359,7 @@ bool LoadStoreOpt::doSingleStoreMerge(SmallVectorImpl<GStore *> &Stores) {
   // For each store, compute pairwise merged debug locs.
   DebugLoc MergedLoc = Stores.front()->getDebugLoc();
   for (auto *Store : drop_begin(Stores))
-    MergedLoc = DebugLoc::getMergedLocation(MergedLoc, Store->getDebugLoc());
+    MergedLoc = DILocation::getMergedLocation(MergedLoc, Store->getDebugLoc());
 
   Builder.setInstr(*Stores.back());
   Builder.setDebugLoc(MergedLoc);
@@ -429,7 +419,8 @@ bool LoadStoreOpt::doSingleStoreMerge(SmallVectorImpl<GStore *> &Stores) {
     return R;
   });
 
-  InstsToErase.insert_range(Stores);
+  for (auto *MI : Stores)
+    InstsToErase.insert(MI);
   return true;
 }
 
@@ -458,7 +449,7 @@ bool LoadStoreOpt::processMergeCandidate(StoreMergeCandidate &C) {
     for (auto AliasInfo : reverse(C.PotentialAliases)) {
       MachineInstr *PotentialAliasOp = AliasInfo.first;
       unsigned PreCheckedIdx = AliasInfo.second;
-      if (Idx < PreCheckedIdx) {
+      if (static_cast<unsigned>(Idx) < PreCheckedIdx) {
         // Once our store index is lower than the index associated with the
         // potential alias, we know that we've already checked for this alias
         // and all of the earlier potential aliases too.
@@ -927,7 +918,7 @@ bool LoadStoreOpt::mergeFunctionStores(MachineFunction &MF) {
   // Erase all dead instructions left over by the merging.
   if (Changed) {
     for (auto &BB : MF) {
-      for (auto &I : make_early_inc_range(reverse(BB))) {
+      for (auto &I : make_early_inc_range(make_range(BB.rbegin(), BB.rend()))) {
         if (isTriviallyDead(I, *MRI))
           I.eraseFromParent();
       }
@@ -950,7 +941,7 @@ void LoadStoreOpt::initializeStoreMergeTargetInfo(unsigned AddrSpace) {
   // Need to reserve at least MaxStoreSizeToForm + 1 bits.
   BitVector LegalSizes(MaxStoreSizeToForm * 2);
   const auto &LI = *MF->getSubtarget().getLegalizerInfo();
-  const auto &DL = MF->getFunction().getDataLayout();
+  const auto &DL = MF->getFunction().getParent()->getDataLayout();
   Type *IRPtrTy = PointerType::get(MF->getFunction().getContext(), AddrSpace);
   LLT PtrTy = getLLTForType(*IRPtrTy, DL);
   // We assume that we're not going to be generating any stores wider than
@@ -958,8 +949,7 @@ void LoadStoreOpt::initializeStoreMergeTargetInfo(unsigned AddrSpace) {
   for (unsigned Size = 2; Size <= MaxStoreSizeToForm; Size *= 2) {
     LLT Ty = LLT::scalar(Size);
     SmallVector<LegalityQuery::MemDesc, 2> MemDescrs(
-        {{Ty, Ty.getSizeInBits(), AtomicOrdering::NotAtomic,
-          AtomicOrdering::NotAtomic}});
+        {{Ty, Ty.getSizeInBits(), AtomicOrdering::NotAtomic}});
     SmallVector<LLT> StoreTys({Ty, PtrTy});
     LegalityQuery Q(TargetOpcode::G_STORE, StoreTys, MemDescrs);
     LegalizeActionStep ActionStep = LI.getAction(Q);
@@ -972,7 +962,8 @@ void LoadStoreOpt::initializeStoreMergeTargetInfo(unsigned AddrSpace) {
 
 bool LoadStoreOpt::runOnMachineFunction(MachineFunction &MF) {
   // If the ISel pipeline failed, do not bother running that pass.
-  if (MF.getProperties().hasFailedISel())
+  if (MF.getProperties().hasProperty(
+          MachineFunctionProperties::Property::FailedISel))
     return false;
 
   LLVM_DEBUG(dbgs() << "Begin memory optimizations for: " << MF.getName()

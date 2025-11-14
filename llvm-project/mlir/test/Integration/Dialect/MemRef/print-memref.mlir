@@ -1,9 +1,8 @@
 // RUN: mlir-opt %s \
-// RUN: -one-shot-bufferize="bufferize-function-boundaries" --canonicalize \
-// RUN:   -buffer-deallocation-pipeline \
-// RUN:   -finalize-memref-to-llvm \
+// RUN:   -func-bufferize -arith-bufferize --canonicalize \
+// RUN:   -finalize-memref-to-llvm\
 // RUN:   -convert-func-to-llvm -reconcile-unrealized-casts |\
-// RUN: mlir-runner \
+// RUN: mlir-cpu-runner \
 // RUN:  -e entry -entry-point-result=void  \
 // RUN:  -shared-libs=%mlir_c_runner_utils,%mlir_runner_utils |\
 // RUN: FileCheck %s

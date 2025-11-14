@@ -10,11 +10,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "kmp_utils.h"
-
 /*****************************************************************************
  * system include files
  ****************************************************************************/
+
 #include <assert.h>
 
 #include <stdint.h>
@@ -105,11 +104,9 @@ static ompt_start_tool_result_t *ompt_start_tool_result = NULL;
 
 #if KMP_OS_WINDOWS
 static HMODULE ompt_tool_module = NULL;
-static HMODULE ompt_archer_module = NULL;
 #define OMPT_DLCLOSE(Lib) FreeLibrary(Lib)
 #else
 static void *ompt_tool_module = NULL;
-static void *ompt_archer_module = NULL;
 #define OMPT_DLCLOSE(Lib) dlclose(Lib)
 #endif
 
@@ -377,7 +374,6 @@ ompt_try_start_tool(unsigned int omp_version, const char *runtime_version) {
               "Tool was started and is using the OMPT interface.\n");
           OMPT_VERBOSE_INIT_PRINT(
               "----- END LOGGING OF TOOL REGISTRATION -----\n");
-          ompt_archer_module = h;
           return ret;
         }
         OMPT_VERBOSE_INIT_CONTINUED_PRINT(
@@ -385,7 +381,6 @@ ompt_try_start_tool(unsigned int omp_version, const char *runtime_version) {
       } else {
         OMPT_VERBOSE_INIT_CONTINUED_PRINT("Failed: %s\n", dlerror());
       }
-      OMPT_DLCLOSE(h);
     }
   }
 #endif
@@ -498,7 +493,6 @@ void ompt_post_init() {
     kmp_info_t *root_thread = ompt_get_thread();
 
     ompt_set_thread_state(root_thread, ompt_state_overhead);
-    __ompt_task_init(root_thread->th.th_current_task, 0);
 
     if (ompt_enabled.ompt_callback_thread_begin) {
       ompt_callbacks.ompt_callback(ompt_callback_thread_begin)(
@@ -527,8 +521,6 @@ void ompt_fini() {
     }
   }
 
-  if (ompt_archer_module)
-    OMPT_DLCLOSE(ompt_archer_module);
   if (ompt_tool_module)
     OMPT_DLCLOSE(ompt_tool_module);
   memset(&ompt_enabled, 0, sizeof(ompt_enabled));
@@ -710,7 +702,7 @@ OMPT_API_ROUTINE int ompt_get_place_proc_ids(int place_num, int ids_size,
   return 0;
 #else
   int i, count;
-  SimpleVLA<int> tmp_ids(ids_size);
+  int tmp_ids[ids_size];
   for (int j = 0; j < ids_size; j++)
     tmp_ids[j] = 0;
   if (!KMP_AFFINITY_CAPABLE())
@@ -923,16 +915,22 @@ _OMP_EXTERN void ompt_libomp_connect(ompt_start_tool_result_t *result) {
   // Ensure libomp callbacks have been added if not already
   __ompt_force_initialization();
 
-  if (ompt_enabled.enabled && result) {
-    OMPT_VERBOSE_INIT_PRINT("libomp --> OMPT: Connecting with libomptarget\n");
-    // Pass in the libomp lookup function so that the already registered
-    // functions can be extracted and assigned to the callbacks in
-    // libomptarget
-    result->initialize(ompt_libomp_target_fn_lookup,
-                       /* initial_device_num */ 0, /* tool_data */ nullptr);
-    // Track the object provided by libomptarget so that the finalizer can be
-    // called during OMPT finalization
-    libomptarget_ompt_result = result;
+  if (ompt_enabled.enabled &&
+      // Callbacks are initiated only if the device initialize callback
+      // has been registered by the tool
+      ompt_callbacks.ompt_callback(ompt_callback_device_initialize)) {
+    if (result) {
+      OMPT_VERBOSE_INIT_PRINT(
+          "libomp --> OMPT: Connecting with libomptarget\n");
+      // Pass in the libomp lookup function so that the already registered
+      // functions can be extracted and assigned to the callbacks in
+      // libomptarget
+      result->initialize(ompt_libomp_target_fn_lookup,
+                         /* initial_device_num */ 0, /* tool_data */ nullptr);
+      // Track the object provided by libomptarget so that the finalizer can be
+      // called during OMPT finalization
+      libomptarget_ompt_result = result;
+    }
   }
   OMPT_VERBOSE_INIT_PRINT("libomp --> OMPT: Exit ompt_libomp_connect\n");
 }

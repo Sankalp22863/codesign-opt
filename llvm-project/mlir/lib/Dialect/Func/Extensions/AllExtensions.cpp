@@ -8,11 +8,9 @@
 
 #include "mlir/Dialect/Func/Extensions/AllExtensions.h"
 #include "mlir/Dialect/Func/Extensions/InlinerExtension.h"
-#include "mlir/Dialect/Func/Extensions/ShardingExtensions.h"
 
 using namespace mlir;
 
 void mlir::func::registerAllExtensions(DialectRegistry &registry) {
   registerInlinerExtension(registry);
-  registerShardingInterfaceExternalModels(registry);
 }

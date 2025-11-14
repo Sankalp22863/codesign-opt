@@ -17,8 +17,11 @@
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Lex/Lexer.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Bitstream/BitCodes.h"
+#include "llvm/Bitstream/BitstreamReader.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include <utility>
@@ -54,8 +57,8 @@ class SDiagsRenderer : public DiagnosticNoteRenderer {
   SDiagsWriter &Writer;
 public:
   SDiagsRenderer(SDiagsWriter &Writer, const LangOptions &LangOpts,
-                 DiagnosticOptions &DiagOpts)
-      : DiagnosticNoteRenderer(LangOpts, DiagOpts), Writer(Writer) {}
+                 DiagnosticOptions *DiagOpts)
+    : DiagnosticNoteRenderer(LangOpts, DiagOpts), Writer(Writer) {}
 
   ~SDiagsRenderer() override {}
 
@@ -137,7 +140,7 @@ class SDiagsWriter : public DiagnosticConsumer {
         State(std::move(State)) {}
 
 public:
-  SDiagsWriter(StringRef File, DiagnosticOptions &Diags, bool MergeChildRecords)
+  SDiagsWriter(StringRef File, DiagnosticOptions *Diags, bool MergeChildRecords)
       : LangOpts(nullptr), OriginalInstance(true),
         MergeChildRecords(MergeChildRecords),
         State(std::make_shared<SharedState>(File, Diags)) {
@@ -199,7 +202,7 @@ private:
 
   /// Emit the string information for diagnostic flags.
   unsigned getEmitDiagnosticFlag(DiagnosticsEngine::Level DiagLevel,
-                                 const Diagnostic *Diag = nullptr);
+                                 unsigned DiagID = 0);
 
   unsigned getEmitDiagnosticFlag(StringRef DiagName);
 
@@ -239,12 +242,12 @@ private:
   /// State that is shared among the various clones of this diagnostic
   /// consumer.
   struct SharedState {
-    SharedState(StringRef File, DiagnosticOptions &DiagOpts)
-        : DiagOpts(DiagOpts), Stream(Buffer), OutputFile(File.str()),
+    SharedState(StringRef File, DiagnosticOptions *Diags)
+        : DiagOpts(Diags), Stream(Buffer), OutputFile(File.str()),
           EmittedAnyDiagBlocks(false) {}
 
     /// Diagnostic options.
-    DiagnosticOptions DiagOpts;
+    IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts;
 
     /// The byte buffer for the serialized content.
     SmallString<1024> Buffer;
@@ -292,11 +295,9 @@ private:
 
 namespace clang {
 namespace serialized_diags {
-std::unique_ptr<DiagnosticConsumer> create(StringRef OutputFile,
-                                           DiagnosticOptions &DiagOpts,
-                                           bool MergeChildRecords) {
-  return std::make_unique<SDiagsWriter>(OutputFile, DiagOpts,
-                                        MergeChildRecords);
+std::unique_ptr<DiagnosticConsumer>
+create(StringRef OutputFile, DiagnosticOptions *Diags, bool MergeChildRecords) {
+  return std::make_unique<SDiagsWriter>(OutputFile, Diags, MergeChildRecords);
 }
 
 } // end namespace serialized_diags
@@ -535,13 +536,11 @@ unsigned SDiagsWriter::getEmitCategory(unsigned int category) {
 }
 
 unsigned SDiagsWriter::getEmitDiagnosticFlag(DiagnosticsEngine::Level DiagLevel,
-                                             const Diagnostic *Diag) {
-  if (!Diag || DiagLevel == DiagnosticsEngine::Note)
+                                             unsigned DiagID) {
+  if (DiagLevel == DiagnosticsEngine::Note)
     return 0; // No flag for notes.
 
-  StringRef FlagName =
-      Diag->getDiags()->getDiagnosticIDs()->getWarningOptionForDiag(
-          Diag->getID());
+  StringRef FlagName = DiagnosticIDs::getWarningOptionForDiag(DiagID);
   return getEmitDiagnosticFlag(FlagName);
 }
 
@@ -575,7 +574,7 @@ void SDiagsWriter::HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
     SmallString<256> diagnostic;
     Info.FormatDiagnostic(diagnostic);
     getMetaDiags()->Report(
-        diag::warn_fe_serialized_diag_failure_during_finalization)
+        diag::warn_fe_serialized_diag_failure_during_finalisation)
         << diagnostic;
     return;
   }
@@ -616,7 +615,7 @@ void SDiagsWriter::HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
 
   assert(Info.hasSourceManager() && LangOpts &&
          "Unexpected diagnostic with valid location outside of a source file");
-  SDiagsRenderer Renderer(*this, *LangOpts, State->DiagOpts);
+  SDiagsRenderer Renderer(*this, *LangOpts, &*State->DiagOpts);
   Renderer.emitDiagnostic(
       FullSourceLoc(Info.getLocation(), Info.getSourceManager()), DiagLevel,
       State->diagBuf, Info.getRanges(), Info.getFixItHints(), &Info);
@@ -651,12 +650,12 @@ void SDiagsWriter::EmitDiagnosticMessage(FullSourceLoc Loc, PresumedLoc PLoc,
   Record.push_back(getStableLevel(Level));
   AddLocToRecord(Loc, PLoc, Record);
 
-  if (const Diagnostic *Info = dyn_cast_if_present<const Diagnostic *>(D)) {
+  if (const Diagnostic *Info = D.dyn_cast<const Diagnostic*>()) {
     // Emit the category string lazily and get the category ID.
     unsigned DiagID = DiagnosticIDs::getCategoryNumberForDiag(Info->getID());
     Record.push_back(getEmitCategory(DiagID));
     // Emit the diagnostic flag string lazily and get the mapped ID.
-    Record.push_back(getEmitDiagnosticFlag(Level, Info));
+    Record.push_back(getEmitDiagnosticFlag(Level, Info->getID()));
   } else {
     Record.push_back(getEmitCategory());
     Record.push_back(getEmitDiagnosticFlag(Level));
@@ -753,9 +752,11 @@ DiagnosticsEngine *SDiagsWriter::getMetaDiags() {
   //    to be distinct from the engine the writer was being added to and would
   //    normally not be used.
   if (!State->MetaDiagnostics) {
-    auto Client = new TextDiagnosticPrinter(llvm::errs(), State->DiagOpts);
+    IntrusiveRefCntPtr<DiagnosticIDs> IDs(new DiagnosticIDs());
+    auto Client =
+        new TextDiagnosticPrinter(llvm::errs(), State->DiagOpts.get());
     State->MetaDiagnostics = std::make_unique<DiagnosticsEngine>(
-        DiagnosticIDs::create(), State->DiagOpts, Client);
+        IDs, State->DiagOpts.get(), Client);
   }
   return State->MetaDiagnostics.get();
 }

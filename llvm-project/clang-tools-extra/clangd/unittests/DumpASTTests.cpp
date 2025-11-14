@@ -49,40 +49,6 @@ declaration: Function - root
       )"},
       {R"cpp(
 namespace root {
-struct S { static const int x = 0; ~S(); };
-int y = S::x + root::S().x;
-}
-      )cpp",
-       R"(
-declaration: Namespace - root
-  declaration: CXXRecord - S
-    declaration: Var - x
-      type: Qualified - const
-        type: Builtin - int
-      expression: IntegerLiteral - 0
-    declaration: CXXDestructor
-      type: Record - S
-      type: FunctionProto
-        type: Builtin - void
-    declaration: CXXConstructor
-    declaration: CXXConstructor
-  declaration: Var - y
-    type: Builtin - int
-    expression: ExprWithCleanups
-      expression: BinaryOperator - +
-        expression: ImplicitCast - LValueToRValue
-          expression: DeclRef - x
-            specifier: Type
-              type: Record - S
-        expression: ImplicitCast - LValueToRValue
-          expression: Member - x
-            expression: CXXBindTemporary
-              expression: CXXTemporaryObject - S
-                type: Record - S
-                  specifier: Namespace - root::
-      )"},
-      {R"cpp(
-namespace root {
 struct S { static const int x = 0; };
 int y = S::x + root::S().x;
 }
@@ -100,16 +66,19 @@ declaration: Namespace - root
     declaration: CXXDestructor
   declaration: Var - y
     type: Builtin - int
-    expression: BinaryOperator - +
-      expression: ImplicitCast - LValueToRValue
-        expression: DeclRef - x
-          specifier: Type
-            type: Record - S
-      expression: ImplicitCast - LValueToRValue
-        expression: Member - x
-          expression: CXXTemporaryObject - S
-            type: Record - S
-              specifier: Namespace - root::
+    expression: ExprWithCleanups
+      expression: BinaryOperator - +
+        expression: ImplicitCast - LValueToRValue
+          expression: DeclRef - x
+            specifier: TypeSpec
+              type: Record - S
+        expression: ImplicitCast - LValueToRValue
+          expression: Member - x
+            expression: MaterializeTemporary - rvalue
+              expression: CXXTemporaryObject - S
+                type: Elaborated
+                  specifier: Namespace - root::
+                  type: Record - S
       )"},
       {R"cpp(
 namespace root {
@@ -136,7 +105,7 @@ declaration: Namespace - root
                   type: Builtin - unsigned int
         statement: Return
           expression: DependentScopeDeclRef - value
-            specifier: Type
+            specifier: TypeSpec
               type: TemplateTypeParm - T
       )"},
       {R"cpp(
@@ -152,7 +121,8 @@ declaration: Var - root
         expression: DeclRef - operator+
       expression: MaterializeTemporary - lvalue
         expression: CXXTemporaryObject - Foo
-          type: Record - Foo
+          type: Elaborated
+            type: Record - Foo
       expression: IntegerLiteral - 42
       )"},
       {R"cpp(

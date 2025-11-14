@@ -158,7 +158,7 @@ static bool eliminateCondBranches_v1(Function &F) {
     // Replace the conditional branch with an unconditional one, by creating
     // a new unconditional branch to the selected successor and removing the
     // conditional one.
-    BranchInst::Create(BI->getSuccessor(CI->isZero()), BI->getIterator());
+    BranchInst::Create(BI->getSuccessor(CI->isZero()), BI);
     BI->eraseFromParent();
     Changed = true;
   }
@@ -195,7 +195,7 @@ static bool eliminateCondBranches_v2(Function &F, DominatorTree &DT) {
     // a new unconditional branch to the selected successor and removing the
     // conditional one.
     BranchInst *NewBranch =
-        BranchInst::Create(BI->getSuccessor(CI->isZero()), BI->getIterator());
+        BranchInst::Create(BI->getSuccessor(CI->isZero()), BI);
     BI->eraseFromParent();
 
     // Delete the edge between BB and RemovedSucc in the DominatorTree, iff
@@ -242,8 +242,7 @@ static bool eliminateCondBranches_v3(Function &F, DominatorTree &DT) {
     // a new unconditional branch to the selected successor and removing the
     // conditional one.
 
-    BranchInst *NewBranch =
-        BranchInst::Create(TakenSucc, BB.getTerminator()->getIterator());
+    BranchInst *NewBranch = BranchInst::Create(TakenSucc, BB.getTerminator());
     BB.getTerminator()->eraseFromParent();
 
     // Delete the edge between BB and RemovedSucc in the DominatorTree, iff
@@ -286,7 +285,7 @@ static bool mergeIntoSinglePredecessor_v1(Function &F) {
     }
     // Move all instructions from BB to Pred.
     for (Instruction &I : make_early_inc_range(BB))
-      I.moveBefore(Pred->getTerminator()->getIterator());
+      I.moveBefore(Pred->getTerminator());
 
     // Remove the Pred's terminator (which jumped to BB). BB's terminator
     // will become Pred's terminator.
@@ -337,7 +336,7 @@ static bool mergeIntoSinglePredecessor_v2(Function &F, DominatorTree &DT) {
     }
     // Move all instructions from BB to Pred.
     for (Instruction &I : make_early_inc_range(BB))
-      I.moveBefore(Pred->getTerminator()->getIterator());
+      I.moveBefore(Pred->getTerminator());
 
     // Remove the Pred's terminator (which jumped to BB). BB's terminator
     // will become Pred's terminator.
@@ -407,7 +406,7 @@ llvm::PassPluginLibraryInfo getExampleIRTransformsPluginInfo() {
           }};
 }
 
-#ifndef LLVM_EXAMPLEIRTRANSFORMS_LINK_INTO_TOOLS
+#ifndef LLVM_SIMPLIFYCFG_LINK_INTO_TOOLS
 extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
 llvmGetPassPluginInfo() {
   return getExampleIRTransformsPluginInfo();

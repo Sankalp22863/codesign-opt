@@ -84,9 +84,7 @@ public:
 
   ConceptReference *getConceptReference() const { return ConceptRef; }
 
-  ConceptDecl *getNamedConcept() const {
-    return cast<ConceptDecl>(ConceptRef->getNamedConcept());
-  }
+  ConceptDecl *getNamedConcept() const { return ConceptRef->getNamedConcept(); }
 
   // FIXME: Several of the following functions can be removed. Instead the
   // caller can directly work with the ConceptReference.
@@ -263,13 +261,13 @@ public:
     assert(Status == SS_SubstitutionFailure &&
            "Attempted to get substitution diagnostic when there has been no "
            "substitution failure.");
-    return cast<SubstitutionDiagnostic *>(Value);
+    return Value.get<SubstitutionDiagnostic *>();
   }
 
   TypeSourceInfo *getType() const {
     assert(!isSubstitutionFailure() &&
            "Attempted to get type when there has been a substitution failure.");
-    return cast<TypeSourceInfo *>(Value);
+    return Value.get<TypeSourceInfo *>();
   }
 
   static bool classof(const Requirement *R) {
@@ -312,7 +310,6 @@ public:
       // TODO: Can we maybe not save the whole template parameter list and just
       //  the type constraint? Saving the whole TPL makes it easier to handle in
       //  serialization but is less elegant.
-      ReturnTypeRequirement(TemplateParameterList *TPL, bool IsDependent);
       ReturnTypeRequirement(TemplateParameterList *TPL);
 
       bool isDependent() const {
@@ -332,24 +329,24 @@ public:
 
       bool isSubstitutionFailure() const {
         return !isEmpty() &&
-               isa<SubstitutionDiagnostic *>(TypeConstraintInfo.getPointer());
+            TypeConstraintInfo.getPointer().is<SubstitutionDiagnostic *>();
       }
 
       bool isTypeConstraint() const {
         return !isEmpty() &&
-               isa<TemplateParameterList *>(TypeConstraintInfo.getPointer());
+            TypeConstraintInfo.getPointer().is<TemplateParameterList *>();
       }
 
       SubstitutionDiagnostic *getSubstitutionDiagnostic() const {
         assert(isSubstitutionFailure());
-        return cast<SubstitutionDiagnostic *>(TypeConstraintInfo.getPointer());
+        return TypeConstraintInfo.getPointer().get<SubstitutionDiagnostic *>();
       }
 
       const TypeConstraint *getTypeConstraint() const;
 
       TemplateParameterList *getTypeConstraintTemplateParameterList() const {
         assert(isTypeConstraint());
-        return cast<TemplateParameterList *>(TypeConstraintInfo.getPointer());
+        return TypeConstraintInfo.getPointer().get<TemplateParameterList *>();
       }
   };
 private:
@@ -412,14 +409,14 @@ public:
     assert(isExprSubstitutionFailure() &&
            "Attempted to get expression substitution diagnostic when there has "
            "been no expression substitution failure");
-    return cast<SubstitutionDiagnostic *>(Value);
+    return Value.get<SubstitutionDiagnostic *>();
   }
 
   Expr *getExpr() const {
     assert(!isExprSubstitutionFailure() &&
            "ExprRequirement has no expression because there has been a "
            "substitution failure.");
-    return cast<Expr *>(Value);
+    return Value.get<Expr *>();
   }
 
   static bool classof(const Requirement *R) {
@@ -492,6 +489,14 @@ public:
     return R->getKind() == RK_Nested;
   }
 };
+
+using EntityPrinter = llvm::function_ref<void(llvm::raw_ostream &)>;
+
+/// \brief create a Requirement::SubstitutionDiagnostic with only a
+/// SubstitutedEntity and DiagLoc using Sema's allocator.
+Requirement::SubstitutionDiagnostic *
+createSubstDiagAt(Sema &S, SourceLocation Location, EntityPrinter Printer);
+
 } // namespace concepts
 
 /// C++2a [expr.prim.req]:
@@ -517,6 +522,10 @@ class RequiresExpr final : public Expr,
     return NumLocalParameters;
   }
 
+  unsigned numTrailingObjects(OverloadToken<concepts::Requirement *>) const {
+    return NumRequirements;
+  }
+
   RequiresExpr(ASTContext &C, SourceLocation RequiresKWLoc,
                RequiresExprBodyDecl *Body, SourceLocation LParenLoc,
                ArrayRef<ParmVarDecl *> LocalParameters,
@@ -539,13 +548,13 @@ public:
          unsigned NumRequirements);
 
   ArrayRef<ParmVarDecl *> getLocalParameters() const {
-    return getTrailingObjects<ParmVarDecl *>(NumLocalParameters);
+    return {getTrailingObjects<ParmVarDecl *>(), NumLocalParameters};
   }
 
   RequiresExprBodyDecl *getBody() const { return Body; }
 
   ArrayRef<concepts::Requirement *> getRequirements() const {
-    return getTrailingObjects<concepts::Requirement *>(NumRequirements);
+    return {getTrailingObjects<concepts::Requirement *>(), NumRequirements};
   }
 
   /// \brief Whether or not the requires clause is satisfied.

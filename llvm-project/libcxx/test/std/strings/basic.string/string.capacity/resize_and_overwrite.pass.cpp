@@ -15,13 +15,11 @@
 
 #include <algorithm>
 #include <cassert>
-#include <memory>
 #include <string>
 
 #include "make_string.h"
 #include "test_macros.h"
 #include "asan_testing.h"
-#include "type_algorithms.h"
 
 template <class S>
 constexpr void test_appending(std::size_t k, size_t N, size_t new_capacity) {
@@ -31,7 +29,7 @@ constexpr void test_appending(std::size_t k, size_t N, size_t new_capacity) {
   s.resize_and_overwrite(new_capacity, [&](auto* p, auto n) {
     assert(n == new_capacity);
     LIBCPP_ASSERT(s.size() == new_capacity);
-    LIBCPP_ASSERT(std::to_address(s.begin()) == p);
+    LIBCPP_ASSERT(s.begin().base() == p);
     assert(std::all_of(p, p + k, [](const auto ch) { return ch == 'a'; }));
     std::fill(p + k, p + n, 'b');
     p[n] = 'c'; // will be overwritten
@@ -50,7 +48,7 @@ constexpr void test_truncating(std::size_t o, size_t N) {
   s.resize_and_overwrite(N, [&](auto* p, auto n) {
     assert(n == N);
     LIBCPP_ASSERT(s.size() == n);
-    LIBCPP_ASSERT(std::to_address(s.begin()) == p);
+    LIBCPP_ASSERT(s.begin().base() == p);
     assert(std::all_of(p, p + n, [](auto ch) { return ch == 'a'; }));
     p[n - 1] = 'b';
     p[n]     = 'c'; // will be overwritten
@@ -78,30 +76,17 @@ constexpr bool test() {
   return true;
 }
 
-constexpr bool test_value_categories() {
+void test_value_categories() {
   std::string s;
   s.resize_and_overwrite(10, [](char*&&, std::size_t&&) { return 0; });
   LIBCPP_ASSERT(is_string_asan_correct(s));
   s.resize_and_overwrite(10, [](char* const&, const std::size_t&) { return 0; });
   LIBCPP_ASSERT(is_string_asan_correct(s));
   struct RefQualified {
-    constexpr int operator()(char*, std::size_t) && { return 0; }
+    int operator()(char*, std::size_t) && { return 0; }
   };
   s.resize_and_overwrite(10, RefQualified{});
   LIBCPP_ASSERT(is_string_asan_correct(s));
-  return true;
-}
-
-constexpr bool test_integer_like_return_types() {
-  types::for_each(types::integer_types(), []<typename IntegerType> {
-    std::string s;
-    s.resize_and_overwrite(10, [](char* p, std::size_t n) -> IntegerType {
-      std::fill(p, p + n, 'f');
-      return n;
-    });
-    assert(s.size() == 10);
-  });
-  return true;
 }
 
 int main(int, char**) {
@@ -119,12 +104,5 @@ int main(int, char**) {
   test<std::basic_string<wchar_t, std::char_traits<wchar_t>, std::allocator<wchar_t>>>();
   static_assert(test<std::basic_string<wchar_t, std::char_traits<wchar_t>, std::allocator<wchar_t>>>());
 #endif
-
-  test_value_categories();
-  test_integer_like_return_types();
-
-  static_assert(test_value_categories());
-  static_assert(test_integer_like_return_types());
-
   return 0;
 }

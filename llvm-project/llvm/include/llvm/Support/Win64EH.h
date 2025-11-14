@@ -75,9 +75,6 @@ enum UnwindOpcodes {
   UOP_SaveAnyRegDPX,
   UOP_SaveAnyRegQX,
   UOP_SaveAnyRegQPX,
-  UOP_AllocZ,
-  UOP_SaveZReg,
-  UOP_SavePReg,
 
   // The following set of unwind opcodes is for ARM.  They are documented at
   // https://docs.microsoft.com/en-us/cpp/build/arm-exception-handling
@@ -126,11 +123,6 @@ union UnwindCode {
   }
   uint8_t getOpInfo() const {
     return (u.UnwindOpAndOpInfo >> 4) & 0x0F;
-  }
-  /// Gets the offset for an UOP_Epilog unwind code.
-  uint32_t getEpilogOffset() const {
-    assert(getUnwindOp() == UOP_Epilog);
-    return (getOpInfo() << 8) | static_cast<uint32_t>(u.CodeOffset);
   }
 };
 

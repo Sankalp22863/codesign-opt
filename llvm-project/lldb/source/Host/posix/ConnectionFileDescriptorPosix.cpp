@@ -52,15 +52,18 @@
 using namespace lldb;
 using namespace lldb_private;
 
-ConnectionFileDescriptor::ConnectionFileDescriptor()
-    : Connection(), m_pipe(), m_mutex(), m_shutting_down(false) {
+ConnectionFileDescriptor::ConnectionFileDescriptor(bool child_processes_inherit)
+    : Connection(), m_pipe(), m_mutex(), m_shutting_down(false),
+
+      m_child_processes_inherit(child_processes_inherit) {
   Log *log(GetLog(LLDBLog::Connection | LLDBLog::Object));
   LLDB_LOGF(log, "%p ConnectionFileDescriptor::ConnectionFileDescriptor ()",
             static_cast<void *>(this));
 }
 
 ConnectionFileDescriptor::ConnectionFileDescriptor(int fd, bool owns_fd)
-    : Connection(), m_pipe(), m_mutex(), m_shutting_down(false) {
+    : Connection(), m_pipe(), m_mutex(), m_shutting_down(false),
+      m_child_processes_inherit(false) {
   m_io_sp =
       std::make_shared<NativeFile>(fd, File::eOpenOptionReadWrite, owns_fd);
 
@@ -72,11 +75,10 @@ ConnectionFileDescriptor::ConnectionFileDescriptor(int fd, bool owns_fd)
   OpenCommandPipe();
 }
 
-ConnectionFileDescriptor::ConnectionFileDescriptor(
-    std::unique_ptr<Socket> socket_up)
-    : m_shutting_down(false) {
-  m_uri = socket_up->GetRemoteConnectionURI();
-  m_io_sp = std::move(socket_up);
+ConnectionFileDescriptor::ConnectionFileDescriptor(Socket *socket)
+    : Connection(), m_pipe(), m_mutex(), m_shutting_down(false),
+      m_child_processes_inherit(false) {
+  InitializeSocket(socket);
 }
 
 ConnectionFileDescriptor::~ConnectionFileDescriptor() {
@@ -92,7 +94,7 @@ void ConnectionFileDescriptor::OpenCommandPipe() {
 
   Log *log = GetLog(LLDBLog::Connection);
   // Make the command file descriptor here:
-  Status result = m_pipe.CreateNew();
+  Status result = m_pipe.CreateNew(m_child_processes_inherit);
   if (!result.Success()) {
     LLDB_LOGF(log,
               "%p ConnectionFileDescriptor::OpenCommandPipe () - could not "
@@ -121,7 +123,8 @@ bool ConnectionFileDescriptor::IsConnected() const {
 
 ConnectionStatus ConnectionFileDescriptor::Connect(llvm::StringRef path,
                                                    Status *error_ptr) {
-  return Connect(path, [](llvm::StringRef) {}, error_ptr);
+  return Connect(
+      path, [](llvm::StringRef) {}, error_ptr);
 }
 
 ConnectionStatus
@@ -137,7 +140,7 @@ ConnectionFileDescriptor::Connect(llvm::StringRef path,
 
   if (path.empty()) {
     if (error_ptr)
-      *error_ptr = Status::FromErrorString("invalid connect arguments");
+      error_ptr->SetErrorString("invalid connect arguments");
     return eConnectionStatusError;
   }
 
@@ -149,11 +152,11 @@ ConnectionFileDescriptor::Connect(llvm::StringRef path,
         llvm::StringSwitch<ConnectionStatus (ConnectionFileDescriptor::*)(
             llvm::StringRef, socket_id_callback_type, Status *)>(scheme)
             .Case("listen", &ConnectionFileDescriptor::AcceptTCP)
-            .Cases({"accept", "unix-accept"},
+            .Cases("accept", "unix-accept",
                    &ConnectionFileDescriptor::AcceptNamedSocket)
             .Case("unix-abstract-accept",
                   &ConnectionFileDescriptor::AcceptAbstractSocket)
-            .Cases({"connect", "tcp-connect"},
+            .Cases("connect", "tcp-connect",
                    &ConnectionFileDescriptor::ConnectTCP)
             .Case("udp", &ConnectionFileDescriptor::ConnectUDP)
             .Case("unix-connect", &ConnectionFileDescriptor::ConnectNamedSocket)
@@ -174,13 +177,15 @@ ConnectionFileDescriptor::Connect(llvm::StringRef path,
   }
 
   if (error_ptr)
-    *error_ptr = Status::FromErrorStringWithFormat(
-        "unsupported connection URL: '%s'", path.str().c_str());
+    error_ptr->SetErrorStringWithFormat("unsupported connection URL: '%s'",
+                                        path.str().c_str());
   return eConnectionStatusError;
 }
 
 bool ConnectionFileDescriptor::InterruptRead() {
-  return !errorToBool(m_pipe.Write("i", 1).takeError());
+  size_t bytes_written = 0;
+  Status result = m_pipe.Write("i", 1, bytes_written);
+  return result.Success();
 }
 
 ConnectionStatus ConnectionFileDescriptor::Disconnect(Status *error_ptr) {
@@ -205,11 +210,13 @@ ConnectionStatus ConnectionFileDescriptor::Disconnect(Status *error_ptr) {
   std::unique_lock<std::recursive_mutex> locker(m_mutex, std::defer_lock);
   if (!locker.try_lock()) {
     if (m_pipe.CanWrite()) {
-      llvm::Error err = m_pipe.Write("q", 1).takeError();
-      LLDB_LOG(log,
-               "{0}: Couldn't get the lock, sent 'q' to {1}, error = '{2}'.",
-               this, m_pipe.GetWriteFileDescriptor(), err);
-      consumeError(std::move(err));
+      size_t bytes_written = 0;
+      Status result = m_pipe.Write("q", 1, bytes_written);
+      LLDB_LOGF(log,
+                "%p ConnectionFileDescriptor::Disconnect(): Couldn't get "
+                "the lock, sent 'q' to %d, error = '%s'.",
+                static_cast<void *>(this), m_pipe.GetWriteFileDescriptor(),
+                result.AsCString());
     } else if (log) {
       LLDB_LOGF(log,
                 "%p ConnectionFileDescriptor::Disconnect(): Couldn't get the "
@@ -226,7 +233,7 @@ ConnectionStatus ConnectionFileDescriptor::Disconnect(Status *error_ptr) {
   if (error.Fail())
     status = eConnectionStatusError;
   if (error_ptr)
-    *error_ptr = std::move(error);
+    *error_ptr = error;
 
   // Close any pipes we were using for async interrupts
   m_pipe.Close();
@@ -249,8 +256,7 @@ size_t ConnectionFileDescriptor::Read(void *dst, size_t dst_len,
               "connection lock.",
               static_cast<void *>(this));
     if (error_ptr)
-      *error_ptr = Status::FromErrorString(
-          "failed to get the connection lock for read.");
+      error_ptr->SetErrorString("failed to get the connection lock for read.");
 
     status = eConnectionStatusTimedOut;
     return 0;
@@ -258,7 +264,7 @@ size_t ConnectionFileDescriptor::Read(void *dst, size_t dst_len,
 
   if (m_shutting_down) {
     if (error_ptr)
-      *error_ptr = Status::FromErrorString("shutting down");
+      error_ptr->SetErrorString("shutting down");
     status = eConnectionStatusError;
     return 0;
   }
@@ -272,11 +278,13 @@ size_t ConnectionFileDescriptor::Read(void *dst, size_t dst_len,
   error = m_io_sp->Read(dst, bytes_read);
 
   if (log) {
-    LLDB_LOG(log,
-             "{0} ConnectionFileDescriptor::Read()  fd = {1}"
-             ", dst = {2}, dst_len = {3}) => {4}, error = {5}",
-             this, m_io_sp->GetWaitableHandle(), dst, dst_len, bytes_read,
-             error.AsCString());
+    LLDB_LOGF(log,
+              "%p ConnectionFileDescriptor::Read()  fd = %" PRIu64
+              ", dst = %p, dst_len = %" PRIu64 ") => %" PRIu64 ", error = %s",
+              static_cast<void *>(this),
+              static_cast<uint64_t>(m_io_sp->GetWaitableHandle()),
+              static_cast<void *>(dst), static_cast<uint64_t>(dst_len),
+              static_cast<uint64_t>(bytes_read), error.AsCString());
   }
 
   if (bytes_read == 0) {
@@ -286,7 +294,7 @@ size_t ConnectionFileDescriptor::Read(void *dst, size_t dst_len,
   }
 
   if (error_ptr)
-    *error_ptr = error.Clone();
+    *error_ptr = error;
 
   if (error.Fail()) {
     uint32_t error_value = error.GetError();
@@ -356,14 +364,14 @@ size_t ConnectionFileDescriptor::Write(const void *src, size_t src_len,
 
   if (!IsConnected()) {
     if (error_ptr)
-      *error_ptr = Status::FromErrorString("not connected");
+      error_ptr->SetErrorString("not connected");
     status = eConnectionStatusNoConnection;
     return 0;
   }
 
   if (m_shutting_down) {
     if (error_ptr)
-      *error_ptr = Status::FromErrorString("shutting down");
+      error_ptr->SetErrorString("shutting down");
     status = eConnectionStatusError;
     return 0;
   }
@@ -374,15 +382,17 @@ size_t ConnectionFileDescriptor::Write(const void *src, size_t src_len,
   error = m_io_sp->Write(src, bytes_sent);
 
   if (log) {
-    LLDB_LOG(log,
-             "{0} ConnectionFileDescriptor::Write(fd = {1}"
-             ", src = {2}, src_len = {3}) => {4} (error = {5})",
-             this, m_io_sp->GetWaitableHandle(), src, src_len, bytes_sent,
-             error.AsCString());
+    LLDB_LOGF(log,
+              "%p ConnectionFileDescriptor::Write(fd = %" PRIu64
+              ", src = %p, src_len = %" PRIu64 ") => %" PRIu64 " (error = %s)",
+              static_cast<void *>(this),
+              static_cast<uint64_t>(m_io_sp->GetWaitableHandle()),
+              static_cast<const void *>(src), static_cast<uint64_t>(src_len),
+              static_cast<uint64_t>(bytes_sent), error.AsCString());
   }
 
   if (error_ptr)
-    *error_ptr = error.Clone();
+    *error_ptr = error;
 
   if (error.Fail()) {
     switch (error.GetError()) {
@@ -447,8 +457,7 @@ ConnectionFileDescriptor::BytesAvailable(const Timeout<std::micro> &timeout,
     if (timeout)
       select_helper.SetTimeout(*timeout);
 
-    // FIXME: Migrate to MainLoop.
-    select_helper.FDSetRead(reinterpret_cast<socket_t>(handle));
+    select_helper.FDSetRead(handle);
 #if defined(_WIN32)
     // select() won't accept pipes on Windows.  The entire Windows codepath
     // needs to be converted over to using WaitForMultipleObjects and event
@@ -466,7 +475,7 @@ ConnectionFileDescriptor::BytesAvailable(const Timeout<std::micro> &timeout,
       Status error = select_helper.Select();
 
       if (error_ptr)
-        *error_ptr = error.Clone();
+        *error_ptr = error;
 
       if (error.Fail()) {
         switch (error.GetError()) {
@@ -490,7 +499,7 @@ ConnectionFileDescriptor::BytesAvailable(const Timeout<std::micro> &timeout,
           break; // Lets keep reading to until we timeout
         }
       } else {
-        if (select_helper.FDIsSetRead((lldb::socket_t)handle))
+        if (select_helper.FDIsSetRead(handle))
           return eConnectionStatusSuccess;
 
         if (select_helper.FDIsSetRead(pipe_fd)) {
@@ -519,7 +528,7 @@ ConnectionFileDescriptor::BytesAvailable(const Timeout<std::micro> &timeout,
   }
 
   if (error_ptr)
-    *error_ptr = Status::FromErrorString("not connected");
+    error_ptr->SetErrorString("not connected");
   return eConnectionStatusLostConnection;
 }
 
@@ -529,7 +538,7 @@ lldb::ConnectionStatus ConnectionFileDescriptor::AcceptSocket(
     Status *error_ptr) {
   Status error;
   std::unique_ptr<Socket> listening_socket =
-      Socket::Create(socket_protocol, error);
+      Socket::Create(socket_protocol, m_child_processes_inherit, error);
   Socket *accepted_socket;
 
   if (!error.Fail())
@@ -537,7 +546,7 @@ lldb::ConnectionStatus ConnectionFileDescriptor::AcceptSocket(
 
   if (!error.Fail()) {
     post_listen_callback(*listening_socket);
-    error = listening_socket->Accept(/*timeout=*/std::nullopt, accepted_socket);
+    error = listening_socket->Accept(accepted_socket);
   }
 
   if (!error.Fail()) {
@@ -547,7 +556,7 @@ lldb::ConnectionStatus ConnectionFileDescriptor::AcceptSocket(
   }
 
   if (error_ptr)
-    *error_ptr = error.Clone();
+    *error_ptr = error;
   return eConnectionStatusError;
 }
 
@@ -556,7 +565,8 @@ ConnectionFileDescriptor::ConnectSocket(Socket::SocketProtocol socket_protocol,
                                         llvm::StringRef socket_name,
                                         Status *error_ptr) {
   Status error;
-  std::unique_ptr<Socket> socket = Socket::Create(socket_protocol, error);
+  std::unique_ptr<Socket> socket =
+      Socket::Create(socket_protocol, m_child_processes_inherit, error);
 
   if (!error.Fail())
     error = socket->Connect(socket_name);
@@ -568,7 +578,7 @@ ConnectionFileDescriptor::ConnectSocket(Socket::SocketProtocol socket_protocol,
   }
 
   if (error_ptr)
-    *error_ptr = error.Clone();
+    *error_ptr = error;
   return eConnectionStatusError;
 }
 
@@ -637,10 +647,11 @@ ConnectionFileDescriptor::ConnectUDP(llvm::StringRef s,
                                      Status *error_ptr) {
   if (error_ptr)
     *error_ptr = Status();
-  llvm::Expected<std::unique_ptr<UDPSocket>> socket = Socket::UdpConnect(s);
+  llvm::Expected<std::unique_ptr<UDPSocket>> socket =
+      Socket::UdpConnect(s, m_child_processes_inherit);
   if (!socket) {
     if (error_ptr)
-      *error_ptr = Status::FromError(socket.takeError());
+      *error_ptr = socket.takeError();
     else
       LLDB_LOG_ERROR(GetLog(LLDBLog::Connection), socket.takeError(),
                      "tcp connect failed: {0}");
@@ -668,8 +679,8 @@ ConnectionFileDescriptor::ConnectFD(llvm::StringRef s,
     int flags = ::fcntl(fd, F_GETFL, 0);
     if (flags == -1 || errno == EBADF) {
       if (error_ptr)
-        *error_ptr = Status::FromErrorStringWithFormat(
-            "stale file descriptor: %s", s.str().c_str());
+        error_ptr->SetErrorStringWithFormat("stale file descriptor: %s",
+                                            s.str().c_str());
       m_io_sp.reset();
       return eConnectionStatusError;
     } else {
@@ -682,7 +693,7 @@ ConnectionFileDescriptor::ConnectFD(llvm::StringRef s,
       // this. For now, we assume we must assume we don't own it.
 
       std::unique_ptr<TCPSocket> tcp_socket;
-      tcp_socket = std::make_unique<TCPSocket>(fd, /*should_close=*/false);
+      tcp_socket = std::make_unique<TCPSocket>(fd, false, false);
       // Try and get a socket option from this file descriptor to see if
       // this is a socket and set m_is_socket accordingly.
       int resuse;
@@ -699,8 +710,8 @@ ConnectionFileDescriptor::ConnectFD(llvm::StringRef s,
   }
 
   if (error_ptr)
-    *error_ptr = Status::FromErrorStringWithFormat(
-        "invalid file descriptor: \"%s\"", s.str().c_str());
+    error_ptr->SetErrorStringWithFormat("invalid file descriptor: \"%s\"",
+                                        s.str().c_str());
   m_io_sp.reset();
   return eConnectionStatusError;
 #endif // LLDB_ENABLE_POSIX
@@ -716,7 +727,7 @@ ConnectionStatus ConnectionFileDescriptor::ConnectFile(
   int fd = FileSystem::Instance().Open(addr_str.c_str(), O_RDWR);
   if (fd == -1) {
     if (error_ptr)
-      *error_ptr = Status::FromErrno();
+      error_ptr->SetErrorToErrno();
     return eConnectionStatusError;
   }
 
@@ -725,19 +736,9 @@ ConnectionStatus ConnectionFileDescriptor::ConnectFile(
     struct termios options;
     ::tcgetattr(fd, &options);
 
-    // Set port speed to the available maximum
-#ifdef B115200
+    // Set port speed to maximum
     ::cfsetospeed(&options, B115200);
     ::cfsetispeed(&options, B115200);
-#elif B57600
-    ::cfsetospeed(&options, B57600);
-    ::cfsetispeed(&options, B57600);
-#elif B38400
-    ::cfsetospeed(&options, B38400);
-    ::cfsetispeed(&options, B38400);
-#else
-#error "Maximum Baud rate is Unknown"
-#endif
 
     // Raw input, disable echo and signals
     options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
@@ -767,7 +768,7 @@ ConnectionStatus ConnectionFileDescriptor::ConnectSerialPort(
       SerialPort::OptionsFromURL(qs);
   if (!serial_options) {
     if (error_ptr)
-      *error_ptr = Status::FromError(serial_options.takeError());
+      *error_ptr = serial_options.takeError();
     else
       llvm::consumeError(serial_options.takeError());
     return eConnectionStatusError;
@@ -776,7 +777,7 @@ ConnectionStatus ConnectionFileDescriptor::ConnectSerialPort(
   int fd = FileSystem::Instance().Open(path.str().c_str(), O_RDWR);
   if (fd == -1) {
     if (error_ptr)
-      *error_ptr = Status::FromErrno();
+      error_ptr->SetErrorToErrno();
     return eConnectionStatusError;
   }
 
@@ -784,7 +785,7 @@ ConnectionStatus ConnectionFileDescriptor::ConnectSerialPort(
       fd, File::eOpenOptionReadWrite, serial_options.get(), true);
   if (!serial_sp) {
     if (error_ptr)
-      *error_ptr = Status::FromError(serial_sp.takeError());
+      *error_ptr = serial_sp.takeError();
     else
       llvm::consumeError(serial_sp.takeError());
     return eConnectionStatusError;
@@ -794,4 +795,18 @@ ConnectionStatus ConnectionFileDescriptor::ConnectSerialPort(
   return eConnectionStatusSuccess;
 #endif // LLDB_ENABLE_POSIX
   llvm_unreachable("this function should be only called w/ LLDB_ENABLE_POSIX");
+}
+
+bool ConnectionFileDescriptor::GetChildProcessesInherit() const {
+  return m_child_processes_inherit;
+}
+
+void ConnectionFileDescriptor::SetChildProcessesInherit(
+    bool child_processes_inherit) {
+  m_child_processes_inherit = child_processes_inherit;
+}
+
+void ConnectionFileDescriptor::InitializeSocket(Socket *socket) {
+  m_io_sp.reset(socket);
+  m_uri = socket->GetRemoteConnectionURI();
 }

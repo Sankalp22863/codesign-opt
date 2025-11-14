@@ -51,10 +51,6 @@ static const unsigned TCEOpenCLAddrSpaceMap[] = {
     0, // ptr32_uptr
     0, // ptr64
     0, // hlsl_groupshared
-    0, // hlsl_constant
-    0, // hlsl_private
-    0, // hlsl_device
-    0, // hlsl_input
     // Wasm address space values for this target are dummy values,
     // as it is only enabled for Wasm targets.
     20, // wasm_funcref
@@ -99,8 +95,8 @@ public:
 
   bool hasFeature(StringRef Feature) const override { return Feature == "tce"; }
 
-  llvm::SmallVector<Builtin::InfosShard> getTargetBuiltins() const override {
-    return {};
+  ArrayRef<Builtin::Info> getTargetBuiltins() const override {
+    return std::nullopt;
   }
 
   std::string_view getClobbers() const override { return ""; }
@@ -109,7 +105,9 @@ public:
     return TargetInfo::VoidPtrBuiltinVaList;
   }
 
-  ArrayRef<const char *> getGCCRegNames() const override { return {}; }
+  ArrayRef<const char *> getGCCRegNames() const override {
+    return std::nullopt;
+  }
 
   bool validateAsmConstraint(const char *&Name,
                              TargetInfo::ConstraintInfo &info) const override {
@@ -117,7 +115,7 @@ public:
   }
 
   ArrayRef<TargetInfo::GCCRegAlias> getGCCRegAliases() const override {
-    return {};
+    return std::nullopt;
   }
 };
 

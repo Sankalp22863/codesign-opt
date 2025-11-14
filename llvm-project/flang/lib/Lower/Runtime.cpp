@@ -15,7 +15,6 @@
 #include "flang/Optimizer/Builder/Runtime/RTBuilder.h"
 #include "flang/Optimizer/Builder/Todo.h"
 #include "flang/Optimizer/Dialect/FIROpsSupport.h"
-#include "flang/Optimizer/Dialect/MIF/MIFOps.h"
 #include "flang/Parser/parse-tree.h"
 #include "flang/Runtime/misc-intrinsic.h"
 #include "flang/Runtime/pointer.h"
@@ -40,10 +39,11 @@ static void genUnreachable(fir::FirOpBuilder &builder, mlir::Location loc) {
   if (parentOp->getDialect()->getNamespace() ==
       mlir::omp::OpenMPDialect::getDialectNamespace())
     Fortran::lower::genOpenMPTerminator(builder, parentOp, loc);
-  else if (Fortran::lower::isInsideOpenACCComputeConstruct(builder))
+  else if (parentOp->getDialect()->getNamespace() ==
+           mlir::acc::OpenACCDialect::getDialectNamespace())
     Fortran::lower::genOpenACCTerminator(builder, parentOp, loc);
   else
-    fir::UnreachableOp::create(builder, loc);
+    builder.create<fir::UnreachableOp>(loc);
   mlir::Block *newBlock = curBlock->splitBlock(builder.getInsertionPoint());
   builder.setInsertionPointToStart(newBlock);
 }
@@ -55,8 +55,6 @@ static void genUnreachable(fir::FirOpBuilder &builder, mlir::Location loc) {
 void Fortran::lower::genStopStatement(
     Fortran::lower::AbstractConverter &converter,
     const Fortran::parser::StopStmt &stmt) {
-  const bool isError = std::get<Fortran::parser::StopStmt::Kind>(stmt.t) ==
-                       Fortran::parser::StopStmt::Kind::ErrorStop;
   fir::FirOpBuilder &builder = converter.getFirOpBuilder();
   mlir::Location loc = converter.getCurrentLocation();
   Fortran::lower::StatementContext stmtCtx;
@@ -96,12 +94,13 @@ void Fortran::lower::genStopStatement(
   } else {
     callee = fir::runtime::getRuntimeFunc<mkRTKey(StopStatement)>(loc, builder);
     calleeType = callee.getFunctionType();
-    // Default to values are advised in F'2023 11.4 p2.
-    operands.push_back(builder.createIntegerConstant(
-        loc, calleeType.getInput(0), isError ? 1 : 0));
+    operands.push_back(
+        builder.createIntegerConstant(loc, calleeType.getInput(0), 0));
   }
 
   // Second operand indicates ERROR STOP
+  bool isError = std::get<Fortran::parser::StopStmt::Kind>(stmt.t) ==
+                 Fortran::parser::StopStmt::Kind::ErrorStop;
   operands.push_back(builder.createIntegerConstant(
       loc, calleeType.getInput(operands.size()), isError));
 
@@ -118,7 +117,7 @@ void Fortran::lower::genStopStatement(
         loc, calleeType.getInput(operands.size()), 0));
   }
 
-  fir::CallOp::create(builder, loc, callee, operands);
+  builder.create<fir::CallOp>(loc, callee, operands);
   auto blockIsUnterminated = [&builder]() {
     mlir::Block *currentBlock = builder.getBlock();
     return currentBlock->empty() ||
@@ -134,7 +133,7 @@ void Fortran::lower::genFailImageStatement(
   mlir::Location loc = converter.getCurrentLocation();
   mlir::func::FuncOp callee =
       fir::runtime::getRuntimeFunc<mkRTKey(FailImageStatement)>(loc, builder);
-  fir::CallOp::create(builder, loc, callee, mlir::ValueRange{});
+  builder.create<fir::CallOp>(loc, callee, std::nullopt);
   genUnreachable(builder, loc);
 }
 
@@ -168,6 +167,30 @@ void Fortran::lower::genUnlockStatement(
   TODO(converter.getCurrentLocation(), "coarray: UNLOCK runtime");
 }
 
+void Fortran::lower::genSyncAllStatement(
+    Fortran::lower::AbstractConverter &converter,
+    const Fortran::parser::SyncAllStmt &) {
+  TODO(converter.getCurrentLocation(), "coarray: SYNC ALL runtime");
+}
+
+void Fortran::lower::genSyncImagesStatement(
+    Fortran::lower::AbstractConverter &converter,
+    const Fortran::parser::SyncImagesStmt &) {
+  TODO(converter.getCurrentLocation(), "coarray: SYNC IMAGES runtime");
+}
+
+void Fortran::lower::genSyncMemoryStatement(
+    Fortran::lower::AbstractConverter &converter,
+    const Fortran::parser::SyncMemoryStmt &) {
+  TODO(converter.getCurrentLocation(), "coarray: SYNC MEMORY runtime");
+}
+
+void Fortran::lower::genSyncTeamStatement(
+    Fortran::lower::AbstractConverter &converter,
+    const Fortran::parser::SyncTeamStmt &) {
+  TODO(converter.getCurrentLocation(), "coarray: SYNC TEAM runtime");
+}
+
 void Fortran::lower::genPauseStatement(
     Fortran::lower::AbstractConverter &converter,
     const Fortran::parser::PauseStmt &) {
@@ -175,7 +198,7 @@ void Fortran::lower::genPauseStatement(
   mlir::Location loc = converter.getCurrentLocation();
   mlir::func::FuncOp callee =
       fir::runtime::getRuntimeFunc<mkRTKey(PauseStatement)>(loc, builder);
-  fir::CallOp::create(builder, loc, callee, mlir::ValueRange{});
+  builder.create<fir::CallOp>(loc, callee, std::nullopt);
 }
 
 void Fortran::lower::genPointerAssociate(fir::FirOpBuilder &builder,
@@ -186,18 +209,17 @@ void Fortran::lower::genPointerAssociate(fir::FirOpBuilder &builder,
       fir::runtime::getRuntimeFunc<mkRTKey(PointerAssociate)>(loc, builder);
   llvm::SmallVector<mlir::Value> args = fir::runtime::createArguments(
       builder, loc, func.getFunctionType(), pointer, target);
-  fir::CallOp::create(builder, loc, func, args);
+  builder.create<fir::CallOp>(loc, func, args).getResult(0);
 }
 
-void Fortran::lower::genPointerAssociateRemapping(
-    fir::FirOpBuilder &builder, mlir::Location loc, mlir::Value pointer,
-    mlir::Value target, mlir::Value bounds, bool isMonomorphic) {
+void Fortran::lower::genPointerAssociateRemapping(fir::FirOpBuilder &builder,
+                                                  mlir::Location loc,
+                                                  mlir::Value pointer,
+                                                  mlir::Value target,
+                                                  mlir::Value bounds) {
   mlir::func::FuncOp func =
-      isMonomorphic
-          ? fir::runtime::getRuntimeFunc<mkRTKey(
-                PointerAssociateRemappingMonomorphic)>(loc, builder)
-          : fir::runtime::getRuntimeFunc<mkRTKey(PointerAssociateRemapping)>(
-                loc, builder);
+      fir::runtime::getRuntimeFunc<mkRTKey(PointerAssociateRemapping)>(loc,
+                                                                       builder);
   auto fTy = func.getFunctionType();
   auto sourceFile = fir::factory::locationToFilename(builder, loc);
   auto sourceLine =
@@ -205,7 +227,7 @@ void Fortran::lower::genPointerAssociateRemapping(
   llvm::SmallVector<mlir::Value> args = fir::runtime::createArguments(
       builder, loc, func.getFunctionType(), pointer, target, bounds, sourceFile,
       sourceLine);
-  fir::CallOp::create(builder, loc, func, args);
+  builder.create<fir::CallOp>(loc, func, args).getResult(0);
 }
 
 void Fortran::lower::genPointerAssociateLowerBounds(fir::FirOpBuilder &builder,
@@ -218,5 +240,5 @@ void Fortran::lower::genPointerAssociateLowerBounds(fir::FirOpBuilder &builder,
           loc, builder);
   llvm::SmallVector<mlir::Value> args = fir::runtime::createArguments(
       builder, loc, func.getFunctionType(), pointer, target, lbounds);
-  fir::CallOp::create(builder, loc, func, args);
+  builder.create<fir::CallOp>(loc, func, args).getResult(0);
 }

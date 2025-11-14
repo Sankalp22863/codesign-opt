@@ -13,21 +13,17 @@
 //
 //===---------------------------------------------------------------------===//
 
-#include "llvm/CodeGen/XRayInstrumentation.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/MachineFunctionAnalysis.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
-#include "llvm/CodeGen/MachinePassManager.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/IR/Attributes.h"
-#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
@@ -47,42 +43,21 @@ struct InstrumentationOptions {
   bool HandleAllReturns;
 };
 
-struct XRayInstrumentationLegacy : public MachineFunctionPass {
+struct XRayInstrumentation : public MachineFunctionPass {
   static char ID;
 
-  XRayInstrumentationLegacy() : MachineFunctionPass(ID) {
-    initializeXRayInstrumentationLegacyPass(*PassRegistry::getPassRegistry());
+  XRayInstrumentation() : MachineFunctionPass(ID) {
+    initializeXRayInstrumentationPass(*PassRegistry::getPassRegistry());
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
-    AU.addPreserved<MachineLoopInfoWrapperPass>();
-    AU.addPreserved<MachineDominatorTreeWrapperPass>();
+    AU.addPreserved<MachineLoopInfo>();
+    AU.addPreserved<MachineDominatorTree>();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 
   bool runOnMachineFunction(MachineFunction &MF) override;
-};
-
-struct XRayInstrumentation {
-  XRayInstrumentation(MachineDominatorTree *MDT, MachineLoopInfo *MLI)
-      : MDT(MDT), MLI(MLI) {}
-
-  bool run(MachineFunction &MF);
-
-  // Methods for use in the NPM and legacy passes, can be removed once migration
-  // is complete.
-  static bool alwaysInstrument(Function &F) {
-    auto InstrAttr = F.getFnAttribute("function-instrument");
-    return InstrAttr.isStringAttribute() &&
-           InstrAttr.getValueAsString() == "xray-always";
-  }
-
-  static bool needMDTAndMLIAnalyses(Function &F) {
-    auto IgnoreLoopsAttr = F.getFnAttribute("xray-ignore-loops");
-    auto AlwaysInstrument = XRayInstrumentation::alwaysInstrument(F);
-    return !AlwaysInstrument && !IgnoreLoopsAttr.isValid();
-  }
 
 private:
   // Replace the original RET instruction with the exit sled code ("patchable
@@ -106,9 +81,6 @@ private:
   void prependRetWithPatchableExit(MachineFunction &MF,
                                    const TargetInstrInfo *TII,
                                    InstrumentationOptions);
-
-  MachineDominatorTree *MDT;
-  MachineLoopInfo *MLI;
 };
 
 } // end anonymous namespace
@@ -139,8 +111,8 @@ void XRayInstrumentation::replaceRetWithPatchableRet(
         for (auto &MO : T.operands())
           MIB.add(MO);
         Terminators.push_back(&T);
-        if (T.shouldUpdateAdditionalCallInfo())
-          MF.eraseAdditionalCallInfo(&T);
+        if (T.shouldUpdateCallSiteInfo())
+          MF.eraseCallSiteInfo(&T);
       }
     }
   }
@@ -170,42 +142,11 @@ void XRayInstrumentation::prependRetWithPatchableExit(
     }
 }
 
-PreservedAnalyses
-XRayInstrumentationPass::run(MachineFunction &MF,
-                             MachineFunctionAnalysisManager &MFAM) {
-  MachineDominatorTree *MDT = nullptr;
-  MachineLoopInfo *MLI = nullptr;
-
-  if (XRayInstrumentation::needMDTAndMLIAnalyses(MF.getFunction())) {
-    MDT = MFAM.getCachedResult<MachineDominatorTreeAnalysis>(MF);
-    MLI = MFAM.getCachedResult<MachineLoopAnalysis>(MF);
-  }
-
-  if (!XRayInstrumentation(MDT, MLI).run(MF))
-    return PreservedAnalyses::all();
-
-  auto PA = getMachineFunctionPassPreservedAnalyses();
-  PA.preserveSet<CFGAnalyses>();
-  return PA;
-}
-
-bool XRayInstrumentationLegacy::runOnMachineFunction(MachineFunction &MF) {
-  MachineDominatorTree *MDT = nullptr;
-  MachineLoopInfo *MLI = nullptr;
-  if (XRayInstrumentation::needMDTAndMLIAnalyses(MF.getFunction())) {
-    auto *MDTWrapper =
-        getAnalysisIfAvailable<MachineDominatorTreeWrapperPass>();
-    MDT = MDTWrapper ? &MDTWrapper->getDomTree() : nullptr;
-    auto *MLIWrapper = getAnalysisIfAvailable<MachineLoopInfoWrapperPass>();
-    MLI = MLIWrapper ? &MLIWrapper->getLI() : nullptr;
-  }
-  return XRayInstrumentation(MDT, MLI).run(MF);
-}
-
-bool XRayInstrumentation::run(MachineFunction &MF) {
+bool XRayInstrumentation::runOnMachineFunction(MachineFunction &MF) {
   auto &F = MF.getFunction();
   auto InstrAttr = F.getFnAttribute("function-instrument");
-  bool AlwaysInstrument = alwaysInstrument(F);
+  bool AlwaysInstrument = InstrAttr.isStringAttribute() &&
+                          InstrAttr.getValueAsString() == "xray-always";
   bool NeverInstrument = InstrAttr.isStringAttribute() &&
                          InstrAttr.getValueAsString() == "xray-never";
   if (NeverInstrument && !AlwaysInstrument)
@@ -229,16 +170,18 @@ bool XRayInstrumentation::run(MachineFunction &MF) {
 
     if (!IgnoreLoops) {
       // Get MachineDominatorTree or compute it on the fly if it's unavailable
+      auto *MDT = getAnalysisIfAvailable<MachineDominatorTree>();
       MachineDominatorTree ComputedMDT;
       if (!MDT) {
-        ComputedMDT.recalculate(MF);
+        ComputedMDT.getBase().recalculate(MF);
         MDT = &ComputedMDT;
       }
 
       // Get MachineLoopInfo or compute it on the fly if it's unavailable
+      auto *MLI = getAnalysisIfAvailable<MachineLoopInfo>();
       MachineLoopInfo ComputedMLI;
       if (!MLI) {
-        ComputedMLI.analyze(*MDT);
+        ComputedMLI.getBase().analyze(MDT->getBase());
         MLI = &ComputedMLI;
       }
 
@@ -265,12 +208,8 @@ bool XRayInstrumentation::run(MachineFunction &MF) {
   auto &FirstMI = *FirstMBB.begin();
 
   if (!MF.getSubtarget().isXRaySupported()) {
-
-    const Function &Fn = FirstMBB.getParent()->getFunction();
-    Fn.getContext().diagnose(DiagnosticInfoUnsupported(
-        Fn, "An attempt to perform XRay instrumentation for an"
-            " unsupported target."));
-
+    FirstMI.emitError("An attempt to perform XRay instrumentation for an"
+                      " unsupported target.");
     return false;
   }
 
@@ -291,20 +230,15 @@ bool XRayInstrumentation::run(MachineFunction &MF) {
     case Triple::ArchType::mips:
     case Triple::ArchType::mipsel:
     case Triple::ArchType::mips64:
-    case Triple::ArchType::mips64el:
-    case Triple::ArchType::riscv32:
-    case Triple::ArchType::riscv64: {
+    case Triple::ArchType::mips64el: {
       // For the architectures which don't have a single return instruction
       InstrumentationOptions op;
-      // AArch64 and RISC-V support patching tail calls.
-      op.HandleTailcall = MF.getTarget().getTargetTriple().isAArch64() ||
-                          MF.getTarget().getTargetTriple().isRISCV();
+      op.HandleTailcall = false;
       op.HandleAllReturns = true;
       prependRetWithPatchableExit(MF, TII, op);
       break;
     }
-    case Triple::ArchType::ppc64le:
-    case Triple::ArchType::systemz: {
+    case Triple::ArchType::ppc64le: {
       // PPC has conditional returns. Turn them into branch and plain returns.
       InstrumentationOptions op;
       op.HandleTailcall = false;
@@ -326,10 +260,10 @@ bool XRayInstrumentation::run(MachineFunction &MF) {
   return true;
 }
 
-char XRayInstrumentationLegacy::ID = 0;
-char &llvm::XRayInstrumentationID = XRayInstrumentationLegacy::ID;
-INITIALIZE_PASS_BEGIN(XRayInstrumentationLegacy, "xray-instrumentation",
+char XRayInstrumentation::ID = 0;
+char &llvm::XRayInstrumentationID = XRayInstrumentation::ID;
+INITIALIZE_PASS_BEGIN(XRayInstrumentation, "xray-instrumentation",
                       "Insert XRay ops", false, false)
-INITIALIZE_PASS_DEPENDENCY(MachineLoopInfoWrapperPass)
-INITIALIZE_PASS_END(XRayInstrumentationLegacy, "xray-instrumentation",
+INITIALIZE_PASS_DEPENDENCY(MachineLoopInfo)
+INITIALIZE_PASS_END(XRayInstrumentation, "xray-instrumentation",
                     "Insert XRay ops", false, false)

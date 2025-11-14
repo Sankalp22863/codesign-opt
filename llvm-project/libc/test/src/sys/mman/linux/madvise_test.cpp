@@ -6,22 +6,24 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "src/errno/libc_errno.h"
 #include "src/sys/mman/madvise.h"
 #include "src/sys/mman/mmap.h"
 #include "src/sys/mman/munmap.h"
-#include "test/UnitTest/ErrnoCheckingTest.h"
 #include "test/UnitTest/ErrnoSetterMatcher.h"
 #include "test/UnitTest/Test.h"
 
+#include <sys/mman.h>
+
 using LIBC_NAMESPACE::testing::ErrnoSetterMatcher::Fails;
 using LIBC_NAMESPACE::testing::ErrnoSetterMatcher::Succeeds;
-using LlvmLibcMadviseTest = LIBC_NAMESPACE::testing::ErrnoCheckingTest;
 
-TEST_F(LlvmLibcMadviseTest, NoError) {
+TEST(LlvmLibcMadviseTest, NoError) {
   size_t alloc_size = 128;
+  libc_errno = 0;
   void *addr = LIBC_NAMESPACE::mmap(nullptr, alloc_size, PROT_READ,
                                     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-  ASSERT_ERRNO_SUCCESS();
+  EXPECT_EQ(0, libc_errno);
   EXPECT_NE(addr, MAP_FAILED);
 
   EXPECT_THAT(LIBC_NAMESPACE::madvise(addr, alloc_size, MADV_RANDOM),
@@ -35,7 +37,8 @@ TEST_F(LlvmLibcMadviseTest, NoError) {
   EXPECT_THAT(LIBC_NAMESPACE::munmap(addr, alloc_size), Succeeds());
 }
 
-TEST_F(LlvmLibcMadviseTest, Error_BadPtr) {
+TEST(LlvmLibcMadviseTest, Error_BadPtr) {
+  libc_errno = 0;
   EXPECT_THAT(LIBC_NAMESPACE::madvise(nullptr, 8, MADV_SEQUENTIAL),
               Fails(ENOMEM));
 }

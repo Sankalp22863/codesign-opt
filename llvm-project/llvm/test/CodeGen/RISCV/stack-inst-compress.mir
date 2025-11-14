@@ -32,7 +32,6 @@ alignment:       2
 tracksRegLiveness: true
 frameInfo:
   maxAlignment:    4
-  adjustsStack:    true
   hasCalls:        true
   localFrameSize:  2048
 stack:
@@ -47,18 +46,15 @@ body:             |
     ; CHECK-RV32-NO-COM-NEXT: {{  $}}
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-setup ADDI $x2, -2032
     ; CHECK-RV32-NO-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 2032
-    ; CHECK-RV32-NO-COM-NEXT: frame-setup SW killed $x1, $x2, 2028 :: (store (s32) into %stack.1)
+    ; CHECK-RV32-NO-COM-NEXT: SW killed $x1, $x2, 2028 :: (store (s32) into %stack.1)
     ; CHECK-RV32-NO-COM-NEXT: frame-setup CFI_INSTRUCTION offset $x1, -4
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-setup ADDI $x2, -32
     ; CHECK-RV32-NO-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 2064
     ; CHECK-RV32-NO-COM-NEXT: renamable $x10 = ADDI $x2, 12
     ; CHECK-RV32-NO-COM-NEXT: PseudoCALL target-flags(riscv-call) @_Z6calleePi, csr_ilp32_lp64, implicit-def dead $x1, implicit killed $x10, implicit-def $x2
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-destroy ADDI $x2, 32
-    ; CHECK-RV32-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 2032
-    ; CHECK-RV32-NO-COM-NEXT: $x1 = frame-destroy LW $x2, 2028 :: (load (s32) from %stack.1)
-    ; CHECK-RV32-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION restore $x1
+    ; CHECK-RV32-NO-COM-NEXT: $x1 = LW $x2, 2028 :: (load (s32) from %stack.1)
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-destroy ADDI $x2, 2032
-    ; CHECK-RV32-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 0
     ; CHECK-RV32-NO-COM-NEXT: PseudoRET
     ;
     ; CHECK-RV32-COM-LABEL: name: _Z15stack_size_2048v
@@ -66,18 +62,15 @@ body:             |
     ; CHECK-RV32-COM-NEXT: {{  $}}
     ; CHECK-RV32-COM-NEXT: $x2 = frame-setup ADDI $x2, -256
     ; CHECK-RV32-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 256
-    ; CHECK-RV32-COM-NEXT: frame-setup SW killed $x1, $x2, 252 :: (store (s32) into %stack.1)
+    ; CHECK-RV32-COM-NEXT: SW killed $x1, $x2, 252 :: (store (s32) into %stack.1)
     ; CHECK-RV32-COM-NEXT: frame-setup CFI_INSTRUCTION offset $x1, -4
     ; CHECK-RV32-COM-NEXT: $x2 = frame-setup ADDI $x2, -1808
     ; CHECK-RV32-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 2064
     ; CHECK-RV32-COM-NEXT: renamable $x10 = ADDI $x2, 12
     ; CHECK-RV32-COM-NEXT: PseudoCALL target-flags(riscv-call) @_Z6calleePi, csr_ilp32_lp64, implicit-def dead $x1, implicit killed $x10, implicit-def $x2
     ; CHECK-RV32-COM-NEXT: $x2 = frame-destroy ADDI $x2, 1808
-    ; CHECK-RV32-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 256
-    ; CHECK-RV32-COM-NEXT: $x1 = frame-destroy LW $x2, 252 :: (load (s32) from %stack.1)
-    ; CHECK-RV32-COM-NEXT: frame-destroy CFI_INSTRUCTION restore $x1
+    ; CHECK-RV32-COM-NEXT: $x1 = LW $x2, 252 :: (load (s32) from %stack.1)
     ; CHECK-RV32-COM-NEXT: $x2 = frame-destroy ADDI $x2, 256
-    ; CHECK-RV32-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 0
     ; CHECK-RV32-COM-NEXT: PseudoRET
     ;
     ; CHECK-RV64-NO-COM-LABEL: name: _Z15stack_size_2048v
@@ -85,18 +78,15 @@ body:             |
     ; CHECK-RV64-NO-COM-NEXT: {{  $}}
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-setup ADDI $x2, -2032
     ; CHECK-RV64-NO-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 2032
-    ; CHECK-RV64-NO-COM-NEXT: frame-setup SD killed $x1, $x2, 2024 :: (store (s64) into %stack.1)
+    ; CHECK-RV64-NO-COM-NEXT: SD killed $x1, $x2, 2024 :: (store (s64) into %stack.1)
     ; CHECK-RV64-NO-COM-NEXT: frame-setup CFI_INSTRUCTION offset $x1, -8
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-setup ADDI $x2, -32
     ; CHECK-RV64-NO-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 2064
     ; CHECK-RV64-NO-COM-NEXT: renamable $x10 = ADDI $x2, 8
     ; CHECK-RV64-NO-COM-NEXT: PseudoCALL target-flags(riscv-call) @_Z6calleePi, csr_ilp32_lp64, implicit-def dead $x1, implicit killed $x10, implicit-def $x2
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-destroy ADDI $x2, 32
-    ; CHECK-RV64-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 2032
-    ; CHECK-RV64-NO-COM-NEXT: $x1 = frame-destroy LD $x2, 2024 :: (load (s64) from %stack.1)
-    ; CHECK-RV64-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION restore $x1
+    ; CHECK-RV64-NO-COM-NEXT: $x1 = LD $x2, 2024 :: (load (s64) from %stack.1)
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-destroy ADDI $x2, 2032
-    ; CHECK-RV64-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 0
     ; CHECK-RV64-NO-COM-NEXT: PseudoRET
     ;
     ; CHECK-RV64-COM-LABEL: name: _Z15stack_size_2048v
@@ -104,18 +94,15 @@ body:             |
     ; CHECK-RV64-COM-NEXT: {{  $}}
     ; CHECK-RV64-COM-NEXT: $x2 = frame-setup ADDI $x2, -496
     ; CHECK-RV64-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 496
-    ; CHECK-RV64-COM-NEXT: frame-setup SD killed $x1, $x2, 488 :: (store (s64) into %stack.1)
+    ; CHECK-RV64-COM-NEXT: SD killed $x1, $x2, 488 :: (store (s64) into %stack.1)
     ; CHECK-RV64-COM-NEXT: frame-setup CFI_INSTRUCTION offset $x1, -8
     ; CHECK-RV64-COM-NEXT: $x2 = frame-setup ADDI $x2, -1568
     ; CHECK-RV64-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 2064
     ; CHECK-RV64-COM-NEXT: renamable $x10 = ADDI $x2, 8
     ; CHECK-RV64-COM-NEXT: PseudoCALL target-flags(riscv-call) @_Z6calleePi, csr_ilp32_lp64, implicit-def dead $x1, implicit killed $x10, implicit-def $x2
     ; CHECK-RV64-COM-NEXT: $x2 = frame-destroy ADDI $x2, 1568
-    ; CHECK-RV64-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 496
-    ; CHECK-RV64-COM-NEXT: $x1 = frame-destroy LD $x2, 488 :: (load (s64) from %stack.1)
-    ; CHECK-RV64-COM-NEXT: frame-destroy CFI_INSTRUCTION restore $x1
+    ; CHECK-RV64-COM-NEXT: $x1 = LD $x2, 488 :: (load (s64) from %stack.1)
     ; CHECK-RV64-COM-NEXT: $x2 = frame-destroy ADDI $x2, 496
-    ; CHECK-RV64-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 0
     ; CHECK-RV64-COM-NEXT: PseudoRET
     ADJCALLSTACKDOWN 0, 0, implicit-def dead $x2, implicit $x2
     renamable $x10 = ADDI %stack.0, 0
@@ -130,7 +117,6 @@ alignment:       2
 tracksRegLiveness: true
 frameInfo:
   maxAlignment:    4
-  adjustsStack:    true
   hasCalls:        true
   localFrameSize:  4096
 stack:
@@ -145,7 +131,7 @@ body:             |
     ; CHECK-RV32-NO-COM-NEXT: {{  $}}
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-setup ADDI $x2, -2032
     ; CHECK-RV32-NO-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 2032
-    ; CHECK-RV32-NO-COM-NEXT: frame-setup SW killed $x1, $x2, 2028 :: (store (s32) into %stack.1)
+    ; CHECK-RV32-NO-COM-NEXT: SW killed $x1, $x2, 2028 :: (store (s32) into %stack.1)
     ; CHECK-RV32-NO-COM-NEXT: frame-setup CFI_INSTRUCTION offset $x1, -4
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-setup ADDI $x2, -2048
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-setup ADDI killed $x2, -32
@@ -154,11 +140,8 @@ body:             |
     ; CHECK-RV32-NO-COM-NEXT: PseudoCALL target-flags(riscv-call) @_Z6calleePi, csr_ilp32_lp64, implicit-def dead $x1, implicit killed $x10, implicit-def $x2
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-destroy ADDI $x2, 2032
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-destroy ADDI killed $x2, 48
-    ; CHECK-RV32-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 2032
-    ; CHECK-RV32-NO-COM-NEXT: $x1 = frame-destroy LW $x2, 2028 :: (load (s32) from %stack.1)
-    ; CHECK-RV32-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION restore $x1
+    ; CHECK-RV32-NO-COM-NEXT: $x1 = LW $x2, 2028 :: (load (s32) from %stack.1)
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-destroy ADDI $x2, 2032
-    ; CHECK-RV32-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 0
     ; CHECK-RV32-NO-COM-NEXT: PseudoRET
     ;
     ; CHECK-RV32-COM-LABEL: name: _Z15stack_size_4096v
@@ -166,7 +149,7 @@ body:             |
     ; CHECK-RV32-COM-NEXT: {{  $}}
     ; CHECK-RV32-COM-NEXT: $x2 = frame-setup ADDI $x2, -256
     ; CHECK-RV32-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 256
-    ; CHECK-RV32-COM-NEXT: frame-setup SW killed $x1, $x2, 252 :: (store (s32) into %stack.1)
+    ; CHECK-RV32-COM-NEXT: SW killed $x1, $x2, 252 :: (store (s32) into %stack.1)
     ; CHECK-RV32-COM-NEXT: frame-setup CFI_INSTRUCTION offset $x1, -4
     ; CHECK-RV32-COM-NEXT: $x2 = frame-setup ADDI $x2, -2048
     ; CHECK-RV32-COM-NEXT: $x2 = frame-setup ADDI killed $x2, -1808
@@ -175,11 +158,8 @@ body:             |
     ; CHECK-RV32-COM-NEXT: PseudoCALL target-flags(riscv-call) @_Z6calleePi, csr_ilp32_lp64, implicit-def dead $x1, implicit killed $x10, implicit-def $x2
     ; CHECK-RV32-COM-NEXT: $x2 = frame-destroy ADDI $x2, 2032
     ; CHECK-RV32-COM-NEXT: $x2 = frame-destroy ADDI killed $x2, 1824
-    ; CHECK-RV32-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 256
-    ; CHECK-RV32-COM-NEXT: $x1 = frame-destroy LW $x2, 252 :: (load (s32) from %stack.1)
-    ; CHECK-RV32-COM-NEXT: frame-destroy CFI_INSTRUCTION restore $x1
+    ; CHECK-RV32-COM-NEXT: $x1 = LW $x2, 252 :: (load (s32) from %stack.1)
     ; CHECK-RV32-COM-NEXT: $x2 = frame-destroy ADDI $x2, 256
-    ; CHECK-RV32-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 0
     ; CHECK-RV32-COM-NEXT: PseudoRET
     ;
     ; CHECK-RV64-NO-COM-LABEL: name: _Z15stack_size_4096v
@@ -187,7 +167,7 @@ body:             |
     ; CHECK-RV64-NO-COM-NEXT: {{  $}}
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-setup ADDI $x2, -2032
     ; CHECK-RV64-NO-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 2032
-    ; CHECK-RV64-NO-COM-NEXT: frame-setup SD killed $x1, $x2, 2024 :: (store (s64) into %stack.1)
+    ; CHECK-RV64-NO-COM-NEXT: SD killed $x1, $x2, 2024 :: (store (s64) into %stack.1)
     ; CHECK-RV64-NO-COM-NEXT: frame-setup CFI_INSTRUCTION offset $x1, -8
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-setup ADDI $x2, -2048
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-setup ADDI killed $x2, -32
@@ -196,11 +176,8 @@ body:             |
     ; CHECK-RV64-NO-COM-NEXT: PseudoCALL target-flags(riscv-call) @_Z6calleePi, csr_ilp32_lp64, implicit-def dead $x1, implicit killed $x10, implicit-def $x2
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-destroy ADDI $x2, 2032
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-destroy ADDI killed $x2, 48
-    ; CHECK-RV64-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 2032
-    ; CHECK-RV64-NO-COM-NEXT: $x1 = frame-destroy LD $x2, 2024 :: (load (s64) from %stack.1)
-    ; CHECK-RV64-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION restore $x1
+    ; CHECK-RV64-NO-COM-NEXT: $x1 = LD $x2, 2024 :: (load (s64) from %stack.1)
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-destroy ADDI $x2, 2032
-    ; CHECK-RV64-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 0
     ; CHECK-RV64-NO-COM-NEXT: PseudoRET
     ;
     ; CHECK-RV64-COM-LABEL: name: _Z15stack_size_4096v
@@ -208,7 +185,7 @@ body:             |
     ; CHECK-RV64-COM-NEXT: {{  $}}
     ; CHECK-RV64-COM-NEXT: $x2 = frame-setup ADDI $x2, -496
     ; CHECK-RV64-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 496
-    ; CHECK-RV64-COM-NEXT: frame-setup SD killed $x1, $x2, 488 :: (store (s64) into %stack.1)
+    ; CHECK-RV64-COM-NEXT: SD killed $x1, $x2, 488 :: (store (s64) into %stack.1)
     ; CHECK-RV64-COM-NEXT: frame-setup CFI_INSTRUCTION offset $x1, -8
     ; CHECK-RV64-COM-NEXT: $x2 = frame-setup ADDI $x2, -2048
     ; CHECK-RV64-COM-NEXT: $x2 = frame-setup ADDI killed $x2, -1568
@@ -217,11 +194,8 @@ body:             |
     ; CHECK-RV64-COM-NEXT: PseudoCALL target-flags(riscv-call) @_Z6calleePi, csr_ilp32_lp64, implicit-def dead $x1, implicit killed $x10, implicit-def $x2
     ; CHECK-RV64-COM-NEXT: $x2 = frame-destroy ADDI $x2, 2032
     ; CHECK-RV64-COM-NEXT: $x2 = frame-destroy ADDI killed $x2, 1584
-    ; CHECK-RV64-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 496
-    ; CHECK-RV64-COM-NEXT: $x1 = frame-destroy LD $x2, 488 :: (load (s64) from %stack.1)
-    ; CHECK-RV64-COM-NEXT: frame-destroy CFI_INSTRUCTION restore $x1
+    ; CHECK-RV64-COM-NEXT: $x1 = LD $x2, 488 :: (load (s64) from %stack.1)
     ; CHECK-RV64-COM-NEXT: $x2 = frame-destroy ADDI $x2, 496
-    ; CHECK-RV64-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 0
     ; CHECK-RV64-COM-NEXT: PseudoRET
     ADJCALLSTACKDOWN 0, 0, implicit-def dead $x2, implicit $x2
     renamable $x10 = ADDI %stack.0, 0
@@ -236,7 +210,6 @@ alignment:       2
 tracksRegLiveness: true
 frameInfo:
   maxAlignment:    4
-  adjustsStack:    true
   hasCalls:        true
   localFrameSize:  8192
 stack:
@@ -251,7 +224,7 @@ body:             |
     ; CHECK-RV32-NO-COM-NEXT: {{  $}}
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-setup ADDI $x2, -2032
     ; CHECK-RV32-NO-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 2032
-    ; CHECK-RV32-NO-COM-NEXT: frame-setup SW killed $x1, $x2, 2028 :: (store (s32) into %stack.1)
+    ; CHECK-RV32-NO-COM-NEXT: SW killed $x1, $x2, 2028 :: (store (s32) into %stack.1)
     ; CHECK-RV32-NO-COM-NEXT: frame-setup CFI_INSTRUCTION offset $x1, -4
     ; CHECK-RV32-NO-COM-NEXT: $x10 = frame-setup LUI 2
     ; CHECK-RV32-NO-COM-NEXT: $x10 = frame-setup ADDI killed $x10, -2016
@@ -262,11 +235,8 @@ body:             |
     ; CHECK-RV32-NO-COM-NEXT: $x10 = frame-destroy LUI 2
     ; CHECK-RV32-NO-COM-NEXT: $x10 = frame-destroy ADDI killed $x10, -2016
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-destroy ADD $x2, killed $x10
-    ; CHECK-RV32-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 2032
-    ; CHECK-RV32-NO-COM-NEXT: $x1 = frame-destroy LW $x2, 2028 :: (load (s32) from %stack.1)
-    ; CHECK-RV32-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION restore $x1
+    ; CHECK-RV32-NO-COM-NEXT: $x1 = LW $x2, 2028 :: (load (s32) from %stack.1)
     ; CHECK-RV32-NO-COM-NEXT: $x2 = frame-destroy ADDI $x2, 2032
-    ; CHECK-RV32-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 0
     ; CHECK-RV32-NO-COM-NEXT: PseudoRET
     ;
     ; CHECK-RV32-COM-LABEL: name: _Z15stack_size_8192v
@@ -274,7 +244,7 @@ body:             |
     ; CHECK-RV32-COM-NEXT: {{  $}}
     ; CHECK-RV32-COM-NEXT: $x2 = frame-setup ADDI $x2, -256
     ; CHECK-RV32-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 256
-    ; CHECK-RV32-COM-NEXT: frame-setup SW killed $x1, $x2, 252 :: (store (s32) into %stack.1)
+    ; CHECK-RV32-COM-NEXT: SW killed $x1, $x2, 252 :: (store (s32) into %stack.1)
     ; CHECK-RV32-COM-NEXT: frame-setup CFI_INSTRUCTION offset $x1, -4
     ; CHECK-RV32-COM-NEXT: $x10 = frame-setup LUI 2
     ; CHECK-RV32-COM-NEXT: $x10 = frame-setup ADDI killed $x10, -240
@@ -285,11 +255,8 @@ body:             |
     ; CHECK-RV32-COM-NEXT: $x10 = frame-destroy LUI 2
     ; CHECK-RV32-COM-NEXT: $x10 = frame-destroy ADDI killed $x10, -240
     ; CHECK-RV32-COM-NEXT: $x2 = frame-destroy ADD $x2, killed $x10
-    ; CHECK-RV32-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 256
-    ; CHECK-RV32-COM-NEXT: $x1 = frame-destroy LW $x2, 252 :: (load (s32) from %stack.1)
-    ; CHECK-RV32-COM-NEXT: frame-destroy CFI_INSTRUCTION restore $x1
+    ; CHECK-RV32-COM-NEXT: $x1 = LW $x2, 252 :: (load (s32) from %stack.1)
     ; CHECK-RV32-COM-NEXT: $x2 = frame-destroy ADDI $x2, 256
-    ; CHECK-RV32-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 0
     ; CHECK-RV32-COM-NEXT: PseudoRET
     ;
     ; CHECK-RV64-NO-COM-LABEL: name: _Z15stack_size_8192v
@@ -297,22 +264,19 @@ body:             |
     ; CHECK-RV64-NO-COM-NEXT: {{  $}}
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-setup ADDI $x2, -2032
     ; CHECK-RV64-NO-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 2032
-    ; CHECK-RV64-NO-COM-NEXT: frame-setup SD killed $x1, $x2, 2024 :: (store (s64) into %stack.1)
+    ; CHECK-RV64-NO-COM-NEXT: SD killed $x1, $x2, 2024 :: (store (s64) into %stack.1)
     ; CHECK-RV64-NO-COM-NEXT: frame-setup CFI_INSTRUCTION offset $x1, -8
     ; CHECK-RV64-NO-COM-NEXT: $x10 = frame-setup LUI 2
-    ; CHECK-RV64-NO-COM-NEXT: $x10 = frame-setup ADDI killed $x10, -2016
+    ; CHECK-RV64-NO-COM-NEXT: $x10 = frame-setup ADDIW killed $x10, -2016
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-setup SUB $x2, killed $x10
     ; CHECK-RV64-NO-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 8208
     ; CHECK-RV64-NO-COM-NEXT: renamable $x10 = ADDI $x2, 8
     ; CHECK-RV64-NO-COM-NEXT: PseudoCALL target-flags(riscv-call) @_Z6calleePi, csr_ilp32_lp64, implicit-def dead $x1, implicit killed $x10, implicit-def $x2
     ; CHECK-RV64-NO-COM-NEXT: $x10 = frame-destroy LUI 2
-    ; CHECK-RV64-NO-COM-NEXT: $x10 = frame-destroy ADDI killed $x10, -2016
+    ; CHECK-RV64-NO-COM-NEXT: $x10 = frame-destroy ADDIW killed $x10, -2016
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-destroy ADD $x2, killed $x10
-    ; CHECK-RV64-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 2032
-    ; CHECK-RV64-NO-COM-NEXT: $x1 = frame-destroy LD $x2, 2024 :: (load (s64) from %stack.1)
-    ; CHECK-RV64-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION restore $x1
+    ; CHECK-RV64-NO-COM-NEXT: $x1 = LD $x2, 2024 :: (load (s64) from %stack.1)
     ; CHECK-RV64-NO-COM-NEXT: $x2 = frame-destroy ADDI $x2, 2032
-    ; CHECK-RV64-NO-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 0
     ; CHECK-RV64-NO-COM-NEXT: PseudoRET
     ;
     ; CHECK-RV64-COM-LABEL: name: _Z15stack_size_8192v
@@ -320,22 +284,19 @@ body:             |
     ; CHECK-RV64-COM-NEXT: {{  $}}
     ; CHECK-RV64-COM-NEXT: $x2 = frame-setup ADDI $x2, -496
     ; CHECK-RV64-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 496
-    ; CHECK-RV64-COM-NEXT: frame-setup SD killed $x1, $x2, 488 :: (store (s64) into %stack.1)
+    ; CHECK-RV64-COM-NEXT: SD killed $x1, $x2, 488 :: (store (s64) into %stack.1)
     ; CHECK-RV64-COM-NEXT: frame-setup CFI_INSTRUCTION offset $x1, -8
     ; CHECK-RV64-COM-NEXT: $x10 = frame-setup LUI 2
-    ; CHECK-RV64-COM-NEXT: $x10 = frame-setup ADDI killed $x10, -480
+    ; CHECK-RV64-COM-NEXT: $x10 = frame-setup ADDIW killed $x10, -480
     ; CHECK-RV64-COM-NEXT: $x2 = frame-setup SUB $x2, killed $x10
     ; CHECK-RV64-COM-NEXT: frame-setup CFI_INSTRUCTION def_cfa_offset 8208
     ; CHECK-RV64-COM-NEXT: renamable $x10 = ADDI $x2, 8
     ; CHECK-RV64-COM-NEXT: PseudoCALL target-flags(riscv-call) @_Z6calleePi, csr_ilp32_lp64, implicit-def dead $x1, implicit killed $x10, implicit-def $x2
     ; CHECK-RV64-COM-NEXT: $x10 = frame-destroy LUI 2
-    ; CHECK-RV64-COM-NEXT: $x10 = frame-destroy ADDI killed $x10, -480
+    ; CHECK-RV64-COM-NEXT: $x10 = frame-destroy ADDIW killed $x10, -480
     ; CHECK-RV64-COM-NEXT: $x2 = frame-destroy ADD $x2, killed $x10
-    ; CHECK-RV64-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 496
-    ; CHECK-RV64-COM-NEXT: $x1 = frame-destroy LD $x2, 488 :: (load (s64) from %stack.1)
-    ; CHECK-RV64-COM-NEXT: frame-destroy CFI_INSTRUCTION restore $x1
+    ; CHECK-RV64-COM-NEXT: $x1 = LD $x2, 488 :: (load (s64) from %stack.1)
     ; CHECK-RV64-COM-NEXT: $x2 = frame-destroy ADDI $x2, 496
-    ; CHECK-RV64-COM-NEXT: frame-destroy CFI_INSTRUCTION def_cfa_offset 0
     ; CHECK-RV64-COM-NEXT: PseudoRET
     ADJCALLSTACKDOWN 0, 0, implicit-def dead $x2, implicit $x2
     renamable $x10 = ADDI %stack.0, 0

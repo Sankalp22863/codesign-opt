@@ -12,7 +12,6 @@
 #include "Diagnostics.h"
 #include "TestFS.h"
 #include "index/FileIndex.h"
-#include "index/SymbolOrigin.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Frontend/CompilerInvocation.h"
@@ -165,7 +164,7 @@ SymbolSlab TestTU::headerSymbols() const {
   auto AST = build();
   return std::get<0>(indexHeaderSymbols(
       /*Version=*/"null", AST.getASTContext(), AST.getPreprocessor(),
-      AST.getPragmaIncludes(), SymbolOrigin::Preamble));
+      AST.getPragmaIncludes()));
 }
 
 RefSlab TestTU::headerRefs() const {
@@ -175,7 +174,7 @@ RefSlab TestTU::headerRefs() const {
 
 std::unique_ptr<SymbolIndex> TestTU::index() const {
   auto AST = build();
-  auto Idx = std::make_unique<FileIndex>(/*SupportContainedRefs=*/true);
+  auto Idx = std::make_unique<FileIndex>();
   Idx->updatePreamble(testPath(Filename), /*Version=*/"null",
                       AST.getASTContext(), AST.getPreprocessor(),
                       AST.getPragmaIncludes());

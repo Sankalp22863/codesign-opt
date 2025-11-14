@@ -2,12 +2,10 @@ add_subdirectory(Utils)
 
 add_mlir_library(MLIRTransforms
   Canonicalizer.cpp
-  CompositePass.cpp
   ControlFlowSink.cpp
   CSE.cpp
   GenerateRuntimeVerification.cpp
-  BubbleDownMemorySpaceCasts.cpp
-  InlinerPass.cpp
+  Inliner.cpp
   LocationSnapshot.cpp
   LoopInvariantCodeMotion.cpp
   Mem2Reg.cpp
@@ -30,9 +28,9 @@ add_mlir_library(MLIRTransforms
 
   LINK_LIBS PUBLIC
   MLIRAnalysis
+  MLIRCopyOpInterface
   MLIRFunctionInterfaces
   MLIRLoopLikeInterface
-  MLIRMemOpInterfaces
   MLIRMemorySlotInterfaces
   MLIRPass
   MLIRRuntimeVerifiableOpInterface

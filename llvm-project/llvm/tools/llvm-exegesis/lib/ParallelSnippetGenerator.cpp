@@ -80,6 +80,7 @@ namespace llvm {
 namespace exegesis {
 
 static bool hasVariablesWithTiedOperands(const Instruction &Instr) {
+  SmallVector<const Variable *, 8> Result;
   for (const auto &Var : Instr.Variables)
     if (Var.hasTiedOperands())
       return true;
@@ -89,9 +90,9 @@ static bool hasVariablesWithTiedOperands(const Instruction &Instr) {
 ParallelSnippetGenerator::~ParallelSnippetGenerator() = default;
 
 void ParallelSnippetGenerator::instantiateMemoryOperands(
-    const MCRegister ScratchSpacePointerInReg,
+    const unsigned ScratchSpacePointerInReg,
     std::vector<InstructionTemplate> &Instructions) const {
-  if (!ScratchSpacePointerInReg)
+  if (ScratchSpacePointerInReg == 0)
     return; // no memory operands.
   const auto &ET = State.getExegesisTarget();
   const unsigned MemStep = ET.getMaxMemoryAccessSize();
@@ -260,10 +261,10 @@ generateSnippetForInstrAvoidingDefUseOverlap(
     if (Op.isReg() && Op.isImplicit() && !Op.isMemory()) {
       assert(Op.isImplicitReg() && "Not an implicit register operand?");
       if (Op.isUse())
-        ImplicitUses.set(Op.getImplicitReg().id());
+        ImplicitUses.set(Op.getImplicitReg());
       else {
         assert(Op.isDef() && "Not a use and not a def?");
-        ImplicitDefs.set(Op.getImplicitReg().id());
+        ImplicitDefs.set(Op.getImplicitReg());
       }
     }
   }
@@ -299,7 +300,7 @@ ParallelSnippetGenerator::generateCodeTemplates(
       Instr.hasMemoryOperands()
           ? State.getExegesisTarget().getScratchMemoryRegister(
                 State.getTargetMachine().getTargetTriple())
-          : MCRegister();
+          : 0;
   const AliasingConfigurations SelfAliasing(Instr, Instr, ForbiddenRegisters);
   if (SelfAliasing.empty()) {
     CT.Info = "instruction is parallel, repeating a random one.";
@@ -349,6 +350,8 @@ ParallelSnippetGenerator::generateCodeTemplates(
   }
   return Result;
 }
+
+constexpr const size_t ParallelSnippetGenerator::kMinNumDifferentAddresses;
 
 } // namespace exegesis
 } // namespace llvm

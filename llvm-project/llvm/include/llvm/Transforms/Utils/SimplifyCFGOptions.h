@@ -24,15 +24,12 @@ struct SimplifyCFGOptions {
   int BonusInstThreshold = 1;
   bool ForwardSwitchCondToPhi = false;
   bool ConvertSwitchRangeToICmp = false;
-  bool ConvertSwitchToArithmetic = false;
   bool ConvertSwitchToLookupTable = false;
   bool NeedCanonicalLoop = true;
   bool HoistCommonInsts = false;
-  bool HoistLoadsStoresWithCondFaulting = false;
   bool SinkCommonInsts = false;
   bool SimplifyCondBranch = true;
   bool SpeculateBlocks = true;
-  bool SpeculateUnpredictables = false;
 
   AssumptionCache *AC = nullptr;
 
@@ -49,10 +46,6 @@ struct SimplifyCFGOptions {
     ConvertSwitchRangeToICmp = B;
     return *this;
   }
-  SimplifyCFGOptions &convertSwitchToArithmetic(bool B) {
-    ConvertSwitchToArithmetic = B;
-    return *this;
-  }
   SimplifyCFGOptions &convertSwitchToLookupTable(bool B) {
     ConvertSwitchToLookupTable = B;
     return *this;
@@ -63,10 +56,6 @@ struct SimplifyCFGOptions {
   }
   SimplifyCFGOptions &hoistCommonInsts(bool B) {
     HoistCommonInsts = B;
-    return *this;
-  }
-  SimplifyCFGOptions &hoistLoadsStoresWithCondFaulting(bool B) {
-    HoistLoadsStoresWithCondFaulting = B;
     return *this;
   }
   SimplifyCFGOptions &sinkCommonInsts(bool B) {
@@ -84,10 +73,6 @@ struct SimplifyCFGOptions {
 
   SimplifyCFGOptions &speculateBlocks(bool B) {
     SpeculateBlocks = B;
-    return *this;
-  }
-  SimplifyCFGOptions &speculateUnpredictables(bool B) {
-    SpeculateUnpredictables = B;
     return *this;
   }
 };

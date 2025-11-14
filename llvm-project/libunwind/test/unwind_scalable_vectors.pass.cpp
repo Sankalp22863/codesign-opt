@@ -34,10 +34,7 @@ __attribute__((noinline)) static void foo() {
   asm volatile("" ::"vr"(v));  // Dummy inline asm to use v.
 }
 
-int main(int, char **) {
-  foo();
-  return 0;
-}
+int main() { foo(); }
 #else
-int main(int, char **) { return 0; }
+int main() { return 0; }
 #endif

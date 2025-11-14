@@ -7,8 +7,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "SystemZSubtarget.h"
+#include "MCTargetDesc/SystemZMCTargetDesc.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
-#include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/GlobalValue.h"
 #include "llvm/Target/TargetMachine.h"
 
 using namespace llvm;
@@ -44,11 +45,9 @@ SystemZSubtarget &SystemZSubtarget::initializeSubtargetDependencies(
   if (!HasVector) {
     HasVectorEnhancements1 = false;
     HasVectorEnhancements2 = false;
-    HasVectorEnhancements3 = false;
     HasVectorPackedDecimal = false;
     HasVectorPackedDecimalEnhancement = false;
     HasVectorPackedDecimalEnhancement2 = false;
-    HasVectorPackedDecimalEnhancement3 = false;
   }
 
   return *this;
@@ -83,9 +82,9 @@ bool SystemZSubtarget::isAddressedViaADA(const GlobalValue *GV) const {
     // least two byte alignment, then generated code can use relative
     // instructions to address the variable. Otherwise, use the ADA to address
     // the variable.
-    if (auto *GV = dyn_cast<GlobalVariable>(GO))
-      if (GV->getAlign() && (*GV->getAlign()).value() & 0x1)
-        return true;
+    if (GO->getAlignment() & 0x1) {
+      return true;
+    }
 
     // getKindForGlobal only works with definitions
     if (GO->isDeclaration()) {
@@ -117,13 +116,13 @@ bool SystemZSubtarget::isPC32DBLSymbol(const GlobalValue *GV,
   //
   // FIXME: Explicitly check for functions: the datalayout is currently
   // missing information about function pointers.
-  const DataLayout &DL = GV->getDataLayout();
+  const DataLayout &DL = GV->getParent()->getDataLayout();
   if (GV->getPointerAlignment(DL) == 1 && !GV->getValueType()->isFunctionTy())
     return false;
 
   // For the small model, all locally-binding symbols are in range.
   if (CM == CodeModel::Small)
-    return TLInfo.getTargetMachine().shouldAssumeDSOLocal(GV);
+    return TLInfo.getTargetMachine().shouldAssumeDSOLocal(*GV->getParent(), GV);
 
   // For Medium and above, assume that the symbol is not within the 4GB range.
   // Taking the address of locally-defined text would be OK, but that

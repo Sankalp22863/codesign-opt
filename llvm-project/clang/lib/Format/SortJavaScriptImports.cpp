@@ -15,6 +15,7 @@
 #include "TokenAnalyzer.h"
 #include "TokenAnnotator.h"
 #include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
@@ -23,6 +24,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Debug.h"
+#include <algorithm>
 #include <string>
 
 #define DEBUG_TYPE "format-formatter"
@@ -31,6 +33,8 @@ namespace clang {
 namespace format {
 
 class FormatTokenLexer;
+
+using clang::format::FormatStyle;
 
 // An imported symbol in a JavaScript ES6 import/export, possibly aliased.
 struct JsImportedSymbol {
@@ -174,7 +178,7 @@ public:
         }
       }
     }
-    StringRef PreviousText = getSourceText(InsertionPoint);
+    llvm::StringRef PreviousText = getSourceText(InsertionPoint);
     if (ReferencesText == PreviousText)
       return {Result, 0};
 
@@ -205,7 +209,7 @@ public:
     // FIXME: better error handling. For now, just print error message and skip
     // the replacement for the release version.
     if (Err) {
-      llvm::errs() << toString(std::move(Err)) << "\n";
+      llvm::errs() << llvm::toString(std::move(Err)) << "\n";
       assert(false);
     }
 
@@ -272,9 +276,10 @@ private:
         SortChunk.push_back(*Start);
         ++Start;
       }
-      stable_sort(SortChunk);
+      llvm::stable_sort(SortChunk);
       mergeModuleReferences(SortChunk);
-      llvm::append_range(ReferencesSorted, SortChunk);
+      ReferencesSorted.insert(ReferencesSorted.end(), SortChunk.begin(),
+                              SortChunk.end());
     }
     return ReferencesSorted;
   }
@@ -329,10 +334,10 @@ private:
     // Sort the individual symbols within the import.
     // E.g. `import {b, a} from 'x';` -> `import {a, b} from 'x';`
     SmallVector<JsImportedSymbol, 1> Symbols = Reference.Symbols;
-    stable_sort(Symbols,
-                [&](const JsImportedSymbol &LHS, const JsImportedSymbol &RHS) {
-                  return LHS.Symbol.compare_insensitive(RHS.Symbol) < 0;
-                });
+    llvm::stable_sort(
+        Symbols, [&](const JsImportedSymbol &LHS, const JsImportedSymbol &RHS) {
+          return LHS.Symbol.compare_insensitive(RHS.Symbol) < 0;
+        });
     if (!Reference.SymbolsMerged && Symbols == Reference.Symbols) {
       // Symbols didn't change, just emit the entire module reference.
       StringRef ReferenceStmt = getSourceText(Reference.Range);
@@ -344,7 +349,7 @@ private:
     // ... then the references in order ...
     if (!Symbols.empty()) {
       Buffer += getSourceText(Symbols.front().Range);
-      for (const JsImportedSymbol &Symbol : drop_begin(Symbols)) {
+      for (const JsImportedSymbol &Symbol : llvm::drop_begin(Symbols)) {
         Buffer += ",";
         Buffer += getSourceText(Symbol.Range);
       }
@@ -439,7 +444,7 @@ private:
   // for grammar EBNF (production ModuleItem).
   bool parseModuleReference(const AdditionalKeywords &Keywords,
                             JsModuleReference &Reference) {
-    if (!Current || Current->isNoneOf(Keywords.kw_import, tok::kw_export))
+    if (!Current || !Current->isOneOf(Keywords.kw_import, tok::kw_export))
       return false;
     Reference.IsExport = Current->is(tok::kw_export);
 
@@ -570,7 +575,7 @@ private:
       Symbol.Range.setEnd(Current->Tok.getLocation());
       Reference.Symbols.push_back(Symbol);
 
-      if (Current->isNoneOf(tok::r_brace, tok::comma))
+      if (!Current->isOneOf(tok::r_brace, tok::comma))
         return false;
     }
     Reference.SymbolsEnd = Current->Tok.getLocation();

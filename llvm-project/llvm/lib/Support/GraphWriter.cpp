@@ -28,7 +28,6 @@
 
 #ifdef __APPLE__
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/ManagedStatic.h"
 #endif
 
 #include <string>
@@ -102,8 +101,10 @@ static std::string replaceIllegalFilenameChars(std::string Filename,
   std::string IllegalChars =
       is_style_windows(sys::path::Style::native) ? "\\/:?\"<>|" : "/";
 
-  for (char IllegalChar : IllegalChars)
-    llvm::replace(Filename, IllegalChar, ReplacementChar);
+  for (char IllegalChar : IllegalChars) {
+    std::replace(Filename.begin(), Filename.end(), IllegalChar,
+                 ReplacementChar);
+  }
 
   return Filename;
 }
@@ -114,8 +115,7 @@ std::string llvm::createGraphFilename(const Twine &Name, int &FD) {
 
   // Windows can't always handle long paths, so limit the length of the name.
   std::string N = Name.str();
-  if (N.size() > 140)
-    N.resize(140);
+  N = N.substr(0, std::min<std::size_t>(N.size(), 140));
 
   // Replace illegal characters in graph Filename with '_' if needed
   std::string CleansedName = replaceIllegalFilenameChars(N, '_');

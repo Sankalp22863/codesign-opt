@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- ClangTidyProfiling.cpp - clang-tidy --------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -36,31 +36,28 @@ ClangTidyProfiling::StorageParams::StorageParams(llvm::StringRef ProfilePrefix,
                       .str();
 }
 
-void ClangTidyProfiling::printUserFriendlyTable(llvm::raw_ostream &OS,
-                                                llvm::TimerGroup &TG) {
-  TG.print(OS);
+void ClangTidyProfiling::printUserFriendlyTable(llvm::raw_ostream &OS) {
+  TG->print(OS);
   OS.flush();
 }
 
-void ClangTidyProfiling::printAsJSON(llvm::raw_ostream &OS,
-                                     llvm::TimerGroup &TG) {
+void ClangTidyProfiling::printAsJSON(llvm::raw_ostream &OS) {
   OS << "{\n";
   OS << R"("file": ")" << Storage->SourceFilename << "\",\n";
   OS << R"("timestamp": ")" << Storage->Timestamp << "\",\n";
   OS << "\"profile\": {\n";
-  TG.printJSONValues(OS, "");
+  TG->printJSONValues(OS, "");
   OS << "\n}\n";
   OS << "}\n";
   OS.flush();
 }
 
-void ClangTidyProfiling::storeProfileData(llvm::TimerGroup &TG) {
+void ClangTidyProfiling::storeProfileData() {
   assert(Storage && "We should have a filename.");
 
   llvm::SmallString<256> OutputDirectory(Storage->StoreFilename);
   llvm::sys::path::remove_filename(OutputDirectory);
-  if (const std::error_code EC =
-          llvm::sys::fs::create_directories(OutputDirectory)) {
+  if (std::error_code EC = llvm::sys::fs::create_directories(OutputDirectory)) {
     llvm::errs() << "Unable to create output directory '" << OutputDirectory
                  << "': " << EC.message() << "\n";
     return;
@@ -74,18 +71,19 @@ void ClangTidyProfiling::storeProfileData(llvm::TimerGroup &TG) {
     return;
   }
 
-  printAsJSON(OS, TG);
+  printAsJSON(OS);
 }
 
 ClangTidyProfiling::ClangTidyProfiling(std::optional<StorageParams> Storage)
     : Storage(std::move(Storage)) {}
 
 ClangTidyProfiling::~ClangTidyProfiling() {
-  llvm::TimerGroup TG{"clang-tidy", "clang-tidy checks profiling", Records};
+  TG.emplace("clang-tidy", "clang-tidy checks profiling", Records);
+
   if (!Storage)
-    printUserFriendlyTable(llvm::errs(), TG);
+    printUserFriendlyTable(llvm::errs());
   else
-    storeProfileData(TG);
+    storeProfileData();
 }
 
 } // namespace clang::tidy

@@ -13,7 +13,14 @@
 
 #include "mlir/Dialect/GPU/Transforms/Passes.h"
 
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/NVVMDialect.h"
+#include "mlir/Dialect/LLVMIR/ROCDLDialect.h"
+#include "mlir/Dialect/SPIRV/IR/SPIRVDialect.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -31,18 +38,33 @@ class GpuModuleToBinaryPass
     : public impl::GpuModuleToBinaryPassBase<GpuModuleToBinaryPass> {
 public:
   using Base::Base;
+  void getDependentDialects(DialectRegistry &registry) const override;
   void runOnOperation() final;
 };
 } // namespace
+
+void GpuModuleToBinaryPass::getDependentDialects(
+    DialectRegistry &registry) const {
+  // Register all GPU related translations.
+  registry.insert<gpu::GPUDialect>();
+  registry.insert<LLVM::LLVMDialect>();
+#if MLIR_CUDA_CONVERSIONS_ENABLED == 1
+  registry.insert<NVVM::NVVMDialect>();
+#endif
+#if MLIR_ROCM_CONVERSIONS_ENABLED == 1
+  registry.insert<ROCDL::ROCDLDialect>();
+#endif
+  registry.insert<spirv::SPIRVDialect>();
+}
 
 void GpuModuleToBinaryPass::runOnOperation() {
   RewritePatternSet patterns(&getContext());
   auto targetFormat =
       llvm::StringSwitch<std::optional<CompilationTarget>>(compilationTarget)
-          .Cases({"offloading", "llvm"}, CompilationTarget::Offload)
-          .Cases({"assembly", "isa"}, CompilationTarget::Assembly)
-          .Cases({"binary", "bin"}, CompilationTarget::Binary)
-          .Cases({"fatbinary", "fatbin"}, CompilationTarget::Fatbin)
+          .Cases("offloading", "llvm", CompilationTarget::Offload)
+          .Cases("assembly", "isa", CompilationTarget::Assembly)
+          .Cases("binary", "bin", CompilationTarget::Binary)
+          .Cases("fatbinary", "fatbin", CompilationTarget::Fatbin)
           .Default(std::nullopt);
   if (!targetFormat)
     getOperation()->emitError() << "Invalid format specified.";
@@ -61,13 +83,14 @@ void GpuModuleToBinaryPass::runOnOperation() {
     }
     return &parentTable.value();
   };
-  SmallVector<Attribute> librariesToLink;
-  for (const std::string &path : linkFiles)
-    librariesToLink.push_back(StringAttr::get(&getContext(), path));
-  TargetOptions targetOptions(toolkitPath, librariesToLink, cmdOptions,
-                              elfSection, *targetFormat, lazyTableBuilder);
+
+  TargetOptions targetOptions(toolkitPath, linkFiles, cmdOptions, *targetFormat,
+                              lazyTableBuilder);
   if (failed(transformGpuModulesToBinaries(
-          getOperation(), OffloadingLLVMTranslationAttrInterface(nullptr),
+          getOperation(),
+          offloadingHandler ? dyn_cast<OffloadingLLVMTranslationAttrInterface>(
+                                  offloadingHandler.getValue())
+                            : OffloadingLLVMTranslationAttrInterface(nullptr),
           targetOptions)))
     return signalPassFailure();
 }
@@ -94,8 +117,7 @@ LogicalResult moduleSerializer(GPUModuleOp op,
       return failure();
     }
 
-    Attribute object =
-        target.createObject(op, *serializedModule, targetOptions);
+    Attribute object = target.createObject(*serializedModule, targetOptions);
     if (!object) {
       op.emitError("An error happened while creating the object.");
       return failure();
@@ -108,8 +130,8 @@ LogicalResult moduleSerializer(GPUModuleOp op,
       !handler && moduleHandler)
     handler = moduleHandler;
   builder.setInsertionPointAfter(op);
-  gpu::BinaryOp::create(builder, op.getLoc(), op.getName(), handler,
-                        builder.getArrayAttr(objects));
+  builder.create<gpu::BinaryOp>(op.getLoc(), op.getName(), handler,
+                                builder.getArrayAttr(objects));
   op->erase();
   return success();
 }

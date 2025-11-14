@@ -10,20 +10,16 @@
 
 #include <array>
 #include <limits>
-#include <sstream>
 
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/DerivedTypes.h"
 
-#include "Utility/RISCV_DWARF_Registers.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Value.h"
+#include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Thread.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/RegisterValue.h"
-#include "lldb/ValueObject/ValueObjectConstResult.h"
 
 #define DEFINE_REG_NAME(reg_num) ConstString(#reg_num).GetCString()
 #define DEFINE_REG_NAME_STR(reg_name) ConstString(reg_name).GetCString()
@@ -123,10 +119,6 @@ static const std::array<RegisterInfo, 33> g_register_infos = {
 } // namespace dwarf
 } // namespace
 
-// Number of argument registers (the base integer calling convention
-// provides 8 argument registers, a0-a7)
-static constexpr size_t g_regs_for_args_count = 8U;
-
 const RegisterInfo *ABISysV_riscv::GetRegisterInfoArray(uint32_t &count) {
   count = dwarf::g_register_infos.size();
   return dwarf::g_register_infos.data();
@@ -171,81 +163,11 @@ TotalArgsSizeInWords(bool is_rv64,
   return total_size;
 }
 
-static bool UpdateRegister(RegisterContext *reg_ctx,
-                           const lldb::RegisterKind reg_kind,
-                           const uint32_t reg_num, const addr_t value) {
-  Log *log = GetLog(LLDBLog::Expressions);
-
-  const RegisterInfo *reg_info = reg_ctx->GetRegisterInfo(reg_kind, reg_num);
-
-  LLDB_LOG(log, "Writing {0}: 0x{1:x}", reg_info->name,
-           static_cast<uint64_t>(value));
-  if (!reg_ctx->WriteRegisterFromUnsigned(reg_info, value)) {
-    LLDB_LOG(log, "Writing {0}: failed", reg_info->name);
-    return false;
-  }
-  return true;
-}
-
-static void LogInitInfo(Log &log, const Thread &thread, addr_t sp,
-                        addr_t func_addr, addr_t return_addr,
-                        const llvm::ArrayRef<addr_t> args) {
-  std::stringstream ss;
-  ss << "ABISysV_riscv::PrepareTrivialCall"
-     << " (tid = 0x" << std::hex << thread.GetID() << ", sp = 0x" << sp
-     << ", func_addr = 0x" << func_addr << ", return_addr = 0x" << return_addr;
-
-  for (auto [idx, arg] : enumerate(args))
-    ss << ", arg" << std::dec << idx << " = 0x" << std::hex << arg;
-  ss << ")";
-  log.PutString(ss.str());
-}
-
 bool ABISysV_riscv::PrepareTrivialCall(Thread &thread, addr_t sp,
                                        addr_t func_addr, addr_t return_addr,
                                        llvm::ArrayRef<addr_t> args) const {
-  Log *log = GetLog(LLDBLog::Expressions);
-  if (log)
-    LogInitInfo(*log, thread, sp, func_addr, return_addr, args);
-
-  const auto reg_ctx_sp = thread.GetRegisterContext();
-  if (!reg_ctx_sp) {
-    LLDB_LOG(log, "Failed to get RegisterContext");
-    return false;
-  }
-
-  if (args.size() > g_regs_for_args_count) {
-    LLDB_LOG(log, "Function has {0} arguments, but only {1} are allowed!",
-             args.size(), g_regs_for_args_count);
-    return false;
-  }
-
-  // Write arguments to registers
-  for (auto [idx, arg] : enumerate(args)) {
-    const RegisterInfo *reg_info = reg_ctx_sp->GetRegisterInfo(
-        eRegisterKindGeneric, LLDB_REGNUM_GENERIC_ARG1 + idx);
-    LLDB_LOG(log, "About to write arg{0} (0x{1:x}) into {2}", idx, arg,
-             reg_info->name);
-
-    if (!reg_ctx_sp->WriteRegisterFromUnsigned(reg_info, arg)) {
-      LLDB_LOG(log, "Failed to write arg{0} (0x{1:x}) into {2}", idx, arg,
-               reg_info->name);
-      return false;
-    }
-  }
-
-  if (!UpdateRegister(reg_ctx_sp.get(), eRegisterKindGeneric,
-                      LLDB_REGNUM_GENERIC_PC, func_addr))
-    return false;
-  if (!UpdateRegister(reg_ctx_sp.get(), eRegisterKindGeneric,
-                      LLDB_REGNUM_GENERIC_SP, sp))
-    return false;
-  if (!UpdateRegister(reg_ctx_sp.get(), eRegisterKindGeneric,
-                      LLDB_REGNUM_GENERIC_RA, return_addr))
-    return false;
-
-  LLDB_LOG(log, "ABISysV_riscv::{0}() success", __FUNCTION__);
-  return true;
+  // TODO: Implement
+  return false;
 }
 
 bool ABISysV_riscv::PrepareTrivialCall(
@@ -299,14 +221,14 @@ bool ABISysV_riscv::PrepareTrivialCall(
   assert(prototype.getFunctionNumParams() == args.size());
 
   const size_t num_args = args.size();
+  const size_t regs_for_args_count = 8U;
   const size_t num_args_in_regs =
-      num_args > g_regs_for_args_count ? g_regs_for_args_count : num_args;
+      num_args > regs_for_args_count ?  regs_for_args_count : num_args;
 
   // Number of arguments passed on stack.
   size_t args_size = TotalArgsSizeInWords(m_is_rv64, args);
-  auto on_stack = args_size <= g_regs_for_args_count
-                      ? 0
-                      : args_size - g_regs_for_args_count;
+  auto on_stack =
+      args_size <= regs_for_args_count ? 0 : args_size - regs_for_args_count;
   auto offset = on_stack * word_size;
 
   uint8_t reg_value[8];
@@ -337,7 +259,7 @@ bool ABISysV_riscv::PrepareTrivialCall(
       ++reg_index;
     }
 
-    if (reg_index < g_regs_for_args_count || size == 0)
+    if (reg_index < regs_for_args_count || size == 0)
       continue;
 
     // Remaining arguments are passed on the stack.
@@ -368,13 +290,13 @@ Status ABISysV_riscv::SetReturnValueObject(StackFrameSP &frame_sp,
                                            ValueObjectSP &new_value_sp) {
   Status result;
   if (!new_value_sp) {
-    result = Status::FromErrorString("Empty value object for return value.");
+    result.SetErrorString("Empty value object for return value.");
     return result;
   }
 
   CompilerType compiler_type = new_value_sp->GetCompilerType();
   if (!compiler_type) {
-    result = Status::FromErrorString("Null clang type for return value.");
+    result.SetErrorString("Null clang type for return value.");
     return result;
   }
 
@@ -383,8 +305,7 @@ Status ABISysV_riscv::SetReturnValueObject(StackFrameSP &frame_sp,
   bool is_signed = false;
   if (!compiler_type.IsIntegerOrEnumerationType(is_signed) &&
       !compiler_type.IsPointerType()) {
-    result = Status::FromErrorString(
-        "We don't support returning other types at present");
+    result.SetErrorString("We don't support returning other types at present");
     return result;
   }
 
@@ -392,7 +313,7 @@ Status ABISysV_riscv::SetReturnValueObject(StackFrameSP &frame_sp,
   size_t num_bytes = new_value_sp->GetData(data, result);
 
   if (result.Fail()) {
-    result = Status::FromErrorStringWithFormat(
+    result.SetErrorStringWithFormat(
         "Couldn't convert return value to raw data: %s", result.AsCString());
     return result;
   }
@@ -405,8 +326,8 @@ Status ABISysV_riscv::SetReturnValueObject(StackFrameSP &frame_sp,
     auto reg_info =
         reg_ctx.GetRegisterInfo(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_ARG1);
     if (!reg_ctx.WriteRegisterFromUnsigned(reg_info, raw_value)) {
-      result = Status::FromErrorStringWithFormat(
-          "Couldn't write value to register %s", reg_info->name);
+      result.SetErrorStringWithFormat("Couldn't write value to register %s",
+                                      reg_info->name);
       return result;
     }
 
@@ -422,14 +343,14 @@ Status ABISysV_riscv::SetReturnValueObject(StackFrameSP &frame_sp,
     reg_info =
         reg_ctx.GetRegisterInfo(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_ARG2);
     if (!reg_ctx.WriteRegisterFromUnsigned(reg_info, raw_value)) {
-      result = Status::FromErrorStringWithFormat(
-          "Couldn't write value to register %s", reg_info->name);
+      result.SetErrorStringWithFormat("Couldn't write value to register %s",
+                                      reg_info->name);
     }
 
     return result;
   }
 
-  result = Status::FromErrorString(
+  result.SetErrorString(
       "We don't support returning large integer values at present.");
   return result;
 }
@@ -621,8 +542,7 @@ ABISysV_riscv::GetReturnValueObjectSimple(Thread &thread,
   value.SetCompilerType(compiler_type);
 
   const uint32_t type_flags = compiler_type.GetTypeInfo();
-  const size_t byte_size =
-      llvm::expectedToOptional(compiler_type.GetByteSize(&thread)).value_or(0);
+  const size_t byte_size = compiler_type.GetByteSize(&thread).value_or(0);
   const ArchSpec arch = thread.GetProcess()->GetTarget().GetArchitecture();
   const llvm::Triple::ArchType machine = arch.GetMachine();
 
@@ -643,10 +563,11 @@ ABISysV_riscv::GetReturnValueObjectSimple(Thread &thread,
   }
   // Floating point return type.
   else if (type_flags & eTypeIsFloat) {
+    uint32_t float_count = 0;
     bool is_complex = false;
 
-    if (compiler_type.IsFloatingPointType(is_complex) &&
-        !(type_flags & eTypeIsVector) && !is_complex) {
+    if (compiler_type.IsFloatingPointType(float_count, is_complex) &&
+        float_count == 1 && !is_complex) {
       const uint32_t arch_fp_flags =
           arch.GetFlags() & ArchSpec::eRISCV_float_abi_mask;
       return_valobj_sp = GetValObjFromFPRegs(
@@ -718,34 +639,41 @@ ValueObjectSP ABISysV_riscv::GetReturnValueObjectImpl(
   return GetReturnValueObjectSimple(thread, return_compiler_type);
 }
 
-UnwindPlanSP ABISysV_riscv::CreateFunctionEntryUnwindPlan() {
-  uint32_t pc_reg_num = riscv_dwarf::dwarf_gpr_pc;
-  uint32_t sp_reg_num = riscv_dwarf::dwarf_gpr_sp;
-  uint32_t ra_reg_num = riscv_dwarf::dwarf_gpr_ra;
+bool ABISysV_riscv::CreateFunctionEntryUnwindPlan(UnwindPlan &unwind_plan) {
+  unwind_plan.Clear();
+  unwind_plan.SetRegisterKind(eRegisterKindDWARF);
 
-  UnwindPlan::Row row;
+  uint32_t pc_reg_num = LLDB_REGNUM_GENERIC_PC;
+  uint32_t sp_reg_num = LLDB_REGNUM_GENERIC_SP;
+  uint32_t ra_reg_num = LLDB_REGNUM_GENERIC_RA;
+
+  UnwindPlan::RowSP row(new UnwindPlan::Row);
 
   // Define CFA as the stack pointer
-  row.GetCFAValue().SetIsRegisterPlusOffset(sp_reg_num, 0);
+  row->GetCFAValue().SetIsRegisterPlusOffset(sp_reg_num, 0);
 
   // Previous frame's pc is in ra
-  row.SetRegisterLocationToRegister(pc_reg_num, ra_reg_num, true);
 
-  auto plan_sp = std::make_shared<UnwindPlan>(eRegisterKindDWARF);
-  plan_sp->AppendRow(std::move(row));
-  plan_sp->SetSourceName("riscv function-entry unwind plan");
-  plan_sp->SetSourcedFromCompiler(eLazyBoolNo);
-  return plan_sp;
+  row->SetRegisterLocationToRegister(pc_reg_num, ra_reg_num, true);
+  unwind_plan.AppendRow(row);
+  unwind_plan.SetSourceName("riscv function-entry unwind plan");
+  unwind_plan.SetSourcedFromCompiler(eLazyBoolNo);
+
+  return true;
 }
 
-UnwindPlanSP ABISysV_riscv::CreateDefaultUnwindPlan() {
+bool ABISysV_riscv::CreateDefaultUnwindPlan(UnwindPlan &unwind_plan) {
+  unwind_plan.Clear();
+  unwind_plan.SetRegisterKind(eRegisterKindGeneric);
+
   uint32_t pc_reg_num = LLDB_REGNUM_GENERIC_PC;
   uint32_t fp_reg_num = LLDB_REGNUM_GENERIC_FP;
 
-  UnwindPlan::Row row;
+  UnwindPlan::RowSP row(new UnwindPlan::Row);
 
   // Define the CFA as the current frame pointer value.
-  row.GetCFAValue().SetIsRegisterPlusOffset(fp_reg_num, 0);
+  row->GetCFAValue().SetIsRegisterPlusOffset(fp_reg_num, 0);
+  row->SetOffset(0);
 
   int reg_size = 4;
   if (m_is_rv64)
@@ -753,15 +681,14 @@ UnwindPlanSP ABISysV_riscv::CreateDefaultUnwindPlan() {
 
   // Assume the ra reg (return pc) and caller's frame pointer 
   // have been spilled to stack already.
-  row.SetRegisterLocationToAtCFAPlusOffset(fp_reg_num, reg_size * -2, true);
-  row.SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, reg_size * -1, true);
+  row->SetRegisterLocationToAtCFAPlusOffset(fp_reg_num, reg_size * -2, true);
+  row->SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, reg_size * -1, true);
 
-  auto plan_sp = std::make_shared<UnwindPlan>(eRegisterKindGeneric);
-  plan_sp->AppendRow(std::move(row));
-  plan_sp->SetSourceName("riscv default unwind plan");
-  plan_sp->SetSourcedFromCompiler(eLazyBoolNo);
-  plan_sp->SetUnwindPlanValidAtAllInstructions(eLazyBoolNo);
-  return plan_sp;
+  unwind_plan.AppendRow(row);
+  unwind_plan.SetSourceName("riscv default unwind plan");
+  unwind_plan.SetSourcedFromCompiler(eLazyBoolNo);
+  unwind_plan.SetUnwindPlanValidAtAllInstructions(eLazyBoolNo);
+  return true;
 }
 
 bool ABISysV_riscv::RegisterIsVolatile(const RegisterInfo *reg_info) {
@@ -782,24 +709,21 @@ bool ABISysV_riscv::RegisterIsCalleeSaved(const RegisterInfo *reg_info) {
   bool is_callee_saved =
       llvm::StringSwitch<bool>(name)
           // integer ABI names
-          .Cases({"ra", "sp", "fp"}, true)
-          .Cases({"s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9"},
+          .Cases("ra", "sp", "fp", true)
+          .Cases("s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9",
                  true)
-          .Cases({"s10", "s11"}, true)
+          .Cases("s10", "s11", true)
           // integer hardware names
-          .Cases({"x1", "x2", "x8", "x9", "x18", "x19", "x20", "x21", "x22"},
+          .Cases("x1", "x2", "x8", "x9", "x18", "x19", "x20", "x21", "x22",
                  true)
-          .Cases({"x23", "x24", "x25", "x26", "x27"}, true)
+          .Cases("x23", "x24", "x25", "x26", "x27", true)
           // floating point ABI names
-          .Cases({"fs0", "fs1", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7"},
+          .Cases("fs0", "fs1", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7",
                  is_hw_fp)
-          .Cases({"fs8", "fs9", "fs10", "fs11"}, is_hw_fp)
+          .Cases("fs8", "fs9", "fs10", "fs11", is_hw_fp)
           // floating point hardware names
-          .Cases({"f8", "f9", "f18", "f19", "f20", "f21", "f22", "f23"},
-                 is_hw_fp)
-          .Cases({"f24", "f25", "f26", "f27"}, is_hw_fp)
-          // vlenb is constant and needed for vector unwinding.
-          .Case("vlenb", true)
+          .Cases("f8", "f9", "f18", "f19", "f20", "f21", "f22", "f23", is_hw_fp)
+          .Cases("f24", "f25", "f26", "f27", is_hw_fp)
           .Default(false);
 
   return is_callee_saved;
@@ -817,9 +741,9 @@ void ABISysV_riscv::Terminate() {
 static uint32_t GetGenericNum(llvm::StringRef name) {
   return llvm::StringSwitch<uint32_t>(name)
       .Case("pc", LLDB_REGNUM_GENERIC_PC)
-      .Cases({"ra", "x1"}, LLDB_REGNUM_GENERIC_RA)
-      .Cases({"sp", "x2"}, LLDB_REGNUM_GENERIC_SP)
-      .Cases({"fp", "s0"}, LLDB_REGNUM_GENERIC_FP)
+      .Cases("ra", "x1", LLDB_REGNUM_GENERIC_RA)
+      .Cases("sp", "x2", LLDB_REGNUM_GENERIC_SP)
+      .Cases("fp", "s0", LLDB_REGNUM_GENERIC_FP)
       .Case("a0", LLDB_REGNUM_GENERIC_ARG1)
       .Case("a1", LLDB_REGNUM_GENERIC_ARG2)
       .Case("a2", LLDB_REGNUM_GENERIC_ARG3)
@@ -847,62 +771,8 @@ void ABISysV_riscv::AugmentRegisterInfo(
       it.value().alt_name.SetCString("x3");
     else if (it.value().name == "fp")
       it.value().alt_name.SetCString("s0");
-    else if (it.value().name == "tp")
-      it.value().alt_name.SetCString("x4");
     else if (it.value().name == "s0")
       it.value().alt_name.SetCString("x8");
-    else if (it.value().name == "s1")
-      it.value().alt_name.SetCString("x9");
-    else if (it.value().name == "t0")
-      it.value().alt_name.SetCString("x5");
-    else if (it.value().name == "t1")
-      it.value().alt_name.SetCString("x6");
-    else if (it.value().name == "t2")
-      it.value().alt_name.SetCString("x7");
-    else if (it.value().name == "a0")
-      it.value().alt_name.SetCString("x10");
-    else if (it.value().name == "a1")
-      it.value().alt_name.SetCString("x11");
-    else if (it.value().name == "a2")
-      it.value().alt_name.SetCString("x12");
-    else if (it.value().name == "a3")
-      it.value().alt_name.SetCString("x13");
-    else if (it.value().name == "a4")
-      it.value().alt_name.SetCString("x14");
-    else if (it.value().name == "a5")
-      it.value().alt_name.SetCString("x15");
-    else if (it.value().name == "a6")
-      it.value().alt_name.SetCString("x16");
-    else if (it.value().name == "a7")
-      it.value().alt_name.SetCString("x17");
-    else if (it.value().name == "s2")
-      it.value().alt_name.SetCString("x18");
-    else if (it.value().name == "s3")
-      it.value().alt_name.SetCString("x19");
-    else if (it.value().name == "s4")
-      it.value().alt_name.SetCString("x20");
-    else if (it.value().name == "s5")
-      it.value().alt_name.SetCString("x21");
-    else if (it.value().name == "s6")
-      it.value().alt_name.SetCString("x22");
-    else if (it.value().name == "s7")
-      it.value().alt_name.SetCString("x23");
-    else if (it.value().name == "s8")
-      it.value().alt_name.SetCString("x24");
-    else if (it.value().name == "s9")
-      it.value().alt_name.SetCString("x25");
-    else if (it.value().name == "s10")
-      it.value().alt_name.SetCString("x26");
-    else if (it.value().name == "s11")
-      it.value().alt_name.SetCString("x27");
-    else if (it.value().name == "t3")
-      it.value().alt_name.SetCString("x28");
-    else if (it.value().name == "t4")
-      it.value().alt_name.SetCString("x29");
-    else if (it.value().name == "t5")
-      it.value().alt_name.SetCString("x30");
-    else if (it.value().name == "t6")
-      it.value().alt_name.SetCString("x31");
 
     // Set generic regnum so lldb knows what the PC, etc is
     it.value().regnum_generic = GetGenericNum(it.value().name.GetStringRef());

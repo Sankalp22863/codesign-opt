@@ -12,6 +12,7 @@
 #include "llvm/ExecutionEngine/Orc/Debugging/DebuggerSupportPlugin.h"
 #include "llvm/ExecutionEngine/Orc/MachOBuilder.h"
 
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
@@ -38,7 +39,7 @@ public:
 
   MachODebugObjectSynthesizerBase(LinkGraph &G, ExecutorAddr RegisterActionAddr)
       : G(G), RegisterActionAddr(RegisterActionAddr) {}
-  ~MachODebugObjectSynthesizerBase() override = default;
+  virtual ~MachODebugObjectSynthesizerBase() = default;
 
   Error preserveDebugSections() {
     if (G.findSectionByName(SynthDebugSectionName)) {
@@ -63,7 +64,7 @@ public:
       LLVM_DEBUG({
         dbgs() << "  Preserving debug section " << Sec.getName() << "\n";
       });
-      SmallPtrSet<Block *, 8> PreservedBlocks;
+      SmallSet<Block *, 8> PreservedBlocks;
       for (auto *Sym : Sec.symbols()) {
         bool NewPreservedBlock =
             PreservedBlocks.insert(&Sym->getBlock()).second;
@@ -120,14 +121,18 @@ public:
 
     // Write MachO header and debug section load commands.
     Builder.Header.filetype = MachO::MH_OBJECT;
-    if (auto CPUType = MachO::getCPUType(G.getTargetTriple()))
-      Builder.Header.cputype = *CPUType;
-    else
-      return CPUType.takeError();
-    if (auto CPUSubType = MachO::getCPUSubType(G.getTargetTriple()))
-      Builder.Header.cpusubtype = *CPUSubType;
-    else
-      return CPUSubType.takeError();
+    switch (G.getTargetTriple().getArch()) {
+    case Triple::x86_64:
+      Builder.Header.cputype = MachO::CPU_TYPE_X86_64;
+      Builder.Header.cpusubtype = MachO::CPU_SUBTYPE_X86_64_ALL;
+      break;
+    case Triple::aarch64:
+      Builder.Header.cputype = MachO::CPU_TYPE_ARM64;
+      Builder.Header.cpusubtype = MachO::CPU_SUBTYPE_ARM64_ALL;
+      break;
+    default:
+      llvm_unreachable("Unsupported architecture");
+    }
 
     Seg = &Builder.addSegment("");
 
@@ -143,7 +148,7 @@ public:
         DSec.BuilderSec->align = Log2_64(SR.getFirstBlock()->getAlignment());
         StringRef SectionData(SR.getFirstBlock()->getContent().data(),
                               SR.getFirstBlock()->getSize());
-        DebugSectionMap[SecName.drop_front(2)] = // drop "__" prefix.
+        DebugSectionMap[SecName] =
             MemoryBuffer::getMemBuffer(SectionData, G.getName(), false);
         if (SecName == "__debug_line")
           DebugLineSectionData = SectionData;
@@ -162,10 +167,11 @@ public:
           DebugLineSectionData, G.getEndianness() == llvm::endianness::little,
           G.getPointerSize());
       uint64_t Offset = 0;
-      DWARFDebugLine::Prologue P;
+      DWARFDebugLine::LineTable LineTable;
 
       // Try to parse line data. Consume error on failure.
-      if (auto Err = P.parse(DebugLineData, &Offset, consumeError, *DWARFCtx)) {
+      if (auto Err = LineTable.parse(DebugLineData, &Offset, *DWARFCtx, nullptr,
+                                     consumeError)) {
         handleAllErrors(std::move(Err), [&](ErrorInfoBase &EIB) {
           LLVM_DEBUG({
             dbgs() << "Cannot parse line table for \"" << G.getName() << "\": ";
@@ -174,26 +180,15 @@ public:
           });
         });
       } else {
-        for (auto &FN : P.FileNames)
-          if ((FileName = dwarf::toString(FN.Name))) {
-            LLVM_DEBUG({
-              dbgs() << "Using FileName = \"" << *FileName
-                     << "\" from DWARF line table\n";
-            });
-            break;
-          }
+        if (!LineTable.Prologue.FileNames.empty())
+          FileName = *dwarf::toString(LineTable.Prologue.FileNames[0].Name);
       }
     }
 
     // If no line table (or unable to use) then use graph name.
     // FIXME: There are probably other debug sections we should look in first.
-    if (!FileName) {
-      LLVM_DEBUG({
-        dbgs() << "Could not find source name from DWARF line table. "
-                  "Using FileName = \"\"\n";
-      });
-      FileName = "";
-    }
+    if (!FileName)
+      FileName = StringRef(G.getName());
 
     Builder.addSymbol("", MachO::N_SO, 0, 0, 0);
     Builder.addSymbol(*FileName, MachO::N_SO, 0, 0, 0);
@@ -219,8 +214,8 @@ public:
 
         Builder.addSymbol("", MachO::N_BNSYM, 1, 0, 0);
         StabSymbols.push_back(
-            {*Sym, Builder.addSymbol(*Sym->getName(), SymType, 1, 0, 0),
-             Builder.addSymbol(*Sym->getName(), SymType, 0, 0, 0)});
+            {*Sym, Builder.addSymbol(Sym->getName(), SymType, 1, 0, 0),
+             Builder.addSymbol(Sym->getName(), SymType, 0, 0, 0)});
         Builder.addSymbol("", MachO::N_ENSYM, 1, 0, 0);
       }
     }

@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- TooSmallLoopVariableCheck.cpp - clang-tidy -----------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -67,34 +67,30 @@ void TooSmallLoopVariableCheck::storeOptions(
 ///   LoopName: The entire for loop (as a ForStmt)
 ///
 void TooSmallLoopVariableCheck::registerMatchers(MatchFinder *Finder) {
-  const StatementMatcher LoopVarMatcher =
+  StatementMatcher LoopVarMatcher =
       expr(ignoringParenImpCasts(
                anyOf(declRefExpr(to(varDecl(hasType(isInteger())))),
                      memberExpr(member(fieldDecl(hasType(isInteger())))))))
           .bind(LoopVarName);
 
   // We need to catch only those comparisons which contain any integer cast.
-  const StatementMatcher LoopVarConversionMatcher = traverse(
+  StatementMatcher LoopVarConversionMatcher = traverse(
       TK_AsIs, implicitCastExpr(hasImplicitDestinationType(isInteger()),
                                 has(ignoringParenImpCasts(LoopVarMatcher)))
                    .bind(LoopVarCastName));
 
   // We are interested in only those cases when the loop bound is a variable
   // value (not const, enum, etc.).
-  const StatementMatcher LoopBoundMatcher =
-      expr(ignoringParenImpCasts(allOf(
-               hasType(isInteger()), unless(integerLiteral()),
-               unless(allOf(
-                   hasType(isConstQualified()),
-                   declRefExpr(to(varDecl(anyOf(
-                       hasInitializer(ignoringParenImpCasts(integerLiteral())),
-                       isConstexpr(), isConstinit())))))),
-               unless(hasType(enumType())))))
+  StatementMatcher LoopBoundMatcher =
+      expr(ignoringParenImpCasts(allOf(hasType(isInteger()),
+                                       unless(integerLiteral()),
+                                       unless(hasType(isConstQualified())),
+                                       unless(hasType(enumType())))))
           .bind(LoopUpperBoundName);
 
   // We use the loop increment expression only to make sure we found the right
   // loop variable.
-  const StatementMatcher IncrementMatcher =
+  StatementMatcher IncrementMatcher =
       expr(ignoringParenImpCasts(hasType(isInteger()))).bind(LoopIncrementName);
 
   Finder->addMatcher(
@@ -121,14 +117,14 @@ static MagnitudeBits calcMagnitudeBits(const ASTContext &Context,
                                        const Expr *IntExpr) {
   assert(IntExprType->isIntegerType());
 
-  const unsigned SignedBits = IntExprType->isUnsignedIntegerType() ? 0U : 1U;
+  unsigned SignedBits = IntExprType->isUnsignedIntegerType() ? 0U : 1U;
 
   if (const auto *BitField = IntExpr->getSourceBitField()) {
-    const unsigned BitFieldWidth = BitField->getBitWidthValue();
+    unsigned BitFieldWidth = BitField->getBitWidthValue(Context);
     return {BitFieldWidth - SignedBits, BitFieldWidth};
   }
 
-  const unsigned IntWidth = Context.getIntWidth(IntExprType);
+  unsigned IntWidth = Context.getIntWidth(IntExprType);
   return {IntWidth - SignedBits, 0U};
 }
 
@@ -143,18 +139,18 @@ calcUpperBoundMagnitudeBits(const ASTContext &Context, const Expr *UpperBound,
     const Expr *RHSE = BinOperator->getRHS()->IgnoreParenImpCasts();
     const Expr *LHSE = BinOperator->getLHS()->IgnoreParenImpCasts();
 
-    const QualType RHSEType = RHSE->getType();
-    const QualType LHSEType = LHSE->getType();
+    QualType RHSEType = RHSE->getType();
+    QualType LHSEType = LHSE->getType();
 
     if (!RHSEType->isIntegerType() || !LHSEType->isIntegerType())
       return {};
 
-    const bool RHSEIsConstantValue = RHSEType->isEnumeralType() ||
-                                     RHSEType.isConstQualified() ||
-                                     isa<IntegerLiteral>(RHSE);
-    const bool LHSEIsConstantValue = LHSEType->isEnumeralType() ||
-                                     LHSEType.isConstQualified() ||
-                                     isa<IntegerLiteral>(LHSE);
+    bool RHSEIsConstantValue = RHSEType->isEnumeralType() ||
+                               RHSEType.isConstQualified() ||
+                               isa<IntegerLiteral>(RHSE);
+    bool LHSEIsConstantValue = LHSEType->isEnumeralType() ||
+                               LHSEType.isConstQualified() ||
+                               isa<IntegerLiteral>(LHSE);
 
     // Avoid false positives produced by two constant values.
     if (RHSEIsConstantValue && LHSEIsConstantValue)
@@ -193,7 +189,7 @@ void TooSmallLoopVariableCheck::check(const MatchFinder::MatchResult &Result) {
   if (LoopVar->getType() != LoopIncrement->getType())
     return;
 
-  const ASTContext &Context = *Result.Context;
+  ASTContext &Context = *Result.Context;
 
   const QualType LoopVarType = LoopVar->getType();
   const MagnitudeBits LoopVarMagnitudeBits =

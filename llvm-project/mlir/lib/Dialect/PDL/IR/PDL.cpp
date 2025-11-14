@@ -11,6 +11,7 @@
 #include "mlir/Dialect/PDL/IR/PDLTypes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include <optional>
 
@@ -64,9 +65,12 @@ static void visit(Operation *op, DenseSet<Operation *> &visited) {
   if (!isa<PatternOp>(op->getParentOp()) || isa<RewriteOp>(op))
     return;
 
-  // Ignore if already visited.  Otherwise, mark as visited.
-  if (!visited.insert(op).second)
+  // Ignore if already visited.
+  if (visited.contains(op))
     return;
+
+  // Mark as visited.
+  visited.insert(op);
 
   // Traverse the operands / parent.
   TypeSwitch<Operation *>(op)
@@ -90,12 +94,6 @@ static void visit(Operation *op, DenseSet<Operation *> &visited) {
 LogicalResult ApplyNativeConstraintOp::verify() {
   if (getNumOperands() == 0)
     return emitOpError("expected at least one argument");
-  if (llvm::any_of(getResults(), [](OpResult result) {
-        return isa<OperationType>(result.getType());
-      })) {
-    return emitOpError(
-        "returning an operation from a constraint is not supported");
-  }
   return success();
 }
 
@@ -386,7 +384,7 @@ LogicalResult PatternOp::verifyRegions() {
 void PatternOp::build(OpBuilder &builder, OperationState &state,
                       std::optional<uint16_t> benefit,
                       std::optional<StringRef> name) {
-  build(builder, state, builder.getI16IntegerAttr(benefit.value_or(0)),
+  build(builder, state, builder.getI16IntegerAttr(benefit ? *benefit : 0),
         name ? builder.getStringAttr(*name) : StringAttr());
   state.regions[0]->emplaceBlock();
 }

@@ -10,7 +10,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/StringSwitch.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/TargetFrameLowering.h"
@@ -22,37 +21,28 @@ using namespace llvm;
 /// DisableFramePointerElim - This returns true if frame pointer elimination
 /// optimization should be disabled for the given machine function.
 bool TargetOptions::DisableFramePointerElim(const MachineFunction &MF) const {
+  // Check to see if the target want to forcably keep frame pointer.
+  if (MF.getSubtarget().getFrameLowering()->keepFramePointer(MF))
+    return true;
+
   const Function &F = MF.getFunction();
 
-  Attribute FPAttr = F.getFnAttribute("frame-pointer");
-  if (!FPAttr.isValid())
+  if (!F.hasFnAttribute("frame-pointer"))
     return false;
-  StringRef FP = FPAttr.getValueAsString();
+  StringRef FP = F.getFnAttribute("frame-pointer").getValueAsString();
   if (FP == "all")
     return true;
-  if (FP == "non-leaf" || FP == "non-leaf-no-reserve")
+  if (FP == "non-leaf")
     return MF.getFrameInfo().hasCalls();
-  if (FP == "none" || FP == "reserved")
+  if (FP == "none")
     return false;
   llvm_unreachable("unknown frame pointer flag");
-}
-
-bool TargetOptions::FramePointerIsReserved(const MachineFunction &MF) const {
-  const Function &F = MF.getFunction();
-  Attribute FPAttr = F.getFnAttribute("frame-pointer");
-  if (!FPAttr.isValid())
-    return false;
-
-  return StringSwitch<bool>(FPAttr.getValueAsString())
-      .Cases({"all", "non-leaf", "reserved"}, true)
-      .Case(("non-leaf-no-reserve"), MF.getFrameInfo().hasCalls())
-      .Case("none", false);
 }
 
 /// HonorSignDependentRoundingFPMath - Return true if the codegen must assume
 /// that the rounding mode of the FPU can change from its default.
 bool TargetOptions::HonorSignDependentRoundingFPMath() const {
-  return HonorSignDependentRoundingFPMathOption;
+  return !UnsafeFPMath && HonorSignDependentRoundingFPMathOption;
 }
 
 /// NOTE: There are targets that still do not support the debug entry values

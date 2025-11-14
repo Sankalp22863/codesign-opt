@@ -19,7 +19,6 @@
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/IR/DebugInfoMetadata.h"
-#include "llvm/Support/Compiler.h"
 #include <optional>
 
 #include "LiveDebugValues.h"
@@ -35,44 +34,6 @@ class MLocTracker;
 class DbgOpIDMap;
 
 using namespace llvm;
-
-using DebugVariableID = unsigned;
-using VarAndLoc = std::pair<DebugVariable, const DILocation *>;
-
-/// Mapping from DebugVariable to/from a unique identifying number. Each
-/// DebugVariable consists of three pointers, and after a small amount of
-/// work to identify overlapping fragments of variables we mostly only use
-/// DebugVariables as identities of variables. It's much more compile-time
-/// efficient to use an ID number instead, which this class provides.
-class DebugVariableMap {
-  DenseMap<DebugVariable, unsigned> VarToIdx;
-  SmallVector<VarAndLoc> IdxToVar;
-
-public:
-  DebugVariableID getDVID(const DebugVariable &Var) const {
-    auto It = VarToIdx.find(Var);
-    assert(It != VarToIdx.end());
-    return It->second;
-  }
-
-  DebugVariableID insertDVID(DebugVariable &Var, const DILocation *Loc) {
-    unsigned Size = VarToIdx.size();
-    auto ItPair = VarToIdx.insert({Var, Size});
-    if (ItPair.second) {
-      IdxToVar.push_back({Var, Loc});
-      return Size;
-    }
-
-    return ItPair.first->second;
-  }
-
-  const VarAndLoc &lookupDVID(DebugVariableID ID) const { return IdxToVar[ID]; }
-
-  void clear() {
-    VarToIdx.clear();
-    IdxToVar.clear();
-  }
-};
 
 /// Handle-class for a particular "location". This value-type uniquely
 /// symbolises a register or stack location, allowing manipulation of locations
@@ -205,8 +166,8 @@ public:
         .str();
   }
 
-  LLVM_ABI_FOR_TEST static ValueIDNum EmptyValue;
-  LLVM_ABI_FOR_TEST static ValueIDNum TombstoneValue;
+  static ValueIDNum EmptyValue;
+  static ValueIDNum TombstoneValue;
 };
 
 } // End namespace LiveDebugValues
@@ -426,7 +387,7 @@ struct DbgOpID {
   DbgOpID(uint32_t RawID) : RawID(RawID) {}
   DbgOpID(bool IsConst, uint32_t Index) : ID({IsConst, Index}) {}
 
-  LLVM_ABI_FOR_TEST static DbgOpID UndefID;
+  static DbgOpID UndefID;
 
   bool operator==(const DbgOpID &Other) const { return RawID == Other.RawID; }
   bool operator!=(const DbgOpID &Other) const { return !(*this == Other); }
@@ -485,16 +446,22 @@ public:
 
 private:
   DbgOpID insertConstOp(MachineOperand &MO) {
-    auto [It, Inserted] = ConstOpToID.try_emplace(MO, true, ConstOps.size());
-    if (Inserted)
-      ConstOps.push_back(MO);
-    return It->second;
+    auto ExistingIt = ConstOpToID.find(MO);
+    if (ExistingIt != ConstOpToID.end())
+      return ExistingIt->second;
+    DbgOpID ID(true, ConstOps.size());
+    ConstOpToID.insert(std::make_pair(MO, ID));
+    ConstOps.push_back(MO);
+    return ID;
   }
   DbgOpID insertValueOp(ValueIDNum VID) {
-    auto [It, Inserted] = ValueOpToID.try_emplace(VID, false, ValueOps.size());
-    if (Inserted)
-      ValueOps.push_back(VID);
-    return It->second;
+    auto ExistingIt = ValueOpToID.find(VID);
+    if (ExistingIt != ValueOpToID.end())
+      return ExistingIt->second;
+    DbgOpID ID(false, ValueOps.size());
+    ValueOpToID.insert(std::make_pair(VID, ID));
+    ValueOps.push_back(VID);
+    return ID;
   }
 };
 
@@ -789,9 +756,8 @@ public:
     value_type operator*() { return value_type(Idx, ValueMap[LocIdx(Idx)]); }
   };
 
-  LLVM_ABI_FOR_TEST MLocTracker(MachineFunction &MF, const TargetInstrInfo &TII,
-                                const TargetRegisterInfo &TRI,
-                                const TargetLowering &TLI);
+  MLocTracker(MachineFunction &MF, const TargetInstrInfo &TII,
+              const TargetRegisterInfo &TRI, const TargetLowering &TLI);
 
   /// Produce location ID number for a Register. Provides some small amount of
   /// type safety.
@@ -905,7 +871,7 @@ public:
 
   /// Create a LocIdx for an untracked register ID. Initialize it to either an
   /// mphi value representing a live-in, or a recent register mask clobber.
-  LLVM_ABI_FOR_TEST LocIdx trackRegister(unsigned ID);
+  LocIdx trackRegister(unsigned ID);
 
   LocIdx lookupOrTrackRegister(unsigned ID) {
     LocIdx &Index = LocIDToLocIdx[ID];
@@ -970,8 +936,7 @@ public:
   /// Find LocIdx for SpillLoc \p L, creating a new one if it's not tracked.
   /// Returns std::nullopt when in scenarios where a spill slot could be
   /// tracked, but we would likely run into resource limitations.
-  LLVM_ABI_FOR_TEST std::optional<SpillLocationNo>
-  getOrTrackSpillLoc(SpillLoc L);
+  std::optional<SpillLocationNo> getOrTrackSpillLoc(SpillLoc L);
 
   // Get LocIdx of a spill ID.
   LocIdx getSpillMLoc(unsigned SpillID) {
@@ -1020,7 +985,7 @@ public:
   /// information in \pProperties, for variable Var. Don't insert it anywhere,
   /// just return the builder for it.
   MachineInstrBuilder emitLoc(const SmallVectorImpl<ResolvedDbgOp> &DbgOps,
-                              const DebugVariable &Var, const DILocation *DILoc,
+                              const DebugVariable &Var,
                               const DbgValueProperties &Properties);
 };
 
@@ -1038,43 +1003,38 @@ using OverlapMap =
 /// identified.
 class VLocTracker {
 public:
-  /// Ref to function-wide map of DebugVariable <=> ID-numbers.
-  DebugVariableMap &DVMap;
   /// Map DebugVariable to the latest Value it's defined to have.
   /// Needs to be a MapVector because we determine order-in-the-input-MIR from
-  /// the order in this container. (FIXME: likely no longer true as the ordering
-  /// is now provided by DebugVariableMap).
+  /// the order in this container.
   /// We only retain the last DbgValue in each block for each variable, to
   /// determine the blocks live-out variable value. The Vars container forms the
   /// transfer function for this block, as part of the dataflow analysis. The
   /// movement of values between locations inside of a block is handled at a
   /// much later stage, in the TransferTracker class.
-  SmallMapVector<DebugVariableID, DbgValue, 8> Vars;
-  SmallDenseMap<DebugVariableID, const DILocation *, 8> Scopes;
+  MapVector<DebugVariable, DbgValue> Vars;
+  SmallDenseMap<DebugVariable, const DILocation *, 8> Scopes;
   MachineBasicBlock *MBB = nullptr;
   const OverlapMap &OverlappingFragments;
   DbgValueProperties EmptyProperties;
 
 public:
-  VLocTracker(DebugVariableMap &DVMap, const OverlapMap &O,
-              const DIExpression *EmptyExpr)
-      : DVMap(DVMap), OverlappingFragments(O),
-        EmptyProperties(EmptyExpr, false, false) {}
+  VLocTracker(const OverlapMap &O, const DIExpression *EmptyExpr)
+      : OverlappingFragments(O), EmptyProperties(EmptyExpr, false, false) {}
 
   void defVar(const MachineInstr &MI, const DbgValueProperties &Properties,
               const SmallVectorImpl<DbgOpID> &DebugOps) {
     assert(MI.isDebugValueLike());
     DebugVariable Var(MI.getDebugVariable(), MI.getDebugExpression(),
                       MI.getDebugLoc()->getInlinedAt());
-    // Either insert or fetch an ID number for this variable.
-    DebugVariableID VarID = DVMap.insertDVID(Var, MI.getDebugLoc().get());
     DbgValue Rec = (DebugOps.size() > 0)
                        ? DbgValue(DebugOps, Properties)
                        : DbgValue(Properties, DbgValue::Undef);
 
     // Attempt insertion; overwrite if it's already mapped.
-    Vars.insert_or_assign(VarID, Rec);
-    Scopes[VarID] = MI.getDebugLoc().get();
+    auto Result = Vars.insert(std::make_pair(Var, Rec));
+    if (!Result.second)
+      Result.first->second = Rec;
+    Scopes[Var] = MI.getDebugLoc().get();
 
     considerOverlaps(Var, MI.getDebugLoc().get());
   }
@@ -1096,13 +1056,13 @@ public:
 
       DebugVariable Overlapped(Var.getVariable(), OptFragmentInfo,
                                Var.getInlinedAt());
-      // Produce an ID number for this overlapping fragment of a variable.
-      DebugVariableID OverlappedID = DVMap.insertDVID(Overlapped, Loc);
       DbgValue Rec = DbgValue(EmptyProperties, DbgValue::Undef);
 
       // Attempt insertion; overwrite if it's already mapped.
-      Vars.insert_or_assign(OverlappedID, Rec);
-      Scopes[OverlappedID] = Loc;
+      auto Result = Vars.insert(std::make_pair(Overlapped, Rec));
+      if (!Result.second)
+        Result.first->second = Rec;
+      Scopes[Overlapped] = Loc;
     }
   }
 
@@ -1131,9 +1091,9 @@ public:
 
   /// Live in/out structure for the variable values: a per-block map of
   /// variables to their values.
-  using LiveIdxT = SmallDenseMap<const MachineBasicBlock *, DbgValue *, 16>;
+  using LiveIdxT = DenseMap<const MachineBasicBlock *, DbgValue *>;
 
-  using VarAndLoc = std::pair<DebugVariableID, DbgValue>;
+  using VarAndLoc = std::pair<DebugVariable, DbgValue>;
 
   /// Type for a live-in value: the predecessor block, and its value.
   using InValueT = std::pair<MachineBasicBlock *, DbgValue *>;
@@ -1146,8 +1106,7 @@ public:
   using ScopeToDILocT = DenseMap<const LexicalScope *, const DILocation *>;
 
   /// Mapping from lexical scopes to variables in that scope.
-  using ScopeToVarsT =
-      DenseMap<const LexicalScope *, SmallSet<DebugVariableID, 4>>;
+  using ScopeToVarsT = DenseMap<const LexicalScope *, SmallSet<DebugVariable, 4>>;
 
   /// Mapping from lexical scopes to blocks where variables in that scope are
   /// assigned. Such blocks aren't necessarily "in" the lexical scope, it's
@@ -1163,6 +1122,7 @@ private:
   const MachineFrameInfo *MFI;
   BitVector CalleeSavedRegs;
   LexicalScopes LS;
+  TargetPassConfig *TPC;
 
   // An empty DIExpression. Used default / placeholder DbgValueProperties
   // objects, as we can't have null expressions.
@@ -1193,7 +1153,7 @@ private:
   SmallPtrSet<MachineBasicBlock *, 16> ArtificialBlocks;
 
   // Mapping of blocks to and from their RPOT order.
-  SmallVector<MachineBasicBlock *> OrderToBB;
+  DenseMap<unsigned int, MachineBasicBlock *> OrderToBB;
   DenseMap<const MachineBasicBlock *, unsigned int> BBToOrder;
   DenseMap<unsigned, unsigned> BBNumToRPO;
 
@@ -1239,11 +1199,6 @@ private:
       SeenDbgPHIs;
 
   DbgOpIDMap DbgOpStore;
-
-  /// Mapping between DebugVariables and unique ID numbers. This is a more
-  /// efficient way to represent the identity of a variable, versus a plain
-  /// DebugVariable.
-  DebugVariableMap DVMap;
 
   /// True if we need to examine call instructions for stack clobbers. We
   /// normally assume that they don't clobber SP, but stack probes on Windows
@@ -1345,7 +1300,7 @@ private:
   /// in an MLocTracker. Convert the observations into a per-block transfer
   /// function in \p MLocTransfer, suitable for using with the machine value
   /// location dataflow problem.
-  LLVM_ABI_FOR_TEST void
+  void
   produceMLocTransferFunction(MachineFunction &MF,
                               SmallVectorImpl<MLocTransferMap> &MLocTransfer,
                               unsigned MaxNumBlocks);
@@ -1355,10 +1310,9 @@ private:
   /// live-out arrays to the (initialized to zero) multidimensional arrays in
   /// \p MInLocs and \p MOutLocs. The outer dimension is indexed by block
   /// number, the inner by LocIdx.
-  LLVM_ABI_FOR_TEST void
-  buildMLocValueMap(MachineFunction &MF, FuncValueTable &MInLocs,
-                    FuncValueTable &MOutLocs,
-                    SmallVectorImpl<MLocTransferMap> &MLocTransfer);
+  void buildMLocValueMap(MachineFunction &MF, FuncValueTable &MInLocs,
+                         FuncValueTable &MOutLocs,
+                         SmallVectorImpl<MLocTransferMap> &MLocTransfer);
 
   /// Examine the stack indexes (i.e. offsets within the stack) to find the
   /// basic units of interference -- like reg units, but for the stack.
@@ -1366,18 +1320,19 @@ private:
 
   /// Install PHI values into the live-in array for each block, according to
   /// the IDF of each register.
-  LLVM_ABI_FOR_TEST void placeMLocPHIs(
-      MachineFunction &MF, SmallPtrSetImpl<MachineBasicBlock *> &AllBlocks,
-      FuncValueTable &MInLocs, SmallVectorImpl<MLocTransferMap> &MLocTransfer);
+  void placeMLocPHIs(MachineFunction &MF,
+                     SmallPtrSetImpl<MachineBasicBlock *> &AllBlocks,
+                     FuncValueTable &MInLocs,
+                     SmallVectorImpl<MLocTransferMap> &MLocTransfer);
 
   /// Propagate variable values to blocks in the common case where there's
   /// only one value assigned to the variable. This function has better
   /// performance as it doesn't have to find the dominance frontier between
   /// different assignments.
   void placePHIsForSingleVarDefinition(
-      const SmallPtrSetImpl<MachineBasicBlock *> &InScopeBlocks,
-      MachineBasicBlock *MBB, SmallVectorImpl<VLocTracker> &AllTheVLocs,
-      DebugVariableID Var, LiveInsT &Output);
+          const SmallPtrSetImpl<MachineBasicBlock *> &InScopeBlocks,
+          MachineBasicBlock *MBB, SmallVectorImpl<VLocTracker> &AllTheVLocs,
+          const DebugVariable &Var, LiveInsT &Output);
 
   /// Calculate the iterated-dominance-frontier for a set of defs, using the
   /// existing LLVM facilities for this. Works for a single "value" or
@@ -1425,13 +1380,12 @@ private:
   /// \p AssignBlocks contains the set of blocks that aren't in \p DILoc's
   /// scope, but which do contain DBG_VALUEs, which VarLocBasedImpl tracks
   /// locations through.
-  LLVM_ABI_FOR_TEST void
-  buildVLocValueMap(const DILocation *DILoc,
-                    const SmallSet<DebugVariableID, 4> &VarsWeCareAbout,
-                    SmallPtrSetImpl<MachineBasicBlock *> &AssignBlocks,
-                    LiveInsT &Output, FuncValueTable &MOutLocs,
-                    FuncValueTable &MInLocs,
-                    SmallVectorImpl<VLocTracker> &AllTheVLocs);
+  void buildVLocValueMap(const DILocation *DILoc,
+                         const SmallSet<DebugVariable, 4> &VarsWeCareAbout,
+                         SmallPtrSetImpl<MachineBasicBlock *> &AssignBlocks,
+                         LiveInsT &Output, FuncValueTable &MOutLocs,
+                         FuncValueTable &MInLocs,
+                         SmallVectorImpl<VLocTracker> &AllTheVLocs);
 
   /// Attempt to eliminate un-necessary PHIs on entry to a block. Examines the
   /// live-in values coming from predecessors live-outs, and replaces any PHIs
@@ -1440,17 +1394,16 @@ private:
   /// \p LiveIn Old live-in value, overwritten with new one if live-in changes.
   /// \returns true if any live-ins change value, either from value propagation
   ///          or PHI elimination.
-  LLVM_ABI_FOR_TEST bool
-  vlocJoin(MachineBasicBlock &MBB, LiveIdxT &VLOCOutLocs,
-           SmallPtrSet<const MachineBasicBlock *, 8> &BlocksToExplore,
-           DbgValue &LiveIn);
+  bool vlocJoin(MachineBasicBlock &MBB, LiveIdxT &VLOCOutLocs,
+                SmallPtrSet<const MachineBasicBlock *, 8> &BlocksToExplore,
+                DbgValue &LiveIn);
 
   /// For the given block and live-outs feeding into it, try to find
   /// machine locations for each debug operand where all the values feeding
   /// into that operand join together.
   /// \returns true if a joined location was found for every value that needed
   ///          to be joined.
-  LLVM_ABI_FOR_TEST bool
+  bool
   pickVPHILoc(SmallVectorImpl<DbgOpID> &OutValues, const MachineBasicBlock &MBB,
               const LiveIdxT &LiveOuts, FuncValueTable &MOutLocs,
               const SmallVectorImpl<const MachineBasicBlock *> &BlockOrders);
@@ -1461,12 +1414,14 @@ private:
       const SmallVectorImpl<const MachineBasicBlock *> &BlockOrders);
 
   /// Take collections of DBG_VALUE instructions stored in TTracker, and
-  /// install them into their output blocks.
-  bool emitTransfers();
+  /// install them into their output blocks. Preserves a stable order of
+  /// DBG_VALUEs produced (which would otherwise cause nondeterminism) through
+  /// the AllVarsNumbering order.
+  bool emitTransfers(DenseMap<DebugVariable, unsigned> &AllVarsNumbering);
 
   /// Boilerplate computation of some initial sets, artifical blocks and
   /// RPOT block ordering.
-  LLVM_ABI_FOR_TEST void initialSetup(MachineFunction &MF);
+  void initialSetup(MachineFunction &MF);
 
   /// Produce a map of the last lexical scope that uses a block, using the
   /// scopes DFSOut number. Mapping is block-number to DFSOut.
@@ -1487,15 +1442,16 @@ private:
       const ScopeToVarsT &ScopeToVars, ScopeToAssignBlocksT &ScopeToBlocks,
       LiveInsT &Output, FuncValueTable &MOutLocs, FuncValueTable &MInLocs,
       SmallVectorImpl<VLocTracker> &AllTheVLocs, MachineFunction &MF,
-      bool ShouldEmitDebugEntryValues);
+      DenseMap<DebugVariable, unsigned> &AllVarsNumbering,
+      const TargetPassConfig &TPC);
 
   bool ExtendRanges(MachineFunction &MF, MachineDominatorTree *DomTree,
-                    bool ShouldEmitDebugEntryValues, unsigned InputBBLimit,
+                    TargetPassConfig *TPC, unsigned InputBBLimit,
                     unsigned InputDbgValLimit) override;
 
 public:
   /// Default construct and initialize the pass.
-  LLVM_ABI_FOR_TEST InstrRefBasedLDV();
+  InstrRefBasedLDV();
 
   LLVM_DUMP_METHOD
   void dump_mloc_transfer(const MLocTransferMap &mloc_transfer) const;
@@ -1517,11 +1473,6 @@ public:
   }
 
   std::optional<LocIdx> findLocationForMemOperand(const MachineInstr &MI);
-
-  // Utility for unit testing, don't use directly.
-  DebugVariableMap &getDVMap() {
-    return DVMap;
-  }
 };
 
 } // namespace LiveDebugValues

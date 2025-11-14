@@ -1,4 +1,4 @@
-//===-- ClangCommentCommandInfoEmitter.cpp - Generate command lists -------===//
+//===--- ClangCommentCommandInfoEmitter.cpp - Generate command lists -----====//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -20,19 +20,20 @@
 
 using namespace llvm;
 
-void clang::EmitClangCommentCommandInfo(const RecordKeeper &Records,
+void clang::EmitClangCommentCommandInfo(RecordKeeper &Records,
                                         raw_ostream &OS) {
   emitSourceFileHeader("A list of commands useable in documentation comments",
                        OS, Records);
 
   OS << "namespace {\n"
         "const CommandInfo Commands[] = {\n";
-  ArrayRef<const Record *> Tags = Records.getAllDerivedDefinitions("Command");
+  std::vector<Record *> Tags = Records.getAllDerivedDefinitions("Command");
   for (size_t i = 0, e = Tags.size(); i != e; ++i) {
-    const Record &Tag = *Tags[i];
+    Record &Tag = *Tags[i];
     OS << "  { "
        << "\"" << Tag.getValueAsString("Name") << "\", "
-       << "\"" << Tag.getValueAsString("EndCommandName") << "\", " << i << ", "
+       << "\"" << Tag.getValueAsString("EndCommandName") << "\", "
+       << i << ", "
        << Tag.getValueAsInt("NumArgs") << ", "
        << Tag.getValueAsBit("IsInlineCommand") << ", "
        << Tag.getValueAsBit("IsBlockCommand") << ", "
@@ -43,7 +44,6 @@ void clang::EmitClangCommentCommandInfo(const RecordKeeper &Records,
        << Tag.getValueAsBit("IsThrowsCommand") << ", "
        << Tag.getValueAsBit("IsDeprecatedCommand") << ", "
        << Tag.getValueAsBit("IsHeaderfileCommand") << ", "
-       << Tag.getValueAsBit("IsParCommand") << ", "
        << Tag.getValueAsBit("IsEmptyParagraphAllowed") << ", "
        << Tag.getValueAsBit("IsVerbatimBlockCommand") << ", "
        << Tag.getValueAsBit("IsVerbatimBlockEndCommand") << ", "
@@ -52,7 +52,8 @@ void clang::EmitClangCommentCommandInfo(const RecordKeeper &Records,
        << Tag.getValueAsBit("IsFunctionDeclarationCommand") << ", "
        << Tag.getValueAsBit("IsRecordLikeDetailCommand") << ", "
        << Tag.getValueAsBit("IsRecordLikeDeclarationCommand") << ", "
-       << /* IsUnknownCommand = */ "0" << " }";
+       << /* IsUnknownCommand = */ "0"
+       << " }";
     if (i + 1 != e)
       OS << ",";
     OS << "\n";
@@ -62,8 +63,8 @@ void clang::EmitClangCommentCommandInfo(const RecordKeeper &Records,
 
   std::vector<StringMatcher::StringPair> Matches;
   for (size_t i = 0, e = Tags.size(); i != e; ++i) {
-    const Record &Tag = *Tags[i];
-    std::string Name = Tag.getValueAsString("Name").str();
+    Record &Tag = *Tags[i];
+    std::string Name = std::string(Tag.getValueAsString("Name"));
     std::string Return;
     raw_string_ostream(Return) << "return &Commands[" << i << "];";
     Matches.emplace_back(std::move(Name), std::move(Return));
@@ -78,10 +79,10 @@ void clang::EmitClangCommentCommandInfo(const RecordKeeper &Records,
 
 static std::string MangleName(StringRef Str) {
   std::string Mangled;
-  for (char C : Str) {
-    switch (C) {
+  for (unsigned i = 0, e = Str.size(); i != e; ++i) {
+    switch (Str[i]) {
     default:
-      Mangled += C;
+      Mangled += Str[i];
       break;
     case '(':
       Mangled += "lparen";
@@ -112,7 +113,7 @@ static std::string MangleName(StringRef Str) {
   return Mangled;
 }
 
-void clang::EmitClangCommentCommandList(const RecordKeeper &Records,
+void clang::EmitClangCommentCommandList(RecordKeeper &Records,
                                         raw_ostream &OS) {
   emitSourceFileHeader("A list of commands useable in documentation comments",
                        OS, Records);
@@ -121,9 +122,10 @@ void clang::EmitClangCommentCommandList(const RecordKeeper &Records,
      << "#  define COMMENT_COMMAND(NAME)\n"
      << "#endif\n";
 
-  ArrayRef<const Record *> Tags = Records.getAllDerivedDefinitions("Command");
-  for (const Record *Tag : Tags) {
-    std::string MangledName = MangleName(Tag->getValueAsString("Name"));
+  std::vector<Record *> Tags = Records.getAllDerivedDefinitions("Command");
+  for (size_t i = 0, e = Tags.size(); i != e; ++i) {
+    Record &Tag = *Tags[i];
+    std::string MangledName = MangleName(Tag.getValueAsString("Name"));
 
     OS << "COMMENT_COMMAND(" << MangledName << ")\n";
   }

@@ -21,11 +21,15 @@
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/Sema.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
@@ -700,8 +704,8 @@ void PrintingCodeCompleteConsumer::ProcessCodeCompleteResults(
       const SourceLocation ELoc = FixIt.RemoveRange.getEnd();
 
       SourceManager &SM = SemaRef.SourceMgr;
-      FileIDAndOffset BInfo = SM.getDecomposedLoc(BLoc);
-      FileIDAndOffset EInfo = SM.getDecomposedLoc(ELoc);
+      std::pair<FileID, unsigned> BInfo = SM.getDecomposedLoc(BLoc);
+      std::pair<FileID, unsigned> EInfo = SM.getDecomposedLoc(ELoc);
       // Adjust for token ranges.
       if (FixIt.RemoveRange.isTokenRange())
         EInfo.second += Lexer::MeasureTokenLength(ELoc, SM, SemaRef.LangOpts);
@@ -850,8 +854,7 @@ StringRef CodeCompletionResult::getOrderedName(std::string &Saved) const {
   if (IdentifierInfo *Id = Name.getAsIdentifierInfo())
     return Id->getName();
   if (Name.isObjCZeroArgSelector())
-    if (const IdentifierInfo *Id =
-            Name.getObjCSelector().getIdentifierInfoForSlot(0))
+    if (IdentifierInfo *Id = Name.getObjCSelector().getIdentifierInfoForSlot(0))
       return Id->getName();
 
   Saved = Name.getAsString();

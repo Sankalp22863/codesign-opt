@@ -19,37 +19,25 @@ TypeCategoryMap::TypeCategoryMap(IFormatChangeListener *lst)
     : m_map_mutex(), listener(lst), m_map(), m_active_categories() {
   ConstString default_cs("default");
   lldb::TypeCategoryImplSP default_sp =
-      std::make_shared<TypeCategoryImpl>(listener, default_cs);
+      lldb::TypeCategoryImplSP(new TypeCategoryImpl(listener, default_cs));
   Add(default_cs, default_sp);
   Enable(default_cs, First);
 }
 
 void TypeCategoryMap::Add(KeyType name, const TypeCategoryImplSP &entry) {
-  {
-    std::lock_guard<std::recursive_mutex> guard(m_map_mutex);
-    m_map[name] = entry;
-  }
-  // Release the mutex to avoid a potential deadlock between
-  // TypeCategoryMap::m_map_mutex and
-  // FormatManager::m_language_categories_mutex which can be acquired in
-  // reverse order when calling FormatManager::Changed.
+  std::lock_guard<std::recursive_mutex> guard(m_map_mutex);
+  m_map[name] = entry;
   if (listener)
     listener->Changed();
 }
 
 bool TypeCategoryMap::Delete(KeyType name) {
-  {
-    std::lock_guard<std::recursive_mutex> guard(m_map_mutex);
-    MapIterator iter = m_map.find(name);
-    if (iter == m_map.end())
-      return false;
-    m_map.erase(name);
-    Disable(name);
-  }
-  // Release the mutex to avoid a potential deadlock between
-  // TypeCategoryMap::m_map_mutex and
-  // FormatManager::m_language_categories_mutex which can be acquired in
-  // reverse order when calling FormatManager::Changed.
+  std::lock_guard<std::recursive_mutex> guard(m_map_mutex);
+  MapIterator iter = m_map.find(name);
+  if (iter == m_map.end())
+    return false;
+  m_map.erase(name);
+  Disable(name);
   if (listener)
     listener->Changed();
   return true;
@@ -112,10 +100,9 @@ void TypeCategoryMap::EnableAllCategories() {
       continue;
     auto pos = iter->second->GetLastEnabledPosition();
     if (pos >= sorted_categories.size()) {
-      auto iter = llvm::find_if(sorted_categories,
-                                [](const TypeCategoryImplSP &sp) -> bool {
-                                  return sp.get() == nullptr;
-                                });
+      auto iter = std::find_if(
+          sorted_categories.begin(), sorted_categories.end(),
+          [](const TypeCategoryImplSP &sp) -> bool { return sp.get() == nullptr; });
       pos = std::distance(sorted_categories.begin(), iter);
     }
     sorted_categories.at(pos) = iter->second;
@@ -136,15 +123,9 @@ void TypeCategoryMap::DisableAllCategories() {
 }
 
 void TypeCategoryMap::Clear() {
-  {
-    std::lock_guard<std::recursive_mutex> guard(m_map_mutex);
-    m_map.clear();
-    m_active_categories.clear();
-  }
-  // Release the mutex to avoid a potential deadlock between
-  // TypeCategoryMap::m_map_mutex and
-  // FormatManager::m_language_categories_mutex which can be acquired in
-  // reverse order when calling FormatManager::Changed.
+  std::lock_guard<std::recursive_mutex> guard(m_map_mutex);
+  m_map.clear();
+  m_active_categories.clear();
   if (listener)
     listener->Changed();
 }
@@ -185,12 +166,13 @@ void TypeCategoryMap::Get(FormattersMatchData &match_data, ImplSP &retval) {
   if (log) {
     for (auto match : match_data.GetMatchesVector()) {
       LLDB_LOGF(
-          log, "[%s] candidate match = %s %s %s %s ptr-stripped-depth=%u",
-          __FUNCTION__, match.GetTypeName().GetCString(),
+          log,
+          "[%s] candidate match = %s %s %s %s",
+          __FUNCTION__,
+          match.GetTypeName().GetCString(),
           match.DidStripPointer() ? "strip-pointers" : "no-strip-pointers",
           match.DidStripReference() ? "strip-reference" : "no-strip-reference",
-          match.DidStripTypedef() ? "strip-typedef" : "no-strip-typedef",
-          match.GetPtrStrippedDepth());
+          match.DidStripTypedef() ? "strip-typedef" : "no-strip-typedef");
     }
   }
 

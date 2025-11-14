@@ -18,7 +18,6 @@
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/BinaryFormat/XCOFF.h"
 #include "llvm/Object/ObjectFile.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/Endian.h"
 #include <limits>
 
@@ -71,9 +70,6 @@ public:
   }
 
   uint16_t getVersion() const { return static_cast<const T *>(this)->Version; }
-  uint64_t getEntryPointAddr() const {
-    return static_cast<const T *>(this)->EntryPointAddr;
-  }
 };
 
 struct XCOFFAuxiliaryHeader32 : XCOFFAuxiliaryHeader<XCOFFAuxiliaryHeader32> {
@@ -157,29 +153,23 @@ struct XCOFFAuxiliaryHeader64 : XCOFFAuxiliaryHeader<XCOFFAuxiliaryHeader64> {
 };
 
 template <typename T> struct XCOFFSectionHeader {
-  // The section flags definitions are the same in both 32- and 64-bit objects.
-  //  Least significant 3 bits are reserved.
+  // Least significant 3 bits are reserved.
   static constexpr unsigned SectionFlagsReservedMask = 0x7;
 
   // The low order 16 bits of section flags denotes the section type.
-  // The high order 16 bits of section flags denotes the section subtype.
-  // For now, this is only used for DWARF sections.
   static constexpr unsigned SectionFlagsTypeMask = 0xffffu;
 
 public:
   StringRef getName() const;
   uint16_t getSectionType() const;
-  uint32_t getSectionSubtype() const;
   bool isReservedSectionType() const;
 };
 
 // Explicit extern template declarations.
 struct XCOFFSectionHeader32;
 struct XCOFFSectionHeader64;
-extern template struct LLVM_TEMPLATE_ABI
-    XCOFFSectionHeader<XCOFFSectionHeader32>;
-extern template struct LLVM_TEMPLATE_ABI
-    XCOFFSectionHeader<XCOFFSectionHeader64>;
+extern template struct XCOFFSectionHeader<XCOFFSectionHeader32>;
+extern template struct XCOFFSectionHeader<XCOFFSectionHeader64>;
 
 struct XCOFFSectionHeader32 : XCOFFSectionHeader<XCOFFSectionHeader32> {
   char Name[XCOFF::NameSize];
@@ -224,7 +214,7 @@ struct LoaderSectionSymbolEntry32 {
   support::ubig32_t ImportFileID;
   support::ubig32_t ParameterTypeCheck;
 
-  LLVM_ABI Expected<StringRef>
+  Expected<StringRef>
   getSymbolName(const LoaderSectionHeader32 *LoaderSecHeader) const;
 };
 
@@ -237,7 +227,7 @@ struct LoaderSectionSymbolEntry64 {
   support::ubig32_t ImportFileID;
   support::ubig32_t ParameterTypeCheck;
 
-  LLVM_ABI Expected<StringRef>
+  Expected<StringRef>
   getSymbolName(const LoaderSectionHeader64 *LoaderSecHeader) const;
 };
 
@@ -320,10 +310,8 @@ typedef ExceptionSectionEntry<support::ubig32_t> ExceptionSectionEntry32;
 typedef ExceptionSectionEntry<support::ubig64_t> ExceptionSectionEntry64;
 
 // Explicit extern template declarations.
-extern template struct LLVM_TEMPLATE_ABI
-    ExceptionSectionEntry<support::ubig32_t>;
-extern template struct LLVM_TEMPLATE_ABI
-    ExceptionSectionEntry<support::ubig64_t>;
+extern template struct ExceptionSectionEntry<support::ubig32_t>;
+extern template struct ExceptionSectionEntry<support::ubig64_t>;
 
 struct XCOFFStringTable {
   uint32_t Size;
@@ -525,17 +513,15 @@ public:
   uint8_t getRelocatedLength() const;
 };
 
-extern template struct LLVM_TEMPLATE_ABI
-    XCOFFRelocation<llvm::support::ubig32_t>;
-extern template struct LLVM_TEMPLATE_ABI
-    XCOFFRelocation<llvm::support::ubig64_t>;
+extern template struct XCOFFRelocation<llvm::support::ubig32_t>;
+extern template struct XCOFFRelocation<llvm::support::ubig64_t>;
 
 struct XCOFFRelocation32 : XCOFFRelocation<llvm::support::ubig32_t> {};
 struct XCOFFRelocation64 : XCOFFRelocation<llvm::support::ubig64_t> {};
 
 class XCOFFSymbolRef;
 
-class LLVM_ABI XCOFFObjectFile : public ObjectFile {
+class XCOFFObjectFile : public ObjectFile {
 private:
   const void *FileHeader = nullptr;
   const void *AuxiliaryHeader = nullptr;
@@ -782,13 +768,6 @@ struct XCOFFSymbolEntry64 {
   uint8_t NumberOfAuxEntries;
 };
 
-extern template LLVM_TEMPLATE_ABI Expected<ArrayRef<XCOFFRelocation32>>
-XCOFFObjectFile::relocations<XCOFFSectionHeader32, XCOFFRelocation32>(
-    const XCOFFSectionHeader32 &Sec) const;
-extern template LLVM_TEMPLATE_ABI Expected<ArrayRef<XCOFFRelocation64>>
-XCOFFObjectFile::relocations<XCOFFSectionHeader64, XCOFFRelocation64>(
-    const XCOFFSectionHeader64 &Sec) const;
-
 class XCOFFSymbolRef : public SymbolRef {
 public:
   enum { NAME_IN_STR_TBL_MAGIC = 0x0 };
@@ -858,10 +837,10 @@ public:
     return getRawDataRefImpl().p;
   }
 
-  LLVM_ABI Expected<StringRef> getName() const;
-  LLVM_ABI Expected<bool> isFunction() const;
-  LLVM_ABI bool isCsectSymbol() const;
-  LLVM_ABI Expected<XCOFFCsectAuxRef> getXCOFFCsectAuxRef() const;
+  Expected<StringRef> getName() const;
+  Expected<bool> isFunction() const;
+  bool isCsectSymbol() const;
+  Expected<XCOFFCsectAuxRef> getXCOFFCsectAuxRef() const;
 
 private:
   const XCOFFObjectFile *getObject() const {
@@ -893,12 +872,12 @@ class TBVectorExt {
   TBVectorExt(StringRef TBvectorStrRef, Error &Err);
 
 public:
-  LLVM_ABI static Expected<TBVectorExt> create(StringRef TBvectorStrRef);
-  LLVM_ABI uint8_t getNumberOfVRSaved() const;
-  LLVM_ABI bool isVRSavedOnStack() const;
-  LLVM_ABI bool hasVarArgs() const;
-  LLVM_ABI uint8_t getNumberOfVectorParms() const;
-  LLVM_ABI bool hasVMXInstruction() const;
+  static Expected<TBVectorExt> create(StringRef TBvectorStrRef);
+  uint8_t getNumberOfVRSaved() const;
+  bool isVRSavedOnStack() const;
+  bool hasVarArgs() const;
+  uint8_t getNumberOfVectorParms() const;
+  bool hasVMXInstruction() const;
   SmallString<32> getVectorParmsInfo() const { return VecParmsInfo; };
 };
 
@@ -936,39 +915,39 @@ public:
   ///    If the XCOFF Traceback Table is not parsed successfully or there are
   ///    extra bytes that are not recognized, \a Size will be updated to be the
   ///    size up to the end of the last successfully parsed field of the table.
-  LLVM_ABI static Expected<XCOFFTracebackTable>
+  static Expected<XCOFFTracebackTable>
   create(const uint8_t *Ptr, uint64_t &Size, bool Is64Bits = false);
-  LLVM_ABI uint8_t getVersion() const;
-  LLVM_ABI uint8_t getLanguageID() const;
+  uint8_t getVersion() const;
+  uint8_t getLanguageID() const;
 
-  LLVM_ABI bool isGlobalLinkage() const;
-  LLVM_ABI bool isOutOfLineEpilogOrPrologue() const;
-  LLVM_ABI bool hasTraceBackTableOffset() const;
-  LLVM_ABI bool isInternalProcedure() const;
-  LLVM_ABI bool hasControlledStorage() const;
-  LLVM_ABI bool isTOCless() const;
-  LLVM_ABI bool isFloatingPointPresent() const;
-  LLVM_ABI bool isFloatingPointOperationLogOrAbortEnabled() const;
+  bool isGlobalLinkage() const;
+  bool isOutOfLineEpilogOrPrologue() const;
+  bool hasTraceBackTableOffset() const;
+  bool isInternalProcedure() const;
+  bool hasControlledStorage() const;
+  bool isTOCless() const;
+  bool isFloatingPointPresent() const;
+  bool isFloatingPointOperationLogOrAbortEnabled() const;
 
-  LLVM_ABI bool isInterruptHandler() const;
-  LLVM_ABI bool isFuncNamePresent() const;
-  LLVM_ABI bool isAllocaUsed() const;
-  LLVM_ABI uint8_t getOnConditionDirective() const;
-  LLVM_ABI bool isCRSaved() const;
-  LLVM_ABI bool isLRSaved() const;
+  bool isInterruptHandler() const;
+  bool isFuncNamePresent() const;
+  bool isAllocaUsed() const;
+  uint8_t getOnConditionDirective() const;
+  bool isCRSaved() const;
+  bool isLRSaved() const;
 
-  LLVM_ABI bool isBackChainStored() const;
-  LLVM_ABI bool isFixup() const;
-  LLVM_ABI uint8_t getNumOfFPRsSaved() const;
+  bool isBackChainStored() const;
+  bool isFixup() const;
+  uint8_t getNumOfFPRsSaved() const;
 
-  LLVM_ABI bool hasVectorInfo() const;
-  LLVM_ABI bool hasExtensionTable() const;
-  LLVM_ABI uint8_t getNumOfGPRsSaved() const;
+  bool hasVectorInfo() const;
+  bool hasExtensionTable() const;
+  uint8_t getNumOfGPRsSaved() const;
 
-  LLVM_ABI uint8_t getNumberOfFixedParms() const;
+  uint8_t getNumberOfFixedParms() const;
 
-  LLVM_ABI uint8_t getNumberOfFPParms() const;
-  LLVM_ABI bool hasParmsOnStack() const;
+  uint8_t getNumberOfFPParms() const;
+  bool hasParmsOnStack() const;
 
   const std::optional<SmallString<32>> &getParmsType() const {
     return ParmsType;
@@ -997,7 +976,7 @@ public:
   const std::optional<uint64_t> &getEhInfoDisp() const { return EhInfoDisp; }
 };
 
-LLVM_ABI bool doesXCOFFTracebackTableBegin(ArrayRef<uint8_t> Bytes);
+bool doesXCOFFTracebackTableBegin(ArrayRef<uint8_t> Bytes);
 } // namespace object
 } // namespace llvm
 

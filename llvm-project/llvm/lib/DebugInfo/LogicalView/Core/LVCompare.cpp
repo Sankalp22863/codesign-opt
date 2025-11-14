@@ -230,7 +230,7 @@ Error LVCompare::execute(LVReader *ReferenceReader, LVReader *TargetReader) {
         }
         if (Pass == LVComparePass::Added)
           // Record all the current missing elements for this category.
-          llvm::append_range(Set, Elements);
+          Set.insert(Set.end(), Elements.begin(), Elements.end());
         if (options().getReportList()) {
           if (Elements.size()) {
             OS << "\n(" << Elements.size() << ") "
@@ -312,9 +312,8 @@ Error LVCompare::execute(LVReader *ReferenceReader, LVReader *TargetReader) {
 
       // We need to find an insertion point in the reference scopes tree.
       Parent = Element->getParentScope();
-      auto It = ScopeLinks.find(Parent);
-      if (It != ScopeLinks.end()) {
-        LVScope *InsertionPoint = It->second;
+      if (ScopeLinks.find(Parent) != ScopeLinks.end()) {
+        LVScope *InsertionPoint = ScopeLinks[Parent];
         LLVM_DEBUG({
           dbgs() << "Inserted at: "
                  << hexSquareString(InsertionPoint->getOffset()) << "\n";

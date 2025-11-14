@@ -35,25 +35,20 @@ def PDL_ApplyNativeConstraintOp
   let description = [{
     `pdl.apply_native_constraint` operations apply a native C++ constraint, that
     has been registered externally with the consumer of PDL, to a given set of
-    entities and optionally return a number of values.
+    entities.
 
     Example:
 
     ```mlir
     // Apply `myConstraint` to the entities defined by `input`, `attr`, and `op`.
     pdl.apply_native_constraint "myConstraint"(%input, %attr, %op : !pdl.value, !pdl.attribute, !pdl.operation)
-    // Apply constraint `with_result` to `root`. This constraint returns an attribute.
-    %attr = pdl.apply_native_constraint "with_result"(%root : !pdl.operation) : !pdl.attribute
     ```
   }];
 
   let arguments = (ins StrAttr:$name, 
                        Variadic<PDL_AnyType>:$args, 
                        DefaultValuedAttr<BoolAttr, "false">:$isNegated);
-  let results = (outs Variadic<PDL_AnyType>:$results);
-  let assemblyFormat = [{
-    $name `(` $args `:` type($args) `)` (`:`  type($results)^ )? attr-dict
-  }];
+  let assemblyFormat = "$name `(` $args `:` type($args) `)` attr-dict";
   let hasVerifier = 1;
 }
 
@@ -360,13 +355,12 @@ def PDL_OperationOp : PDL_Op<"operation", [AttrSizedOperandSegments]> {
     (`->` `(` $typeValues^ `:` type($typeValues) `)`)? attr-dict
   }];
 
-  let builders =
-      [OpBuilder<(ins CArg<"std::optional<StringRef>", "std::nullopt">:$name,
-                     CArg<"ValueRange", "{}">:$operandValues,
-                     CArg<"ArrayRef<StringRef>", "{}">:$attrNames,
-                     CArg<"ValueRange", "{}">:$attrValues,
-                     CArg<"ValueRange", "{}">:$resultTypes),
-                 [{
+  let builders = [
+    OpBuilder<(ins CArg<"std::optional<StringRef>", "std::nullopt">:$name,
+      CArg<"ValueRange", "std::nullopt">:$operandValues,
+      CArg<"ArrayRef<StringRef>", "std::nullopt">:$attrNames,
+      CArg<"ValueRange", "std::nullopt">:$attrValues,
+      CArg<"ValueRange", "std::nullopt">:$resultTypes), [{
       auto nameAttr = name ? $_builder.getStringAttr(*name) : StringAttr();
       build($_builder, $_state, $_builder.getType<OperationType>(), nameAttr,
             operandValues, attrValues, $_builder.getStrArrayAttr(attrNames),

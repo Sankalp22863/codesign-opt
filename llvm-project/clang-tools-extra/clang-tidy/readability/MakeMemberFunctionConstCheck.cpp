@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- MakeMemberFunctionConstCheck.cpp - clang-tidy --------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -16,8 +16,6 @@
 using namespace clang::ast_matchers;
 
 namespace clang::tidy::readability {
-
-namespace {
 
 AST_MATCHER(CXXMethodDecl, isStatic) { return Node.isStatic(); }
 
@@ -59,7 +57,7 @@ public:
   UsageKind Usage = Unused;
 
   template <class T> const T *getParent(const Expr *E) {
-    const DynTypedNodeList Parents = Ctxt.getParents(*E);
+    DynTypedNodeList Parents = Ctxt.getParents(*E);
     if (Parents.size() != 1)
       return nullptr;
 
@@ -211,12 +209,10 @@ AST_MATCHER(CXXMethodDecl, usesThisAsConst) {
   FindUsageOfThis UsageOfThis(Finder->getASTContext());
 
   // TraverseStmt does not modify its argument.
-  UsageOfThis.TraverseStmt(Node.getBody());
+  UsageOfThis.TraverseStmt(const_cast<Stmt *>(Node.getBody()));
 
   return UsageOfThis.Usage == Const;
 }
-
-} // namespace
 
 void MakeMemberFunctionConstCheck::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(
@@ -241,7 +237,7 @@ void MakeMemberFunctionConstCheck::registerMatchers(MatchFinder *Finder) {
 }
 
 static SourceLocation getConstInsertionPoint(const CXXMethodDecl *M) {
-  const TypeSourceInfo *TSI = M->getTypeSourceInfo();
+  TypeSourceInfo *TSI = M->getTypeSourceInfo();
   if (!TSI)
     return {};
 

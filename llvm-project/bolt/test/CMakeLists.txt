@@ -37,7 +37,6 @@ list(APPEND BOLT_TEST_DEPS
   lld
   llvm-config
   llvm-bolt
-  llvm-bolt-binary-analysis
   llvm-bolt-heatmap
   llvm-bat-dump
   llvm-dwarfdump
@@ -57,7 +56,7 @@ list(APPEND BOLT_TEST_DEPS
   )
 
 add_custom_target(bolt-test-depends DEPENDS ${BOLT_TEST_DEPS})
-set_target_properties(bolt-test-depends PROPERTIES FOLDER "BOLT/Tests")
+set_target_properties(bolt-test-depends PROPERTIES FOLDER "BOLT")
 
 add_lit_testsuite(check-bolt "Running the BOLT regression tests"
   ${CMAKE_CURRENT_BINARY_DIR}
@@ -65,6 +64,7 @@ add_lit_testsuite(check-bolt "Running the BOLT regression tests"
   DEPENDS ${BOLT_TEST_DEPS}
   ARGS ${BOLT_TEST_EXTRA_ARGS}
   )
+set_target_properties(check-bolt PROPERTIES FOLDER "BOLT")
 
 add_lit_testsuites(BOLT ${CMAKE_CURRENT_SOURCE_DIR}
   PARAMS ${BOLT_TEST_PARAMS}

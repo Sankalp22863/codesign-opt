@@ -31,25 +31,6 @@ int lprofUnlockFileHandle(FILE *F);
  * lock for exclusive access. The caller will block
  * if the lock is already held by another process. */
 FILE *lprofOpenFileEx(const char *Filename);
-
-enum MemoryStatus {
-  MS_INVALID, // Addr is not a valid address
-  MS_MMAP,    // Addr was mmap'ed
-  MS_MALLOC   // Addr was malloc'ed
-};
-typedef struct {
-  void *Addr;
-  enum MemoryStatus Status;
-} ManagedMemory;
-
-/* Read the content of a file using mmap or fread into a buffer.
- * Certain files (e.g. NFS mounted) cannot be opened reliably with mmap,
- * so we use fread in those cases. The corresponding lprofReleaseBuffer
- * will free/munmap the buffer.
- */
-void lprofGetFileContentBuffer(FILE *F, uint64_t FileSize, ManagedMemory *Buf);
-void lprofReleaseBuffer(ManagedMemory *FileBuffer, size_t Length);
-
 /* PS4 doesn't have setenv/getenv/fork. Define a shim. */
 #if __ORBIS__
 #include <sys/types.h>
@@ -88,10 +69,10 @@ void *lprofPtrFetchAdd(void **Mem, long ByteIncr);
 /* Temporarily suspend SIGKILL. Return value of 1 means a restore is needed.
  * Other return values mean no restore is needed.
  */
-int lprofSuspendSigKill(void);
+int lprofSuspendSigKill();
 
 /* Restore previously suspended SIGKILL. */
-void lprofRestoreSigKill(void);
+void lprofRestoreSigKill();
 
 static inline size_t lprofRoundUpTo(size_t x, size_t boundary) {
   return (x + boundary - 1) & ~(boundary - 1);
@@ -102,10 +83,5 @@ static inline size_t lprofRoundDownTo(size_t x, size_t boundary) {
 }
 
 int lprofReleaseMemoryPagesToOS(uintptr_t Begin, uintptr_t End);
-
-typedef void (*AtExit_Fn_ptr)(void);
-
-/* Call atexit and perform other platform-specific bookkeeping. */
-int lprofAtExit(AtExit_Fn_ptr);
 
 #endif /* PROFILE_INSTRPROFILINGUTIL_H */

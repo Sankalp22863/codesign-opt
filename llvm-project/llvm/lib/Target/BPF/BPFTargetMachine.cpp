@@ -12,7 +12,6 @@
 
 #include "BPFTargetMachine.h"
 #include "BPF.h"
-#include "BPFTargetLoweringObjectFile.h"
 #include "BPFTargetTransformInfo.h"
 #include "MCTargetDesc/BPFMCAsmInfo.h"
 #include "TargetInfo/BPFTargetInfo.h"
@@ -27,7 +26,7 @@
 #include "llvm/InitializePasses.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
-#include "llvm/Support/Compiler.h"
+#include "llvm/Support/FormattedStream.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/SimplifyCFG.h"
@@ -39,11 +38,7 @@ static cl::
 opt<bool> DisableMIPeephole("disable-bpf-peephole", cl::Hidden,
                             cl::desc("Disable machine peepholes for BPF"));
 
-static cl::opt<bool>
-    DisableCheckUnreachable("bpf-disable-trap-unreachable", cl::Hidden,
-                            cl::desc("Disable Trap Unreachable for BPF"));
-
-extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeBPFTarget() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeBPFTarget() {
   // Register the target.
   RegisterTargetMachine<BPFTargetMachine> X(getTheBPFleTarget());
   RegisterTargetMachine<BPFTargetMachine> Y(getTheBPFbeTarget());
@@ -51,13 +46,17 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeBPFTarget() {
 
   PassRegistry &PR = *PassRegistry::getPassRegistry();
   initializeGlobalISel(PR);
-  initializeBPFAsmPrinterPass(PR);
   initializeBPFCheckAndAdjustIRPass(PR);
   initializeBPFMIPeepholePass(PR);
-  initializeBPFMIPreEmitPeepholePass(PR);
-  initializeBPFDAGToDAGISelLegacyPass(PR);
-  initializeBPFMISimplifyPatchablePass(PR);
-  initializeBPFMIPreEmitCheckingPass(PR);
+  initializeBPFDAGToDAGISelPass(PR);
+}
+
+// DataLayout: little or big endian
+static std::string computeDataLayout(const Triple &TT) {
+  if (TT.getArch() == Triple::bpfeb)
+    return "E-m:e-p:64:64-i64:64-i128:128-n32:64-S128";
+  else
+    return "e-m:e-p:64:64-i64:64-i128:128-n32:64-S128";
 }
 
 static Reloc::Model getEffectiveRelocModel(std::optional<Reloc::Model> RM) {
@@ -70,16 +69,11 @@ BPFTargetMachine::BPFTargetMachine(const Target &T, const Triple &TT,
                                    std::optional<Reloc::Model> RM,
                                    std::optional<CodeModel::Model> CM,
                                    CodeGenOptLevel OL, bool JIT)
-    : CodeGenTargetMachineImpl(T, TT.computeDataLayout(), TT, CPU, FS, Options,
-                               getEffectiveRelocModel(RM),
-                               getEffectiveCodeModel(CM, CodeModel::Small), OL),
-      TLOF(std::make_unique<BPFTargetLoweringObjectFileELF>()),
+    : LLVMTargetMachine(T, computeDataLayout(TT), TT, CPU, FS, Options,
+                        getEffectiveRelocModel(RM),
+                        getEffectiveCodeModel(CM, CodeModel::Small), OL),
+      TLOF(std::make_unique<TargetLoweringObjectFileELF>()),
       Subtarget(TT, std::string(CPU), std::string(FS), *this) {
-  if (!DisableCheckUnreachable) {
-    this->Options.TrapUnreachable = true;
-    this->Options.NoTrapAfterNoreturn = true;
-  }
-
   initAsmInfo();
 
   BPFMCAsmInfo *MAI =
@@ -114,15 +108,21 @@ TargetPassConfig *BPFTargetMachine::createPassConfig(PassManagerBase &PM) {
   return new BPFPassConfig(*this, PM);
 }
 
-static Expected<bool> parseBPFPreserveStaticOffsetOptions(StringRef Params) {
-  return PassBuilder::parseSinglePassOption(Params, "allow-partial",
-                                            "BPFPreserveStaticOffsetPass");
-}
-
-void BPFTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {
-#define GET_PASS_REGISTRY "BPFPassRegistry.def"
-#include "llvm/Passes/TargetPassRegistry.inc"
-
+void BPFTargetMachine::registerPassBuilderCallbacks(
+    PassBuilder &PB, bool PopulateClassToPassNames) {
+  PB.registerPipelineParsingCallback(
+      [](StringRef PassName, FunctionPassManager &FPM,
+         ArrayRef<PassBuilder::PipelineElement>) {
+        if (PassName == "bpf-ir-peephole") {
+          FPM.addPass(BPFIRPeepholePass());
+          return true;
+        }
+        if (PassName == "bpf-preserve-static-offset") {
+          FPM.addPass(BPFPreserveStaticOffsetPass(false));
+          return true;
+        }
+        return false;
+      });
   PB.registerPipelineStartEPCallback(
       [=](ModulePassManager &MPM, OptimizationLevel) {
         FunctionPassManager FPM;
@@ -135,7 +135,6 @@ void BPFTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {
   PB.registerPeepholeEPCallback([=](FunctionPassManager &FPM,
                                     OptimizationLevel Level) {
     FPM.addPass(SimplifyCFGPass(SimplifyCFGOptions().hoistCommonInsts(true)));
-    FPM.addPass(BPFASpaceCastSimplifyPass());
   });
   PB.registerScalarOptimizerLateEPCallback(
       [=](FunctionPassManager &FPM, OptimizationLevel Level) {
@@ -144,13 +143,13 @@ void BPFTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {
         FPM.addPass(BPFPreserveStaticOffsetPass(false));
       });
   PB.registerPipelineEarlySimplificationEPCallback(
-      [=](ModulePassManager &MPM, OptimizationLevel, ThinOrFullLTOPhase) {
+      [=](ModulePassManager &MPM, OptimizationLevel) {
         MPM.addPass(BPFAdjustOptPass());
       });
 }
 
 void BPFPassConfig::addIRPasses() {
-  addPass(createAtomicExpandLegacyPass());
+  addPass(createAtomicExpandPass());
   addPass(createBPFCheckAndAdjustIR());
 
   TargetPassConfig::addIRPasses();
@@ -158,7 +157,7 @@ void BPFPassConfig::addIRPasses() {
 
 TargetTransformInfo
 BPFTargetMachine::getTargetTransformInfo(const Function &F) const {
-  return TargetTransformInfo(std::make_unique<BPFTTIImpl>(this, F));
+  return TargetTransformInfo(BPFTTIImpl(this, F));
 }
 
 // Install an instruction selector pass using

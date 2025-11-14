@@ -19,10 +19,12 @@
 //     range [1, rank_), where pi is the ith element of P.
 //   - Otherwise, false.
 
-#include <array>
-#include <cassert>
-#include <cstddef>
 #include <mdspan>
+#include <type_traits>
+#include <concepts>
+#include <cassert>
+
+#include "test_macros.h"
 
 template <class E>
 constexpr void

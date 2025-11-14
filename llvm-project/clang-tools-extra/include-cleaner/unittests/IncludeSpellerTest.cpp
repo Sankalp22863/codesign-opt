@@ -47,7 +47,8 @@ public:
       return "<bits/stdc++.h>";
     if (Input.H.kind() != Header::Physical)
       return "";
-    llvm::StringRef AbsolutePath = Input.H.resolvedPath();
+    llvm::StringRef AbsolutePath =
+        Input.H.physical().getFileEntry().tryGetRealPathName();
     std::string RootWithSeparator{testRoot()};
     RootWithSeparator += llvm::sys::path::get_separator();
     if (!AbsolutePath.consume_front(llvm::StringRef{RootWithSeparator}))
@@ -86,24 +87,6 @@ TEST(IncludeSpeller, CanOverrideSystemHeaders) {
   EXPECT_EQ("<bits/stdc++.h>",
             spellHeader({Header{*tooling::stdlib::Header::named("<vector>")},
                          HS, MainFile}));
-}
-
-TEST(IncludeSpeller, RelativeIncludeSearchPath) {
-  TestInputs Inputs;
-
-  Inputs.WorkingDir = "/root/inner";
-  Inputs.ExtraArgs.push_back("-I..");
-  Inputs.ExtraFiles["/root/foo.h"] = "";
-  TestAST AST{Inputs};
-
-  auto &FM = AST.fileManager();
-  auto &HS = AST.preprocessor().getHeaderSearchInfo();
-  const auto *MainFile = AST.sourceManager().getFileEntryForID(
-      AST.sourceManager().getMainFileID());
-
-  EXPECT_EQ("\"foo.h\"",
-            spellHeader(
-                {Header{*FM.getOptionalFileRef("/root/foo.h")}, HS, MainFile}));
 }
 
 IncludeSpellingStrategy::Add<DummyIncludeSpeller>

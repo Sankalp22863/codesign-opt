@@ -1,6 +1,5 @@
 llvm_canonicalize_cmake_booleans(
   ENABLE_BACKTRACES
-  LLVM_ENABLE_THREADS
   LLVM_ENABLE_ZLIB
   LLVM_ENABLE_ZSTD
   LLVM_ENABLE_LIBXML2
@@ -39,17 +38,17 @@ configure_lit_site_cfg(
   "LLD_SOURCE_DIR"
 )
 
-set(LLD_TEST_DEPS lld LLDUnitTests)
+set(LLD_TEST_DEPS lld)
 if (NOT LLD_BUILT_STANDALONE)
   list(APPEND LLD_TEST_DEPS
     FileCheck
+    LLDUnitTests
     count
     dsymutil
     llc
     llvm-ar
     llvm-as
     llvm-bcanalyzer
-    llvm-cgdata
     llvm-config
     llvm-cvtres
     llvm-dis
@@ -66,7 +65,6 @@ if (NOT LLD_BUILT_STANDALONE)
     llvm-profdata
     llvm-readelf
     llvm-readobj
-    llvm-strings
     llvm-strip
     llvm-symbolizer
     not
@@ -86,9 +84,10 @@ add_lit_testsuite(check-lld "Running lld test suite"
   ${CMAKE_CURRENT_BINARY_DIR}
   DEPENDS ${LLD_TEST_DEPS}
   )
+set_target_properties(check-lld PROPERTIES FOLDER "lld tests")
 
 add_custom_target(lld-test-depends DEPENDS ${LLD_TEST_DEPS})
-set_target_properties(lld-test-depends PROPERTIES FOLDER "LLD/Tests")
+set_target_properties(lld-test-depends PROPERTIES FOLDER "lld tests")
 
 add_lit_testsuites(LLD ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS ${LLD_TEST_DEPS}
@@ -97,4 +96,4 @@ add_lit_testsuites(LLD ${CMAKE_CURRENT_SOURCE_DIR}
 # Add a legacy target spelling: lld-test
 add_custom_target(lld-test)
 add_dependencies(lld-test check-lld)
-set_target_properties(lld-test PROPERTIES FOLDER "LLD/Tests")
+set_target_properties(lld-test PROPERTIES FOLDER "lld tests")

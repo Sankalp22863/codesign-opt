@@ -6,14 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "hdr/signal_macros.h"
 #include "src/__support/FPUtil/FPBits.h"
 #include "src/math/nan.h"
-#include "test/UnitTest/FEnvSafeTest.h"
 #include "test/UnitTest/FPMatcher.h"
 #include "test/UnitTest/Test.h"
+#include <signal.h>
 
-class LlvmLibcNanTest : public LIBC_NAMESPACE::testing::FEnvSafeTest {
+class LlvmLibcNanTest : public LIBC_NAMESPACE::testing::Test {
 public:
   using StorageType = LIBC_NAMESPACE::fputil::FPBits<double>::StorageType;
 
@@ -21,8 +20,8 @@ public:
     double result = LIBC_NAMESPACE::nan(input_str);
     auto actual_fp = LIBC_NAMESPACE::fputil::FPBits<double>(result);
     auto expected_fp = LIBC_NAMESPACE::fputil::FPBits<double>(bits);
-    EXPECT_EQ(actual_fp.uintval(), expected_fp.uintval());
-  }
+    EXPECT_EQ(actual_fp.bits, expected_fp.bits);
+  };
 };
 
 TEST_F(LlvmLibcNanTest, NCharSeq) {
@@ -43,8 +42,8 @@ TEST_F(LlvmLibcNanTest, RandomString) {
   run_test("123 ", 0x7ff8000000000000);
 }
 
-#if defined(LIBC_ADD_NULL_CHECKS)
+#ifndef LIBC_HAVE_ADDRESS_SANITIZER
 TEST_F(LlvmLibcNanTest, InvalidInput) {
-  EXPECT_DEATH([] { LIBC_NAMESPACE::nan(nullptr); }, WITH_SIGNAL(-1));
+  EXPECT_DEATH([] { LIBC_NAMESPACE::nan(nullptr); }, WITH_SIGNAL(SIGSEGV));
 }
-#endif // LIBC_ADD_NULL_CHECKS
+#endif // LIBC_HAVE_ADDRESS_SANITIZER

@@ -89,13 +89,13 @@ bool Merge(llvm::StringRef MergeDir, llvm::StringRef OutputFile) {
 
   // Load all symbol files in MergeDir.
   {
-    llvm::DefaultThreadPool Pool;
+    llvm::ThreadPool Pool;
     for (llvm::sys::fs::directory_iterator Dir(MergeDir, EC), DirEnd;
          Dir != DirEnd && !EC; Dir.increment(EC)) {
       // Parse YAML files in parallel.
       Pool.async(
           [&AddSymbols](std::string Path) {
-            auto Buffer = llvm::MemoryBuffer::getFile(Path, /*IsText=*/true);
+            auto Buffer = llvm::MemoryBuffer::getFile(Path);
             if (!Buffer) {
               llvm::errs() << "Can't open " << Path << "\n";
               return;
@@ -114,7 +114,7 @@ bool Merge(llvm::StringRef MergeDir, llvm::StringRef OutputFile) {
     }
   }
 
-  llvm::raw_fd_ostream OS(OutputFile, EC, llvm::sys::fs::OF_Text);
+  llvm::raw_fd_ostream OS(OutputFile, EC, llvm::sys::fs::OF_None);
   if (EC) {
     llvm::errs() << "Can't open '" << OutputFile << "': " << EC.message()
                  << '\n';

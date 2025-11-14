@@ -15,9 +15,7 @@
 // template<class _Alloc>
 // struct __allocation_guard;
 
-#include <__memory/allocation_guard.h>
 #include <cassert>
-#include <climits>
 #include <memory>
 #include <type_traits>
 #include <utility>

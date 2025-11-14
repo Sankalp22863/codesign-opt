@@ -24,6 +24,7 @@
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Target/TargetMachine.h"
 
@@ -35,12 +36,15 @@ namespace {
 
 class MipsMulMulBugFix : public MachineFunctionPass {
 public:
-  MipsMulMulBugFix() : MachineFunctionPass(ID) {}
+  MipsMulMulBugFix() : MachineFunctionPass(ID) {
+    initializeMipsMulMulBugFixPass(*PassRegistry::getPassRegistry());
+  }
 
   StringRef getPassName() const override { return "Mips VR4300 mulmul bugfix"; }
 
   MachineFunctionProperties getRequiredProperties() const override {
-    return MachineFunctionProperties().setNoVRegs();
+    return MachineFunctionProperties().set(
+        MachineFunctionProperties::Property::NoVRegs);
   }
 
   bool runOnMachineFunction(MachineFunction &MF) override;

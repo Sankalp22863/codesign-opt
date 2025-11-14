@@ -143,12 +143,6 @@ module MetadataKind : sig
     | DIMacroMetadataKind
     | DIMacroFileMetadataKind
     | DICommonBlockMetadataKind
-    | DIStringTypeMetadataKind
-    | DIGenericSubrangeMetadataKind
-    | DIArgListMetadataKind
-    | DIAssignIDMetadataKind
-    | DISubrangeTypeMetadataKind
-    | DIFixedPointTypeMetadataKind
 end
 
 (** The amount of debug information to emit. *)
@@ -477,11 +471,10 @@ val dibuild_create_member_pointer_type :
     a pointer to member. See LLVMDIBuilderCreateMemberPointerType *)
 
 val dibuild_create_object_pointer_type :
-  lldibuilder -> Llvm.llmetadata -> implicit:bool -> Llvm.llmetadata
+  lldibuilder -> Llvm.llmetadata -> Llvm.llmetadata
 (** [dibuild_create_object_pointer_type dib ty] Create a uniqued DIType* clone
-  with FlagObjectPointer. [dib] is the dibuilder
-  value and [ty] the underlying type to which this pointer points. If
-  [implicit] is true, also set FlagArtificial. *)
+  with FlagObjectPointer and FlagArtificial set. [dib] is the dibuilder
+  value and [ty] the underlying type to which this pointer points. *)
 
 val dibuild_create_qualified_type :
   lldibuilder -> tag:int -> Llvm.llmetadata -> Llvm.llmetadata
@@ -666,7 +659,7 @@ val dibuild_insert_declare_before :
   expr:Llvm.llmetadata ->
   location:Llvm.llmetadata ->
   instr:Llvm.llvalue ->
-  Llvm.lldbgrecord
+  Llvm.llvalue
 (** [dibuild_insert_declare_before]  Insert a new llvm.dbg.declare
     intrinsic call before the given instruction [instr]. *)
 
@@ -677,7 +670,7 @@ val dibuild_insert_declare_at_end :
   expr:Llvm.llmetadata ->
   location:Llvm.llmetadata ->
   block:Llvm.llbasicblock ->
-  Llvm.lldbgrecord
+  Llvm.llvalue
 (** [dibuild_insert_declare_at_end] Insert a new llvm.dbg.declare
     intrinsic call at the end of basic block [block]. If [block]
     has a terminator instruction, the intrinsic is inserted
@@ -687,9 +680,3 @@ val dibuild_expression : lldibuilder -> Int64.t array -> Llvm.llmetadata
 (** [dibuild_expression] Create a new descriptor for the specified variable
     which has a complex address expression for its address.
     See LLVMDIBuilderCreateExpression. *)
-
-val is_new_dbg_info_format : Llvm.llmodule -> bool
-(** [is_new_dbg_info_format] See LLVMIsNewDbgInfoFormat *)
-
-val set_is_new_dbg_info_format : Llvm.llmodule -> bool -> unit
-(** [set_is_new_dbg_info_format] See LLVMSetIsNewDbgInfoFormat *)

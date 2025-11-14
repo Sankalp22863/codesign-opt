@@ -9,6 +9,7 @@
 #include "ClangDocTest.h"
 #include "Generators.h"
 #include "Representation.h"
+#include "Serialize.h"
 #include "clang/Basic/Version.h"
 #include "gtest/gtest.h"
 
@@ -18,20 +19,18 @@ namespace doc {
 static const std::string ClangDocVersion =
     clang::getClangToolFullVersion("clang-doc");
 
-static std::unique_ptr<Generator> getHTMLGenerator() {
+std::unique_ptr<Generator> getHTMLGenerator() {
   auto G = doc::findGeneratorByName("html");
   if (!G)
     return nullptr;
   return std::move(G.get());
 }
 
-static ClangDocContext
+ClangDocContext
 getClangDocContext(std::vector<std::string> UserStylesheets = {},
-                   StringRef RepositoryUrl = "",
-                   StringRef RepositoryLinePrefix = "", StringRef Base = "") {
+                   StringRef RepositoryUrl = "") {
   ClangDocContext CDCtx{
-      {},   "test-project", {}, {}, {}, RepositoryUrl, RepositoryLinePrefix,
-      Base, UserStylesheets};
+      {}, "test-project", {}, {}, {}, RepositoryUrl, UserStylesheets, {}};
   CDCtx.UserStylesheets.insert(
       CDCtx.UserStylesheets.begin(),
       "../share/clang/clang-doc-default-stylesheet.css");
@@ -67,7 +66,6 @@ TEST(HTMLGeneratorTest, emitNamespaceHTML) {
 <title>namespace Namespace</title>
 <link rel="stylesheet" href="../clang-doc-default-stylesheet.css"/>
 <link rel="stylesheet" href="../user-provided-stylesheet.css"/>
-<script src="../index_json.js"></script>
 <script src="../index.js"></script>
 <header id="project-title">test-project</header>
 <main>
@@ -93,13 +91,7 @@ TEST(HTMLGeneratorTest, emitNamespaceHTML) {
     </div>
     <h2 id="Enums">Enums</h2>
     <div>
-      <table id="0000000000000000000000000000000000000000">
-        <thead>
-          <tr>
-            <th colspan="2">enum OneEnum</th>
-          </tr>
-        </thead>
-      </table>
+      <h3 id="0000000000000000000000000000000000000000">enum OneEnum</h3>
     </div>
   </div>
   <div id="sidebar-right" class="col-xs-6 col-sm-6 col-md-2 sidebar sidebar-offcanvas-right">
@@ -156,8 +148,8 @@ TEST(HTMLGeneratorTest, emitRecordHTML) {
   I.Path = "X/Y/Z";
   I.Namespace.emplace_back(EmptySID, "A", InfoType::IT_namespace);
 
-  I.DefLoc = Location(10, 10, "dir/test.cpp", true);
-  I.Loc.emplace_back(12, 12, "test.cpp");
+  I.DefLoc = Location(10, llvm::SmallString<16>{"dir/test.cpp"}, true);
+  I.Loc.emplace_back(12, llvm::SmallString<16>{"test.cpp"});
 
   SmallString<16> PathTo;
   llvm::sys::path::native("path/to", PathTo);
@@ -184,7 +176,6 @@ TEST(HTMLGeneratorTest, emitRecordHTML) {
 <meta charset="utf-8"/>
 <title>class r</title>
 <link rel="stylesheet" href="../../../clang-doc-default-stylesheet.css"/>
-<script src="../../../index_json.js"></script>
 <script src="../../../index.js"></script>
 <header id="project-title">test-project</header>
 <main>
@@ -204,9 +195,7 @@ TEST(HTMLGeneratorTest, emitRecordHTML) {
     </p>
     <h2 id="Members">Members</h2>
     <ul>
-      <li>
-        <div>private int X</div>
-      </li>
+      <li>private int X</li>
     </ul>
     <h2 id="Records">Records</h2>
     <ul>
@@ -221,13 +210,7 @@ TEST(HTMLGeneratorTest, emitRecordHTML) {
     </div>
     <h2 id="Enums">Enums</h2>
     <div>
-      <table id="0000000000000000000000000000000000000000">
-        <thead>
-          <tr>
-            <th colspan="2">enum OneEnum</th>
-          </tr>
-        </thead>
-      </table>
+      <h3 id="0000000000000000000000000000000000000000">enum OneEnum</h3>
     </div>
   </div>
   <div id="sidebar-right" class="col-xs-6 col-sm-6 col-md-2 sidebar sidebar-offcanvas-right">
@@ -283,8 +266,8 @@ TEST(HTMLGeneratorTest, emitFunctionHTML) {
   I.Name = "f";
   I.Namespace.emplace_back(EmptySID, "A", InfoType::IT_namespace);
 
-  I.DefLoc = Location(10, 10, "dir/test.cpp", true);
-  I.Loc.emplace_back(12, 12, "test.cpp");
+  I.DefLoc = Location(10, llvm::SmallString<16>{"dir/test.cpp"}, false);
+  I.Loc.emplace_back(12, llvm::SmallString<16>{"test.cpp"});
 
   I.Access = AccessSpecifier::AS_none;
 
@@ -307,7 +290,6 @@ TEST(HTMLGeneratorTest, emitFunctionHTML) {
 <meta charset="utf-8"/>
 <title></title>
 <link rel="stylesheet" href="clang-doc-default-stylesheet.css"/>
-<script src="index_json.js"></script>
 <script src="index.js"></script>
 <header id="project-title">test-project</header>
 <main>
@@ -320,12 +302,7 @@ TEST(HTMLGeneratorTest, emitFunctionHTML) {
       <a href="path/to/int.html">int</a>
        P)
     </p>
-    <p>
-      Defined at line 
-      <a href="https://www.repository.com/dir/test.cpp#10">10</a>
-       of file 
-      <a href="https://www.repository.com/dir/test.cpp">test.cpp</a>
-    </p>
+    <p>Defined at line 10 of file dir/test.cpp</p>
   </div>
   <div id="sidebar-right" class="col-xs-6 col-sm-6 col-md-2 sidebar sidebar-offcanvas-right"></div>
 </main>
@@ -343,8 +320,8 @@ TEST(HTMLGeneratorTest, emitEnumHTML) {
   I.Name = "e";
   I.Namespace.emplace_back(EmptySID, "A", InfoType::IT_namespace);
 
-  I.DefLoc = Location(10, 10, "test.cpp", true);
-  I.Loc.emplace_back(12, 12, "test.cpp");
+  I.DefLoc = Location(10, llvm::SmallString<16>{"test.cpp"}, true);
+  I.Loc.emplace_back(12, llvm::SmallString<16>{"test.cpp"});
 
   I.Members.emplace_back("X");
   I.Scoped = true;
@@ -360,25 +337,15 @@ TEST(HTMLGeneratorTest, emitEnumHTML) {
 <meta charset="utf-8"/>
 <title></title>
 <link rel="stylesheet" href="clang-doc-default-stylesheet.css"/>
-<script src="index_json.js"></script>
 <script src="index.js"></script>
 <header id="project-title">test-project</header>
 <main>
   <div id="sidebar-left" path="" class="col-xs-6 col-sm-3 col-md-2 sidebar sidebar-offcanvas-left"></div>
   <div id="main-content" class="col-xs-12 col-sm-9 col-md-8 main-content">
-    <table id="0000000000000000000000000000000000000000">
-      <thead>
-        <tr>
-          <th colspan="2">enum class e</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>X</td>
-          <td>0</td>
-        </tr>
-      </tbody>
-    </table>
+    <h3 id="0000000000000000000000000000000000000000">enum class e</h3>
+    <ul>
+      <li>X</li>
+    </ul>
     <p>
       Defined at line 
       <a href="https://www.repository.com/test.cpp#10">10</a>
@@ -400,44 +367,44 @@ TEST(HTMLGeneratorTest, emitEnumHTML) {
 TEST(HTMLGeneratorTest, emitCommentHTML) {
   FunctionInfo I;
   I.Name = "f";
-  I.DefLoc = Location(10, 10, "test.cpp", true);
+  I.DefLoc = Location(10, llvm::SmallString<16>{"test.cpp"});
   I.ReturnType = TypeInfo("void");
   I.Params.emplace_back(TypeInfo("int"), "I");
   I.Params.emplace_back(TypeInfo("int"), "J");
   I.Access = AccessSpecifier::AS_none;
 
   CommentInfo Top;
-  Top.Kind = CommentKind::CK_FullComment;
+  Top.Kind = "FullComment";
 
   Top.Children.emplace_back(std::make_unique<CommentInfo>());
   CommentInfo *BlankLine = Top.Children.back().get();
-  BlankLine->Kind = CommentKind::CK_ParagraphComment;
+  BlankLine->Kind = "ParagraphComment";
   BlankLine->Children.emplace_back(std::make_unique<CommentInfo>());
-  BlankLine->Children.back()->Kind = CommentKind::CK_TextComment;
+  BlankLine->Children.back()->Kind = "TextComment";
 
   Top.Children.emplace_back(std::make_unique<CommentInfo>());
   CommentInfo *Brief = Top.Children.back().get();
-  Brief->Kind = CommentKind::CK_ParagraphComment;
+  Brief->Kind = "ParagraphComment";
   Brief->Children.emplace_back(std::make_unique<CommentInfo>());
-  Brief->Children.back()->Kind = CommentKind::CK_TextComment;
+  Brief->Children.back()->Kind = "TextComment";
   Brief->Children.back()->Name = "ParagraphComment";
   Brief->Children.back()->Text = " Brief description.";
 
   Top.Children.emplace_back(std::make_unique<CommentInfo>());
   CommentInfo *Extended = Top.Children.back().get();
-  Extended->Kind = CommentKind::CK_ParagraphComment;
+  Extended->Kind = "ParagraphComment";
   Extended->Children.emplace_back(std::make_unique<CommentInfo>());
-  Extended->Children.back()->Kind = CommentKind::CK_TextComment;
+  Extended->Children.back()->Kind = "TextComment";
   Extended->Children.back()->Text = " Extended description that";
   Extended->Children.emplace_back(std::make_unique<CommentInfo>());
-  Extended->Children.back()->Kind = CommentKind::CK_TextComment;
+  Extended->Children.back()->Kind = "TextComment";
   Extended->Children.back()->Text = " continues onto the next line.";
 
   Top.Children.emplace_back(std::make_unique<CommentInfo>());
   CommentInfo *Entities = Top.Children.back().get();
-  Entities->Kind = CommentKind::CK_ParagraphComment;
+  Entities->Kind = "ParagraphComment";
   Entities->Children.emplace_back(std::make_unique<CommentInfo>());
-  Entities->Children.back()->Kind = CommentKind::CK_TextComment;
+  Entities->Children.back()->Kind = "TextComment";
   Entities->Children.back()->Name = "ParagraphComment";
   Entities->Children.back()->Text =
       " Comment with html entities: &, <, >, \", \'.";
@@ -455,7 +422,6 @@ TEST(HTMLGeneratorTest, emitCommentHTML) {
 <meta charset="utf-8"/>
 <title></title>
 <link rel="stylesheet" href="clang-doc-default-stylesheet.css"/>
-<script src="index_json.js"></script>
 <script src="index.js"></script>
 <header id="project-title">test-project</header>
 <main>
@@ -463,12 +429,7 @@ TEST(HTMLGeneratorTest, emitCommentHTML) {
   <div id="main-content" class="col-xs-12 col-sm-9 col-md-8 main-content">
     <h3 id="0000000000000000000000000000000000000000">f</h3>
     <p>void f(int I, int J)</p>
-    <p>
-      Defined at line 
-      <a href="test.cpp#10">10</a>
-       of file 
-      <a href="test.cpp">test.cpp</a>
-    </p>
+    <p>Defined at line 10 of file test.cpp</p>
     <div>
       <div>
         <p> Brief description.</p>

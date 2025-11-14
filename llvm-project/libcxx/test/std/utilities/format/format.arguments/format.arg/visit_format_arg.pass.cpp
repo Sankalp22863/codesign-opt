@@ -1,5 +1,4 @@
 //===----------------------------------------------------------------------===//
-//
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
@@ -9,17 +8,14 @@
 // UNSUPPORTED: c++03, c++11, c++14, c++17
 // UNSUPPORTED: GCC-ALWAYS_INLINE-FIXME
 
-// ADDITIONAL_COMPILE_FLAGS: -D_LIBCPP_DISABLE_DEPRECATION_WARNINGS
-
 // <format>
 
 // template<class Visitor, class Context>
-//   see below visit_format_arg(Visitor&& vis, basic_format_arg<Context> arg); // Deprecated in C++26
+//   see below visit_format_arg(Visitor&& vis, basic_format_arg<Context> arg);
 
 #include <algorithm>
 #include <format>
 #include <cassert>
-#include <limits>
 #include <type_traits>
 
 #include "constexpr_char_traits.h"

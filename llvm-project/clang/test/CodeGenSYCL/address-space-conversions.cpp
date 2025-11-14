@@ -16,28 +16,23 @@ template <typename T>
 void tmpl(T t) {}
 // See Check Lines below.
 
-[[clang::sycl_external]] void usages() {
-  int *NoAS;
-  // CHECK-DAG: [[NoAS:%[a-zA-Z0-9]+]] = alloca ptr addrspace(4)
-  __attribute__((opencl_global)) int *GLOB;
+void usages() {
   // CHECK-DAG: [[GLOB:%[a-zA-Z0-9]+]] = alloca ptr addrspace(1)
-  __attribute__((opencl_local)) int *LOC;
-  // CHECK-DAG: [[LOC:%[a-zA-Z0-9]+]] = alloca ptr addrspace(3)
-  __attribute__((opencl_private)) int *PRIV;
-  // CHECK-DAG: [[PRIV:%[a-zA-Z0-9]+]] = alloca ptr
-  __attribute__((opencl_global_device)) int *GLOBDEVICE;
-  // CHECK-DAG: [[GLOB_DEVICE:%[a-zA-Z0-9]+]] = alloca ptr addrspace(5)
-  __attribute__((opencl_global_host)) int *GLOBHOST;
-  // CHECK-DAG: [[GLOB_HOST:%[a-zA-Z0-9]+]] = alloca ptr addrspace(6)
-
-  // CHECK-DAG: [[NoAS]].ascast = addrspacecast ptr [[NoAS]] to ptr addrspace(4)
   // CHECK-DAG: [[GLOB]].ascast = addrspacecast ptr [[GLOB]] to ptr addrspace(4)
+  __attribute__((opencl_global)) int *GLOB;
+  // CHECK-DAG: [[LOC:%[a-zA-Z0-9]+]] = alloca ptr addrspace(3)
   // CHECK-DAG: [[LOC]].ascast = addrspacecast ptr [[LOC]] to ptr addrspace(4)
+  __attribute__((opencl_local)) int *LOC;
+  // CHECK-DAG: [[NoAS:%[a-zA-Z0-9]+]] = alloca ptr addrspace(4)
+  // CHECK-DAG: [[NoAS]].ascast = addrspacecast ptr [[NoAS]] to ptr addrspace(4)
+  int *NoAS;
+  // CHECK-DAG: [[PRIV:%[a-zA-Z0-9]+]] = alloca ptr
   // CHECK-DAG: [[PRIV]].ascast = addrspacecast ptr [[PRIV]] to ptr addrspace(4)
-  LOC = nullptr;
-  // CHECK-DAG: store ptr addrspace(3) addrspacecast (ptr addrspace(4) null to ptr addrspace(3)), ptr addrspace(4) [[LOC]].ascast, align 8
-  GLOB = nullptr;
-  // CHECK-DAG: store ptr addrspace(1) addrspacecast (ptr addrspace(4) null to ptr addrspace(1)), ptr addrspace(4) [[GLOB]].ascast, align 8
+  __attribute__((opencl_private)) int *PRIV;
+  // CHECK-DAG: [[GLOB_DEVICE:%[a-zA-Z0-9]+]] = alloca ptr addrspace(5)
+  __attribute__((opencl_global_device)) int *GLOBDEVICE;
+  // CHECK-DAG: [[GLOB_HOST:%[a-zA-Z0-9]+]] = alloca ptr addrspace(6)
+  __attribute__((opencl_global_host)) int *GLOBHOST;
 
   // Explicit conversions
   // From named address spaces to default address space

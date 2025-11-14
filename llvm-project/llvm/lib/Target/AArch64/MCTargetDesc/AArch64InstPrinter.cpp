@@ -13,6 +13,7 @@
 #include "AArch64InstPrinter.h"
 #include "MCTargetDesc/AArch64AddressingModes.h"
 #include "Utils/AArch64BaseInfo.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/MC/MCAsmInfo.h"
@@ -58,12 +59,12 @@ bool AArch64InstPrinter::applyTargetSpecificCLOption(StringRef Opt) {
   return false;
 }
 
-void AArch64InstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) {
+void AArch64InstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) const {
   markup(OS, Markup::Register) << getRegisterName(Reg);
 }
 
 void AArch64InstPrinter::printRegName(raw_ostream &OS, MCRegister Reg,
-                                      unsigned AltIdx) {
+                                      unsigned AltIdx) const {
   markup(OS, Markup::Register) << getRegisterName(Reg, AltIdx);
 }
 
@@ -80,12 +81,6 @@ void AArch64InstPrinter::printInst(const MCInst *MI, uint64_t Address,
 
   if (Opcode == AArch64::SYSxt)
     if (printSysAlias(MI, STI, O)) {
-      printAnnotation(O, Annot);
-      return;
-    }
-
-  if (Opcode == AArch64::SYSLxt)
-    if (printSyslAlias(MI, STI, O)) {
       printAnnotation(O, Annot);
       return;
     }
@@ -222,7 +217,7 @@ void AArch64InstPrinter::printInst(const MCInst *MI, uint64_t Address,
 
     if ((Op2.getReg() == AArch64::WZR || Op2.getReg() == AArch64::XZR) &&
         (ImmR == 0 || ImmS < ImmR) && STI.hasFeature(AArch64::HasV8_2aOps)) {
-      // BFC takes precedence over its entire range, slightly differently to BFI.
+      // BFC takes precedence over its entire range, sligtly differently to BFI.
       int BitWidth = Opcode == AArch64::BFMXri ? 64 : 32;
       int LSB = (BitWidth - ImmR) % BitWidth;
       int Width = ImmS + 1;
@@ -284,7 +279,7 @@ void AArch64InstPrinter::printInst(const MCInst *MI, uint64_t Address,
     {
       WithMarkup M = markup(O, Markup::Immediate);
       O << "#";
-      MAI.printExpr(O, *MI->getOperand(1).getExpr());
+      MI->getOperand(1).getExpr()->print(O, &MAI);
     }
     return;
   }
@@ -297,7 +292,7 @@ void AArch64InstPrinter::printInst(const MCInst *MI, uint64_t Address,
     {
       WithMarkup M = markup(O, Markup::Immediate);
       O << "#";
-      MAI.printExpr(O, *MI->getOperand(2).getExpr());
+      MI->getOperand(2).getExpr()->print(O, &MAI);
     }
     return;
   }
@@ -368,6 +363,13 @@ void AArch64InstPrinter::printInst(const MCInst *MI, uint64_t Address,
     O << '\t' << MAI.getCommentString() << " SPACE "
       << MI->getOperand(1).getImm();
     printAnnotation(O, Annot);
+    return;
+  }
+
+  // Instruction TSB is specified as a one operand instruction, but 'csync' is
+  // not encoded, so for printing it is treated as a special case here:
+  if (Opcode == AArch64::TSB) {
+    O << "\ttsb\tcsync";
     return;
   }
 
@@ -813,14 +815,14 @@ void AArch64AppleInstPrinter::printInst(const MCInst *MI, uint64_t Address,
       O << '[' << MI->getOperand(OpNum++).getImm() << ']';
 
     // Next the address: [xN]
-    MCRegister AddrReg = MI->getOperand(OpNum++).getReg();
+    unsigned AddrReg = MI->getOperand(OpNum++).getReg();
     O << ", [";
     printRegName(O, AddrReg);
     O << ']';
 
     // Finally, there might be a post-indexed offset.
     if (LdStDesc->NaturalOffset != 0) {
-      MCRegister Reg = MI->getOperand(OpNum++).getReg();
+      unsigned Reg = MI->getOperand(OpNum++).getReg();
       if (Reg != AArch64::XZR) {
         O << ", ";
         printRegName(O, Reg);
@@ -858,7 +860,7 @@ bool AArch64InstPrinter::printRangePrefetchAlias(const MCInst *MI,
   if ((PRFOp & Mask) != Mask)
     return false; // Rt != '11xxx', it's a PRFM instruction.
 
-  MCRegister Rm = MI->getOperand(2).getReg();
+  unsigned Rm = MI->getOperand(2).getReg();
 
   // "Rm" must be a 64-bit GPR for RPRFM.
   if (MRI.getRegClass(AArch64::GPR32RegClassID).contains(Rm))
@@ -915,25 +917,13 @@ bool AArch64InstPrinter::printSysAlias(const MCInst *MI,
   Encoding |= CnVal << 7;
   Encoding |= Op1Val << 11;
 
-  bool NeedsReg = false;
-  bool OptionalReg = false;
+  bool NeedsReg;
   std::string Ins;
   std::string Name;
 
   if (CnVal == 7) {
     switch (CmVal) {
     default: return false;
-    // MLBI aliases
-    case 0: {
-      const AArch64MLBI::MLBI *MLBI =
-          AArch64MLBI::lookupMLBIByEncoding(Encoding);
-      if (!MLBI || !MLBI->haveFeatures(STI.getFeatureBits()))
-        return false;
-
-      NeedsReg = MLBI->NeedsReg;
-      Ins = "mlbi\t";
-      Name = std::string(MLBI->Name);
-    } break;
     // Maybe IC, maybe Prediction Restriction
     case 1:
       switch (Op1Val) {
@@ -998,22 +988,6 @@ bool AArch64InstPrinter::printSysAlias(const MCInst *MI,
       Name = std::string(AT->Name);
     }
     break;
-    // Overlaps with AT and DC
-    case 15: {
-      const AArch64AT::AT *AT = AArch64AT::lookupATByEncoding(Encoding);
-      const AArch64DC::DC *DC = AArch64DC::lookupDCByEncoding(Encoding);
-      if (AT && AT->haveFeatures(STI.getFeatureBits())) {
-        NeedsReg = true;
-        Ins = "at\t";
-        Name = std::string(AT->Name);
-      } else if (DC && DC->haveFeatures(STI.getFeatureBits())) {
-        NeedsReg = true;
-        Ins = "dc\t";
-        Name = std::string(DC->Name);
-      } else {
-        return false;
-      }
-    } break;
     }
   } else if (CnVal == 8 || CnVal == 9) {
     // TLBI aliases
@@ -1022,101 +996,20 @@ bool AArch64InstPrinter::printSysAlias(const MCInst *MI,
       return false;
 
     NeedsReg = TLBI->NeedsReg;
-    if (STI.hasFeature(AArch64::FeatureAll) ||
-        STI.hasFeature(AArch64::FeatureTLBID))
-      OptionalReg = TLBI->OptionalReg;
     Ins = "tlbi\t";
     Name = std::string(TLBI->Name);
-  } else if (CnVal == 12) {
-    if (CmVal != 0) {
-      // GIC aliases
-      const AArch64GIC::GIC *GIC = AArch64GIC::lookupGICByEncoding(Encoding);
-      if (!GIC || !GIC->haveFeatures(STI.getFeatureBits()))
-        return false;
-
-      NeedsReg = true;
-      Ins = "gic\t";
-      Name = std::string(GIC->Name);
-    } else {
-      // GSB aliases
-      const AArch64GSB::GSB *GSB = AArch64GSB::lookupGSBByEncoding(Encoding);
-      if (!GSB || !GSB->haveFeatures(STI.getFeatureBits()))
-        return false;
-
-      NeedsReg = false;
-      Ins = "gsb\t";
-      Name = std::string(GSB->Name);
-    }
-  } else
-    return false;
-
-  StringRef Reg = getRegisterName(MI->getOperand(4).getReg());
-  bool NotXZR = Reg != "xzr";
-
-  // If a mandatory or optional register is not specified in the TableGen
-  // (i.e. no register operand should be present), and the register value
-  // is not xzr/x31, then disassemble to a SYS alias instead.
-  if (NotXZR && !NeedsReg && !OptionalReg)
+  }
+  else
     return false;
 
   std::string Str = Ins + Name;
-  llvm::transform(Str, Str.begin(), ::tolower);
+  std::transform(Str.begin(), Str.end(), Str.begin(), ::tolower);
 
   O << '\t' << Str;
-
-  // For optional registers, don't print the value if it's xzr/x31
-  // since this defaults to xzr/x31 if register is not specified.
-  if (NeedsReg || (OptionalReg && NotXZR))
-    O << ", " << Reg;
-
-  return true;
-}
-
-bool AArch64InstPrinter::printSyslAlias(const MCInst *MI,
-                                        const MCSubtargetInfo &STI,
-                                        raw_ostream &O) {
-#ifndef NDEBUG
-  unsigned Opcode = MI->getOpcode();
-  assert(Opcode == AArch64::SYSLxt && "Invalid opcode for SYSL alias!");
-#endif
-
-  StringRef Reg = getRegisterName(MI->getOperand(0).getReg());
-  const MCOperand &Op1 = MI->getOperand(1);
-  const MCOperand &Cn = MI->getOperand(2);
-  const MCOperand &Cm = MI->getOperand(3);
-  const MCOperand &Op2 = MI->getOperand(4);
-
-  unsigned Op1Val = Op1.getImm();
-  unsigned CnVal = Cn.getImm();
-  unsigned CmVal = Cm.getImm();
-  unsigned Op2Val = Op2.getImm();
-
-  uint16_t Encoding = Op2Val;
-  Encoding |= CmVal << 3;
-  Encoding |= CnVal << 7;
-  Encoding |= Op1Val << 11;
-
-  std::string Ins;
-  std::string Name;
-
-  if (CnVal == 12) {
-    if (CmVal == 3) {
-      // GICR aliases
-      const AArch64GICR::GICR *GICR =
-          AArch64GICR::lookupGICRByEncoding(Encoding);
-      if (!GICR || !GICR->haveFeatures(STI.getFeatureBits()))
-        return false;
-
-      Ins = "gicr";
-      Name = std::string(GICR->Name);
-    } else
-      return false;
-  } else
-    return false;
-
-  llvm::transform(Name, Name.begin(), ::tolower);
-
-  O << '\t' << Ins << '\t' << Reg.str() << ", " << Name;
+  if (NeedsReg) {
+    O << ", ";
+    printRegName(O, MI->getOperand(4).getReg());
+  }
 
   return true;
 }
@@ -1157,20 +1050,19 @@ bool AArch64InstPrinter::printSyspAlias(const MCInst *MI,
       Encoding &= ~(1 << 7);
     }
 
-    const AArch64TLBIP::TLBIP *TLBIP =
-        AArch64TLBIP::lookupTLBIPByEncoding(Encoding);
-    if (!TLBIP || !TLBIP->haveFeatures(STI.getFeatureBits()))
+    const AArch64TLBI::TLBI *TLBI = AArch64TLBI::lookupTLBIByEncoding(Encoding);
+    if (!TLBI || !TLBI->haveFeatures(STI.getFeatureBits()))
       return false;
 
     Ins = "tlbip\t";
-    Name = std::string(TLBIP->Name);
+    Name = std::string(TLBI->Name);
     if (CnVal == 9)
       Name += "nXS";
   } else
     return false;
 
   std::string Str = Ins + Name;
-  llvm::transform(Str, Str.begin(), ::tolower);
+  std::transform(Str.begin(), Str.end(), Str.begin(), ::tolower);
 
   O << '\t' << Str;
   O << ", ";
@@ -1251,12 +1143,13 @@ void AArch64InstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
                                       raw_ostream &O) {
   const MCOperand &Op = MI->getOperand(OpNo);
   if (Op.isReg()) {
-    printRegName(O, Op.getReg());
+    unsigned Reg = Op.getReg();
+    printRegName(O, Reg);
   } else if (Op.isImm()) {
     printImm(MI, OpNo, STI, O);
   } else {
     assert(Op.isExpr() && "unknown operand kind in printOperand");
-    MAI.printExpr(O, *Op.getExpr());
+    Op.getExpr()->print(O, &MAI);
   }
 }
 
@@ -1291,7 +1184,7 @@ void AArch64InstPrinter::printPostIncOperand(const MCInst *MI, unsigned OpNo,
                                              unsigned Imm, raw_ostream &O) {
   const MCOperand &Op = MI->getOperand(OpNo);
   if (Op.isReg()) {
-    MCRegister Reg = Op.getReg();
+    unsigned Reg = Op.getReg();
     if (Reg == AArch64::XZR)
       markup(O, Markup::Immediate) << "#" << Imm;
     else
@@ -1305,7 +1198,8 @@ void AArch64InstPrinter::printVRegOperand(const MCInst *MI, unsigned OpNo,
                                           raw_ostream &O) {
   const MCOperand &Op = MI->getOperand(OpNo);
   assert(Op.isReg() && "Non-register vreg operand!");
-  printRegName(O, Op.getReg(), AArch64::vreg);
+  unsigned Reg = Op.getReg();
+  printRegName(O, Reg, AArch64::vreg);
 }
 
 void AArch64InstPrinter::printSysCROperand(const MCInst *MI, unsigned OpNo,
@@ -1333,7 +1227,7 @@ void AArch64InstPrinter::printAddSubImm(const MCInst *MI, unsigned OpNum,
     }
   } else {
     assert(MO.isExpr() && "Unexpected operand type!");
-    MAI.printExpr(O, *MO.getExpr());
+    MO.getExpr()->print(O, &MAI);
     printShifter(MI, OpNum + 1, STI, O);
   }
 }
@@ -1386,8 +1280,8 @@ void AArch64InstPrinter::printArithExtend(const MCInst *MI, unsigned OpNum,
   // UXTW/UXTX as LSL, and if the shift amount is also zero, print nothing at
   // all.
   if (ExtType == AArch64_AM::UXTW || ExtType == AArch64_AM::UXTX) {
-    MCRegister Dest = MI->getOperand(0).getReg();
-    MCRegister Src1 = MI->getOperand(1).getReg();
+    unsigned Dest = MI->getOperand(0).getReg();
+    unsigned Src1 = MI->getOperand(1).getReg();
     if ( ((Dest == AArch64::SP || Src1 == AArch64::SP) &&
           ExtType == AArch64_AM::UXTX) ||
          ((Dest == AArch64::WSP || Src1 == AArch64::WSP) &&
@@ -1453,7 +1347,7 @@ void AArch64InstPrinter::printPredicateAsCounter(const MCInst *MI,
                                                  unsigned OpNum,
                                                  const MCSubtargetInfo &STI,
                                                  raw_ostream &O) {
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg = MI->getOperand(OpNum).getReg();
   if (Reg < AArch64::PN0 || Reg > AArch64::PN15)
     llvm_unreachable("Unsupported predicate-as-counter register");
   O << "pn" << Reg - AArch64::PN0;
@@ -1524,7 +1418,7 @@ void AArch64InstPrinter::printUImm12Offset(const MCInst *MI, unsigned OpNum,
     markup(O, Markup::Immediate) << '#' << formatImm(MO.getImm() * Scale);
   } else {
     assert(MO.isExpr() && "Unexpected operand type!");
-    MAI.printExpr(O, *MO.getExpr());
+    MO.getExpr()->print(O, &MAI);
   }
 }
 
@@ -1539,7 +1433,7 @@ void AArch64InstPrinter::printAMIndexedWB(const MCInst *MI, unsigned OpNum,
   } else {
     assert(MO1.isExpr() && "Unexpected operand type!");
     O << ", ";
-    MAI.printExpr(O, *MO1.getExpr());
+    MO1.getExpr()->print(O, &MAI);
   }
   O << ']';
 }
@@ -1599,17 +1493,6 @@ void AArch64InstPrinter::printBTIHintOp(const MCInst *MI, unsigned OpNum,
     markup(O, Markup::Immediate) << '#' << formatImm(btihintop);
 }
 
-void AArch64InstPrinter::printCMHPriorityHintOp(const MCInst *MI,
-                                                unsigned OpNum,
-                                                const MCSubtargetInfo &STI,
-                                                raw_ostream &O) {
-  unsigned priorityhint_op = MI->getOperand(OpNum).getImm();
-  auto PHint =
-      AArch64CMHPriorityHint::lookupCMHPriorityHintByEncoding(priorityhint_op);
-  if (PHint)
-    O << PHint->Name;
-}
-
 void AArch64InstPrinter::printFPImmOperand(const MCInst *MI, unsigned OpNum,
                                            const MCSubtargetInfo &STI,
                                            raw_ostream &O) {
@@ -1621,9 +1504,9 @@ void AArch64InstPrinter::printFPImmOperand(const MCInst *MI, unsigned OpNum,
   markup(O, Markup::Immediate) << format("#%.8f", FPImm);
 }
 
-static MCRegister getNextVectorRegister(MCRegister Reg, unsigned Stride = 1) {
+static unsigned getNextVectorRegister(unsigned Reg, unsigned Stride = 1) {
   while (Stride--) {
-    switch (Reg.id()) {
+    switch (Reg) {
     default:
       llvm_unreachable("Vector register expected!");
     case AArch64::Q0:  Reg = AArch64::Q1;  break;
@@ -1725,13 +1608,13 @@ void AArch64InstPrinter::printGPRSeqPairsClassOperand(const MCInst *MI,
                                                    raw_ostream &O) {
   static_assert(size == 64 || size == 32,
                 "Template parameter must be either 32 or 64");
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg = MI->getOperand(OpNum).getReg();
 
   unsigned Sube = (size == 32) ? AArch64::sube32 : AArch64::sube64;
   unsigned Subo = (size == 32) ? AArch64::subo32 : AArch64::subo64;
 
-  MCRegister Even = MRI.getSubReg(Reg, Sube);
-  MCRegister Odd = MRI.getSubReg(Reg, Subo);
+  unsigned Even = MRI.getSubReg(Reg,  Sube);
+  unsigned Odd = MRI.getSubReg(Reg,  Subo);
   printRegName(O, Even);
   O << ", ";
   printRegName(O, Odd);
@@ -1766,7 +1649,7 @@ void AArch64InstPrinter::printVectorList(const MCInst *MI, unsigned OpNum,
                                          const MCSubtargetInfo &STI,
                                          raw_ostream &O,
                                          StringRef LayoutSuffix) {
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg = MI->getOperand(OpNum).getReg();
 
   O << "{ ";
 
@@ -1796,13 +1679,13 @@ void AArch64InstPrinter::printVectorList(const MCInst *MI, unsigned OpNum,
     Stride = 4;
 
   // Now forget about the list and find out what the first register is.
-  if (MCRegister FirstReg = MRI.getSubReg(Reg, AArch64::dsub0))
+  if (unsigned FirstReg = MRI.getSubReg(Reg, AArch64::dsub0))
     Reg = FirstReg;
-  else if (MCRegister FirstReg = MRI.getSubReg(Reg, AArch64::qsub0))
+  else if (unsigned FirstReg = MRI.getSubReg(Reg, AArch64::qsub0))
     Reg = FirstReg;
-  else if (MCRegister FirstReg = MRI.getSubReg(Reg, AArch64::zsub0))
+  else if (unsigned FirstReg = MRI.getSubReg(Reg, AArch64::zsub0))
     Reg = FirstReg;
-  else if (MCRegister FirstReg = MRI.getSubReg(Reg, AArch64::psub0))
+  else if (unsigned FirstReg = MRI.getSubReg(Reg, AArch64::psub0))
     Reg = FirstReg;
 
   // If it's a D-reg, we need to promote it to the equivalent Q-reg before
@@ -1888,10 +1771,6 @@ void AArch64InstPrinter::printAlignedLabel(const MCInst *MI, uint64_t Address,
                                            unsigned OpNum,
                                            const MCSubtargetInfo &STI,
                                            raw_ostream &O) {
-  // Do not print the numeric target address when symbolizing.
-  if (SymbolizeOperands)
-    return;
-
   const MCOperand &Op = MI->getOperand(OpNum);
 
   // If the label has already been resolved to an immediate offset (say, when
@@ -1913,7 +1792,7 @@ void AArch64InstPrinter::printAlignedLabel(const MCInst *MI, uint64_t Address,
     markup(O, Markup::Target) << formatHex((uint64_t)TargetAddress);
   } else {
     // Otherwise, just print the expression.
-    MAI.printExpr(O, *MI->getOperand(OpNum).getExpr());
+    MI->getOperand(OpNum).getExpr()->print(O, &MAI);
   }
 }
 
@@ -1921,12 +1800,6 @@ void AArch64InstPrinter::printAdrAdrpLabel(const MCInst *MI, uint64_t Address,
                                            unsigned OpNum,
                                            const MCSubtargetInfo &STI,
                                            raw_ostream &O) {
-  // Do not print the numeric target address when symbolizing.
-  // However, do print for ADRP, as this is typically used together with an ADD
-  // or an immediate-offset ldr/str and the label is likely at the wrong point.
-  if (SymbolizeOperands && MI->getOpcode() != AArch64::ADRP)
-    return;
-
   const MCOperand &Op = MI->getOperand(OpNum);
 
   // If the label has already been resolved to an immediate offset (say, when
@@ -1946,7 +1819,7 @@ void AArch64InstPrinter::printAdrAdrpLabel(const MCInst *MI, uint64_t Address,
   }
 
   // Otherwise, just print the expression.
-  MAI.printExpr(O, *MI->getOperand(OpNum).getExpr());
+  MI->getOperand(OpNum).getExpr()->print(O, &MAI);
 }
 
 void AArch64InstPrinter::printBarrierOption(const MCInst *MI, unsigned OpNo,
@@ -1988,25 +1861,26 @@ void AArch64InstPrinter::printBarriernXSOption(const MCInst *MI, unsigned OpNo,
     markup(O, Markup::Immediate) << "#" << Val;
 }
 
-static bool isValidSysReg(const AArch64SysReg::SysReg &Reg, bool Read,
+static bool isValidSysReg(const AArch64SysReg::SysReg *Reg, bool Read,
                           const MCSubtargetInfo &STI) {
-  return (Read ? Reg.Readable : Reg.Writeable) &&
-         Reg.haveFeatures(STI.getFeatureBits());
+  return (Reg && (Read ? Reg->Readable : Reg->Writeable) &&
+          Reg->haveFeatures(STI.getFeatureBits()));
 }
 
-// Looks up a system register either by encoding. Some system
+// Looks up a system register either by encoding or by name. Some system
 // registers share the same encoding between different architectures,
-// to work around this tablegen will return a range of registers with the same
-// encodings. We need to check each register in the range to see if it valid.
+// therefore a tablegen lookup by encoding will return an entry regardless
+// of the register's predication on a specific subtarget feature. To work
+// around this problem we keep an alternative name for such registers and
+// look them up by that name if the first lookup was unsuccessful.
 static const AArch64SysReg::SysReg *lookupSysReg(unsigned Val, bool Read,
                                                  const MCSubtargetInfo &STI) {
-  auto Range = AArch64SysReg::lookupSysRegByEncoding(Val);
-  for (auto &Reg : Range) {
-    if (isValidSysReg(Reg, Read, STI))
-      return &Reg;
-  }
+  const AArch64SysReg::SysReg *Reg = AArch64SysReg::lookupSysRegByEncoding(Val);
 
-  return nullptr;
+  if (Reg && !isValidSysReg(Reg, Read, STI))
+    Reg = AArch64SysReg::lookupSysRegByName(Reg->AltName);
+
+  return Reg;
 }
 
 void AArch64InstPrinter::printMRSSystemRegister(const MCInst *MI, unsigned OpNo,
@@ -2030,7 +1904,7 @@ void AArch64InstPrinter::printMRSSystemRegister(const MCInst *MI, unsigned OpNo,
 
   const AArch64SysReg::SysReg *Reg = lookupSysReg(Val, true /*Read*/, STI);
 
-  if (Reg)
+  if (isValidSysReg(Reg, true /*Read*/, STI))
     O << Reg->Name;
   else
     O << AArch64SysReg::genericRegisterString(Val);
@@ -2057,7 +1931,7 @@ void AArch64InstPrinter::printMSRSystemRegister(const MCInst *MI, unsigned OpNo,
 
   const AArch64SysReg::SysReg *Reg = lookupSysReg(Val, false /*Read*/, STI);
 
-  if (Reg)
+  if (isValidSysReg(Reg, false /*Read*/, STI))
     O << Reg->Name;
   else
     O << AArch64SysReg::genericRegisterString(Val);
@@ -2134,7 +2008,7 @@ void AArch64InstPrinter::printSVERegOp(const MCInst *MI, unsigned OpNum,
   default: llvm_unreachable("Invalid kind specifier.");
   }
 
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg = MI->getOperand(OpNum).getReg();
   printRegName(O, Reg);
   if (suffix != 0)
     O << '.' << suffix;
@@ -2165,7 +2039,7 @@ void AArch64InstPrinter::printImm8OptLsl(const MCInst *MI, unsigned OpNum,
   unsigned UnscaledVal = MI->getOperand(OpNum).getImm();
   unsigned Shift = MI->getOperand(OpNum + 1).getImm();
   assert(AArch64_AM::getShiftType(Shift) == AArch64_AM::LSL &&
-         "Unexpected shift type!");
+         "Unexepected shift type!");
 
   // #0 lsl #8 is never pretty printed
   if ((UnscaledVal == 0) && (AArch64_AM::getShiftValue(Shift) != 0)) {
@@ -2216,7 +2090,7 @@ void AArch64InstPrinter::printZPRasFPR(const MCInst *MI, unsigned OpNum,
   default:
     llvm_unreachable("Unsupported width");
   }
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg = MI->getOperand(OpNum).getReg();
   printRegName(O, Reg - AArch64::Z0 + Base);
 }
 
@@ -2234,33 +2108,22 @@ void AArch64InstPrinter::printExactFPImm(const MCInst *MI, unsigned OpNum,
 void AArch64InstPrinter::printGPR64as32(const MCInst *MI, unsigned OpNum,
                                         const MCSubtargetInfo &STI,
                                         raw_ostream &O) {
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg = MI->getOperand(OpNum).getReg();
   printRegName(O, getWRegFromXReg(Reg));
 }
 
 void AArch64InstPrinter::printGPR64x8(const MCInst *MI, unsigned OpNum,
                                       const MCSubtargetInfo &STI,
                                       raw_ostream &O) {
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg = MI->getOperand(OpNum).getReg();
   printRegName(O, MRI.getSubReg(Reg, AArch64::x8sub_0));
 }
 
 void AArch64InstPrinter::printSyspXzrPair(const MCInst *MI, unsigned OpNum,
                                           const MCSubtargetInfo &STI,
                                           raw_ostream &O) {
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg = MI->getOperand(OpNum).getReg();
   assert(Reg == AArch64::XZR &&
          "MC representation of SyspXzrPair should be XZR");
   O << getRegisterName(Reg) << ", " << getRegisterName(Reg);
-}
-
-void AArch64InstPrinter::printPHintOp(const MCInst *MI, unsigned OpNum,
-                                      const MCSubtargetInfo &STI,
-                                      raw_ostream &O) {
-  unsigned Op = MI->getOperand(OpNum).getImm();
-  auto PH = AArch64PHint::lookupPHintByEncoding(Op);
-  if (PH)
-    O << PH->Name;
-  else
-    markup(O, Markup::Immediate) << '#' << formatImm(Op);
 }

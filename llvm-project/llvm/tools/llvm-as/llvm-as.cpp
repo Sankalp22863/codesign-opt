@@ -30,10 +30,11 @@
 #include <optional>
 using namespace llvm;
 
-static cl::OptionCategory AsCat("llvm-as Options");
+cl::OptionCategory AsCat("llvm-as Options");
 
-static cl::opt<std::string>
-    InputFilename(cl::Positional, cl::desc("<input .ll file>"), cl::init("-"));
+static cl::opt<std::string> InputFilename(cl::Positional,
+                                          cl::desc("<input .llvm file>"),
+                                          cl::init("-"));
 
 static cl::opt<std::string> OutputFilename("o",
                                            cl::desc("Override output filename"),
@@ -56,6 +57,11 @@ static cl::opt<bool>
     DisableVerify("disable-verify", cl::Hidden,
                   cl::desc("Do not run verifier on input LLVM (dangerous!)"),
                   cl::cat(AsCat));
+
+static cl::opt<bool> PreserveBitcodeUseListOrder(
+    "preserve-bc-uselistorder",
+    cl::desc("Preserve use-list order when writing LLVM bitcode."),
+    cl::init(true), cl::Hidden, cl::cat(AsCat));
 
 static cl::opt<std::string> ClDataLayout("data-layout",
                                          cl::desc("data layout string to use"),
@@ -95,7 +101,7 @@ static void WriteOutputFile(const Module *M, const ModuleSummaryIndex *Index) {
       // any non-null Index along with it as a per-module Index.
       // If both are empty, this will give an empty module block, which is
       // the expected behavior.
-      WriteBitcodeToFile(*M, Out->os(), /* ShouldPreserveUseListOrder */ true,
+      WriteBitcodeToFile(*M, Out->os(), PreserveBitcodeUseListOrder,
                          IndexToWrite, EmitModuleHash);
     else
       // Otherwise, with an empty Module but non-empty Index, we write a
@@ -129,19 +135,16 @@ int main(int argc, char **argv) {
                                                 nullptr, SetDataLayout);
   }
   std::unique_ptr<Module> M = std::move(ModuleAndIndex.Mod);
-  if (!M) {
+  if (!M.get()) {
     Err.print(argv[0], errs());
     return 1;
   }
-
-  M->removeDebugIntrinsicDeclarations();
-
   std::unique_ptr<ModuleSummaryIndex> Index = std::move(ModuleAndIndex.Index);
 
   if (!DisableVerify) {
     std::string ErrorStr;
     raw_string_ostream OS(ErrorStr);
-    if (verifyModule(*M, &OS)) {
+    if (verifyModule(*M.get(), &OS)) {
       errs() << argv[0]
              << ": assembly parsed, but does not verify as correct!\n";
       errs() << OS.str();
@@ -151,7 +154,7 @@ int main(int argc, char **argv) {
   }
 
   if (DumpAsm) {
-    errs() << "Here's the assembly:\n" << *M;
+    errs() << "Here's the assembly:\n" << *M.get();
     if (Index.get() && Index->begin() != Index->end())
       Index->print(errs());
   }

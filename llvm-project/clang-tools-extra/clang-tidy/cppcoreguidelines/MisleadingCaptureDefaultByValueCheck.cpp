@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- MisleadingCaptureDefaultByValueCheck.cpp - clang-tidy-------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -67,7 +67,8 @@ static std::string createReplacementText(const LambdaExpr *Lambda) {
       AppendName("this");
     }
   }
-  if (!Replacement.empty() && !Lambda->explicit_captures().empty()) {
+  if (!Replacement.empty() &&
+      Lambda->explicit_capture_begin() != Lambda->explicit_capture_end()) {
     // Add back separator if we are adding explicit capture variables.
     Stream << ", ";
   }
@@ -81,7 +82,7 @@ void MisleadingCaptureDefaultByValueCheck::check(
     return;
 
   if (Lambda->getCaptureDefault() == LCD_ByCopy) {
-    const bool IsThisImplicitlyCaptured = std::any_of(
+    bool IsThisImplicitlyCaptured = std::any_of(
         Lambda->implicit_capture_begin(), Lambda->implicit_capture_end(),
         [](const LambdaCapture &Capture) { return Capture.capturesThis(); });
     auto Diag = diag(Lambda->getCaptureDefaultLoc(),
@@ -89,8 +90,8 @@ void MisleadingCaptureDefaultByValueCheck::check(
                      "should not specify a by-value capture default")
                 << IsThisImplicitlyCaptured;
 
-    const std::string ReplacementText = createReplacementText(Lambda);
-    const SourceLocation DefaultCaptureEnd =
+    std::string ReplacementText = createReplacementText(Lambda);
+    SourceLocation DefaultCaptureEnd =
         findDefaultCaptureEnd(Lambda, *Result.Context);
     Diag << FixItHint::CreateReplacement(
         CharSourceRange::getCharRange(Lambda->getCaptureDefaultLoc(),

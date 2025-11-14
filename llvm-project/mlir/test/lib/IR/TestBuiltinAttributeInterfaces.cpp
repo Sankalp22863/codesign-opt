@@ -6,8 +6,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <utility>
-
 #include "TestAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
@@ -53,7 +51,7 @@ struct TestElementsAttrInterface
     InFlightDiagnostic diag = op->emitError()
                               << "Test iterating `" << type << "`: ";
 
-    if (!isa<mlir::IntegerType>(attr.getElementType())) {
+    if (!attr.getElementType().isa<mlir::IntegerType>()) {
       diag << "expected element type to be an integer type";
       return;
     }
@@ -64,9 +62,8 @@ struct TestElementsAttrInterface
       return;
     }
 
-    llvm::interleaveComma(*values, diag, [&](T value) {
-      printOneElement(diag, std::move(value));
-    });
+    llvm::interleaveComma(*values, diag,
+                          [&](T value) { printOneElement(diag, value); });
   }
 };
 } // namespace

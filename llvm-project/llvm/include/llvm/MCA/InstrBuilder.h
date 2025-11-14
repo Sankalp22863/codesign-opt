@@ -14,7 +14,6 @@
 #ifndef LLVM_MCA_INSTRBUILDER_H
 #define LLVM_MCA_INSTRBUILDER_H
 
-#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/MC/MCInstrAnalysis.h"
 #include "llvm/MC/MCInstrInfo.h"
@@ -23,7 +22,6 @@
 #include "llvm/MCA/CustomBehaviour.h"
 #include "llvm/MCA/Instruction.h"
 #include "llvm/MCA/Support.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/Error.h"
 
 namespace llvm {
@@ -33,7 +31,7 @@ class RecycledInstErr : public ErrorInfo<RecycledInstErr> {
   Instruction *RecycledInst;
 
 public:
-  LLVM_ABI static char ID;
+  static char ID;
 
   explicit RecycledInstErr(Instruction *Inst) : RecycledInst(Inst) {}
   // Always need to carry an Instruction
@@ -73,23 +71,18 @@ class InstrBuilder {
            std::unique_ptr<const InstrDesc>>
       Descriptors;
 
-  // Key is a hash of the MCInstruction and a SchedClassID that describe the
-  // value InstrDesc
-  DenseMap<std::pair<hash_code, unsigned>, std::unique_ptr<const InstrDesc>>
+  // Key is the MCIInst and SchedClassID the describe the value InstrDesc
+  DenseMap<std::pair<const MCInst *, unsigned>,
+           std::unique_ptr<const InstrDesc>>
       VariantDescriptors;
-
-  // These descriptors are customized for particular instructions and cannot
-  // be reused
-  SmallVector<std::unique_ptr<const InstrDesc>> CustomDescriptors;
 
   bool FirstCallInst;
   bool FirstReturnInst;
-  unsigned CallLatency;
 
-  using InstRecycleCallback = std::function<Instruction *(const InstrDesc &)>;
+  using InstRecycleCallback =
+      llvm::function_ref<Instruction *(const InstrDesc &)>;
   InstRecycleCallback InstRecycleCB;
 
-  Expected<unsigned> getVariantSchedClassID(const MCInst &MCI, unsigned SchedClassID);
   Expected<const InstrDesc &>
   createInstrDescImpl(const MCInst &MCI, const SmallVector<Instrument *> &IVec);
   Expected<const InstrDesc &>
@@ -104,9 +97,9 @@ class InstrBuilder {
   Error verifyInstrDesc(const InstrDesc &ID, const MCInst &MCI) const;
 
 public:
-  LLVM_ABI InstrBuilder(const MCSubtargetInfo &STI, const MCInstrInfo &MCII,
-                        const MCRegisterInfo &RI, const MCInstrAnalysis *IA,
-                        const InstrumentManager &IM, unsigned CallLatency);
+  InstrBuilder(const MCSubtargetInfo &STI, const MCInstrInfo &MCII,
+               const MCRegisterInfo &RI, const MCInstrAnalysis *IA,
+               const InstrumentManager &IM);
 
   void clear() {
     Descriptors.clear();
@@ -119,7 +112,7 @@ public:
   /// or null if there isn't any.
   void setInstRecycleCallback(InstRecycleCallback CB) { InstRecycleCB = CB; }
 
-  LLVM_ABI Expected<std::unique_ptr<Instruction>>
+  Expected<std::unique_ptr<Instruction>>
   createInstruction(const MCInst &MCI, const SmallVector<Instrument *> &IVec);
 };
 } // namespace mca

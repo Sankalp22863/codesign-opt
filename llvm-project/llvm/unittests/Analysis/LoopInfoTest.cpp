@@ -13,7 +13,6 @@
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
-#include "llvm/IR/Module.h"
 #include "llvm/Support/SourceMgr.h"
 #include "gtest/gtest.h"
 
@@ -38,7 +37,7 @@ static void runWithLoopInfoPlus(
   auto *F = M.getFunction(FuncName);
   ASSERT_NE(F, nullptr) << "Could not find " << FuncName;
 
-  TargetLibraryInfoImpl TLII(M.getTargetTriple());
+  TargetLibraryInfoImpl TLII;
   TargetLibraryInfo TLI(TLII);
   AssumptionCache AC(*F);
   DominatorTree DT(*F);

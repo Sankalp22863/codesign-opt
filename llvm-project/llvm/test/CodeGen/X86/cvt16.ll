@@ -34,14 +34,15 @@ define void @test1(float %src, ptr %dest) nounwind {
 ; F16C-LABEL: test1:
 ; F16C:       # %bb.0:
 ; F16C-NEXT:    vcvtps2ph $4, %xmm0, %xmm0
-; F16C-NEXT:    vpextrw $0, %xmm0, (%rdi)
+; F16C-NEXT:    vmovd %xmm0, %eax
+; F16C-NEXT:    movw %ax, (%rdi)
 ; F16C-NEXT:    retq
 ;
 ; SOFTFLOAT-LABEL: test1:
 ; SOFTFLOAT:       # %bb.0:
 ; SOFTFLOAT-NEXT:    pushq %rbx
 ; SOFTFLOAT-NEXT:    movq %rsi, %rbx
-; SOFTFLOAT-NEXT:    callq __truncsfhf2@PLT
+; SOFTFLOAT-NEXT:    callq __gnu_f2h_ieee@PLT
 ; SOFTFLOAT-NEXT:    movw %ax, (%rbx)
 ; SOFTFLOAT-NEXT:    popq %rbx
 ; SOFTFLOAT-NEXT:    retq
@@ -58,7 +59,8 @@ define float @test2(ptr nocapture %src) nounwind {
 ;
 ; F16C-LABEL: test2:
 ; F16C:       # %bb.0:
-; F16C-NEXT:    vpinsrw $0, (%rdi), %xmm0, %xmm0
+; F16C-NEXT:    movzwl (%rdi), %eax
+; F16C-NEXT:    vmovd %eax, %xmm0
 ; F16C-NEXT:    vcvtph2ps %xmm0, %xmm0
 ; F16C-NEXT:    retq
 ;
@@ -66,7 +68,7 @@ define float @test2(ptr nocapture %src) nounwind {
 ; SOFTFLOAT:       # %bb.0:
 ; SOFTFLOAT-NEXT:    pushq %rax
 ; SOFTFLOAT-NEXT:    movzwl (%rdi), %edi
-; SOFTFLOAT-NEXT:    callq __extendhfsf2@PLT
+; SOFTFLOAT-NEXT:    callq __gnu_h2f_ieee@PLT
 ; SOFTFLOAT-NEXT:    popq %rcx
 ; SOFTFLOAT-NEXT:    retq
   %1 = load i16, ptr %src, align 2
@@ -87,6 +89,7 @@ define float @test3(float %src) nounwind uwtable readnone {
 ; F16C-LABEL: test3:
 ; F16C:       # %bb.0:
 ; F16C-NEXT:    vcvtps2ph $4, %xmm0, %xmm0
+; F16C-NEXT:    vpmovzxwq {{.*#+}} xmm0 = xmm0[0],zero,zero,zero,xmm0[1],zero,zero,zero
 ; F16C-NEXT:    vcvtph2ps %xmm0, %xmm0
 ; F16C-NEXT:    retq
 ;
@@ -94,9 +97,9 @@ define float @test3(float %src) nounwind uwtable readnone {
 ; SOFTFLOAT:       # %bb.0:
 ; SOFTFLOAT-NEXT:    pushq %rax
 ; SOFTFLOAT-NEXT:    .cfi_def_cfa_offset 16
-; SOFTFLOAT-NEXT:    callq __truncsfhf2@PLT
+; SOFTFLOAT-NEXT:    callq __gnu_f2h_ieee@PLT
 ; SOFTFLOAT-NEXT:    movzwl %ax, %edi
-; SOFTFLOAT-NEXT:    callq __extendhfsf2@PLT
+; SOFTFLOAT-NEXT:    callq __gnu_h2f_ieee@PLT
 ; SOFTFLOAT-NEXT:    popq %rcx
 ; SOFTFLOAT-NEXT:    .cfi_def_cfa_offset 8
 ; SOFTFLOAT-NEXT:    retq
@@ -117,7 +120,8 @@ define double @test4(ptr nocapture %src) nounwind {
 ;
 ; F16C-LABEL: test4:
 ; F16C:       # %bb.0:
-; F16C-NEXT:    vpinsrw $0, (%rdi), %xmm0, %xmm0
+; F16C-NEXT:    movzwl (%rdi), %eax
+; F16C-NEXT:    vmovd %eax, %xmm0
 ; F16C-NEXT:    vcvtph2ps %xmm0, %xmm0
 ; F16C-NEXT:    vcvtss2sd %xmm0, %xmm0, %xmm0
 ; F16C-NEXT:    retq
@@ -126,7 +130,7 @@ define double @test4(ptr nocapture %src) nounwind {
 ; SOFTFLOAT:       # %bb.0:
 ; SOFTFLOAT-NEXT:    pushq %rax
 ; SOFTFLOAT-NEXT:    movzwl (%rdi), %edi
-; SOFTFLOAT-NEXT:    callq __extendhfsf2@PLT
+; SOFTFLOAT-NEXT:    callq __gnu_h2f_ieee@PLT
 ; SOFTFLOAT-NEXT:    movl %eax, %edi
 ; SOFTFLOAT-NEXT:    callq __extendsfdf2@PLT
 ; SOFTFLOAT-NEXT:    popq %rcx

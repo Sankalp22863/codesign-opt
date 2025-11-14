@@ -29,7 +29,6 @@
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Intrinsics.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cassert>
 #include <cstdint>
@@ -41,7 +40,6 @@ class MDNode;
 
 namespace RegState {
 
-// Keep this in sync with the table in MIRLangRef.rst.
 enum {
   /// Register definition.
   Define = 0x2,
@@ -68,32 +66,6 @@ enum {
 };
 
 } // end namespace RegState
-
-/// Set of metadata that should be preserved when using BuildMI(). This provides
-/// a more convenient way of preserving DebugLoc, PCSections and MMRA.
-class MIMetadata {
-public:
-  MIMetadata() = default;
-  MIMetadata(DebugLoc DL, MDNode *PCSections = nullptr, MDNode *MMRA = nullptr)
-      : DL(std::move(DL)), PCSections(PCSections), MMRA(MMRA) {}
-  MIMetadata(const DILocation *DI, MDNode *PCSections = nullptr,
-             MDNode *MMRA = nullptr)
-      : DL(DI), PCSections(PCSections), MMRA(MMRA) {}
-  explicit MIMetadata(const Instruction &From)
-      : DL(From.getDebugLoc()),
-        PCSections(From.getMetadata(LLVMContext::MD_pcsections)) {}
-  explicit MIMetadata(const MachineInstr &From)
-      : DL(From.getDebugLoc()), PCSections(From.getPCSections()) {}
-
-  const DebugLoc &getDL() const { return DL; }
-  MDNode *getPCSections() const { return PCSections; }
-  MDNode *getMMRAMetadata() const { return MMRA; }
-
-private:
-  DebugLoc DL;
-  MDNode *PCSections = nullptr;
-  MDNode *MMRA = nullptr;
-};
 
 class MachineInstrBuilder {
   MachineFunction *MF = nullptr;
@@ -256,8 +228,9 @@ public:
   }
 
   const MachineInstrBuilder &add(ArrayRef<MachineOperand> MOs) const {
-    for (const MachineOperand &MO : MOs)
+    for (const MachineOperand &MO : MOs) {
       MI->addOperand(*MF, MO);
+    }
     return *this;
   }
 
@@ -343,11 +316,9 @@ public:
     }
   }
 
-  const MachineInstrBuilder &copyMIMetadata(const MIMetadata &MIMD) const {
-    if (MIMD.getPCSections())
-      MI->setPCSections(*MF, MIMD.getPCSections());
-    if (MIMD.getMMRAMetadata())
-      MI->setMMRAMetadata(*MF, MIMD.getMMRAMetadata());
+  const MachineInstrBuilder &setPCSections(MDNode *MD) const {
+    if (MD)
+      MI->setPCSections(*MF, MD);
     return *this;
   }
 
@@ -365,11 +336,34 @@ public:
   }
 };
 
+/// Set of metadata that should be preserved when using BuildMI(). This provides
+/// a more convenient way of preserving DebugLoc and PCSections.
+class MIMetadata {
+public:
+  MIMetadata() = default;
+  MIMetadata(DebugLoc DL, MDNode *PCSections = nullptr)
+      : DL(std::move(DL)), PCSections(PCSections) {}
+  MIMetadata(const DILocation *DI, MDNode *PCSections = nullptr)
+      : DL(DI), PCSections(PCSections) {}
+  explicit MIMetadata(const Instruction &From)
+      : DL(From.getDebugLoc()),
+        PCSections(From.getMetadata(LLVMContext::MD_pcsections)) {}
+  explicit MIMetadata(const MachineInstr &From)
+      : DL(From.getDebugLoc()), PCSections(From.getPCSections()) {}
+
+  const DebugLoc &getDL() const { return DL; }
+  MDNode *getPCSections() const { return PCSections; }
+
+private:
+  DebugLoc DL;
+  MDNode *PCSections = nullptr;
+};
+
 /// Builder interface. Specify how to create the initial instruction itself.
 inline MachineInstrBuilder BuildMI(MachineFunction &MF, const MIMetadata &MIMD,
                                    const MCInstrDesc &MCID) {
   return MachineInstrBuilder(MF, MF.CreateMachineInstr(MCID, MIMD.getDL()))
-      .copyMIMetadata(MIMD);
+           .setPCSections(MIMD.getPCSections());
 }
 
 /// This version of the builder sets up the first operand as a
@@ -377,8 +371,8 @@ inline MachineInstrBuilder BuildMI(MachineFunction &MF, const MIMetadata &MIMD,
 inline MachineInstrBuilder BuildMI(MachineFunction &MF, const MIMetadata &MIMD,
                                    const MCInstrDesc &MCID, Register DestReg) {
   return MachineInstrBuilder(MF, MF.CreateMachineInstr(MCID, MIMD.getDL()))
-      .copyMIMetadata(MIMD)
-      .addReg(DestReg, RegState::Define);
+           .setPCSections(MIMD.getPCSections())
+           .addReg(DestReg, RegState::Define);
 }
 
 /// This version of the builder inserts the newly-built instruction before
@@ -391,8 +385,9 @@ inline MachineInstrBuilder BuildMI(MachineBasicBlock &BB,
   MachineFunction &MF = *BB.getParent();
   MachineInstr *MI = MF.CreateMachineInstr(MCID, MIMD.getDL());
   BB.insert(I, MI);
-  return MachineInstrBuilder(MF, MI).copyMIMetadata(MIMD).addReg(
-      DestReg, RegState::Define);
+  return MachineInstrBuilder(MF, MI)
+           .setPCSections(MIMD.getPCSections())
+           .addReg(DestReg, RegState::Define);
 }
 
 /// This version of the builder inserts the newly-built instruction before
@@ -408,8 +403,9 @@ inline MachineInstrBuilder BuildMI(MachineBasicBlock &BB,
   MachineFunction &MF = *BB.getParent();
   MachineInstr *MI = MF.CreateMachineInstr(MCID, MIMD.getDL());
   BB.insert(I, MI);
-  return MachineInstrBuilder(MF, MI).copyMIMetadata(MIMD).addReg(
-      DestReg, RegState::Define);
+  return MachineInstrBuilder(MF, MI)
+           .setPCSections(MIMD.getPCSections())
+           .addReg(DestReg, RegState::Define);
 }
 
 inline MachineInstrBuilder BuildMI(MachineBasicBlock &BB, MachineInstr &I,
@@ -439,7 +435,7 @@ inline MachineInstrBuilder BuildMI(MachineBasicBlock &BB,
   MachineFunction &MF = *BB.getParent();
   MachineInstr *MI = MF.CreateMachineInstr(MCID, MIMD.getDL());
   BB.insert(I, MI);
-  return MachineInstrBuilder(MF, MI).copyMIMetadata(MIMD);
+  return MachineInstrBuilder(MF, MI).setPCSections(MIMD.getPCSections());
 }
 
 inline MachineInstrBuilder BuildMI(MachineBasicBlock &BB,
@@ -449,7 +445,7 @@ inline MachineInstrBuilder BuildMI(MachineBasicBlock &BB,
   MachineFunction &MF = *BB.getParent();
   MachineInstr *MI = MF.CreateMachineInstr(MCID, MIMD.getDL());
   BB.insert(I, MI);
-  return MachineInstrBuilder(MF, MI).copyMIMetadata(MIMD);
+  return MachineInstrBuilder(MF, MI).setPCSections(MIMD.getPCSections());
 }
 
 inline MachineInstrBuilder BuildMI(MachineBasicBlock &BB, MachineInstr &I,
@@ -489,50 +485,48 @@ inline MachineInstrBuilder BuildMI(MachineBasicBlock *BB,
 /// for either a value in a register or a register-indirect
 /// address.  The convention is that a DBG_VALUE is indirect iff the
 /// second operand is an immediate.
-LLVM_ABI MachineInstrBuilder BuildMI(MachineFunction &MF, const DebugLoc &DL,
-                                     const MCInstrDesc &MCID, bool IsIndirect,
-                                     Register Reg, const MDNode *Variable,
-                                     const MDNode *Expr);
+MachineInstrBuilder BuildMI(MachineFunction &MF, const DebugLoc &DL,
+                            const MCInstrDesc &MCID, bool IsIndirect,
+                            Register Reg, const MDNode *Variable,
+                            const MDNode *Expr);
 
 /// This version of the builder builds a DBG_VALUE or DBG_VALUE_LIST intrinsic
 /// for a MachineOperand.
-LLVM_ABI MachineInstrBuilder BuildMI(MachineFunction &MF, const DebugLoc &DL,
-                                     const MCInstrDesc &MCID, bool IsIndirect,
-                                     ArrayRef<MachineOperand> MOs,
-                                     const MDNode *Variable,
-                                     const MDNode *Expr);
+MachineInstrBuilder BuildMI(MachineFunction &MF, const DebugLoc &DL,
+                            const MCInstrDesc &MCID, bool IsIndirect,
+                            ArrayRef<MachineOperand> MOs,
+                            const MDNode *Variable, const MDNode *Expr);
 
 /// This version of the builder builds a DBG_VALUE intrinsic
 /// for either a value in a register or a register-indirect
 /// address and inserts it at position I.
-LLVM_ABI MachineInstrBuilder BuildMI(MachineBasicBlock &BB,
-                                     MachineBasicBlock::iterator I,
-                                     const DebugLoc &DL,
-                                     const MCInstrDesc &MCID, bool IsIndirect,
-                                     Register Reg, const MDNode *Variable,
-                                     const MDNode *Expr);
+MachineInstrBuilder BuildMI(MachineBasicBlock &BB,
+                            MachineBasicBlock::iterator I, const DebugLoc &DL,
+                            const MCInstrDesc &MCID, bool IsIndirect,
+                            Register Reg, const MDNode *Variable,
+                            const MDNode *Expr);
 
 /// This version of the builder builds a DBG_VALUE, DBG_INSTR_REF, or
 /// DBG_VALUE_LIST intrinsic for a machine operand and inserts it at position I.
-LLVM_ABI MachineInstrBuilder BuildMI(
-    MachineBasicBlock &BB, MachineBasicBlock::iterator I, const DebugLoc &DL,
-    const MCInstrDesc &MCID, bool IsIndirect, ArrayRef<MachineOperand> MOs,
-    const MDNode *Variable, const MDNode *Expr);
+MachineInstrBuilder BuildMI(MachineBasicBlock &BB,
+                            MachineBasicBlock::iterator I, const DebugLoc &DL,
+                            const MCInstrDesc &MCID, bool IsIndirect,
+                            ArrayRef<MachineOperand> MOs,
+                            const MDNode *Variable, const MDNode *Expr);
 
 /// Clone a DBG_VALUE whose value has been spilled to FrameIndex.
-LLVM_ABI MachineInstr *buildDbgValueForSpill(MachineBasicBlock &BB,
-                                             MachineBasicBlock::iterator I,
-                                             const MachineInstr &Orig,
-                                             int FrameIndex, Register SpillReg);
-LLVM_ABI MachineInstr *buildDbgValueForSpill(
-    MachineBasicBlock &BB, MachineBasicBlock::iterator I,
-    const MachineInstr &Orig, int FrameIndex,
-    const SmallVectorImpl<const MachineOperand *> &SpilledOperands);
+MachineInstr *buildDbgValueForSpill(MachineBasicBlock &BB,
+                                    MachineBasicBlock::iterator I,
+                                    const MachineInstr &Orig, int FrameIndex,
+                                    Register SpillReg);
+MachineInstr *
+buildDbgValueForSpill(MachineBasicBlock &BB, MachineBasicBlock::iterator I,
+                      const MachineInstr &Orig, int FrameIndex,
+                      SmallVectorImpl<const MachineOperand *> &SpilledOperands);
 
 /// Update a DBG_VALUE whose value has been spilled to FrameIndex. Useful when
 /// modifying an instruction in place while iterating over a basic block.
-LLVM_ABI void updateDbgValueForSpill(MachineInstr &Orig, int FrameIndex,
-                                     Register Reg);
+void updateDbgValueForSpill(MachineInstr &Orig, int FrameIndex, Register Reg);
 
 inline unsigned getDefRegState(bool B) {
   return B ? RegState::Define : 0;

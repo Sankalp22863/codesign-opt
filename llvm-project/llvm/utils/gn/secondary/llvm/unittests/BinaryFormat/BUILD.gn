@@ -7,12 +7,10 @@ unittest("BinaryFormatTests") {
   ]
   sources = [
     "DwarfTest.cpp",
-    "ELFTest.cpp",
     "MachOTest.cpp",
     "MsgPackDocumentTest.cpp",
     "MsgPackReaderTest.cpp",
     "MsgPackWriterTest.cpp",
-    "SFrameTest.cpp",
     "TestFileMagic.cpp",
   ]
 }

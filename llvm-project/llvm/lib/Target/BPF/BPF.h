@@ -22,8 +22,6 @@ class BPFTargetMachine;
 class InstructionSelector;
 class PassRegistry;
 
-#define BPF_TRAP "__bpf_trap"
-
 ModulePass *createBPFCheckAndAdjustIR();
 
 FunctionPass *createBPFISelDag(BPFTargetMachine &TM);
@@ -36,11 +34,10 @@ InstructionSelector *createBPFInstructionSelector(const BPFTargetMachine &,
                                                   const BPFSubtarget &,
                                                   const BPFRegisterBankInfo &);
 
-void initializeBPFAsmPrinterPass(PassRegistry &);
 void initializeBPFCheckAndAdjustIRPass(PassRegistry&);
-void initializeBPFDAGToDAGISelLegacyPass(PassRegistry &);
+void initializeBPFDAGToDAGISelPass(PassRegistry &);
 void initializeBPFMIPeepholePass(PassRegistry &);
-void initializeBPFMIPreEmitCheckingPass(PassRegistry &);
+void initializeBPFMIPreEmitCheckingPass(PassRegistry&);
 void initializeBPFMIPreEmitPeepholePass(PassRegistry &);
 void initializeBPFMISimplifyPatchablePass(PassRegistry &);
 
@@ -63,14 +60,6 @@ public:
 };
 
 class BPFIRPeepholePass : public PassInfoMixin<BPFIRPeepholePass> {
-public:
-  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
-
-  static bool isRequired() { return true; }
-};
-
-class BPFASpaceCastSimplifyPass
-    : public PassInfoMixin<BPFASpaceCastSimplifyPass> {
 public:
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
 

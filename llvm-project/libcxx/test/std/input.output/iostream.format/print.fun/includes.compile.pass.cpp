@@ -1,12 +1,11 @@
 //===----------------------------------------------------------------------===//
-//
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
-// REQUIRES: std-at-least-c++23
+// UNSUPPORTED: c++03, c++11, c++14, c++17, c++20
 // UNSUPPORTED: no-filesystem
 // UNSUPPORTED: GCC-ALWAYS_INLINE-FIXME
 
@@ -18,7 +17,7 @@
 // using the granularized headers so it's possible to implement <print> without
 // <format>. This would be a non-conforming implementation.
 //
-// See https://llvm.org/PR71925
+// See https://github.com/llvm/llvm-project/issues/71925
 
 #include <print>
 #include <vector>

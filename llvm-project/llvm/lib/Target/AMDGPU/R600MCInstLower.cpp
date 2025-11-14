@@ -20,8 +20,6 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 
-using namespace llvm;
-
 namespace {
 class R600MCInstLower : public AMDGPUMCInstLower {
 public:
@@ -74,10 +72,8 @@ void R600AsmPrinter::emitInstruction(const MachineInstr *MI) {
   }
 }
 
-const MCExpr *R600AsmPrinter::lowerConstant(const Constant *CV,
-                                            const Constant *BaseCV,
-                                            uint64_t Offset) {
+const MCExpr *R600AsmPrinter::lowerConstant(const Constant *CV) {
   if (const MCExpr *E = lowerAddrSpaceCast(TM, CV, OutContext))
     return E;
-  return AsmPrinter::lowerConstant(CV, BaseCV, Offset);
+  return AsmPrinter::lowerConstant(CV);
 }

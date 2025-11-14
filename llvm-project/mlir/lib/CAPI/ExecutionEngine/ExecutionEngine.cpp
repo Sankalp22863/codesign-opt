@@ -68,10 +68,6 @@ mlirExecutionEngineCreate(MlirModule op, int optLevel, int numPaths,
   return wrap(jitOrError->release());
 }
 
-extern "C" void mlirExecutionEngineInitialize(MlirExecutionEngine jit) {
-  unwrap(jit)->initialize();
-}
-
 extern "C" void mlirExecutionEngineDestroy(MlirExecutionEngine jit) {
   delete (unwrap(jit));
 }
@@ -89,20 +85,18 @@ mlirExecutionEngineInvokePacked(MlirExecutionEngine jit, MlirStringRef name,
 
 extern "C" void *mlirExecutionEngineLookupPacked(MlirExecutionEngine jit,
                                                  MlirStringRef name) {
-  auto optionalFPtr =
-      llvm::expectedToOptional(unwrap(jit)->lookupPacked(unwrap(name)));
-  if (!optionalFPtr)
+  auto expectedFPtr = unwrap(jit)->lookupPacked(unwrap(name));
+  if (!expectedFPtr)
     return nullptr;
-  return reinterpret_cast<void *>(*optionalFPtr);
+  return reinterpret_cast<void *>(*expectedFPtr);
 }
 
 extern "C" void *mlirExecutionEngineLookup(MlirExecutionEngine jit,
                                            MlirStringRef name) {
-  auto optionalFPtr =
-      llvm::expectedToOptional(unwrap(jit)->lookup(unwrap(name)));
-  if (!optionalFPtr)
+  auto expectedFPtr = unwrap(jit)->lookup(unwrap(name));
+  if (!expectedFPtr)
     return nullptr;
-  return *optionalFPtr;
+  return reinterpret_cast<void *>(*expectedFPtr);
 }
 
 extern "C" void mlirExecutionEngineRegisterSymbol(MlirExecutionEngine jit,
@@ -110,8 +104,9 @@ extern "C" void mlirExecutionEngineRegisterSymbol(MlirExecutionEngine jit,
                                                   void *sym) {
   unwrap(jit)->registerSymbols([&](llvm::orc::MangleAndInterner interner) {
     llvm::orc::SymbolMap symbolMap;
-    symbolMap[interner(unwrap(name))] = {llvm::orc::ExecutorAddr::fromPtr(sym),
-                                         llvm::JITSymbolFlags::Exported};
+    symbolMap[interner(unwrap(name))] =
+        { llvm::orc::ExecutorAddr::fromPtr(sym),
+          llvm::JITSymbolFlags::Exported };
     return symbolMap;
   });
 }

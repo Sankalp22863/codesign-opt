@@ -15,6 +15,7 @@
 #define LLVM_CLANG_SERIALIZATION_MODULEMANAGER_H
 
 #include "clang/Basic/LLVM.h"
+#include "clang/Basic/Module.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Serialization/ModuleFile.h"
 #include "llvm/ADT/DenseMap.h"
@@ -37,7 +38,7 @@ class FileEntry;
 class FileManager;
 class GlobalModuleIndex;
 class HeaderSearch;
-class ModuleCache;
+class InMemoryModuleCache;
 class PCHContainerReader;
 
 namespace serialization {
@@ -45,7 +46,7 @@ namespace serialization {
 /// Manages the set of modules loaded by an AST reader.
 class ModuleManager {
   /// The chain of AST files, in the order in which we started to load
-  /// them.
+  /// them (this order isn't really useful for anything).
   SmallVector<std::unique_ptr<ModuleFile>, 2> Chain;
 
   /// The chain of non-module PCH files. The first entry is the one named
@@ -65,7 +66,7 @@ class ModuleManager {
   FileManager &FileMgr;
 
   /// Cache of PCM files.
-  IntrusiveRefCntPtr<ModuleCache> ModCache;
+  IntrusiveRefCntPtr<InMemoryModuleCache> ModuleCache;
 
   /// Knows how to unwrap module containers.
   const PCHContainerReader &PCHContainerRdr;
@@ -133,9 +134,9 @@ public:
       SmallVectorImpl<std::unique_ptr<ModuleFile>>::reverse_iterator>;
   using ModuleOffset = std::pair<uint32_t, StringRef>;
 
-  ModuleManager(FileManager &FileMgr, ModuleCache &ModCache,
-                const PCHContainerReader &PCHContainerRdr,
-                const HeaderSearch &HeaderSearchInfo);
+  explicit ModuleManager(FileManager &FileMgr, InMemoryModuleCache &ModuleCache,
+                         const PCHContainerReader &PCHContainerRdr,
+                         const HeaderSearch &HeaderSearchInfo);
 
   /// Forward iterator to traverse all loaded modules.
   ModuleIterator begin() { return Chain.begin(); }
@@ -306,7 +307,7 @@ public:
   /// View the graphviz representation of the module graph.
   void viewGraph();
 
-  ModuleCache &getModuleCache() const { return *ModCache; }
+  InMemoryModuleCache &getModuleCache() const { return *ModuleCache; }
 };
 
 } // namespace serialization

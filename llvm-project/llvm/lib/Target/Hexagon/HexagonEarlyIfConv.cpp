@@ -91,6 +91,13 @@
 
 using namespace llvm;
 
+namespace llvm {
+
+  FunctionPass *createHexagonEarlyIfConversion();
+  void initializeHexagonEarlyIfConversionPass(PassRegistry& Registry);
+
+} // end namespace llvm
+
 static cl::opt<bool> EnableHexagonBP("enable-hexagon-br-prob", cl::Hidden,
   cl::init(true), cl::desc("Enable branch probability info"));
 static cl::opt<unsigned> SizeLimit("eif-limit", cl::init(6), cl::Hidden,
@@ -132,7 +139,8 @@ namespace {
     const TargetRegisterInfo &TRI;
     friend raw_ostream &operator<< (raw_ostream &OS, const PrintFP &P);
   };
-  [[maybe_unused]] raw_ostream &operator<<(raw_ostream &OS, const PrintFP &P);
+  raw_ostream &operator<<(raw_ostream &OS,
+                          const PrintFP &P) LLVM_ATTRIBUTE_UNUSED;
   raw_ostream &operator<<(raw_ostream &OS, const PrintFP &P) {
     OS << "{ SplitB:" << PrintMB(P.FP.SplitB)
        << ", PredR:" << printReg(P.FP.PredR, &P.TRI)
@@ -153,10 +161,10 @@ namespace {
     }
 
     void getAnalysisUsage(AnalysisUsage &AU) const override {
-      AU.addRequired<MachineBranchProbabilityInfoWrapperPass>();
-      AU.addRequired<MachineDominatorTreeWrapperPass>();
-      AU.addPreserved<MachineDominatorTreeWrapperPass>();
-      AU.addRequired<MachineLoopInfoWrapperPass>();
+      AU.addRequired<MachineBranchProbabilityInfo>();
+      AU.addRequired<MachineDominatorTree>();
+      AU.addPreserved<MachineDominatorTree>();
+      AU.addRequired<MachineLoopInfo>();
       MachineFunctionPass::getAnalysisUsage(AU);
     }
 
@@ -1046,11 +1054,10 @@ bool HexagonEarlyIfConversion::runOnMachineFunction(MachineFunction &MF) {
   TRI = ST.getRegisterInfo();
   MFN = &MF;
   MRI = &MF.getRegInfo();
-  MDT = &getAnalysis<MachineDominatorTreeWrapperPass>().getDomTree();
-  MLI = &getAnalysis<MachineLoopInfoWrapperPass>().getLI();
-  MBPI = EnableHexagonBP
-             ? &getAnalysis<MachineBranchProbabilityInfoWrapperPass>().getMBPI()
-             : nullptr;
+  MDT = &getAnalysis<MachineDominatorTree>();
+  MLI = &getAnalysis<MachineLoopInfo>();
+  MBPI = EnableHexagonBP ? &getAnalysis<MachineBranchProbabilityInfo>() :
+    nullptr;
 
   Deleted.clear();
   bool Changed = false;

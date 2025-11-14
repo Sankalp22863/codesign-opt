@@ -55,19 +55,19 @@ def Symbol : OpInterface<"SymbolOpInterface"> {
     InterfaceMethod<"Returns true if this symbol has nested visibility.",
       "bool", "isNested", (ins),  [{}],
       /*defaultImplementation=*/[{
-        return $_op.getVisibility() == mlir::SymbolTable::Visibility::Nested;
+        return getVisibility() == mlir::SymbolTable::Visibility::Nested;
       }]
     >,
     InterfaceMethod<"Returns true if this symbol has private visibility.",
       "bool", "isPrivate", (ins),  [{}],
       /*defaultImplementation=*/[{
-        return $_op.getVisibility() == mlir::SymbolTable::Visibility::Private;
+        return getVisibility() == mlir::SymbolTable::Visibility::Private;
       }]
     >,
     InterfaceMethod<"Returns true if this symbol has public visibility.",
       "bool", "isPublic", (ins),  [{}],
       /*defaultImplementation=*/[{
-        return $_op.getVisibility() == mlir::SymbolTable::Visibility::Public;
+        return getVisibility() == mlir::SymbolTable::Visibility::Public;
       }]
     >,
     InterfaceMethod<"Sets the visibility of this symbol.",
@@ -79,19 +79,19 @@ def Symbol : OpInterface<"SymbolOpInterface"> {
     InterfaceMethod<"Sets the visibility of this symbol to be nested.",
       "void", "setNested", (ins),  [{}],
       /*defaultImplementation=*/[{
-        $_op.setVisibility(mlir::SymbolTable::Visibility::Nested);
+        setVisibility(mlir::SymbolTable::Visibility::Nested);
       }]
     >,
     InterfaceMethod<"Sets the visibility of this symbol to be private.",
       "void", "setPrivate", (ins),  [{}],
       /*defaultImplementation=*/[{
-        $_op.setVisibility(mlir::SymbolTable::Visibility::Private);
+        setVisibility(mlir::SymbolTable::Visibility::Private);
       }]
     >,
     InterfaceMethod<"Sets the visibility of this symbol to be public.",
       "void", "setPublic", (ins),  [{}],
       /*defaultImplementation=*/[{
-        $_op.setVisibility(mlir::SymbolTable::Visibility::Public);
+        setVisibility(mlir::SymbolTable::Visibility::Public);
       }]
     >,
     InterfaceMethod<[{
@@ -121,7 +121,7 @@ def Symbol : OpInterface<"SymbolOpInterface"> {
         symbol 'newSymbol' that are nested within the given operation 'from'.
         Note: See mlir::SymbolTable::replaceAllSymbolUses for more details.
       }],
-      "::llvm::LogicalResult", "replaceAllSymbolUses",
+      "::mlir::LogicalResult", "replaceAllSymbolUses",
       (ins "::mlir::StringAttr":$newSymbol, "::mlir::Operation *":$from), [{}],
       /*defaultImplementation=*/[{
         return ::mlir::SymbolTable::replaceAllSymbolUses(this->getOperation(),
@@ -144,7 +144,7 @@ def Symbol : OpInterface<"SymbolOpInterface"> {
         // By default, base this on the visibility alone. A symbol can be
         // discarded as long as it is not public. Only public symbols may be
         // visible from outside of the IR.
-        return $_op.getVisibility() != ::mlir::SymbolTable::Visibility::Public;
+        return getVisibility() != ::mlir::SymbolTable::Visibility::Public;
       }]
     >,
     InterfaceMethod<[{
@@ -171,11 +171,6 @@ def Symbol : OpInterface<"SymbolOpInterface"> {
     if (concreteOp.isDeclaration() && concreteOp.isPublic())
       return concreteOp.emitOpError("symbol declaration cannot have public "
              "visibility");
-    auto parent = $_op->getParentOp();
-    if (parent && !parent->hasTrait<OpTrait::SymbolTable>() && parent->isRegistered()) {
-      return concreteOp.emitOpError("symbol's parent must have the SymbolTable "
-             "trait");
-    }
     return success();
   }];
 
@@ -214,7 +209,7 @@ def SymbolUserOpInterface : OpInterface<"SymbolUserOpInterface"> {
 
   let methods = [
     InterfaceMethod<"Verify the symbol uses held by this operation.",
-      "::llvm::LogicalResult", "verifySymbolUses",
+      "::mlir::LogicalResult", "verifySymbolUses",
       (ins "::mlir::SymbolTableCollection &":$symbolTable)
     >,
   ];

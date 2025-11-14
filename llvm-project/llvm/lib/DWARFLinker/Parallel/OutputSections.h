@@ -181,11 +181,6 @@ struct SectionDescriptor : SectionDescriptorBase {
   /// to the debug section, corresponding to this object.
   uint64_t StartOffset = 0;
 
-protected:
-  /// Section data bits.
-  OutSectionDataTy Contents;
-
-public:
   /// Stream which stores data to the Contents.
   raw_svector_ostream OS;
 
@@ -225,7 +220,7 @@ public:
   /// Returns section content.
   StringRef getContents() override {
     if (SectionOffsetInsideAsmPrinterOutputStart == 0)
-      return Contents;
+      return StringRef(Contents.data(), Contents.size());
 
     return Contents.slice(SectionOffsetInsideAsmPrinterOutputStart,
                           SectionOffsetInsideAsmPrinterOutputEnd);
@@ -258,7 +253,7 @@ public:
 
   /// Emit specified inplace string value into the current section contents.
   void emitInplaceString(StringRef String) {
-    OS << String;
+    OS << GlobalData.translateString(String);
     emitIntVal(0, 1);
   }
 
@@ -291,6 +286,9 @@ protected:
   }
 
   LinkingGlobalData &GlobalData;
+
+  /// Section data bits.
+  OutSectionDataTy Contents;
 
   /// Some sections are generated using AsmPrinter. The real section data
   /// located inside elf file in that case. Following fields points to the
@@ -373,11 +371,16 @@ public:
   /// If descriptor does not exist then creates it.
   SectionDescriptor &
   getOrCreateSectionDescriptor(DebugSectionKind SectionKind) {
-    auto [It, Inserted] = SectionDescriptors.try_emplace(SectionKind);
+    SectionsSetTy::iterator It = SectionDescriptors.find(SectionKind);
 
-    if (Inserted)
-      It->second = std::make_shared<SectionDescriptor>(SectionKind, GlobalData,
-                                                       Format, Endianness);
+    if (It == SectionDescriptors.end()) {
+      SectionDescriptor *Section =
+          new SectionDescriptor(SectionKind, GlobalData, Format, Endianness);
+      auto Result = SectionDescriptors.try_emplace(SectionKind, Section);
+      assert(Result.second);
+
+      It = Result.first;
+    }
 
     return *It->second;
   }

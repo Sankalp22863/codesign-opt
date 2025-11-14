@@ -8,7 +8,6 @@
 
 #include "ABIInfoImpl.h"
 #include "TargetInfo.h"
-#include "llvm/ADT/StringExtras.h"
 
 using namespace clang;
 using namespace clang::CodeGen;
@@ -52,12 +51,9 @@ public:
       I.info = classifyArgumentType(I.type);
   }
 
-  RValue EmitVAArg(CodeGenFunction &CGF, Address VAListAddr, QualType Ty,
-                   AggValueSlot Slot) const override {
-    return CGF.EmitLoadOfAnyValue(
-        CGF.MakeAddrLValue(
-            EmitVAArgInstr(CGF, VAListAddr, Ty, classifyArgumentType(Ty)), Ty),
-        Slot);
+  Address EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
+                    QualType Ty) const override {
+    return EmitVAArgInstr(CGF, VAListAddr, Ty, classifyArgumentType(Ty));
   }
 };
 

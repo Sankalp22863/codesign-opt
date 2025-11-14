@@ -14,7 +14,7 @@
 #ifndef LLVM_CLANG_PARSE_RAIIOBJECTSFORPARSER_H
 #define LLVM_CLANG_PARSE_RAIIOBJECTSFORPARSER_H
 
-#include "clang/Basic/DiagnosticParse.h"
+#include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
 #include "clang/Sema/DelayedDiagnostic.h"
 #include "clang/Sema/ParsedTemplate.h"
@@ -323,7 +323,7 @@ namespace clang {
 
     /// This can be used to restore the state early, before the dtor
     /// is run.
-    void restore() { P.OpenACCDirectiveParsing = OldVal; }
+    void restore() { P.OpenMPDirectiveParsing = OldVal; }
 
     ~ParsingOpenACCDirectiveRAII() { restore(); }
   };
@@ -361,11 +361,11 @@ namespace clang {
   };
 
   class OffsetOfStateRAIIObject {
-    OffsetOfKind &OffsetOfState;
-    OffsetOfKind OldValue;
+    Sema::OffsetOfKind &OffsetOfState;
+    Sema::OffsetOfKind OldValue;
 
   public:
-    OffsetOfStateRAIIObject(Parser &P, OffsetOfKind Value)
+    OffsetOfStateRAIIObject(Parser &P, Sema::OffsetOfKind Value)
         : OffsetOfState(P.OffsetOfState), OldValue(P.OffsetOfState) {
       OffsetOfState = Value;
     }

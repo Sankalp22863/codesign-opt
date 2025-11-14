@@ -236,7 +236,8 @@ public:
 //===----------------------------------------------------------------------===//
 // Helper class template that is used by the IntervalTree to ensure that one
 // does instantiate using only fundamental and/or pointer types.
-template <typename T> using PointTypeIsValid = std::is_fundamental<T>;
+template <typename T>
+using PointTypeIsValid = std::bool_constant<std::is_fundamental<T>::value>;
 
 template <typename T>
 using ValueTypeIsValid = std::bool_constant<std::is_fundamental<T>::value ||
@@ -653,7 +654,7 @@ public:
       References.push_back(std::addressof(Data));
     }
     std::stable_sort(Points.begin(), Points.end());
-    auto Last = llvm::unique(Points);
+    auto Last = std::unique(Points.begin(), Points.end());
     Points.erase(Last, Points.end());
 
     EndPoints.assign(Points.begin(), Points.end());

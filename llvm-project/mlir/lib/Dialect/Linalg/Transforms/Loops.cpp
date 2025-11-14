@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arith/Utils/Utils.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
@@ -26,9 +27,9 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 namespace mlir {
-#define GEN_PASS_DEF_CONVERTLINALGTOAFFINELOOPSPASS
-#define GEN_PASS_DEF_CONVERTLINALGTOLOOPSPASS
-#define GEN_PASS_DEF_CONVERTLINALGTOPARALLELLOOPSPASS
+#define GEN_PASS_DEF_LINALGLOWERTOAFFINELOOPS
+#define GEN_PASS_DEF_LINALGLOWERTOLOOPS
+#define GEN_PASS_DEF_LINALGLOWERTOPARALLELLOOPS
 #include "mlir/Dialect/Linalg/Passes.h.inc"
 } // namespace mlir
 
@@ -47,9 +48,9 @@ static SmallVector<Value> makeCanonicalAffineApplies(OpBuilder &b, Location loc,
   auto dims = map.getNumDims();
   for (auto e : map.getResults()) {
     auto exprMap = AffineMap::get(dims, map.getNumSymbols(), e);
-    SmallVector<Value> operands(vals);
+    SmallVector<Value> operands(vals.begin(), vals.end());
     affine::canonicalizeMapAndOperands(&exprMap, &operands);
-    res.push_back(affine::AffineApplyOp::create(b, loc, exprMap, operands));
+    res.push_back(b.create<affine::AffineApplyOp>(loc, exprMap, operands));
   }
   return res;
 }
@@ -70,9 +71,8 @@ static void inlineRegionAndEmitStore(OpBuilder &b, Location loc, OpType op,
   Operation *terminator = block.getTerminator();
   for (OpOperand &operand : terminator->getOpOperands()) {
     Value toStore = map.lookupOrDefault(operand.get());
-    StoreOpTy::create(b, loc, toStore,
-                      outputBuffers[operand.getOperandNumber()],
-                      indexing[operand.getOperandNumber()]);
+    b.create<StoreOpTy>(loc, toStore, outputBuffers[operand.getOperandNumber()],
+                        indexing[operand.getOperandNumber()]);
   }
 }
 
@@ -133,7 +133,7 @@ static void emitScalarImplementation(OpBuilder &b, Location loc,
   SmallVector<Value> indexedValues;
   indexedValues.reserve(linalgOp->getNumOperands());
 
-  auto allIvsPlusDims = SmallVector<Value>(allIvs);
+  auto allIvsPlusDims = SmallVector<Value>(allIvs.begin(), allIvs.end());
 
   // TODO: Avoid the loads if the corresponding argument of the
   // region has no uses.
@@ -146,7 +146,7 @@ static void emitScalarImplementation(OpBuilder &b, Location loc,
     auto indexing = makeCanonicalAffineApplies(
         b, loc, linalgOp.getMatchingIndexingMap(inputOperand), allIvsPlusDims);
     indexedValues.push_back(
-        LoadOpTy::create(b, loc, inputOperand->get(), indexing));
+        b.create<LoadOpTy>(loc, inputOperand->get(), indexing));
   }
   // 1.b. Emit load from output views.
   for (OpOperand &outputOperand : linalgOp.getDpsInitsMutable()) {
@@ -154,7 +154,7 @@ static void emitScalarImplementation(OpBuilder &b, Location loc,
         b, loc, linalgOp.getMatchingIndexingMap(&outputOperand),
         allIvsPlusDims);
     indexedValues.push_back(
-        LoadOpTy::create(b, loc, outputOperand.get(), indexing));
+        b.create<LoadOpTy>(loc, outputOperand.get(), indexing));
   }
 
   // TODO: When a region inliner exists, use it.
@@ -184,7 +184,8 @@ static void replaceIndexOpsByInductionVariables(RewriterBase &rewriter,
   for (Operation *loopOp : loopOps) {
     llvm::TypeSwitch<Operation *>(loopOp)
         .Case([&](scf::ParallelOp parallelOp) {
-          allIvs.append(parallelOp.getInductionVars());
+          allIvs.append(parallelOp.getInductionVars().begin(),
+                        parallelOp.getInductionVars().end());
         })
         .Case([&](scf::ForOp forOp) {
           allIvs.push_back(forOp.getInductionVar());
@@ -192,7 +193,7 @@ static void replaceIndexOpsByInductionVariables(RewriterBase &rewriter,
         .Case([&](affine::AffineForOp affineForOp) {
           allIvs.push_back(affineForOp.getInductionVar());
         })
-        .DefaultUnreachable("unexpected op");
+        .Default([&](Operation *op) { assert(false && "unexpected op"); });
   }
   assert(linalgOp.getNumLoops() == allIvs.size() &&
          "expected the number of loops and induction variables to match");
@@ -303,7 +304,7 @@ struct FoldAffineOp : public RewritePattern {
       }
       return failure();
     }
-    if (isa<AffineDimExpr, AffineSymbolExpr>(expr)) {
+    if (dyn_cast<AffineDimExpr>(expr) || dyn_cast<AffineSymbolExpr>(expr)) {
       rewriter.replaceOp(op, op->getOperand(0));
       return success();
     }
@@ -321,13 +322,11 @@ static void lowerLinalgToLoopsImpl(Operation *enclosingOp) {
   affine::AffineApplyOp::getCanonicalizationPatterns(patterns, context);
   patterns.add<FoldAffineOp>(context);
   // Just apply the patterns greedily.
-  (void)applyPatternsGreedily(enclosingOp, std::move(patterns));
+  (void)applyPatternsAndFoldGreedily(enclosingOp, std::move(patterns));
 }
 
 struct LowerToAffineLoops
-    : public impl::ConvertLinalgToAffineLoopsPassBase<LowerToAffineLoops> {
-  using impl::ConvertLinalgToAffineLoopsPassBase<
-      LowerToAffineLoops>::ConvertLinalgToAffineLoopsPassBase;
+    : public impl::LinalgLowerToAffineLoopsBase<LowerToAffineLoops> {
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<memref::MemRefDialect>();
   }
@@ -336,9 +335,7 @@ struct LowerToAffineLoops
   }
 };
 
-struct LowerToLoops : public impl::ConvertLinalgToLoopsPassBase<LowerToLoops> {
-  using impl::ConvertLinalgToLoopsPassBase<
-      LowerToLoops>::ConvertLinalgToLoopsPassBase;
+struct LowerToLoops : public impl::LinalgLowerToLoopsBase<LowerToLoops> {
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<memref::MemRefDialect, scf::SCFDialect>();
   }
@@ -348,15 +345,25 @@ struct LowerToLoops : public impl::ConvertLinalgToLoopsPassBase<LowerToLoops> {
 };
 
 struct LowerToParallelLoops
-    : public impl::ConvertLinalgToParallelLoopsPassBase<LowerToParallelLoops> {
-  using impl::ConvertLinalgToParallelLoopsPassBase<
-      LowerToParallelLoops>::ConvertLinalgToParallelLoopsPassBase;
+    : public impl::LinalgLowerToParallelLoopsBase<LowerToParallelLoops> {
   void runOnOperation() override {
     lowerLinalgToLoopsImpl<scf::ParallelOp>(getOperation());
   }
 };
 
 } // namespace
+
+std::unique_ptr<Pass> mlir::createConvertLinalgToLoopsPass() {
+  return std::make_unique<LowerToLoops>();
+}
+
+std::unique_ptr<Pass> mlir::createConvertLinalgToParallelLoopsPass() {
+  return std::make_unique<LowerToParallelLoops>();
+}
+
+std::unique_ptr<Pass> mlir::createConvertLinalgToAffineLoopsPass() {
+  return std::make_unique<LowerToAffineLoops>();
+}
 
 /// Emits a loop nest of `affine.for` with the proper body for `linalgOp`.
 FailureOr<LinalgLoops>

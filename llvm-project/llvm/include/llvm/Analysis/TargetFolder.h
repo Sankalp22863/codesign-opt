@@ -20,11 +20,9 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Analysis/ConstantFolding.h"
-#include "llvm/IR/ConstantFold.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilderFolder.h"
 #include "llvm/IR/Operator.h"
-#include "llvm/Support/Compiler.h"
 
 namespace llvm {
 
@@ -33,7 +31,7 @@ class DataLayout;
 class Type;
 
 /// TargetFolder - Create constants with target dependent folding.
-class LLVM_ABI TargetFolder final : public IRBuilderFolder {
+class TargetFolder final : public IRBuilderFolder {
   const DataLayout &DL;
 
   /// Fold - Fold the constant using target specific information.
@@ -41,7 +39,7 @@ class LLVM_ABI TargetFolder final : public IRBuilderFolder {
     return ConstantFoldConstant(C, DL);
   }
 
-  LLVM_DECLARE_VIRTUAL_ANCHOR_FUNCTION();
+  virtual void anchor();
 
 public:
   explicit TargetFolder(const DataLayout &DL) : DL(DL) {}
@@ -101,11 +99,11 @@ public:
     return FoldBinOp(Opc, LHS, RHS);
   }
 
-  Value *FoldCmp(CmpInst::Predicate P, Value *LHS, Value *RHS) const override {
+  Value *FoldICmp(CmpInst::Predicate P, Value *LHS, Value *RHS) const override {
     auto *LC = dyn_cast<Constant>(LHS);
     auto *RC = dyn_cast<Constant>(RHS);
     if (LC && RC)
-      return ConstantFoldCompareInstOperands(P, LC, RC, DL);
+      return Fold(ConstantExpr::getCompare(P, LC, RC));
     return nullptr;
   }
 
@@ -117,7 +115,7 @@ public:
   }
 
   Value *FoldGEP(Type *Ty, Value *Ptr, ArrayRef<Value *> IdxList,
-                 GEPNoWrapFlags NW) const override {
+                 bool IsInBounds = false) const override {
     if (!ConstantExpr::isSupportedGetElementPtr(Ty))
       return nullptr;
 
@@ -125,7 +123,10 @@ public:
       // Every index must be constant.
       if (any_of(IdxList, [](Value *V) { return !isa<Constant>(V); }))
         return nullptr;
-      return Fold(ConstantExpr::getGetElementPtr(Ty, PC, IdxList, NW));
+      if (IsInBounds)
+        return Fold(ConstantExpr::getInBoundsGetElementPtr(Ty, PC, IdxList));
+      else
+        return Fold(ConstantExpr::getGetElementPtr(Ty, PC, IdxList));
     }
     return nullptr;
   }
@@ -190,15 +191,6 @@ public:
     return nullptr;
   }
 
-  Value *FoldBinaryIntrinsic(Intrinsic::ID ID, Value *LHS, Value *RHS, Type *Ty,
-                             Instruction *FMFSource) const override {
-    auto *C1 = dyn_cast<Constant>(LHS);
-    auto *C2 = dyn_cast<Constant>(RHS);
-    if (C1 && C2)
-      return ConstantFoldBinaryIntrinsic(ID, C1, C2, Ty, FMFSource);
-    return nullptr;
-  }
-
   //===--------------------------------------------------------------------===//
   // Cast/Conversion Operators
   //===--------------------------------------------------------------------===//
@@ -215,7 +207,17 @@ public:
       return C; // avoid calling Fold
     return Fold(ConstantExpr::getPointerBitCastOrAddrSpaceCast(C, DestTy));
   }
+
+  //===--------------------------------------------------------------------===//
+  // Compare Instructions
+  //===--------------------------------------------------------------------===//
+
+  Constant *CreateFCmp(CmpInst::Predicate P, Constant *LHS,
+                       Constant *RHS) const override {
+    return Fold(ConstantExpr::getCompare(P, LHS, RHS));
+  }
 };
+
 }
 
 #endif

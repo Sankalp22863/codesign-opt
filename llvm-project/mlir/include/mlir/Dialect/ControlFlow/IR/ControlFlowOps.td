@@ -37,8 +37,7 @@ class CF_Op<string mnemonic, list<Trait> traits = []> :
 // AssertOp
 //===----------------------------------------------------------------------===//
 
-def AssertOp : CF_Op<"assert",
-    [DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
+def AssertOp : CF_Op<"assert"> {
   let summary = "Assert operation with message attribute";
   let description = [{
     Assert operation at runtime with single boolean operand and an error
@@ -50,7 +49,7 @@ def AssertOp : CF_Op<"assert",
     Example:
 
     ```mlir
-    cf.assert %b, "Expected ... to be true"
+    assert %b, "Expected ... to be true"
     ```
   }];
 
@@ -68,7 +67,7 @@ def BranchOp : CF_Op<"br", [
     DeclareOpInterfaceMethods<BranchOpInterface, ["getSuccessorForOperands"]>,
     Pure, Terminator
   ]> {
-  let summary = "Branch operation";
+  let summary = "branch operation";
   let description = [{
     The `cf.br` operation represents a direct branch operation to a given
     block. The operands of this operation are forwarded to the successor block,
@@ -112,14 +111,13 @@ def BranchOp : CF_Op<"br", [
 // CondBranchOp
 //===----------------------------------------------------------------------===//
 
-def CondBranchOp
-    : CF_Op<"cond_br", [AttrSizedOperandSegments,
-                        DeclareOpInterfaceMethods<
-                            BranchOpInterface, ["getSuccessorForOperands"]>,
-                        WeightedBranchOpInterface, Pure, Terminator]> {
-  let summary = "Conditional branch operation";
+def CondBranchOp : CF_Op<"cond_br",
+    [AttrSizedOperandSegments,
+     DeclareOpInterfaceMethods<BranchOpInterface, ["getSuccessorForOperands"]>,
+     Pure, Terminator]> {
+  let summary = "conditional branch operation";
   let description = [{
-    The `cf.cond_br` terminator operation represents a conditional branch on a
+    The `cond_br` terminator operation represents a conditional branch on a
     boolean (1-bit integer) value. If the bit is set, then the first destination
     is jumped to; if it is false, the second destination is chosen. The count
     and types of operands must align with the arguments in the corresponding
@@ -137,7 +135,7 @@ def CondBranchOp
     ```mlir
     func.func @select(%a: i32, %b: i32, %flag: i1) -> i32 {
       // Both targets are the same, operands differ
-      cf.cond_br %flag, ^bb1(%a : i32), ^bb1(%b : i32)
+      cond_br %flag, ^bb1(%a : i32), ^bb1(%b : i32)
 
     ^bb1(%x : i32) :
       return %x : i32
@@ -145,33 +143,22 @@ def CondBranchOp
     ```
   }];
 
-  let arguments = (ins I1:$condition, Variadic<AnyType>:$trueDestOperands,
-      Variadic<AnyType>:$falseDestOperands,
-      OptionalAttr<DenseI32ArrayAttr>:$branch_weights);
+  let arguments = (ins I1:$condition,
+                       Variadic<AnyType>:$trueDestOperands,
+                       Variadic<AnyType>:$falseDestOperands);
   let successors = (successor AnySuccessor:$trueDest, AnySuccessor:$falseDest);
 
-  let builders = [OpBuilder<(ins "Value":$condition, "Block *":$trueDest,
-                                "ValueRange":$trueOperands,
-                                "Block *":$falseDest,
-                                "ValueRange":$falseOperands,
-                                CArg<"ArrayRef<int32_t>", "{}">:$branchWeights),
-                            [{
-      DenseI32ArrayAttr weights;
-      if (!branchWeights.empty())
-        weights = $_builder.getDenseI32ArrayAttr(branchWeights);
-      build($_builder, $_state, condition, trueOperands, falseOperands,
-            weights, trueDest, falseDest);
+  let builders = [
+    OpBuilder<(ins "Value":$condition, "Block *":$trueDest,
+      "ValueRange":$trueOperands, "Block *":$falseDest,
+      "ValueRange":$falseOperands), [{
+      build($_builder, $_state, condition, trueOperands, falseOperands, trueDest,
+            falseDest);
     }]>,
-                  OpBuilder<(ins "Value":$condition, "Block *":$trueDest,
-                                "Block *":$falseDest,
-                                CArg<"ValueRange", "{}">:$falseOperands,
-                                CArg<"ArrayRef<int32_t>", "{}">:$branchWeights),
-                            [{
-      DenseI32ArrayAttr weights;
-      if (!branchWeights.empty())
-        weights = $_builder.getDenseI32ArrayAttr(branchWeights);
-      build($_builder, $_state, condition, ValueRange(), falseOperands,
-            weights, trueDest, falseDest);
+    OpBuilder<(ins "Value":$condition, "Block *":$trueDest,
+      "Block *":$falseDest, CArg<"ValueRange", "{}">:$falseOperands), [{
+      build($_builder, $_state, condition, trueDest, ValueRange(), falseDest,
+            falseOperands);
     }]>];
 
   let extraClassDeclaration = [{
@@ -228,7 +215,7 @@ def CondBranchOp
 
   let hasCanonicalizer = 1;
   let assemblyFormat = [{
-    $condition (`weights` `(` $branch_weights^ `)` )? `,`
+    $condition `,`
     $trueDest (`(` $trueDestOperands^ `:` type($trueDestOperands) `)`)? `,`
     $falseDest (`(` $falseDestOperands^ `:` type($falseDestOperands) `)`)?
     attr-dict
@@ -243,9 +230,9 @@ def SwitchOp : CF_Op<"switch",
     [AttrSizedOperandSegments,
      DeclareOpInterfaceMethods<BranchOpInterface, ["getSuccessorForOperands"]>,
      Pure, Terminator]> {
-  let summary = "Switch operation";
+  let summary = "switch operation";
   let description = [{
-    The `cf.switch` terminator operation represents a switch on a signless integer
+    The `switch` terminator operation represents a switch on a signless integer
     value. If the flag matches one of the specified cases, then the
     corresponding destination is jumped to. If the flag does not match any of
     the cases, the default destination is jumped to. The count and types of
@@ -254,7 +241,7 @@ def SwitchOp : CF_Op<"switch",
     Example:
 
     ```mlir
-    cf.switch %flag : i32, [
+    switch %flag : i32, [
       default: ^bb1(%a : i32),
       42: ^bb1(%b : i32),
       43: ^bb3(%c : i32)

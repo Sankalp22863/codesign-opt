@@ -15,8 +15,8 @@
 #include "TestTransformStateExtension.h"
 #include "mlir/Dialect/PDL/IR/PDL.h"
 #include "mlir/Dialect/Transform/IR/TransformDialect.h"
+#include "mlir/Dialect/Transform/IR/TransformInterfaces.h"
 #include "mlir/Dialect/Transform/IR/TransformOps.h"
-#include "mlir/Dialect/Transform/Interfaces/TransformInterfaces.h"
 #include "mlir/Dialect/Transform/PDLExtension/PDLExtensionOps.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
@@ -128,8 +128,8 @@ mlir::test::TestProduceSelfHandleOrForwardOperandOp::apply(
 void mlir::test::TestProduceSelfHandleOrForwardOperandOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
   if (getOperand())
-    transform::onlyReadsHandle(getOperandMutable(), effects);
-  transform::producesHandle(getOperation()->getOpResults(), effects);
+    transform::onlyReadsHandle(getOperand(), effects);
+  transform::producesHandle(getRes(), effects);
 }
 
 DiagnosedSilenceableFailure
@@ -142,8 +142,8 @@ mlir::test::TestProduceValueHandleToSelfOperand::apply(
 
 void mlir::test::TestProduceValueHandleToSelfOperand::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getInMutable(), effects);
-  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::onlyReadsHandle(getIn(), effects);
+  transform::producesHandle(getOut(), effects);
   transform::onlyReadsPayload(effects);
 }
 
@@ -160,8 +160,8 @@ mlir::test::TestProduceValueHandleToResult::applyToOne(
 
 void mlir::test::TestProduceValueHandleToResult::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getInMutable(), effects);
-  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::onlyReadsHandle(getIn(), effects);
+  transform::producesHandle(getOut(), effects);
   transform::onlyReadsPayload(effects);
 }
 
@@ -181,8 +181,8 @@ mlir::test::TestProduceValueHandleToArgumentOfParentBlock::applyToOne(
 
 void mlir::test::TestProduceValueHandleToArgumentOfParentBlock::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getInMutable(), effects);
-  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::onlyReadsHandle(getIn(), effects);
+  transform::producesHandle(getOut(), effects);
   transform::onlyReadsPayload(effects);
 }
 
@@ -199,9 +199,9 @@ mlir::test::TestConsumeOperand::apply(transform::TransformRewriter &rewriter,
 
 void mlir::test::TestConsumeOperand::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::consumesHandle(getOperation()->getOpOperands(), effects);
+  transform::consumesHandle(getOperand(), effects);
   if (getSecondOperand())
-    transform::consumesHandle(getSecondOperandMutable(), effects);
+    transform::consumesHandle(getSecondOperand(), effects);
   transform::modifiesPayload(effects);
 }
 
@@ -223,7 +223,7 @@ DiagnosedSilenceableFailure mlir::test::TestConsumeOperandOfOpKindOrFail::apply(
 
 void mlir::test::TestConsumeOperandOfOpKindOrFail::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::consumesHandle(getOperation()->getOpOperands(), effects);
+  transform::consumesHandle(getOperand(), effects);
   transform::modifiesPayload(effects);
 }
 
@@ -242,7 +242,7 @@ mlir::test::TestSucceedIfOperandOfOpKind::matchOperation(
 
 void mlir::test::TestSucceedIfOperandOfOpKind::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getOperation()->getOpOperands(), effects);
+  transform::onlyReadsHandle(getOperand(), effects);
   transform::onlyReadsPayload(effects);
 }
 
@@ -281,7 +281,7 @@ mlir::test::TestCheckIfTestExtensionPresentOp::apply(
 
 void mlir::test::TestCheckIfTestExtensionPresentOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getOperation()->getOpOperands(), effects);
+  transform::onlyReadsHandle(getOperand(), effects);
   transform::onlyReadsPayload(effects);
 }
 
@@ -302,8 +302,8 @@ DiagnosedSilenceableFailure mlir::test::TestRemapOperandPayloadToSelfOp::apply(
 
 void mlir::test::TestRemapOperandPayloadToSelfOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getOperation()->getOpOperands(), effects);
-  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::onlyReadsHandle(getOperand(), effects);
+  transform::producesHandle(getOut(), effects);
   transform::onlyReadsPayload(effects);
 }
 
@@ -346,11 +346,8 @@ DiagnosedSilenceableFailure mlir::test::TestEmitRemarkAndEraseOperandOp::apply(
     transform::TransformRewriter &rewriter,
     transform::TransformResults &results, transform::TransformState &state) {
   emitRemark() << getRemark();
-  for (Operation *op : state.getPayloadOps(getTarget())) {
-    if (!op->getUses().empty())
-      return emitSilenceableError() << "cannot erase an op that has uses";
+  for (Operation *op : state.getPayloadOps(getTarget()))
     rewriter.eraseOp(op);
-  }
 
   if (getFailAfterErase())
     return emitSilenceableError() << "silenceable error";
@@ -359,7 +356,7 @@ DiagnosedSilenceableFailure mlir::test::TestEmitRemarkAndEraseOperandOp::apply(
 
 void mlir::test::TestEmitRemarkAndEraseOperandOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::consumesHandle(getTargetMutable(), effects);
+  transform::consumesHandle(getTarget(), effects);
   transform::modifiesPayload(effects);
 }
 
@@ -428,8 +425,8 @@ mlir::test::TestCopyPayloadOp::apply(transform::TransformRewriter &rewriter,
 
 void mlir::test::TestCopyPayloadOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getHandleMutable(), effects);
-  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::onlyReadsHandle(getHandle(), effects);
+  transform::producesHandle(getCopy(), effects);
   transform::onlyReadsPayload(effects);
 }
 
@@ -463,7 +460,7 @@ DiagnosedSilenceableFailure mlir::transform::TestDialectParamType::checkPayload(
 
 void mlir::test::TestReportNumberOfTrackedHandlesNestedUnder::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getTargetMutable(), effects);
+  transform::onlyReadsHandle(getTarget(), effects);
 }
 
 DiagnosedSilenceableFailure
@@ -533,8 +530,9 @@ mlir::test::TestProduceParamOp::apply(transform::TransformRewriter &rewriter,
 
 void mlir::test::TestProduceTransformParamOrForwardOperandOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getInMutable(), effects);
-  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::onlyReadsHandle(getIn(), effects);
+  transform::producesHandle(getOut(), effects);
+  transform::producesHandle(getParam(), effects);
 }
 
 DiagnosedSilenceableFailure
@@ -562,7 +560,7 @@ mlir::test::TestProduceTransformParamOrForwardOperandOp::applyToOne(
 
 void mlir::test::TestProduceNullPayloadOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::producesHandle(getOut(), effects);
 }
 
 DiagnosedSilenceableFailure mlir::test::TestProduceNullPayloadOp::apply(
@@ -582,7 +580,7 @@ DiagnosedSilenceableFailure mlir::test::TestProduceEmptyPayloadOp::apply(
 
 void mlir::test::TestProduceNullParamOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::producesHandle(getOut(), effects);
 }
 
 DiagnosedSilenceableFailure mlir::test::TestProduceNullParamOp::apply(
@@ -594,7 +592,7 @@ DiagnosedSilenceableFailure mlir::test::TestProduceNullParamOp::apply(
 
 void mlir::test::TestProduceNullValueOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::producesHandle(getOperation()->getOpResults(), effects);
+  transform::producesHandle(getOut(), effects);
 }
 
 DiagnosedSilenceableFailure mlir::test::TestProduceNullValueOp::apply(
@@ -607,15 +605,12 @@ DiagnosedSilenceableFailure mlir::test::TestProduceNullValueOp::apply(
 void mlir::test::TestRequiredMemoryEffectsOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
   if (getHasOperandEffect())
-    transform::consumesHandle(getInMutable(), effects);
+    transform::consumesHandle(getIn(), effects);
 
-  if (getHasResultEffect()) {
-    transform::producesHandle(getOperation()->getOpResults(), effects);
-  } else {
-    effects.emplace_back(MemoryEffects::Read::get(),
-                         llvm::cast<OpResult>(getOut()),
-                         transform::TransformMappingResource::get());
-  }
+  if (getHasResultEffect())
+    transform::producesHandle(getOut(), effects);
+  else
+    transform::onlyReadsHandle(getOut(), effects);
 
   if (getModifiesPayload())
     transform::modifiesPayload(effects);
@@ -630,13 +625,14 @@ DiagnosedSilenceableFailure mlir::test::TestRequiredMemoryEffectsOp::apply(
 
 void mlir::test::TestTrackedRewriteOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getInMutable(), effects);
+  transform::onlyReadsHandle(getIn(), effects);
   transform::modifiesPayload(effects);
 }
 
 void mlir::test::TestDummyPayloadOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::producesHandle(getOperation()->getOpResults(), effects);
+  for (OpResult result : getResults())
+    transform::producesHandle(result, effects);
 }
 
 LogicalResult mlir::test::TestDummyPayloadOp::verify() {
@@ -723,7 +719,7 @@ void mlir::test::ApplyTestPatternsOp::populatePatterns(
 
 void mlir::test::TestReEnterRegionOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::consumesHandle(getOperation()->getOpOperands(), effects);
+  transform::consumesHandle(getOperands(), effects);
   transform::modifiesPayload(effects);
 }
 
@@ -786,8 +782,8 @@ DiagnosedSilenceableFailure mlir::test::TestNotifyPayloadOpReplacedOp::apply(
 
 void mlir::test::TestNotifyPayloadOpReplacedOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getOriginalMutable(), effects);
-  transform::onlyReadsHandle(getReplacementMutable(), effects);
+  transform::onlyReadsHandle(getOriginal(), effects);
+  transform::onlyReadsHandle(getReplacement(), effects);
 }
 
 DiagnosedSilenceableFailure mlir::test::TestProduceInvalidIR::applyToOne(
@@ -796,37 +792,15 @@ DiagnosedSilenceableFailure mlir::test::TestProduceInvalidIR::applyToOne(
     transform::TransformState &state) {
   // Provide some IR that does not verify.
   rewriter.setInsertionPointToStart(&target->getRegion(0).front());
-  TestDummyPayloadOp::create(rewriter, target->getLoc(), TypeRange(),
-                             ValueRange(), /*fail_to_verify=*/true);
+  rewriter.create<TestDummyPayloadOp>(target->getLoc(), TypeRange(),
+                                      ValueRange(), /*failToVerify=*/true);
   return DiagnosedSilenceableFailure::success();
 }
 
 void mlir::test::TestProduceInvalidIR::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  transform::onlyReadsHandle(getTargetMutable(), effects);
+  transform::onlyReadsHandle(getTarget(), effects);
   transform::modifiesPayload(effects);
-}
-
-DiagnosedSilenceableFailure mlir::test::TestInitializerExtensionOp::apply(
-    transform::TransformRewriter &rewriter,
-    transform::TransformResults &results, transform::TransformState &state) {
-  std::string opName =
-      this->getOperationName().str() + "_" + getTypeAttr().str();
-  TransformStateInitializerExtension *initExt =
-      state.getExtension<TransformStateInitializerExtension>();
-  if (!initExt) {
-    emitRemark() << "\nSpecified extension not found, adding a new one!\n";
-    SmallVector<std::string> opCollection = {opName};
-    state.addExtension<TransformStateInitializerExtension>(1, opCollection);
-  } else {
-    initExt->setNumOp(initExt->getNumOp() + 1);
-    initExt->pushRegisteredOps(opName);
-    InFlightDiagnostic diag = emitRemark()
-                              << "Number of currently registered op: "
-                              << initExt->getNumOp() << "\n"
-                              << initExt->printMessage() << "\n";
-  }
-  return DiagnosedSilenceableFailure::success();
 }
 
 namespace {
@@ -874,11 +848,10 @@ public:
     });
     auto unrealizedCastConverter = [&](OpBuilder &builder, Type resultType,
                                        ValueRange inputs,
-                                       Location loc) -> Value {
+                                       Location loc) -> std::optional<Value> {
       if (inputs.size() != 1)
-        return Value();
-      return UnrealizedConversionCastOp::create(builder, loc, resultType,
-                                                inputs)
+        return std::nullopt;
+      return builder.create<UnrealizedConversionCastOp>(loc, resultType, inputs)
           .getResult(0);
     };
     addSourceMaterialization(unrealizedCastConverter);
@@ -900,8 +873,6 @@ class TestTransformDialectExtension
     : public transform::TransformDialectExtension<
           TestTransformDialectExtension> {
 public:
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestTransformDialectExtension)
-
   using Base::Base;
 
   void init() {
@@ -916,7 +887,7 @@ public:
 #include "TestTransformDialectExtensionTypes.cpp.inc"
         >();
 
-    auto verboseConstraint = [](PatternRewriter &rewriter, PDLResultList &,
+    auto verboseConstraint = [](PatternRewriter &rewriter,
                                 ArrayRef<PDLValue> pdlValues) {
       for (const PDLValue &pdlValue : pdlValues) {
         if (Operation *op = pdlValue.dyn_cast<Operation *>()) {
@@ -938,10 +909,10 @@ public:
 
 // These are automatically generated by ODS but are not used as the Transform
 // dialect uses a different dispatch mechanism to support dialect extensions.
-[[maybe_unused]] static OptionalParseResult
+LLVM_ATTRIBUTE_UNUSED static OptionalParseResult
 generatedTypeParser(AsmParser &parser, StringRef *mnemonic, Type &value);
-[[maybe_unused]] static LogicalResult generatedTypePrinter(Type def,
-                                                           AsmPrinter &printer);
+LLVM_ATTRIBUTE_UNUSED static LogicalResult
+generatedTypePrinter(Type def, AsmPrinter &printer);
 
 #define GET_TYPEDEF_CLASSES
 #include "TestTransformDialectExtensionTypes.cpp.inc"

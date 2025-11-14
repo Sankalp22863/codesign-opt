@@ -7,37 +7,50 @@
 //===----------------------------------------------------------------------===//
 
 #include "AArch64SMEAttributes.h"
-#include "AArch64ISelLowering.h"
 #include "llvm/IR/InstrTypes.h"
-#include "llvm/IR/RuntimeLibcalls.h"
 #include <cassert>
 
 using namespace llvm;
 
-void SMEAttrs::validate() const {
+void SMEAttrs::set(unsigned M, bool Enable) {
+  if (Enable)
+    Bitmask |= M;
+  else
+    Bitmask &= ~M;
+
   // Streaming Mode Attrs
   assert(!(hasStreamingInterface() && hasStreamingCompatibleInterface()) &&
          "SM_Enabled and SM_Compatible are mutually exclusive");
 
   // ZA Attrs
-  assert(!(isNewZA() && (Bitmask & SME_ABI_Routine)) &&
+  assert(!(hasNewZABody() && sharesZA()) &&
+         "ZA_New and ZA_Shared are mutually exclusive");
+  assert(!(hasNewZABody() && preservesZA()) &&
+         "ZA_New and ZA_Preserved are mutually exclusive");
+  assert(!(hasNewZABody() && (Bitmask & SME_ABI_Routine)) &&
          "ZA_New and SME_ABI_Routine are mutually exclusive");
-
-  assert(
-      (isNewZA() + isInZA() + isOutZA() + isInOutZA() + isPreservesZA()) <= 1 &&
-      "Attributes 'aarch64_new_za', 'aarch64_in_za', 'aarch64_out_za', "
-      "'aarch64_inout_za' and 'aarch64_preserves_za' are mutually exclusive");
 
   // ZT0 Attrs
   assert(
-      (isNewZT0() + isInZT0() + isOutZT0() + isInOutZT0() + isPreservesZT0()) <=
-          1 &&
+      (!sharesZT0() || (isNewZT0() ^ isInZT0() ^ isInOutZT0() ^ isOutZT0() ^
+                        isPreservesZT0())) &&
       "Attributes 'aarch64_new_zt0', 'aarch64_in_zt0', 'aarch64_out_zt0', "
       "'aarch64_inout_zt0' and 'aarch64_preserves_zt0' are mutually exclusive");
+}
 
-  assert(!(hasAgnosticZAInterface() && hasSharedZAInterface()) &&
-         "Function cannot have a shared-ZA interface and an agnostic-ZA "
-         "interface");
+SMEAttrs::SMEAttrs(const CallBase &CB) {
+  *this = SMEAttrs(CB.getAttributes());
+  if (auto *F = CB.getCalledFunction()) {
+    set(SMEAttrs(*F).Bitmask | SMEAttrs(F->getName()).Bitmask);
+  }
+}
+
+SMEAttrs::SMEAttrs(StringRef FuncName) : Bitmask(0) {
+  if (FuncName == "__arm_tpidr2_save" || FuncName == "__arm_sme_state")
+    Bitmask |= (SMEAttrs::SM_Compatible | SMEAttrs::SME_ABI_Routine);
+  if (FuncName == "__arm_tpidr2_restore")
+    Bitmask |= (SMEAttrs::SM_Compatible | SMEAttrs::ZA_Shared |
+                SMEAttrs::SME_ABI_Routine);
 }
 
 SMEAttrs::SMEAttrs(const AttributeList &Attrs) {
@@ -48,20 +61,12 @@ SMEAttrs::SMEAttrs(const AttributeList &Attrs) {
     Bitmask |= SM_Compatible;
   if (Attrs.hasFnAttr("aarch64_pstate_sm_body"))
     Bitmask |= SM_Body;
-  if (Attrs.hasFnAttr("aarch64_za_state_agnostic"))
-    Bitmask |= ZA_State_Agnostic;
-  if (Attrs.hasFnAttr("aarch64_zt0_undef"))
-    Bitmask |= ZT0_Undef;
-  if (Attrs.hasFnAttr("aarch64_in_za"))
-    Bitmask |= encodeZAState(StateValue::In);
-  if (Attrs.hasFnAttr("aarch64_out_za"))
-    Bitmask |= encodeZAState(StateValue::Out);
-  if (Attrs.hasFnAttr("aarch64_inout_za"))
-    Bitmask |= encodeZAState(StateValue::InOut);
-  if (Attrs.hasFnAttr("aarch64_preserves_za"))
-    Bitmask |= encodeZAState(StateValue::Preserved);
-  if (Attrs.hasFnAttr("aarch64_new_za"))
-    Bitmask |= encodeZAState(StateValue::New);
+  if (Attrs.hasFnAttr("aarch64_pstate_za_shared"))
+    Bitmask |= ZA_Shared;
+  if (Attrs.hasFnAttr("aarch64_pstate_za_new"))
+    Bitmask |= ZA_New;
+  if (Attrs.hasFnAttr("aarch64_pstate_za_preserved"))
+    Bitmask |= ZA_Preserved;
   if (Attrs.hasFnAttr("aarch64_in_zt0"))
     Bitmask |= encodeZT0State(StateValue::In);
   if (Attrs.hasFnAttr("aarch64_out_zt0"))
@@ -74,72 +79,17 @@ SMEAttrs::SMEAttrs(const AttributeList &Attrs) {
     Bitmask |= encodeZT0State(StateValue::New);
 }
 
-void SMEAttrs::addKnownFunctionAttrs(StringRef FuncName,
-                                     const RTLIB::RuntimeLibcallsInfo &RTLCI) {
-  RTLIB::LibcallImpl Impl = RTLCI.getSupportedLibcallImpl(FuncName);
-  if (Impl == RTLIB::Unsupported)
-    return;
-  unsigned KnownAttrs = SMEAttrs::Normal;
-  RTLIB::Libcall LC = RTLIB::RuntimeLibcallsInfo::getLibcallFromImpl(Impl);
-  switch (LC) {
-  case RTLIB::SMEABI_SME_STATE:
-  case RTLIB::SMEABI_TPIDR2_SAVE:
-  case RTLIB::SMEABI_GET_CURRENT_VG:
-  case RTLIB::SMEABI_SME_STATE_SIZE:
-  case RTLIB::SMEABI_SME_SAVE:
-  case RTLIB::SMEABI_SME_RESTORE:
-    KnownAttrs |= SMEAttrs::SM_Compatible | SMEAttrs::SME_ABI_Routine;
-    break;
-  case RTLIB::SMEABI_ZA_DISABLE:
-  case RTLIB::SMEABI_TPIDR2_RESTORE:
-    KnownAttrs |= SMEAttrs::SM_Compatible | encodeZAState(StateValue::In) |
-                  SMEAttrs::SME_ABI_Routine;
-    break;
-  case RTLIB::SC_MEMCPY:
-  case RTLIB::SC_MEMMOVE:
-  case RTLIB::SC_MEMSET:
-  case RTLIB::SC_MEMCHR:
-    KnownAttrs |= SMEAttrs::SM_Compatible;
-    break;
-  default:
-    break;
-  }
-  set(KnownAttrs);
-}
-
-bool SMECallAttrs::requiresSMChange() const {
-  if (callee().hasStreamingCompatibleInterface())
+bool SMEAttrs::requiresSMChange(const SMEAttrs &Callee) const {
+  if (Callee.hasStreamingCompatibleInterface())
     return false;
 
   // Both non-streaming
-  if (caller().hasNonStreamingInterfaceAndBody() &&
-      callee().hasNonStreamingInterface())
+  if (hasNonStreamingInterfaceAndBody() && Callee.hasNonStreamingInterface())
     return false;
 
   // Both streaming
-  if (caller().hasStreamingInterfaceOrBody() &&
-      callee().hasStreamingInterface())
+  if (hasStreamingInterfaceOrBody() && Callee.hasStreamingInterface())
     return false;
 
   return true;
-}
-
-SMECallAttrs::SMECallAttrs(const CallBase &CB,
-                           const RTLIB::RuntimeLibcallsInfo *RTLCI)
-    : CallerFn(*CB.getFunction()), CalledFn(SMEAttrs::Normal),
-      Callsite(CB.getAttributes()), IsIndirect(CB.isIndirectCall()) {
-  if (auto *CalledFunction = CB.getCalledFunction())
-    CalledFn = SMEAttrs(*CalledFunction, RTLCI);
-
-  // FIXME: We probably should not allow SME attributes on direct calls but
-  // clang duplicates streaming mode attributes at each callsite.
-  assert((IsIndirect ||
-          ((Callsite.withoutPerCallsiteFlags() | CalledFn) == CalledFn)) &&
-         "SME attributes at callsite do not match declaration");
-
-  // An `invoke` of an agnostic ZA function may not return normally (it may
-  // resume in an exception block). In this case, it acts like a private ZA
-  // callee and may require a ZA save to be set up before it is called.
-  if (isa<InvokeInst>(CB))
-    CalledFn.set(SMEAttrs::ZA_State_Agnostic, /*Enable=*/false);
 }

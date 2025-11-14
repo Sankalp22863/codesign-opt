@@ -189,7 +189,7 @@ taken, but below is a list of possible resolutions:
   violation.
 * A private verbal warning and/or reprimand from the committee to the
   individual(s) involved and request to stop this behavior. This conversation
-  may happen in person, email, by phone, video chat, or Discord.
+  may happen in person, email, by phone, video chat, or IRC.
 * Request that the reportee avoid any interaction with, and physical proximity
   to, another person for the remainder of the event.
 * Refusal of alcoholic beverage purchases by the reportee at LLVM events.
@@ -202,7 +202,8 @@ taken, but below is a list of possible resolutions:
 * Immediately ending any volunteer responsibilities and privileges the reportee
   holds.
 * An imposed suspension (e.g., asking someone to "take a week off" from mailing
-  lists, bug tracker, Discord, repositories, or other communication forms). 
+  lists, bug tracker, IRC, Discord, repositories, or other communication
+  forms). 
 * A permanent or temporary ban from some or all LLVM Project spaces (online or
   in person).
 
@@ -218,13 +219,11 @@ Appeal Process
 ===============
 
 Any individual(s) determined to have violated the CoC have the right to appeal
-a resolution decision. An appeal can be made directly to the committee by sending an 
-email to conduct@llvm.org with subject line Code of Conduct Incident Appeal.
+a decision. An appeal can be made directly to the committee by sending an email
+to conduct@llvm.org with subject line Code of Conduct Incident Appeal.
 
-This process is intended to consider new or different evidence from the 
-initial incident investigation. The email should include documentation related 
-to the incident to support the appeal. The said documentation may include, 
-but does not have to be limited to:
+The email should include documentation related to the incident to support the
+appeal. The said documentation may include, but does not have to be limited to:
 
 * Information from the reportee justifying reasoning for the appeal.
 * Statements from other individuals involved in the incident to support the
@@ -283,7 +282,9 @@ Transparency Reports
 Lack of transparency in the outcomes of our Code of Conduct incidents leaves
 our community without an understanding of how or if the organizers worked to
 resolve incidents. The CoC committee should aim to publish transparency
-reports, if reports are received, at least 2 times in a calendar year.
+reports, if reports are received, after major events (such as the LLVM
+Developers' meetings) and on the following dates: Jan 15, April 15, July 15,
+Oct 15. 
 
 A transparency report consists of 2 parts:
 

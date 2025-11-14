@@ -8,6 +8,7 @@
 
 #include "llvm/ExecutionEngine/RuntimeDyldChecker.h"
 #include "RuntimeDyldCheckerImpl.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
@@ -20,7 +21,9 @@
 #include "llvm/MC/MCTargetOptions.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Support/MSVCErrorWorkarounds.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 #include <cctype>
 #include <memory>
 #include <utility>
@@ -301,10 +304,10 @@ private:
       if (auto E = TI.takeError()) {
         errs() << "Error obtaining instruction printer: "
                << toString(std::move(E)) << "\n";
-        return;
+        return std::make_pair(EvalResult(ErrMsgStream.str()), "");
       }
       Inst.dump_pretty(ErrMsgStream, TI->InstPrinter.get());
-      return;
+      return std::make_pair(EvalResult(ErrMsgStream.str()), "");
     };
 
     if (OpIdx >= Inst.getNumOperands()) {
@@ -316,8 +319,7 @@ private:
                    << format("%i", Inst.getNumOperands())
                    << " operands.\nInstruction is:\n  ";
 
-      printInst(Symbol, Inst, ErrMsgStream);
-      return {EvalResult(std::move(ErrMsg)), ""};
+      return printInst(Symbol, Inst, ErrMsgStream);
     }
 
     const MCOperand &Op = Inst.getOperand(OpIdx);
@@ -327,8 +329,7 @@ private:
       ErrMsgStream << "Operand '" << format("%i", OpIdx) << "' of instruction '"
                    << Symbol << "' is not an immediate.\nInstruction is:\n  ";
 
-      printInst(Symbol, Inst, ErrMsgStream);
-      return {EvalResult(std::move(ErrMsg)), ""};
+      return printInst(Symbol, Inst, ErrMsgStream);
     }
 
     return std::make_pair(EvalResult(Op.getImm()), RemainingExpr);
@@ -368,13 +369,7 @@ private:
     uint64_t SymbolAddr = PCtx.IsInsideLoad
                               ? Checker.getSymbolLocalAddr(Symbol)
                               : Checker.getSymbolRemoteAddr(Symbol);
-
-    // ARM PC offset is 8 instead of 4, because it accounts for an additional
-    // prefetch instruction that increments PC even though it is implicit.
-    auto TT = Checker.getTripleForSymbol(Checker.getTargetFlag(Symbol));
-    uint64_t PCOffset = TT.getArch() == Triple::ArchType::arm ? 4 : 0;
-
-    uint64_t NextPC = SymbolAddr + InstSize + PCOffset;
+    uint64_t NextPC = SymbolAddr + InstSize;
 
     return std::make_pair(EvalResult(NextPC), RemainingExpr);
   }
@@ -756,56 +751,59 @@ private:
 
   Expected<TargetInfo> getTargetInfo(const Triple &TT, const StringRef &CPU,
                                      const SubtargetFeatures &TF) const {
+
+    auto TripleName = TT.str();
     std::string ErrorStr;
-    const Target *TheTarget = TargetRegistry::lookupTarget(TT, ErrorStr);
+    const Target *TheTarget =
+        TargetRegistry::lookupTarget(TripleName, ErrorStr);
     if (!TheTarget)
-      return make_error<StringError>("Error accessing target '" + TT.str() +
+      return make_error<StringError>("Error accessing target '" + TripleName +
                                          "': " + ErrorStr,
                                      inconvertibleErrorCode());
 
     std::unique_ptr<MCSubtargetInfo> STI(
-        TheTarget->createMCSubtargetInfo(TT, CPU, TF.getString()));
+        TheTarget->createMCSubtargetInfo(TripleName, CPU, TF.getString()));
     if (!STI)
       return make_error<StringError>("Unable to create subtarget for " +
-                                         TT.str(),
+                                         TripleName,
                                      inconvertibleErrorCode());
 
-    std::unique_ptr<MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TT));
+    std::unique_ptr<MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TripleName));
     if (!MRI)
       return make_error<StringError>("Unable to create target register info "
                                      "for " +
-                                         TT.str(),
+                                         TripleName,
                                      inconvertibleErrorCode());
 
     MCTargetOptions MCOptions;
     std::unique_ptr<MCAsmInfo> MAI(
-        TheTarget->createMCAsmInfo(*MRI, TT, MCOptions));
+        TheTarget->createMCAsmInfo(*MRI, TripleName, MCOptions));
     if (!MAI)
       return make_error<StringError>("Unable to create target asm info " +
-                                         TT.str(),
+                                         TripleName,
                                      inconvertibleErrorCode());
 
-    auto Ctx = std::make_unique<MCContext>(Triple(TT.str()), MAI.get(),
+    auto Ctx = std::make_unique<MCContext>(Triple(TripleName), MAI.get(),
                                            MRI.get(), STI.get());
 
     std::unique_ptr<MCDisassembler> Disassembler(
         TheTarget->createMCDisassembler(*STI, *Ctx));
     if (!Disassembler)
       return make_error<StringError>("Unable to create disassembler for " +
-                                         TT.str(),
+                                         TripleName,
                                      inconvertibleErrorCode());
 
     std::unique_ptr<MCInstrInfo> MII(TheTarget->createMCInstrInfo());
     if (!MII)
       return make_error<StringError>("Unable to create instruction info for" +
-                                         TT.str(),
+                                         TripleName,
                                      inconvertibleErrorCode());
 
-    std::unique_ptr<MCInstPrinter> InstPrinter(
-        TheTarget->createMCInstPrinter(TT, 0, *MAI, *MII, *MRI));
+    std::unique_ptr<MCInstPrinter> InstPrinter(TheTarget->createMCInstPrinter(
+        Triple(TripleName), 0, *MAI, *MII, *MRI));
     if (!InstPrinter)
       return make_error<StringError>(
-          "Unable to create instruction printer for" + TT.str(),
+          "Unable to create instruction printer for" + TripleName,
           inconvertibleErrorCode());
 
     return TargetInfo({TheTarget, std::move(STI), std::move(MRI),

@@ -59,7 +59,7 @@ foreach(tool ${SUPPORTED_TOOLS})
     darwin_filter_host_archs(${tool_toupper}_SUPPORTED_ARCH TEST_ARCH)
   endif()
   if(${tool} STREQUAL "asan")
-    list(REMOVE_ITEM TEST_ARCH sparcv9)
+    list(REMOVE_ITEM TEST_ARCH sparc sparcv9)
   endif()
   if(OS_NAME MATCHES "SunOS" AND ${tool} STREQUAL "asan")
     list(REMOVE_ITEM TEST_ARCH x86_64)
@@ -89,10 +89,9 @@ foreach(tool ${SUPPORTED_TOOLS})
       ${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_NAME}/lit.site.cfg.py)
     # FIXME(dliew): LSan i386 on Darwin is completely broken right now.
     # so don't run the tests by default.
-    # Tests fail on arm64, see https://github.com/llvm/llvm-project/issues/131678
     if (NOT (CMAKE_SYSTEM_NAME MATCHES "Darwin" AND
              ${tool} STREQUAL "lsan" AND
-             (${arch} STREQUAL "i386" OR ${arch} MATCHES "arm64")))
+             ${arch} STREQUAL "i386"))
       list(APPEND SANITIZER_COMMON_TESTSUITES
            ${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_NAME})
     endif()
@@ -100,17 +99,21 @@ foreach(tool ${SUPPORTED_TOOLS})
 endforeach()
 
 # Unit tests.
-configure_lit_site_cfg(
-  ${CMAKE_CURRENT_SOURCE_DIR}/Unit/lit.site.cfg.py.in
-  ${CMAKE_CURRENT_BINARY_DIR}/Unit/lit.site.cfg.py)
-# FIXME: support unit test in the android test runner
-if (NOT ANDROID)
-  list(APPEND SANITIZER_COMMON_TESTSUITES ${CMAKE_CURRENT_BINARY_DIR}/Unit)
-  list(APPEND SANITIZER_COMMON_TEST_DEPS SanitizerUnitTests)
+if(COMPILER_RT_INCLUDE_TESTS)
+  configure_lit_site_cfg(
+    ${CMAKE_CURRENT_SOURCE_DIR}/Unit/lit.site.cfg.py.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Unit/lit.site.cfg.py)
+  # FIXME: support unit test in the android test runner
+  if (NOT ANDROID)
+    list(APPEND SANITIZER_COMMON_TESTSUITES ${CMAKE_CURRENT_BINARY_DIR}/Unit)
+    list(APPEND SANITIZER_COMMON_TEST_DEPS SanitizerUnitTests)
+  endif()
 endif()
 
 if(SANITIZER_COMMON_TESTSUITES)
   add_lit_testsuite(check-sanitizer "Running sanitizer_common tests"
     ${SANITIZER_COMMON_TESTSUITES}
     DEPENDS ${SANITIZER_COMMON_TEST_DEPS})
+  set_target_properties(check-sanitizer PROPERTIES FOLDER
+                        "Compiler-RT Misc")
 endif()

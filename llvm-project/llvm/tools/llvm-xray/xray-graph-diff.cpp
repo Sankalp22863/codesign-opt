@@ -236,7 +236,6 @@ Expected<GraphDiffRenderer> GraphDiffRenderer::Factory::getGraphDiffRenderer() {
 
   return R;
 }
-
 // Returns the Relative change With respect to LeftStat between LeftStat
 // and RightStat.
 static double statRelDiff(const GraphDiffRenderer::TimeStat &LeftStat,
@@ -364,8 +363,9 @@ void GraphDiffRenderer::exportGraphAsDOT(raw_ostream &OS, StatType EdgeLabel,
   StringMap<int32_t> VertexNo;
 
   int i = 0;
-  for (const auto &V : G.vertices())
+  for (const auto &V : G.vertices()) {
     VertexNo[V.first] = i++;
+  }
 
   ColorHelper H(ColorHelper::DivergingScheme::PiYG);
 
@@ -381,14 +381,14 @@ void GraphDiffRenderer::exportGraphAsDOT(raw_ostream &OS, StatType EdgeLabel,
                   R"(color="{5}" labelfontcolor="{5}" penwidth={6}])"
                   "\n",
                   VertexNo[HeadId], VertexNo[TailId],
-                  HeadId.empty() ? static_cast<StringRef>("F0") : HeadId,
+                  (HeadId.equals("")) ? static_cast<StringRef>("F0") : HeadId,
                   TailId, getLabel(E, EdgeLabel), getColor(E, G, H, EdgeColor),
                   getLineWidth(E, EdgeColor));
   }
 
   for (const auto &V : G.vertices()) {
     const auto &VertexId = V.first;
-    if (VertexId.empty()) {
+    if (VertexId.equals("")) {
       OS << formatv(R"(F{0} [label="F0"])"
                     "\n",
                     VertexNo[VertexId]);

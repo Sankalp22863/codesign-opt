@@ -618,7 +618,7 @@ int main(int argc, const char *argv[]) {
 
   NSDictionary *error_userInfo = @{@"a" : @1, @"b" : @2};
   NSError *nserror = [[NSError alloc] initWithDomain:@"Foobar"
-                                                code:-1234
+                                                code:12
                                             userInfo:error_userInfo];
   NSError **nserrorptr = &nserror;
 

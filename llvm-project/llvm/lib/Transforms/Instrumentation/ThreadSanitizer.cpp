@@ -40,9 +40,11 @@
 #include "llvm/ProfileData/InstrProf.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Instrumentation.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/EscapeEnumerator.h"
-#include "llvm/Transforms/Utils/Instrumentation.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
@@ -80,10 +82,6 @@ static cl::opt<bool> ClCompoundReadBeforeWrite(
     "tsan-compound-read-before-write", cl::init(false),
     cl::desc("Emit special compound instrumentation for reads-before-writes"),
     cl::Hidden);
-static cl::opt<bool>
-    ClOmitNonCaptured("tsan-omit-by-pointer-capturing", cl::init(true),
-                      cl::desc("Omit accesses due to pointer capturing"),
-                      cl::Hidden);
 
 STATISTIC(NumInstrumentedReads, "Number of instrumented reads");
 STATISTIC(NumInstrumentedWrites, "Number of instrumented writes");
@@ -194,9 +192,6 @@ PreservedAnalyses ThreadSanitizerPass::run(Function &F,
 
 PreservedAnalyses ModuleThreadSanitizerPass::run(Module &M,
                                                  ModuleAnalysisManager &MAM) {
-  // Return early if nosanitize_thread module flag is present for the module.
-  if (checkIfAlreadyInstrumented(M, "nosanitize_thread"))
-    return PreservedAnalyses::all();
   insertModuleCtor(M);
   return PreservedAnalyses::none();
 }
@@ -355,7 +350,7 @@ static bool isVtableAccess(Instruction *I) {
 }
 
 // Do not instrument known races/"benign races" that come from compiler
-// instrumentation. The user has no way of suppressing them.
+// instrumentatin. The user has no way of suppressing them.
 static bool shouldInstrumentReadWriteFromAddress(const Module *M, Value *Addr) {
   // Peel off GEPs and BitCasts.
   Addr = Addr->stripInBoundsOffsets();
@@ -364,7 +359,7 @@ static bool shouldInstrumentReadWriteFromAddress(const Module *M, Value *Addr) {
     if (GV->hasSection()) {
       StringRef SectionName = GV->getSection();
       // Check if the global is in the PGO counters section.
-      auto OF = M->getTargetTriple().getObjectFormat();
+      auto OF = Triple(M->getTargetTriple()).getObjectFormat();
       if (SectionName.ends_with(
               getInstrProfSectionName(IPSK_cnts, OF, /*AddSegmentInfo=*/false)))
         return false;
@@ -452,10 +447,8 @@ void ThreadSanitizer::chooseInstructionsToInstrument(
       }
     }
 
-    const AllocaInst *AI = findAllocaForValue(Addr);
-    // Instead of Addr, we should check whether its base pointer is captured.
-    if (AI && !PointerMayBeCaptured(AI, /*ReturnCaptures=*/true) &&
-        ClOmitNonCaptured) {
+    if (isa<AllocaInst>(getUnderlyingObject(Addr)) &&
+        !PointerMayBeCaptured(Addr, true, true)) {
       // The variable is addressable but not captured, so it cannot be
       // referenced from a different thread and participate in a data race
       // (see llvm/Analysis/CaptureTracking.h for details).
@@ -485,8 +478,7 @@ static bool isTsanAtomic(const Instruction *I) {
 }
 
 void ThreadSanitizer::InsertRuntimeIgnores(Function &F) {
-  InstrumentationIRBuilder IRB(&F.getEntryBlock(),
-                               F.getEntryBlock().getFirstNonPHIIt());
+  InstrumentationIRBuilder IRB(F.getEntryBlock().getFirstNonPHI());
   IRB.CreateCall(TsanIgnoreBegin);
   EscapeEnumerator EE(F, "tsan_ignore_cleanup", ClHandleCxxExceptions);
   while (IRBuilder<> *AtExit = EE.Next()) {
@@ -520,7 +512,7 @@ bool ThreadSanitizer::sanitizeFunction(Function &F,
   bool Res = false;
   bool HasCalls = false;
   bool SanitizeFunction = F.hasFnAttribute(Attribute::SanitizeThread);
-  const DataLayout &DL = F.getDataLayout();
+  const DataLayout &DL = F.getParent()->getDataLayout();
 
   // Traverse all instructions, collect loads/stores/returns, check for calls.
   for (auto &BB : F) {
@@ -532,7 +524,8 @@ bool ThreadSanitizer::sanitizeFunction(Function &F,
         AtomicAccesses.push_back(&Inst);
       else if (isa<LoadInst>(Inst) || isa<StoreInst>(Inst))
         LocalLoadsAndStores.push_back(&Inst);
-      else if (isa<CallInst>(Inst) || isa<InvokeInst>(Inst)) {
+      else if ((isa<CallInst>(Inst) && !isa<DbgInfoIntrinsic>(Inst)) ||
+               isa<InvokeInst>(Inst)) {
         if (CallInst *CI = dyn_cast<CallInst>(&Inst))
           maybeMarkSanitizerLibraryCallNoBuiltin(CI, &TLI);
         if (isa<MemIntrinsic>(Inst))
@@ -575,10 +568,10 @@ bool ThreadSanitizer::sanitizeFunction(Function &F,
 
   // Instrument function entry/exit points if there were instrumented accesses.
   if ((Res || HasCalls) && ClInstrumentFuncEntryExit) {
-    InstrumentationIRBuilder IRB(&F.getEntryBlock(),
-                                 F.getEntryBlock().getFirstNonPHIIt());
-    Value *ReturnAddress =
-        IRB.CreateIntrinsic(Intrinsic::returnaddress, IRB.getInt32(0));
+    InstrumentationIRBuilder IRB(F.getEntryBlock().getFirstNonPHI());
+    Value *ReturnAddress = IRB.CreateCall(
+        Intrinsic::getDeclaration(F.getParent(), Intrinsic::returnaddress),
+        IRB.getInt32(0));
     IRB.CreateCall(TsanFuncEntry, ReturnAddress);
 
     EscapeEnumerator EE(F, "tsan_cleanup", ClHandleCxxExceptions);
@@ -733,7 +726,6 @@ bool ThreadSanitizer::instrumentAtomic(Instruction *I, const DataLayout &DL) {
     Value *C = IRB.CreateCall(TsanAtomicLoad[Idx], Args);
     Value *Cast = IRB.CreateBitOrPointerCast(C, OrigTy);
     I->replaceAllUsesWith(Cast);
-    I->eraseFromParent();
   } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
     Value *Addr = SI->getPointerOperand();
     int Idx =
@@ -746,8 +738,8 @@ bool ThreadSanitizer::instrumentAtomic(Instruction *I, const DataLayout &DL) {
     Value *Args[] = {Addr,
                      IRB.CreateBitOrPointerCast(SI->getValueOperand(), Ty),
                      createOrdering(&IRB, SI->getOrdering())};
-    IRB.CreateCall(TsanAtomicStore[Idx], Args);
-    SI->eraseFromParent();
+    CallInst *C = CallInst::Create(TsanAtomicStore[Idx], Args);
+    ReplaceInstWithInst(I, C);
   } else if (AtomicRMWInst *RMWI = dyn_cast<AtomicRMWInst>(I)) {
     Value *Addr = RMWI->getPointerOperand();
     int Idx =
@@ -803,8 +795,8 @@ bool ThreadSanitizer::instrumentAtomic(Instruction *I, const DataLayout &DL) {
     FunctionCallee F = FI->getSyncScopeID() == SyncScope::SingleThread
                            ? TsanAtomicSignalFence
                            : TsanAtomicThreadFence;
-    IRB.CreateCall(F, Args);
-    FI->eraseFromParent();
+    CallInst *C = CallInst::Create(F, Args);
+    ReplaceInstWithInst(I, C);
   }
   return true;
 }
@@ -812,10 +804,6 @@ bool ThreadSanitizer::instrumentAtomic(Instruction *I, const DataLayout &DL) {
 int ThreadSanitizer::getMemoryAccessFuncIndex(Type *OrigTy, Value *Addr,
                                               const DataLayout &DL) {
   assert(OrigTy->isSized());
-  if (OrigTy->isScalableTy()) {
-    // FIXME: support vscale.
-    return -1;
-  }
   uint32_t TypeSize = DL.getTypeStoreSizeInBits(OrigTy);
   if (TypeSize != 8  && TypeSize != 16 &&
       TypeSize != 32 && TypeSize != 64 && TypeSize != 128) {

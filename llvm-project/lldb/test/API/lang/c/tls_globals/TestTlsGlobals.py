@@ -38,9 +38,8 @@ class TlsGlobalTestCase(TestBase):
     # TLS works differently on Windows, this would need to be implemented
     # separately.
     @skipIfWindows
-    @skipIf(oslist=["linux"], archs=["arm$", "aarch64"])
+    @skipIf(oslist=["linux"], archs=["arm", "aarch64"])
     @skipIf(oslist=no_match([lldbplatformutil.getDarwinOSTriples(), "linux"]))
-    @expectedFailureIf(lldbplatformutil.xcode15LinkerBug())
     def test(self):
         """Test thread-local storage."""
         self.build()
@@ -71,17 +70,12 @@ class TlsGlobalTestCase(TestBase):
         self.expect(
             "expr var_static",
             VARIABLES_DISPLAYED_CORRECTLY,
-            patterns=[r"\(int\) \$.* = 88"],
-        )
-        self.expect(
-            "expr var_static2",
-            VARIABLES_DISPLAYED_CORRECTLY,
-            patterns=[r"\(int\) \$.* = 66"],
+            patterns=["\(int\) \$.* = 88"],
         )
         self.expect(
             "expr var_shared",
             VARIABLES_DISPLAYED_CORRECTLY,
-            patterns=[r"\(int\) \$.* = 66"],
+            patterns=["\(int\) \$.* = 66"],
         )
 
         # Continue on the main thread
@@ -107,15 +101,10 @@ class TlsGlobalTestCase(TestBase):
         self.expect(
             "expr var_static",
             VARIABLES_DISPLAYED_CORRECTLY,
-            patterns=[r"\(int\) \$.* = 44"],
-        )
-        self.expect(
-            "expr var_static2",
-            VARIABLES_DISPLAYED_CORRECTLY,
-            patterns=[r"\(int\) \$.* = 22"],
+            patterns=["\(int\) \$.* = 44"],
         )
         self.expect(
             "expr var_shared",
             VARIABLES_DISPLAYED_CORRECTLY,
-            patterns=[r"\(int\) \$.* = 33"],
+            patterns=["\(int\) \$.* = 33"],
         )

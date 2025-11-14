@@ -10,10 +10,8 @@
 #define LLVM_EXECUTIONENGINE_ORC_TARGETPROCESS_EXECUTORSHAREDMEMORYMAPPERSERVICE_H
 
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/Config/llvm-config.h" // for LLVM_ON_UNIX
 #include "llvm/ExecutionEngine/Orc/Shared/TargetProcessControlTypes.h"
 #include "llvm/ExecutionEngine/Orc/TargetProcess/ExecutorBootstrapService.h"
-#include "llvm/Support/Compiler.h"
 
 #include <atomic>
 #include <mutex>
@@ -26,10 +24,10 @@ namespace llvm {
 namespace orc {
 namespace rt_bootstrap {
 
-class LLVM_ABI ExecutorSharedMemoryMapperService final
+class ExecutorSharedMemoryMapperService final
     : public ExecutorBootstrapService {
 public:
-  ~ExecutorSharedMemoryMapperService() override = default;
+  ~ExecutorSharedMemoryMapperService(){};
 
   Expected<std::pair<ExecutorAddr, std::string>> reserve(uint64_t Size);
   Expected<ExecutorAddr> initialize(ExecutorAddr Reservation,

@@ -18,10 +18,13 @@
 #include "clang/Basic/TokenKinds.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/Token.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <optional>
+#include <utility>
 
 using namespace clang;
 
@@ -68,8 +71,10 @@ unsigned MacroInfo::getDefinitionLengthSlow(const SourceManager &SM) const {
          "Macro defined in macro?");
   assert((macroEnd.isFileID() || lastToken.is(tok::comment)) &&
          "Macro defined in macro?");
-  FileIDAndOffset startInfo = SM.getDecomposedExpansionLoc(macroStart);
-  FileIDAndOffset endInfo = SM.getDecomposedExpansionLoc(macroEnd);
+  std::pair<FileID, unsigned>
+      startInfo = SM.getDecomposedExpansionLoc(macroStart);
+  std::pair<FileID, unsigned>
+      endInfo = SM.getDecomposedExpansionLoc(macroEnd);
   assert(startInfo.first == endInfo.first &&
          "Macro definition spanning multiple FileIDs ?");
   assert(startInfo.second <= endInfo.second);
@@ -252,7 +257,7 @@ LLVM_DUMP_METHOD void MacroDirective::dump() const {
 }
 
 ModuleMacro *ModuleMacro::create(Preprocessor &PP, Module *OwningModule,
-                                 const IdentifierInfo *II, MacroInfo *Macro,
+                                 IdentifierInfo *II, MacroInfo *Macro,
                                  ArrayRef<ModuleMacro *> Overrides) {
   void *Mem = PP.getPreprocessorAllocator().Allocate(
       sizeof(ModuleMacro) + sizeof(ModuleMacro *) * Overrides.size(),

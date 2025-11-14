@@ -27,8 +27,7 @@ using namespace lldb;
 using namespace lldb_private;
 
 uint32_t ThreadPlanStepInRange::s_default_flag_values =
-    ThreadPlanShouldStopHere::eStepInAvoidNoDebug |
-    ThreadPlanShouldStopHere::eStepOutPastThunks;
+    ThreadPlanShouldStopHere::eStepInAvoidNoDebug;
 
 // ThreadPlanStepInRange: Step through a stack range, either stepping over or
 // into based on the value of \a type.
@@ -42,7 +41,7 @@ ThreadPlanStepInRange::ThreadPlanStepInRange(
                           "Step Range stepping in", thread, range, addr_context,
                           stop_others),
       ThreadPlanShouldStopHere(this), m_step_past_prologue(true),
-      m_virtual_step(eLazyBoolCalculate), m_step_into_target(step_into_target) {
+      m_virtual_step(false), m_step_into_target(step_into_target) {
   SetCallbacks();
   SetFlagsToDefault();
   SetupAvoidNoDebug(step_in_avoids_code_without_debug_info,
@@ -135,7 +134,6 @@ bool ThreadPlanStepInRange::ShouldStop(Event *event_ptr) {
                 GetTarget().GetArchitecture().GetAddressByteSize());
     LLDB_LOGF(log, "ThreadPlanStepInRange reached %s.", s.GetData());
   }
-  ClearNextBranchBreakpointExplainedStop();
 
   if (IsPlanComplete())
     return true;
@@ -150,7 +148,7 @@ bool ThreadPlanStepInRange::ShouldStop(Event *event_ptr) {
       m_sub_plan_sp.reset();
   }
 
-  if (m_virtual_step == eLazyBoolYes) {
+  if (m_virtual_step) {
     // If we've just completed a virtual step, all we need to do is check for a
     // ShouldStopHere plan, and otherwise we're done.
     // FIXME - This can be both a step in and a step out.  Probably should
@@ -251,7 +249,7 @@ bool ThreadPlanStepInRange::ShouldStop(Event *event_ptr) {
                                                         eSymbolContextSymbol);
 
         if (sc.function) {
-          func_start_address = sc.function->GetAddress();
+          func_start_address = sc.function->GetAddressRange().GetBaseAddress();
           if (curr_addr == func_start_address.GetLoadAddress(&GetTarget()))
             bytes_to_skip = sc.function->GetPrologueByteSize();
         } else if (sc.symbol) {
@@ -264,7 +262,8 @@ bool ThreadPlanStepInRange::ShouldStop(Event *event_ptr) {
           const Architecture *arch = GetTarget().GetArchitecturePlugin();
           if (arch) {
             Address curr_sec_addr;
-            GetTarget().ResolveLoadAddress(curr_addr, curr_sec_addr);
+            GetTarget().GetSectionLoadList().ResolveLoadAddress(curr_addr,
+                                                                curr_sec_addr);
             bytes_to_skip = arch->GetBytesToSkip(*sc.symbol, curr_sec_addr);
           }
         }
@@ -370,7 +369,7 @@ bool ThreadPlanStepInRange::DefaultShouldStopHereCallback(
   if (!should_stop_here)
     return false;
 
-  if (current_plan->GetKind() == eKindStepInRange &&
+  if (should_stop_here && current_plan->GetKind() == eKindStepInRange &&
       operation == eFrameCompareYounger) {
     ThreadPlanStepInRange *step_in_range_plan =
         static_cast<ThreadPlanStepInRange *>(current_plan);
@@ -431,7 +430,7 @@ bool ThreadPlanStepInRange::DoPlanExplainsStop(Event *event_ptr) {
 
   bool return_value = false;
 
-  if (m_virtual_step == eLazyBoolYes) {
+  if (m_virtual_step) {
     return_value = true;
   } else {
     StopInfoSP stop_info_sp = GetPrivateStopInfo();
@@ -460,13 +459,10 @@ bool ThreadPlanStepInRange::DoPlanExplainsStop(Event *event_ptr) {
 
 bool ThreadPlanStepInRange::DoWillResume(lldb::StateType resume_state,
                                          bool current_plan) {
-  m_virtual_step = eLazyBoolCalculate;
+  m_virtual_step = false;
   if (resume_state == eStateStepping && current_plan) {
     Thread &thread = GetThread();
     // See if we are about to step over a virtual inlined call.
-    // But if we already know we're virtual stepping, don't decrement the
-    // inlined depth again...
-
     bool step_without_resume = thread.DecrementCurrentInlinedDepth();
     if (step_without_resume) {
       Log *log = GetLog(LLDBLog::Step);
@@ -479,21 +475,11 @@ bool ThreadPlanStepInRange::DoWillResume(lldb::StateType resume_state,
       // FIXME: Maybe it would be better to create a InlineStep stop reason, but
       // then
       // the whole rest of the world would have to handle that stop reason.
-      m_virtual_step = eLazyBoolYes;
+      m_virtual_step = true;
     }
     return !step_without_resume;
   }
   return true;
 }
 
-bool ThreadPlanStepInRange::IsVirtualStep() {
-  if (m_virtual_step == eLazyBoolCalculate) {
-    Thread &thread = GetThread();
-    uint32_t cur_inline_depth = thread.GetCurrentInlinedDepth();
-    if (cur_inline_depth == UINT32_MAX || cur_inline_depth == 0)
-      m_virtual_step = eLazyBoolNo;
-    else
-      m_virtual_step = eLazyBoolYes;
-  }
-  return m_virtual_step == eLazyBoolYes;
-}
+bool ThreadPlanStepInRange::IsVirtualStep() { return m_virtual_step; }

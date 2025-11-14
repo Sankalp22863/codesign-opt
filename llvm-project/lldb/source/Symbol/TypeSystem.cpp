@@ -93,11 +93,6 @@ CompilerType TypeSystem::AddConstModifier(lldb::opaque_compiler_type_t type) {
   return CompilerType();
 }
 
-CompilerType TypeSystem::AddPtrAuthModifier(lldb::opaque_compiler_type_t type,
-                                            uint32_t payload) {
-  return CompilerType();
-}
-
 CompilerType
 TypeSystem::AddVolatileModifier(lldb::opaque_compiler_type_t type) {
   return CompilerType();
@@ -155,10 +150,6 @@ LazyBool TypeSystem::ShouldPrintAsOneLiner(void *type, ValueObject *valobj) {
 
 bool TypeSystem::IsMeaninglessWithoutDynamicResolution(void *type) {
   return false;
-}
-
-ConstString TypeSystem::GetMangledTypeName(void *type) {
-  return GetTypeName(type, false);
 }
 
 ConstString TypeSystem::DeclGetMangledName(void *opaque_decl) {
@@ -271,8 +262,9 @@ llvm::Expected<lldb::TypeSystemSP> TypeSystemMap::GetTypeSystemForLanguage(
     std::optional<CreateCallback> create_callback) {
   std::lock_guard<std::mutex> guard(m_mutex);
   if (m_clear_in_progress)
-    return llvm::createStringError(
-        "Unable to get TypeSystem because TypeSystemMap is being cleared");
+    return llvm::make_error<llvm::StringError>(
+        "Unable to get TypeSystem because TypeSystemMap is being cleared",
+        llvm::inconvertibleErrorCode());
 
   collection::iterator pos = m_map.find(language);
   if (pos != m_map.end()) {
@@ -280,10 +272,11 @@ llvm::Expected<lldb::TypeSystemSP> TypeSystemMap::GetTypeSystemForLanguage(
       assert(!pos->second->weak_from_this().expired());
       return pos->second;
     }
-    return llvm::createStringError(
+    return llvm::make_error<llvm::StringError>(
         "TypeSystem for language " +
-        llvm::StringRef(Language::GetNameForLanguageType(language)) +
-        " doesn't exist");
+            llvm::StringRef(Language::GetNameForLanguageType(language)) +
+            " doesn't exist",
+        llvm::inconvertibleErrorCode());
   }
 
   for (const auto &pair : m_map) {
@@ -293,27 +286,31 @@ llvm::Expected<lldb::TypeSystemSP> TypeSystemMap::GetTypeSystemForLanguage(
       m_map[language] = pair.second;
       if (pair.second)
         return pair.second;
-      return llvm::createStringError(
+      return llvm::make_error<llvm::StringError>(
           "TypeSystem for language " +
-          llvm::StringRef(Language::GetNameForLanguageType(language)) +
-          " doesn't exist");
+              llvm::StringRef(Language::GetNameForLanguageType(language)) +
+              " doesn't exist",
+          llvm::inconvertibleErrorCode());
     }
   }
 
   if (!create_callback)
-    return llvm::createStringError(
+    return llvm::make_error<llvm::StringError>(
         "Unable to find type system for language " +
-        llvm::StringRef(Language::GetNameForLanguageType(language)));
+            llvm::StringRef(Language::GetNameForLanguageType(language)),
+        llvm::inconvertibleErrorCode());
+
   // Cache even if we get a shared pointer that contains a null type system
   // back.
   TypeSystemSP type_system_sp = (*create_callback)();
   m_map[language] = type_system_sp;
   if (type_system_sp)
     return type_system_sp;
-  return llvm::createStringError(
+  return llvm::make_error<llvm::StringError>(
       "TypeSystem for language " +
-      llvm::StringRef(Language::GetNameForLanguageType(language)) +
-      " doesn't exist");
+          llvm::StringRef(Language::GetNameForLanguageType(language)) +
+          " doesn't exist",
+      llvm::inconvertibleErrorCode());
 }
 
 llvm::Expected<lldb::TypeSystemSP>
@@ -338,15 +335,4 @@ TypeSystemMap::GetTypeSystemForLanguage(lldb::LanguageType language,
         }));
   }
   return GetTypeSystemForLanguage(language);
-}
-
-bool TypeSystem::SupportsLanguageStatic(lldb::LanguageType language) {
-  if (language == eLanguageTypeUnknown || language >= eNumLanguageTypes)
-    return false;
-
-  LanguageSet languages =
-      PluginManager::GetAllTypeSystemSupportedLanguagesForTypes();
-  if (languages.Empty())
-    return false;
-  return languages[language];
 }

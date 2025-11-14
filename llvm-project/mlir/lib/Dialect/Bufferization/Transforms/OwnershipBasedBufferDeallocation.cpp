@@ -30,7 +30,7 @@
 
 namespace mlir {
 namespace bufferization {
-#define GEN_PASS_DEF_OWNERSHIPBASEDBUFFERDEALLOCATIONPASS
+#define GEN_PASS_DEF_OWNERSHIPBASEDBUFFERDEALLOCATION
 #include "mlir/Dialect/Bufferization/Transforms/Passes.h.inc"
 } // namespace bufferization
 } // namespace mlir
@@ -43,16 +43,22 @@ using namespace mlir::bufferization;
 //===----------------------------------------------------------------------===//
 
 static Value buildBoolValue(OpBuilder &builder, Location loc, bool value) {
-  return arith::ConstantOp::create(builder, loc, builder.getBoolAttr(value));
+  return builder.create<arith::ConstantOp>(loc, builder.getBoolAttr(value));
 }
 
-static bool isMemref(Value v) { return isa<BaseMemRefType>(v.getType()); }
+static bool isMemref(Value v) { return v.getType().isa<BaseMemRefType>(); }
 
 /// Return "true" if the given op is guaranteed to have neither "Allocate" nor
 /// "Free" side effects.
 static bool hasNeitherAllocateNorFreeSideEffect(Operation *op) {
-  return !mightHaveEffect<MemoryEffects::Allocate>(op) &&
-         !mightHaveEffect<MemoryEffects::Free>(op);
+  if (isa<MemoryEffectOpInterface>(op))
+    return hasEffect<MemoryEffects::Allocate>(op) ||
+           hasEffect<MemoryEffects::Free>(op);
+  // If the op does not implement the MemoryEffectOpInterface but has has
+  // recursive memory effects, then this op in isolation (without its body) does
+  // not have any side effects. All the ops inside the regions of this op will
+  // be processed separately.
+  return op->hasTrait<OpTrait::HasRecursiveMemoryEffects>();
 }
 
 /// Return "true" if the given op has buffer semantics. I.e., it has buffer
@@ -160,9 +166,10 @@ namespace {
 /// program have a corresponding de-allocation.
 class BufferDeallocation {
 public:
-  BufferDeallocation(Operation *op, DeallocationOptions options,
-                     SymbolTableCollection &symbolTables)
-      : state(op, symbolTables), options(options) {}
+  BufferDeallocation(Operation *op, bool privateFuncDynamicOwnership)
+      : state(op) {
+    options.privateFuncDynamicOwnership = privateFuncDynamicOwnership;
+  }
 
   /// Performs the actual placement/creation of all dealloc operations.
   LogicalResult deallocate(FunctionOpInterface op);
@@ -285,10 +292,11 @@ private:
   FailureOr<Operation *> handleInterface(RegionBranchOpInterface op);
 
   /// If the private-function-dynamic-ownership pass option is enabled and the
-  /// called function is private, additional results are added for each MemRef
-  /// result to pass the dynamic ownership indicator along. Otherwise, updates
-  /// the ownership map and list of memrefs to be deallocated according to the
-  /// function boundary ABI, i.e., assume ownership of all returned MemRefs.
+  /// called function is private, additional arguments and results are added for
+  /// each MemRef argument/result to pass the dynamic ownership indicator along.
+  /// Otherwise, updates the ownership map and list of memrefs to be deallocated
+  /// according to the function boundary ABI, i.e., assume ownership of all
+  /// returned MemRefs.
   ///
   /// Example (assume `private-function-dynamic-ownership` is enabled):
   /// ```
@@ -301,15 +309,17 @@ private:
   /// becomes
   /// ```
   /// func.func @f(%arg0: memref<2xi32>) -> memref<2xi32> {...}
-  /// func.func private @g(%arg0: memref<2xi32>) -> (memref<2xi32>, i1) {...}
+  /// func.func private @g(%arg0: memref<2xi32>) -> memref<2xi32> {...}
   ///
   /// %ret_f = func.call @f(%memref) : (memref<2xi32>) -> memref<2xi32>
   /// // set ownership(%ret_f) := true
   /// // remember to deallocate %ret_f
   ///
-  /// %ret_g:2 = func.call @g(%memref) : (memref<2xi32>) -> (memref<2xi32>, i1)
+  /// // (new_memref, own) = getmemrefWithUniqueOwnership(%memref)
+  /// %ret_g:2 = func.call @g(new_memref, own) :
+  ///   (memref<2xi32>, i1) -> (memref<2xi32>, i1)
   /// // set ownership(%ret_g#0) := %ret_g#1
-  /// // remember to deallocate %ret_g if it comes with ownership
+  /// // remember to deallocate %ret_g
   /// ```
   FailureOr<Operation *> handleInterface(CallOpInterface op);
 
@@ -434,8 +444,8 @@ private:
   static LogicalResult verifyOperationPreconditions(Operation *op);
 
   /// When the 'private-function-dynamic-ownership' pass option is enabled,
-  /// additional `i1` return values are added for each MemRef result in the
-  /// function signature. This function takes care of updating the
+  /// additional `i1` arguments and return values are added for each MemRef
+  /// value in the function signature. This function takes care of updating the
   /// `function_type` attribute of the function according to the actually
   /// returned values from the terminators.
   static LogicalResult updateFunctionSignature(FunctionOpInterface op);
@@ -492,11 +502,6 @@ BufferDeallocation::verifyFunctionPreconditions(FunctionOpInterface op) {
 }
 
 LogicalResult BufferDeallocation::verifyOperationPreconditions(Operation *op) {
-  // We do not care about ops that do not operate on buffers and have no
-  // Allocate/Free side effect.
-  if (!hasBufferSemantics(op) && hasNeitherAllocateNorFreeSideEffect(op))
-    return success();
-
   // (1) The pass does not work properly when deallocations are already present.
   // Alternatively, we could also remove all deallocations as a pre-pass.
   if (isa<DeallocOp>(op))
@@ -511,9 +516,16 @@ LogicalResult BufferDeallocation::verifyOperationPreconditions(Operation *op) {
   //   MemoryEffectOpInterface. They usually do not have side effects apart
   //   from the callee, which will be analyzed separately. (This is similar to
   //   "recursive memory effects".)
-  if (hasUnknownEffects(op) && !isa<CallOpInterface>(op))
+  if (!isa<MemoryEffectOpInterface>(op) &&
+      !op->hasTrait<OpTrait::HasRecursiveMemoryEffects>() &&
+      !isa<CallOpInterface>(op))
     return op->emitError(
         "ops with unknown memory side effects are not supported");
+
+  // We do not care about ops that do not operate on buffers and have no
+  // Allocate/Free side effect.
+  if (!hasBufferSemantics(op) && hasNeitherAllocateNorFreeSideEffect(op))
+    return success();
 
   // (3) Check that the control flow structures are supported.
   auto regions = op->getRegions();
@@ -562,11 +574,8 @@ LogicalResult
 BufferDeallocation::updateFunctionSignature(FunctionOpInterface op) {
   SmallVector<TypeRange> returnOperandTypes(llvm::map_range(
       op.getFunctionBody().getOps<RegionBranchTerminatorOpInterface>(),
-      [&](RegionBranchTerminatorOpInterface branchOp) {
-        return branchOp
-            .getSuccessorOperands(RegionSuccessor(
-                op.getOperation(), op.getOperation()->getResults()))
-            .getTypes();
+      [](RegionBranchTerminatorOpInterface op) {
+        return op.getSuccessorOperands(RegionBranchPoint::parent()).getTypes();
       }));
   if (!llvm::all_equal(returnOperandTypes))
     return op->emitError(
@@ -580,9 +589,13 @@ BufferDeallocation::updateFunctionSignature(FunctionOpInterface op) {
   if (!returnOperandTypes.empty())
     resultTypes = returnOperandTypes[0];
 
-  op.setFunctionTypeAttr(TypeAttr::get(FunctionType::get(
-      op->getContext(), op.getFunctionBody().front().getArgumentTypes(),
-      resultTypes)));
+  // TODO: it would be nice if the FunctionOpInterface had a method to not only
+  // get the function type but also set it.
+  op->setAttr(
+      "function_type",
+      TypeAttr::get(FunctionType::get(
+          op->getContext(), op.getFunctionBody().front().getArgumentTypes(),
+          resultTypes)));
 
   return success();
 }
@@ -637,7 +650,7 @@ LogicalResult BufferDeallocation::deallocate(Block *block) {
 
     // Adhere to function boundary ABI: no ownership of function argument
     // MemRefs is taken.
-    if (isa<FunctionOpInterface>(block->getParentOp()) &&
+    if (isFunctionWithoutDynamicOwnership(block->getParentOp()) &&
         block->isEntryBlock()) {
       Value newArg = buildBoolValue(builder, arg.getLoc(), false);
       state.updateOwnership(arg, newArg);
@@ -745,17 +758,19 @@ Value BufferDeallocation::materializeMemrefWithGuaranteedOwnership(
 
   // Insert a runtime check and only clone if we still don't have ownership at
   // runtime.
-  Value maybeClone = scf::IfOp::create(
-                         builder, memref.getLoc(), condition,
-                         [&](OpBuilder &builder, Location loc) {
-                           scf::YieldOp::create(builder, loc, newMemref);
-                         },
-                         [&](OpBuilder &builder, Location loc) {
-                           Value clone = bufferization::CloneOp::create(
-                               builder, loc, newMemref);
-                           scf::YieldOp::create(builder, loc, clone);
-                         })
-                         .getResult(0);
+  Value maybeClone =
+      builder
+          .create<scf::IfOp>(
+              memref.getLoc(), condition,
+              [&](OpBuilder &builder, Location loc) {
+                builder.create<scf::YieldOp>(loc, newMemref);
+              },
+              [&](OpBuilder &builder, Location loc) {
+                Value clone =
+                    builder.create<bufferization::CloneOp>(loc, newMemref);
+                builder.create<scf::YieldOp>(loc, clone);
+              })
+          .getResult(0);
   Value trueVal = buildBoolValue(builder, memref.getLoc(), true);
   state.updateOwnership(maybeClone, trueVal);
   state.addMemrefToDeallocate(maybeClone, maybeClone.getParentBlock());
@@ -790,8 +805,8 @@ BufferDeallocation::handleInterface(BranchOpInterface op) {
   state.getMemrefsToRetain(block, op->getSuccessor(0), forwardedOperands,
                            toRetain);
 
-  auto deallocOp = bufferization::DeallocOp::create(
-      builder, op.getLoc(), memrefs, conditions, toRetain);
+  auto deallocOp = builder.create<bufferization::DeallocOp>(
+      op.getLoc(), memrefs, conditions, toRetain);
 
   // We want to replace the current ownership of the retained values with the
   // result values of the dealloc operation as they are always unique.
@@ -816,18 +831,33 @@ FailureOr<Operation *> BufferDeallocation::handleInterface(CallOpInterface op) {
 
   // Lookup the function operation and check if it has private visibility. If
   // the function is referenced by SSA value instead of a Symbol, it's assumed
-  // to be public. (And we cannot easily change the type of the SSA value
-  // anyway.)
-  Operation *funcOp = op.resolveCallableInTable(state.getSymbolTable());
-  bool isPrivate = false;
-  if (auto symbol = dyn_cast_or_null<SymbolOpInterface>(funcOp))
+  // to be always private.
+  Operation *funcOp = op.resolveCallable(state.getSymbolTable());
+  bool isPrivate = true;
+  if (auto symbol = dyn_cast<SymbolOpInterface>(funcOp))
     isPrivate = symbol.isPrivate() && !symbol.isDeclaration();
 
   // If the private-function-dynamic-ownership option is enabled and we are
-  // calling a private function, we need to add an additional `i1` result for
-  // each MemRef result to dynamically pass the current ownership indicator
-  // rather than adhering to the function boundary ABI.
+  // calling a private function, we need to add an additional `i1`
+  // argument/result for each MemRef argument/result to dynamically pass the
+  // current ownership indicator rather than adhering to the function boundary
+  // ABI.
   if (options.privateFuncDynamicOwnership && isPrivate) {
+    SmallVector<Value> newOperands, ownershipIndicatorsToAdd;
+    for (Value operand : op.getArgOperands()) {
+      if (!isMemref(operand)) {
+        newOperands.push_back(operand);
+        continue;
+      }
+      auto [memref, condition] =
+          materializeUniqueOwnership(builder, operand, op->getBlock());
+      newOperands.push_back(memref);
+      ownershipIndicatorsToAdd.push_back(condition);
+    }
+    newOperands.append(ownershipIndicatorsToAdd.begin(),
+                       ownershipIndicatorsToAdd.end());
+    op.getArgOperandsMutable().assign(newOperands);
+
     unsigned numMemrefs = llvm::count_if(op->getResults(), isMemref);
     SmallVector<Type> ownershipTypesToAppend(numMemrefs, builder.getI1Type());
     unsigned ownershipCounter = op->getNumResults();
@@ -878,11 +908,12 @@ BufferDeallocation::handleInterface(MemoryEffectOpInterface op) {
       builder.setInsertionPoint(op);
       Ownership ownership = state.getOwnership(operand, block);
       if (ownership.isUnique()) {
-        Value ownershipInverted = arith::XOrIOp::create(
-            builder, op.getLoc(), ownership.getIndicator(),
+        Value ownershipInverted = builder.create<arith::XOrIOp>(
+            op.getLoc(), ownership.getIndicator(),
             buildBoolValue(builder, op.getLoc(), true));
-        cf::AssertOp::create(builder, op.getLoc(), ownershipInverted,
-                             "expected that the block does not have ownership");
+        builder.create<cf::AssertOp>(
+            op.getLoc(), ownershipInverted,
+            "expected that the block does not have ownership");
       }
     }
   }
@@ -945,18 +976,18 @@ BufferDeallocation::handleInterface(RegionBranchTerminatorOpInterface op) {
   // about, but we would need to check how many successors there are and under
   // which condition they are taken, etc.
 
-  MutableOperandRange operands = op.getMutableSuccessorOperands(
-      RegionSuccessor(op.getOperation(), op.getOperation()->getResults()));
+  MutableOperandRange operands =
+      op.getMutableSuccessorOperands(RegionBranchPoint::parent());
 
   SmallVector<Value> updatedOwnerships;
   auto result = deallocation_impl::insertDeallocOpForReturnLike(
-      state, op, operands.getAsOperandRange(), updatedOwnerships);
+      state, op, OperandRange(operands), updatedOwnerships);
   if (failed(result) || !*result)
     return result;
 
   // Add an additional operand for every MemRef for the ownership indicator.
   if (!funcWithoutDynamicOwnership) {
-    SmallVector<Value> newOperands{operands.getAsOperandRange()};
+    SmallVector<Value> newOperands{OperandRange(operands)};
     newOperands.append(updatedOwnerships.begin(), updatedOwnerships.end());
     operands.assign(newOperands);
   }
@@ -1012,21 +1043,20 @@ namespace {
 /// into the right positions. Furthermore, it inserts additional clones if
 /// necessary. It uses the algorithm described at the top of the file.
 struct OwnershipBasedBufferDeallocationPass
-    : public bufferization::impl::OwnershipBasedBufferDeallocationPassBase<
+    : public bufferization::impl::OwnershipBasedBufferDeallocationBase<
           OwnershipBasedBufferDeallocationPass> {
-  using Base::Base;
-
+  OwnershipBasedBufferDeallocationPass() = default;
+  OwnershipBasedBufferDeallocationPass(bool privateFuncDynamicOwnership)
+      : OwnershipBasedBufferDeallocationPass() {
+    this->privateFuncDynamicOwnership.setValue(privateFuncDynamicOwnership);
+  }
   void runOnOperation() override {
-    DeallocationOptions options;
-    options.privateFuncDynamicOwnership = privateFuncDynamicOwnership;
-
-    mlir::SymbolTableCollection symbolTables;
-
     auto status = getOperation()->walk([&](func::FuncOp func) {
       if (func.isExternal())
         return WalkResult::skip();
 
-      if (failed(deallocateBuffersOwnershipBased(func, options, symbolTables)))
+      if (failed(deallocateBuffersOwnershipBased(func,
+                                                 privateFuncDynamicOwnership)))
         return WalkResult::interrupt();
 
       return WalkResult::advance();
@@ -1043,11 +1073,21 @@ struct OwnershipBasedBufferDeallocationPass
 //===----------------------------------------------------------------------===//
 
 LogicalResult bufferization::deallocateBuffersOwnershipBased(
-    FunctionOpInterface op, DeallocationOptions options,
-    SymbolTableCollection &symbolTables) {
+    FunctionOpInterface op, bool privateFuncDynamicOwnership) {
   // Gather all required allocation nodes and prepare the deallocation phase.
-  BufferDeallocation deallocation(op, options, symbolTables);
+  BufferDeallocation deallocation(op, privateFuncDynamicOwnership);
 
   // Place all required temporary clone and dealloc nodes.
   return deallocation.deallocate(op);
+}
+
+//===----------------------------------------------------------------------===//
+// OwnershipBasedBufferDeallocationPass construction
+//===----------------------------------------------------------------------===//
+
+std::unique_ptr<Pass>
+mlir::bufferization::createOwnershipBasedBufferDeallocationPass(
+    bool privateFuncDynamicOwnership) {
+  return std::make_unique<OwnershipBasedBufferDeallocationPass>(
+      privateFuncDynamicOwnership);
 }

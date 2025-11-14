@@ -9,6 +9,7 @@
 #include "Hexagon.h"
 #include "MCTargetDesc/HexagonMCTargetDesc.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineBranchProbabilityInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
@@ -24,6 +25,13 @@ using namespace llvm;
 
 #define DEBUG_TYPE "hexagon_cfg"
 
+namespace llvm {
+
+FunctionPass *createHexagonCFGOptimizer();
+void initializeHexagonCFGOptimizerPass(PassRegistry&);
+
+} // end namespace llvm
+
 namespace {
 
 class HexagonCFGOptimizer : public MachineFunctionPass {
@@ -34,13 +42,16 @@ private:
 public:
   static char ID;
 
-  HexagonCFGOptimizer() : MachineFunctionPass(ID) {}
+  HexagonCFGOptimizer() : MachineFunctionPass(ID) {
+    initializeHexagonCFGOptimizerPass(*PassRegistry::getPassRegistry());
+  }
 
   StringRef getPassName() const override { return "Hexagon CFG Optimizer"; }
   bool runOnMachineFunction(MachineFunction &Fn) override;
 
   MachineFunctionProperties getRequiredProperties() const override {
-    return MachineFunctionProperties().setNoVRegs();
+    return MachineFunctionProperties().set(
+        MachineFunctionProperties::Property::NoVRegs);
   }
 };
 

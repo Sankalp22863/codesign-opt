@@ -27,14 +27,10 @@ struct FuncInlinerInterface : public DialectInlinerInterface {
   // Analysis Hooks
   //===--------------------------------------------------------------------===//
 
-  /// Call operations can be inlined unless specified otherwise by attributes
-  /// on either the call or the callbale.
+  /// All call operations can be inlined.
   bool isLegalToInline(Operation *call, Operation *callable,
                        bool wouldBeCloned) const final {
-    auto callOp = dyn_cast<func::CallOp>(call);
-    auto funcOp = dyn_cast<func::FuncOp>(callable);
-    return !(callOp && callOp.getNoInline()) &&
-           !(funcOp && funcOp.getNoInline());
+    return true;
   }
 
   /// All operations can be inlined.
@@ -42,7 +38,7 @@ struct FuncInlinerInterface : public DialectInlinerInterface {
     return true;
   }
 
-  /// All function bodies can be inlined.
+  /// All functions can be inlined.
   bool isLegalToInline(Region *, Region *, bool, IRMapping &) const final {
     return true;
   }
@@ -61,8 +57,7 @@ struct FuncInlinerInterface : public DialectInlinerInterface {
 
     // Replace the return with a branch to the dest.
     OpBuilder builder(op);
-    cf::BranchOp::create(builder, op->getLoc(), newDest,
-                         returnOp.getOperands());
+    builder.create<cf::BranchOp>(op->getLoc(), newDest, returnOp.getOperands());
     op->erase();
   }
 

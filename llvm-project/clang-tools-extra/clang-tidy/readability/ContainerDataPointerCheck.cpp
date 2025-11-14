@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- ContainerDataPointerCheck.cpp - clang-tidy -----------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -101,17 +101,14 @@ void ContainerDataPointerCheck::check(const MatchFinder::MatchResult &Result) {
   else if (ACE)
     CE = ACE;
 
-  const SourceRange SrcRange = CE->getSourceRange();
+  SourceRange SrcRange = CE->getSourceRange();
 
   std::string ReplacementText{
       Lexer::getSourceText(CharSourceRange::getTokenRange(SrcRange),
                            *Result.SourceManager, getLangOpts())};
 
-  const auto *OpCall = dyn_cast<CXXOperatorCallExpr>(CE);
-  const bool NeedsParens =
-      OpCall ? (OpCall->getOperator() != OO_Subscript)
-             : !isa<DeclRefExpr, MemberExpr, ArraySubscriptExpr, CallExpr>(CE);
-  if (NeedsParens)
+  if (!isa<DeclRefExpr, ArraySubscriptExpr, CXXOperatorCallExpr, CallExpr,
+           MemberExpr>(CE))
     ReplacementText = "(" + ReplacementText + ")";
 
   if (CE->getType()->isPointerType())
@@ -119,7 +116,7 @@ void ContainerDataPointerCheck::check(const MatchFinder::MatchResult &Result) {
   else
     ReplacementText += ".data()";
 
-  const FixItHint Hint =
+  FixItHint Hint =
       FixItHint::CreateReplacement(UO->getSourceRange(), ReplacementText);
   diag(UO->getBeginLoc(),
        "'data' should be used for accessing the data pointer instead of taking "

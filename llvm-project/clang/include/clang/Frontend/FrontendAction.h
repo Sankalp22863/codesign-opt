@@ -21,7 +21,6 @@
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Frontend/ASTUnit.h"
-#include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendOptions.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
@@ -84,8 +83,6 @@ protected:
   /// \return True on success; on failure ExecutionAction() and
   /// EndSourceFileAction() will not be called.
   virtual bool BeginSourceFileAction(CompilerInstance &CI) {
-    if (CurrentInput.isPreprocessed())
-      CI.getPreprocessor().SetMacroExpansionOnlyInDirectives();
     return true;
   }
 
@@ -100,11 +97,7 @@ protected:
   ///
   /// This is guaranteed to only be called following a successful call to
   /// BeginSourceFileAction (and BeginSourceFile).
-  virtual void EndSourceFileAction() {
-    if (CurrentInput.isPreprocessed())
-      // Reset the preprocessor macro expansion to the default.
-      getCompilerInstance().getPreprocessor().SetEnableMacroExpansion();
-  }
+  virtual void EndSourceFileAction() {}
 
   /// Callback at the end of processing a single input, to determine
   /// if the output files should be erased or not.
@@ -192,12 +185,7 @@ public:
   virtual bool usesPreprocessorOnly() const = 0;
 
   /// For AST-based actions, the kind of translation unit we're handling.
-  virtual TranslationUnitKind getTranslationUnitKind() {
-    // The ASTContext, if exists, knows the exact TUKind of the frondend.
-    if (Instance && Instance->hasASTContext())
-      return Instance->getASTContext().TUKind;
-    return TU_Complete;
-  }
+  virtual TranslationUnitKind getTranslationUnitKind() { return TU_Complete; }
 
   /// Does this action support use with PCH?
   virtual bool hasPCHSupport() const { return true; }

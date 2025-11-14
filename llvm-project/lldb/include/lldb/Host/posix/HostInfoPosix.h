@@ -12,7 +12,6 @@
 #include "lldb/Host/HostInfoBase.h"
 #include "lldb/Utility/FileSpec.h"
 #include <optional>
-#include <string>
 
 namespace lldb_private {
 
@@ -36,17 +35,11 @@ public:
   static bool GetEnvironmentVar(const std::string &var_name, std::string &var);
 
   static UserIDResolver &GetUserIDResolver();
-  static llvm::VersionTuple GetOSVersion();
-  static std::optional<std::string> GetOSBuildString();
-
-  static llvm::Expected<llvm::StringRef> GetSDKRoot(SDKOptions options);
 
 protected:
   static bool ComputeSupportExeDirectory(FileSpec &file_spec);
   static bool ComputeHeaderDirectory(FileSpec &file_spec);
-  static bool ComputeSystemPluginsDirectory(FileSpec &file_spec);
-  static bool ComputeUserPluginsDirectory(FileSpec &file_spec);
 };
-} // namespace lldb_private
+}
 
 #endif

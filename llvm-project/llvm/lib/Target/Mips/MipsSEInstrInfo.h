@@ -24,14 +24,14 @@ class MipsSEInstrInfo : public MipsInstrInfo {
 public:
   explicit MipsSEInstrInfo(const MipsSubtarget &STI);
 
-  const MipsSERegisterInfo &getRegisterInfo() const { return RI; }
+  const MipsRegisterInfo &getRegisterInfo() const override;
 
   /// isLoadFromStackSlot - If the specified machine instruction is a direct
   /// load from a stack slot, return the virtual or physical register number of
   /// the destination along with the FrameIndex of the loaded stack slot.  If
   /// not, return 0.  This predicate must return 0 if the instruction has
   /// any side effects other than loading from the stack slot.
-  Register isLoadFromStackSlot(const MachineInstr &MI,
+  unsigned isLoadFromStackSlot(const MachineInstr &MI,
                                int &FrameIndex) const override;
 
   /// isStoreToStackSlot - If the specified machine instruction is a direct
@@ -39,24 +39,26 @@ public:
   /// the source reg along with the FrameIndex of the loaded stack slot.  If
   /// not, return 0.  This predicate must return 0 if the instruction has
   /// any side effects other than storing to the stack slot.
-  Register isStoreToStackSlot(const MachineInstr &MI,
+  unsigned isStoreToStackSlot(const MachineInstr &MI,
                               int &FrameIndex) const override;
 
   void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
-                   const DebugLoc &DL, Register DestReg, Register SrcReg,
-                   bool KillSrc, bool RenamableDest = false,
-                   bool RenamableSrc = false) const override;
+                   const DebugLoc &DL, MCRegister DestReg, MCRegister SrcReg,
+                   bool KillSrc) const override;
 
-  void storeRegToStack(
-      MachineBasicBlock &MBB, MachineBasicBlock::iterator MI, Register SrcReg,
-      bool isKill, int FrameIndex, const TargetRegisterClass *RC,
-      int64_t Offset,
-      MachineInstr::MIFlag Flags = MachineInstr::NoFlags) const override;
+  void storeRegToStack(MachineBasicBlock &MBB,
+                       MachineBasicBlock::iterator MI,
+                       Register SrcReg, bool isKill, int FrameIndex,
+                       const TargetRegisterClass *RC,
+                       const TargetRegisterInfo *TRI,
+                       int64_t Offset) const override;
 
-  void loadRegFromStack(
-      MachineBasicBlock &MBB, MachineBasicBlock::iterator MI, Register DestReg,
-      int FrameIndex, const TargetRegisterClass *RC, int64_t Offset,
-      MachineInstr::MIFlag Flags = MachineInstr::NoFlags) const override;
+  void loadRegFromStack(MachineBasicBlock &MBB,
+                        MachineBasicBlock::iterator MI,
+                        Register DestReg, int FrameIndex,
+                        const TargetRegisterClass *RC,
+                        const TargetRegisterInfo *TRI,
+                        int64_t Offset) const override;
 
   bool expandPostRAPseudo(MachineInstr &MI) const override;
 

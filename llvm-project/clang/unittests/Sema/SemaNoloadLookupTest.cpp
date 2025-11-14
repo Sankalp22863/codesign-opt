@@ -57,15 +57,14 @@ public:
     std::string FileName = llvm::Twine(ModuleName + ".cppm").str();
     addFile(FileName, Contents);
 
-    CreateInvocationOptions CIOpts;
-    CIOpts.VFS = llvm::vfs::createPhysicalFileSystem();
-    DiagnosticOptions DiagOpts;
     IntrusiveRefCntPtr<DiagnosticsEngine> Diags =
-        CompilerInstance::createDiagnostics(*CIOpts.VFS, DiagOpts);
+        CompilerInstance::createDiagnostics(new DiagnosticOptions());
+    CreateInvocationOptions CIOpts;
     CIOpts.Diags = Diags;
+    CIOpts.VFS = llvm::vfs::createPhysicalFileSystem();
 
     std::string CacheBMIPath =
-        llvm::Twine(TestDir + "/" + ModuleName + ".pcm").str();
+        llvm::Twine(TestDir + "/" + ModuleName + " .pcm").str();
     std::string PrebuiltModulePath =
         "-fprebuilt-module-path=" + TestDir.str().str();
     const char *Args[] = {"clang++",
@@ -76,15 +75,17 @@ public:
                           TestDir.c_str(),
                           "-I",
                           TestDir.c_str(),
-                          FileName.c_str()};
+                          FileName.c_str(),
+                          "-o",
+                          CacheBMIPath.c_str()};
     std::shared_ptr<CompilerInvocation> Invocation =
         createInvocation(Args, CIOpts);
     EXPECT_TRUE(Invocation);
 
-    CompilerInstance Instance(std::move(Invocation));
-    Instance.setDiagnostics(Diags);
-    Instance.getFrontendOpts().OutputFile = CacheBMIPath;
-    GenerateReducedModuleInterfaceAction Action;
+    CompilerInstance Instance;
+    Instance.setDiagnostics(Diags.get());
+    Instance.setInvocation(Invocation);
+    GenerateModuleInterfaceAction Action;
     EXPECT_TRUE(Instance.ExecuteAction(Action));
     EXPECT_FALSE(Diags->hasErrorOccurred());
 

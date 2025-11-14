@@ -1,7 +1,6 @@
 # REQUIRES: asserts
 # RUN: llvm-mc -filetype=obj -triple=x86_64-windows-msvc %s -o %t
-# RUN: llvm-jitlink -num-threads=0 -debug-only=jitlink -noexec %t 2>&1 \
-# RUN:              | FileCheck %s
+# RUN: llvm-jitlink --debug-only=jitlink -noexec %t 2>&1 | FileCheck %s
 #
 # Check absolute symbol is created with a correct value.
 #

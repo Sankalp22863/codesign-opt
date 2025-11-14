@@ -2,6 +2,9 @@ set(LLVM_OPTIONAL_SOURCES
   null.cpp
 )
 
+get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
+get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
+get_property(extension_libs GLOBAL PROPERTY MLIR_EXTENSION_LIBS)
 set(LLVM_LINK_COMPONENTS
   Core
   Support
@@ -14,7 +17,6 @@ if(MLIR_INCLUDE_TESTS)
     MLIRTestFuncToLLVM
     MLIRAffineTransformsTestPasses
     MLIRArithTestPasses
-    MLIRArmSMETestPasses
     MLIRBufferizationTestPasses
     MLIRControlFlowTestPasses
     MLIRDLTITestPasses
@@ -23,35 +25,29 @@ if(MLIR_INCLUDE_TESTS)
     MLIRLinalgTestPasses
     MLIRLoopLikeInterfaceTestPasses
     MLIRMathTestPasses
-    MLIRTestMathToVCIX
     MLIRMemRefTestPasses
-    MLIRTestMemRefToLLVMWithTransforms
-    MLIRShardTest
+    MLIRMeshTest
     MLIRNVGPUTestPasses
-    MLIROpenACCTestPasses
     MLIRSCFTestPasses
     MLIRShapeTestPasses
     MLIRSPIRVTestPasses
     MLIRTensorTestPasses
     MLIRTestAnalysis
-    MLIRTestConvertToSPIRV
     MLIRTestDialect
     MLIRTestDynDialect
     MLIRTestIR
+    MLIRTestOneToNTypeConversionPass
     MLIRTestPass
     MLIRTestReducer
     MLIRTestTransforms
     MLIRTilingInterfaceTestPasses
-    MLIRTosaTestPasses
     MLIRVectorTestPasses
-    MLIRXeGPUTestPasses
     MLIRTestVectorToSPIRV
     MLIRLLVMTestPasses
     )
   set(test_libs ${test_libs}
     MLIRTestPDLL
     MLIRTestTransformDialect
-    MLIRTestIRDLToCppDialect
     )
 
   if (MLIR_ENABLE_PDL_IN_PATTERNMATCH)
@@ -63,11 +59,22 @@ if(MLIR_INCLUDE_TESTS)
 endif()
 
 set(LIBS
+  ${dialect_libs}
+  ${conversion_libs}
+  ${extension_libs}
+  ${test_libs}
 
+  MLIRAffineAnalysis
+  MLIRAnalysis
+  MLIRCastInterfaces
+  MLIRDialect
   MLIROptLib
-  MLIRRegisterAllDialects
-  MLIRRegisterAllExtensions
-  MLIRRegisterAllPasses
+  MLIRParser
+  MLIRPass
+  MLIRTransforms
+  MLIRTransformUtils
+  MLIRSupport
+  MLIRIR
 
   # TODO: Remove when registerAllGPUToLLVMIRTranslations is no longer
   # registered directly in mlir-opt.cpp.
@@ -80,20 +87,28 @@ add_mlir_library(MLIRMlirOptMain
   mlir-opt.cpp
 
   EXCLUDE_FROM_LIBMLIR
-  )
-mlir_target_link_libraries(MLIRMlirOptMain PUBLIC
+
+  LINK_LIBS PUBLIC
   ${LIBS}
-  ${test_libs}
   )
 
 add_mlir_tool(mlir-opt
   mlir-opt.cpp
 
+  DEPENDS
+  ${LIBS}
   SUPPORT_PLUGINS
   )
-mlir_target_link_libraries(mlir-opt PRIVATE ${LIBS})
-target_link_libraries(mlir-opt PRIVATE ${test_libs})
+target_link_libraries(mlir-opt PRIVATE ${LIBS})
 llvm_update_compile_flags(mlir-opt)
 
 mlir_check_all_link_libraries(mlir-opt)
 export_executable_symbols_for_plugins(mlir-opt)
+
+if(MLIR_ENABLE_DEPRECATED_GPU_SERIALIZATION)
+  # Enable deprecated serialization passes.
+  target_compile_definitions(mlir-opt
+    PRIVATE
+    MLIR_DEPRECATED_GPU_SERIALIZATION_ENABLE=1
+  )
+endif()

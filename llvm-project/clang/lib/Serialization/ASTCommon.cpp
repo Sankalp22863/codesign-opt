@@ -186,9 +186,6 @@ serialization::TypeIdxFromBuiltin(const BuiltinType *BT) {
   case BuiltinType::Overload:
     ID = PREDEF_TYPE_OVERLOAD_ID;
     break;
-  case BuiltinType::UnresolvedTemplate:
-    ID = PREDEF_TYPE_UNRESOLVED_TEMPLATE;
-    break;
   case BuiltinType::BoundMember:
     ID = PREDEF_TYPE_BOUND_MEMBER;
     break;
@@ -242,7 +239,7 @@ serialization::TypeIdxFromBuiltin(const BuiltinType *BT) {
   case BuiltinType::Id: \
     ID = PREDEF_TYPE_##Id##_ID; \
     break;
-#include "clang/Basic/AArch64ACLETypes.def"
+#include "clang/Basic/AArch64SVEACLETypes.def"
 #define PPC_VECTOR_TYPE(Name, Id, Size) \
   case BuiltinType::Id: \
     ID = PREDEF_TYPE_##Id##_ID; \
@@ -258,24 +255,14 @@ serialization::TypeIdxFromBuiltin(const BuiltinType *BT) {
     ID = PREDEF_TYPE_##Id##_ID;                                                \
     break;
 #include "clang/Basic/WebAssemblyReferenceTypes.def"
-#define AMDGPU_TYPE(Name, Id, SingletonId, Width, Align)                       \
-  case BuiltinType::Id:                                                        \
-    ID = PREDEF_TYPE_##Id##_ID;                                                \
-    break;
-#include "clang/Basic/AMDGPUTypes.def"
-#define HLSL_INTANGIBLE_TYPE(Name, Id, SingletonId)                            \
-  case BuiltinType::Id:                                                        \
-    ID = PREDEF_TYPE_##Id##_ID;                                                \
-    break;
-#include "clang/Basic/HLSLIntangibleTypes.def"
   case BuiltinType::BuiltinFn:
     ID = PREDEF_TYPE_BUILTIN_FN;
     break;
   case BuiltinType::IncompleteMatrixIdx:
     ID = PREDEF_TYPE_INCOMPLETE_MATRIX_IDX;
     break;
-  case BuiltinType::ArraySection:
-    ID = PREDEF_TYPE_ARRAY_SECTION;
+  case BuiltinType::OMPArraySection:
+    ID = PREDEF_TYPE_OMP_ARRAY_SECTION;
     break;
   case BuiltinType::OMPArrayShaping:
     ID = PREDEF_TYPE_OMP_ARRAY_SHAPING;
@@ -288,7 +275,7 @@ serialization::TypeIdxFromBuiltin(const BuiltinType *BT) {
     break;
   }
 
-  return TypeIdx(0, ID);
+  return TypeIdx(ID);
 }
 
 unsigned serialization::ComputeHash(Selector Sel) {
@@ -297,7 +284,7 @@ unsigned serialization::ComputeHash(Selector Sel) {
     ++N;
   unsigned R = 5381;
   for (unsigned I = 0; I != N; ++I)
-    if (const IdentifierInfo *II = Sel.getIdentifierInfoForSlot(I))
+    if (IdentifierInfo *II = Sel.getIdentifierInfoForSlot(I))
       R = llvm::djbHash(II->getName(), R);
   return R;
 }
@@ -335,7 +322,6 @@ serialization::getDefinitiveDeclContext(const DeclContext *DC) {
   case Decl::CXXConversion:
   case Decl::ObjCMethod:
   case Decl::Block:
-  case Decl::OutlinedFunction:
   case Decl::Captured:
     // Objective C categories, category implementations, and class
     // implementations can only be defined in one place.
@@ -352,7 +338,7 @@ serialization::getDefinitiveDeclContext(const DeclContext *DC) {
 
   // FIXME: These are defined in one place, but properties in class extensions
   // end up being back-patched into the main interface. See
-  // SemaObjC::HandlePropertyInClassExtension for the offending code.
+  // Sema::HandlePropertyInClassExtension for the offending code.
   case Decl::ObjCInterface:
     return nullptr;
 
@@ -437,11 +423,9 @@ bool serialization::isRedeclarableDeclKind(unsigned Kind) {
   case Decl::FriendTemplate:
   case Decl::StaticAssert:
   case Decl::Block:
-  case Decl::OutlinedFunction:
   case Decl::Captured:
   case Decl::Import:
   case Decl::OMPThreadPrivate:
-  case Decl::OMPGroupPrivate:
   case Decl::OMPAllocate:
   case Decl::OMPRequires:
   case Decl::OMPCapturedExpr:
@@ -456,9 +440,6 @@ bool serialization::isRedeclarableDeclKind(unsigned Kind) {
   case Decl::RequiresExprBody:
   case Decl::UnresolvedUsingIfExists:
   case Decl::HLSLBuffer:
-  case Decl::HLSLRootSignature:
-  case Decl::OpenACCDeclare:
-  case Decl::OpenACCRoutine:
     return false;
 
   // These indirectly derive from Redeclarable<T> but are not actually

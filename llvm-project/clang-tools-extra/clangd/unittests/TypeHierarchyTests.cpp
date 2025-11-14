@@ -28,7 +28,6 @@ using ::testing::ElementsAre;
 using ::testing::Field;
 using ::testing::IsEmpty;
 using ::testing::Matcher;
-using ::testing::Optional;
 using ::testing::SizeIs;
 using ::testing::UnorderedElementsAre;
 
@@ -39,12 +38,12 @@ MATCHER_P(selectionRangeIs, R, "") { return arg.selectionRange == R; }
 template <class... ParentMatchers>
 ::testing::Matcher<TypeHierarchyItem> parents(ParentMatchers... ParentsM) {
   return Field(&TypeHierarchyItem::parents,
-               Optional(UnorderedElementsAre(ParentsM...)));
+               HasValue(UnorderedElementsAre(ParentsM...)));
 }
 template <class... ChildMatchers>
 ::testing::Matcher<TypeHierarchyItem> children(ChildMatchers... ChildrenM) {
   return Field(&TypeHierarchyItem::children,
-               Optional(UnorderedElementsAre(ChildrenM...)));
+               HasValue(UnorderedElementsAre(ChildrenM...)));
 }
 // Note: "not resolved" is different from "resolved but empty"!
 MATCHER(parentsNotResolved, "") { return !arg.parents; }
@@ -243,6 +242,7 @@ const NamedDecl &findDeclWithTemplateArgs(ParsedAST &AST,
     // Use getNameForDiagnostic() which includes the template
     // arguments in the printed name.
     ND.getNameForDiagnostic(OS, Policy, /*Qualified=*/true);
+    OS.flush();
     return QName == Query;
   });
 }
@@ -791,7 +791,7 @@ struct Child : Parent1, Parent2 {};
       Children,
       UnorderedElementsAre(
           AllOf(withName("Child"),
-                withResolveParents(Optional(UnorderedElementsAre(withResolveID(
+                withResolveParents(HasValue(UnorderedElementsAre(withResolveID(
                     getSymbolID(&findDecl(AST, "Parent1")).str())))))));
 }
 
@@ -811,9 +811,9 @@ struct Chil^d : Parent {};
   ASSERT_THAT(Result, SizeIs(1));
   auto Parents = superTypes(Result.front(), Index.get());
 
-  EXPECT_THAT(Parents, Optional(UnorderedElementsAre(
+  EXPECT_THAT(Parents, HasValue(UnorderedElementsAre(
                            AllOf(withName("Parent"),
-                                 withResolveParents(Optional(IsEmpty()))))));
+                                 withResolveParents(HasValue(IsEmpty()))))));
 }
 } // namespace
 } // namespace clangd

@@ -88,6 +88,10 @@ struct rdar8875247 {
 };
 void rdar8875247_aux();
 
+int rdar8875247_test() {
+  rdar8875247 f;
+} // expected-warning{{non-void function does not return a value}}
+
 struct rdar8875247_B {
   rdar8875247_B();
   ~rdar8875247_B();
@@ -117,17 +121,4 @@ namespace PR10801 {
     thingy(f);
     thingy(b);
   }
-}
-
-namespace GH63009 {
-struct S2 {
-  [[noreturn]] ~S2();
-};
-
-int foo();
-
-int test_2() {
-  S2 s2;
-  foo();
-}
 }

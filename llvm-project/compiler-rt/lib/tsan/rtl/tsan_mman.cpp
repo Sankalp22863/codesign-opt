@@ -9,19 +9,17 @@
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
 //===----------------------------------------------------------------------===//
-#include "tsan_mman.h"
-
 #include "sanitizer_common/sanitizer_allocator_checks.h"
 #include "sanitizer_common/sanitizer_allocator_interface.h"
 #include "sanitizer_common/sanitizer_allocator_report.h"
 #include "sanitizer_common/sanitizer_common.h"
 #include "sanitizer_common/sanitizer_errno.h"
 #include "sanitizer_common/sanitizer_placement_new.h"
-#include "sanitizer_common/sanitizer_stackdepot.h"
-#include "tsan_flags.h"
 #include "tsan_interface.h"
-#include "tsan_report.h"
+#include "tsan_mman.h"
 #include "tsan_rtl.h"
+#include "tsan_report.h"
+#include "tsan_flags.h"
 
 namespace __tsan {
 
@@ -54,7 +52,7 @@ struct MapUnmapCallback {
   }
 };
 
-alignas(64) static char allocator_placeholder[sizeof(Allocator)];
+static char allocator_placeholder[sizeof(Allocator)] ALIGNED(64);
 Allocator *allocator() {
   return reinterpret_cast<Allocator*>(&allocator_placeholder);
 }
@@ -75,7 +73,7 @@ struct GlobalProc {
         internal_alloc_mtx(MutexTypeInternalAlloc) {}
 };
 
-alignas(64) static char global_proc_placeholder[sizeof(GlobalProc)];
+static char global_proc_placeholder[sizeof(GlobalProc)] ALIGNED(64);
 GlobalProc *global_proc() {
   return reinterpret_cast<GlobalProc*>(&global_proc_placeholder);
 }
@@ -117,21 +115,12 @@ ScopedGlobalProcessor::~ScopedGlobalProcessor() {
   gp->mtx.Unlock();
 }
 
-void AllocatorLockBeforeFork() SANITIZER_NO_THREAD_SAFETY_ANALYSIS {
+void AllocatorLock() SANITIZER_NO_THREAD_SAFETY_ANALYSIS {
   global_proc()->internal_alloc_mtx.Lock();
   InternalAllocatorLock();
-#if !SANITIZER_APPLE
-  // OS X allocates from hooks, see 6a3958247a.
-  allocator()->ForceLock();
-  StackDepotLockBeforeFork();
-#endif
 }
 
-void AllocatorUnlockAfterFork(bool child) SANITIZER_NO_THREAD_SAFETY_ANALYSIS {
-#if !SANITIZER_APPLE
-  StackDepotUnlockAfterFork(child);
-  allocator()->ForceUnlock();
-#endif
+void AllocatorUnlock() SANITIZER_NO_THREAD_SAFETY_ANALYSIS {
   InternalAllocatorUnlock();
   global_proc()->internal_alloc_mtx.Unlock();
 }
@@ -182,24 +171,10 @@ static void SignalUnsafeCall(ThreadState *thr, uptr pc) {
   ObtainCurrentStack(thr, pc, &stack);
   if (IsFiredSuppression(ctx, ReportTypeSignalUnsafe, stack))
     return;
-  // Use alloca, because malloc during signal handling deadlocks
-  ScopedReport *rep = (ScopedReport *)__builtin_alloca(sizeof(ScopedReport));
-  // Take a new scope as Apple platforms require the below locks released
-  // before symbolizing in order to avoid a deadlock
-  {
-    ThreadRegistryLock l(&ctx->thread_registry);
-    new (rep) ScopedReport(ReportTypeSignalUnsafe);
-    rep->AddStack(stack, true);
-#if SANITIZER_APPLE
-  }  // Close this scope to release the locks
-#endif
-    OutputReport(thr, *rep);
-
-    // Need to manually destroy this because we used placement new to allocate
-    rep->~ScopedReport();
-#if !SANITIZER_APPLE
-  }
-#endif
+  ThreadRegistryLock l(&ctx->thread_registry);
+  ScopedReport rep(ReportTypeSignalUnsafe);
+  rep.AddStack(stack, true);
+  OutputReport(thr, rep);
 }
 
 
@@ -266,7 +241,7 @@ void *user_reallocarray(ThreadState *thr, uptr pc, void *p, uptr size, uptr n) {
     if (AllocatorMayReturnNull())
       return SetErrnoOnNull(nullptr);
     GET_STACK_TRACE_FATAL(thr, pc);
-    ReportReallocArrayOverflow(n, size, &stack);
+    ReportReallocArrayOverflow(size, n, &stack);
   }
   return user_realloc(thr, pc, p, size * n);
 }

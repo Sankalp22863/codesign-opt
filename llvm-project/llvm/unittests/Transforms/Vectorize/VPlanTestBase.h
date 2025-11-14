@@ -13,8 +13,7 @@
 #define LLVM_UNITTESTS_TRANSFORMS_VECTORIZE_VPLANTESTBASE_H
 
 #include "../lib/Transforms/Vectorize/VPlan.h"
-#include "../lib/Transforms/Vectorize/VPlanHelpers.h"
-#include "../lib/Transforms/Vectorize/VPlanTransforms.h"
+#include "../lib/Transforms/Vectorize/VPlanHCFGBuilder.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/BasicAliasAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -29,8 +28,10 @@ namespace llvm {
 
 /// Helper class to create a module from an assembly string and VPlans for a
 /// given loop entry block.
-class VPlanTestIRBase : public testing::Test {
+class VPlanTestBase : public testing::Test {
 protected:
+  TargetLibraryInfoImpl TLII;
+  TargetLibraryInfo TLI;
   DataLayout DL;
 
   std::unique_ptr<LLVMContext> Ctx;
@@ -39,11 +40,10 @@ protected:
   std::unique_ptr<DominatorTree> DT;
   std::unique_ptr<AssumptionCache> AC;
   std::unique_ptr<ScalarEvolution> SE;
-  std::unique_ptr<TargetLibraryInfoImpl> TLII;
-  std::unique_ptr<TargetLibraryInfo> TLI;
 
-  VPlanTestIRBase()
-      : DL("e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-"
+  VPlanTestBase()
+      : TLII(), TLI(TLII),
+        DL("e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-"
            "f64:64:64-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:"
            "16:32:64-S128"),
         Ctx(new LLVMContext) {}
@@ -52,8 +52,6 @@ protected:
     SMDiagnostic Err;
     M = parseAssemblyString(ModuleString, Err, *Ctx);
     EXPECT_TRUE(M);
-    TLII = std::make_unique<TargetLibraryInfoImpl>(M->getTargetTriple());
-    TLI = std::make_unique<TargetLibraryInfo>(*TLII);
     return *M;
   }
 
@@ -61,41 +59,32 @@ protected:
     DT.reset(new DominatorTree(F));
     LI.reset(new LoopInfo(*DT));
     AC.reset(new AssumptionCache(F));
-    SE.reset(new ScalarEvolution(F, *TLI, *AC, *DT, *LI));
+    SE.reset(new ScalarEvolution(F, TLI, *AC, *DT, *LI));
   }
 
-  /// Build the VPlan for the loop starting from \p LoopHeader.
-  VPlanPtr buildVPlan(BasicBlock *LoopHeader, bool HasUncountableExit = false) {
+  VPlanPtr buildHCFG(BasicBlock *LoopHeader) {
     Function &F = *LoopHeader->getParent();
     assert(!verifyFunction(F) && "input function must be valid");
     doAnalysis(F);
 
-    Loop *L = LI->getLoopFor(LoopHeader);
-    PredicatedScalarEvolution PSE(*SE, *L);
-    auto Plan = VPlanTransforms::buildVPlan0(L, *LI, IntegerType::get(*Ctx, 64),
-                                             {}, PSE);
-
-    VPlanTransforms::handleEarlyExits(*Plan, HasUncountableExit);
-    VPlanTransforms::addMiddleCheck(*Plan, true, false);
-
-    VPlanTransforms::createLoopRegions(*Plan);
+    auto Plan = VPlan::createInitialVPlan(
+        SE->getBackedgeTakenCount(LI->getLoopFor(LoopHeader)), *SE);
+    VPlanHCFGBuilder HCFGBuilder(LI->getLoopFor(LoopHeader), LI.get(), *Plan);
+    HCFGBuilder.buildHierarchicalCFG();
     return Plan;
   }
-};
 
-class VPlanTestBase : public testing::Test {
-protected:
-  LLVMContext C;
-  std::unique_ptr<BasicBlock> ScalarHeader;
-  SmallVector<std::unique_ptr<VPlan>> Plans;
+  /// Build the VPlan plain CFG for the loop starting from \p LoopHeader.
+  VPlanPtr buildPlainCFG(BasicBlock *LoopHeader) {
+    Function &F = *LoopHeader->getParent();
+    assert(!verifyFunction(F) && "input function must be valid");
+    doAnalysis(F);
 
-  VPlanTestBase() : ScalarHeader(BasicBlock::Create(C, "scalar.header")) {
-    BranchInst::Create(&*ScalarHeader, &*ScalarHeader);
-  }
-
-  VPlan &getPlan(VPValue *TC = nullptr) {
-    Plans.push_back(std::make_unique<VPlan>(&*ScalarHeader, TC));
-    return *Plans.back();
+    auto Plan = VPlan::createInitialVPlan(
+        SE->getBackedgeTakenCount(LI->getLoopFor(LoopHeader)), *SE);
+    VPlanHCFGBuilder HCFGBuilder(LI->getLoopFor(LoopHeader), LI.get(), *Plan);
+    HCFGBuilder.buildPlainCFG();
+    return Plan;
   }
 };
 

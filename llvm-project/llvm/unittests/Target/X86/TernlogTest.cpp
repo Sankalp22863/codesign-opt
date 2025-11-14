@@ -8,7 +8,6 @@
 
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/AsmParser/Parser.h"
-#include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/TargetSelect.h"
@@ -20,17 +19,17 @@
 #include <random>
 
 namespace llvm {
-static std::unique_ptr<TargetMachine> initTM() {
+static std::unique_ptr<LLVMTargetMachine> initTM() {
   LLVMInitializeX86TargetInfo();
   LLVMInitializeX86Target();
   LLVMInitializeX86TargetMC();
 
-  Triple TT("x86_64--");
+  auto TT(Triple::normalize("x86_64--"));
   std::string Error;
   const Target *TheTarget = TargetRegistry::lookupTarget(TT, Error);
-  return std::unique_ptr<TargetMachine>(
+  return std::unique_ptr<LLVMTargetMachine>(static_cast<LLVMTargetMachine *>(
       TheTarget->createTargetMachine(TT, "", "", TargetOptions(), std::nullopt,
-                                     std::nullopt, CodeGenOptLevel::Default));
+                                     std::nullopt, CodeGenOptLevel::Default)));
 }
 
 struct TernTester {
@@ -155,7 +154,6 @@ struct TernTester {
     Function *F = M->getFunction("foo");
     ASSERT_TRUE(F);
     ASSERT_EQ(F->getInstructionCount(), 2u);
-    FAM.clear();
     FPM.run(*F, FAM);
     ASSERT_EQ(F->getInstructionCount(), 1u);
     ASSERT_EQ(F->size(), 1u);

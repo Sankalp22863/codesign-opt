@@ -7,16 +7,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/signal/sigaltstack.h"
-#include "hdr/types/stack_t.h"
-#include "src/__support/libc_errno.h"
-#include "src/__support/macros/config.h"
+#include "src/errno/libc_errno.h"
 #include "src/signal/linux/signal_utils.h"
 
 #include "src/__support/common.h"
 
+#include <signal.h>
 #include <sys/syscall.h>
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
 LLVM_LIBC_FUNCTION(int, sigaltstack,
                    (const stack_t *__restrict ss, stack_t *__restrict oss)) {
@@ -43,4 +42,4 @@ LLVM_LIBC_FUNCTION(int, sigaltstack,
   return 0;
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

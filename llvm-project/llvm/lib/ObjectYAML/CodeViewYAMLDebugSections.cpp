@@ -40,10 +40,12 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <vector>
 
 using namespace llvm;
@@ -735,7 +737,9 @@ Expected<std::shared_ptr<YAMLCoffSymbolRVASubsection>>
 YAMLCoffSymbolRVASubsection::fromCodeViewSubsection(
     const DebugSymbolRVASubsectionRef &Section) {
   auto Result = std::make_shared<YAMLCoffSymbolRVASubsection>();
-  llvm::append_range(Result->RVAs, Section);
+  for (const auto &RVA : Section) {
+    Result->RVAs.push_back(RVA);
+  }
   return Result;
 }
 

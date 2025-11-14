@@ -4,7 +4,7 @@
 @id = private unnamed_addr constant [4 x i8] c"@id\00", align 1
 @id2 = private unnamed_addr constant [5 x i8] c"@id2\00", align 1
 
-; Higher-aligned dummy to make sure it is first in the global merge pool.
+; Higher-aligned dummy to make sure it is first in the string pool.
 @dummy = private unnamed_addr constant [1 x i32] [i32 42], align 4
 
 define ptr @test1() personality ptr @__gnu_objc_personality_v0 {
@@ -15,8 +15,8 @@ define ptr @test1() personality ptr @__gnu_objc_personality_v0 {
 ; CHECK-NEXT:    std 0, 48(1)
 ; CHECK-NEXT:    .cfi_def_cfa_offset 32
 ; CHECK-NEXT:    .cfi_offset lr, 16
-; CHECK-NEXT:    addis 3, 2, .Ldummy@toc@ha
-; CHECK-NEXT:    addi 3, 3, .Ldummy@toc@l
+; CHECK-NEXT:    addis 3, 2, .L__ModuleStringPool@toc@ha
+; CHECK-NEXT:    addi 3, 3, .L__ModuleStringPool@toc@l
 ; CHECK-NEXT:    bl foo
 ; CHECK-NEXT:    nop
   invoke void @foo(ptr @dummy)

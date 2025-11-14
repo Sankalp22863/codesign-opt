@@ -19,7 +19,7 @@
 #include "CodeRegion.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
-#include "llvm/MC/MCParser/AsmLexer.h"
+#include "llvm/MC/MCParser/MCAsmLexer.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -106,6 +106,7 @@ public:
   void emitZerofill(MCSection *Section, MCSymbol *Symbol = nullptr,
                     uint64_t Size = 0, Align ByteAlignment = Align(1),
                     SMLoc Loc = SMLoc()) override {}
+  void emitGPRel32Value(const MCExpr *Value) override {}
   void beginCOFFSymbolDef(const MCSymbol *Symbol) override {}
   void emitCOFFSymbolStorageClass(int StorageClass) override {}
   void emitCOFFSymbolType(int Type) override {}
@@ -147,11 +148,10 @@ protected:
   CodeRegionGenerator(const CodeRegionGenerator &) = delete;
   CodeRegionGenerator &operator=(const CodeRegionGenerator &) = delete;
   virtual Expected<const CodeRegions &>
-  parseCodeRegions(const std::unique_ptr<MCInstPrinter> &IP,
-                   bool SkipFailures) = 0;
+  parseCodeRegions(const std::unique_ptr<MCInstPrinter> &IP) = 0;
 
 public:
-  CodeRegionGenerator() = default;
+  CodeRegionGenerator() {}
   virtual ~CodeRegionGenerator();
 };
 
@@ -164,8 +164,7 @@ public:
   AnalysisRegionGenerator(llvm::SourceMgr &SM) : Regions(SM) {}
 
   virtual Expected<const AnalysisRegions &>
-  parseAnalysisRegions(const std::unique_ptr<MCInstPrinter> &IP,
-                       bool SkipFailures) = 0;
+  parseAnalysisRegions(const std::unique_ptr<MCInstPrinter> &IP) = 0;
 };
 
 /// Abstract CodeRegionGenerator with InstrumentRegionsRegions member
@@ -177,8 +176,7 @@ public:
   InstrumentRegionGenerator(llvm::SourceMgr &SM) : Regions(SM) {}
 
   virtual Expected<const InstrumentRegions &>
-  parseInstrumentRegions(const std::unique_ptr<MCInstPrinter> &IP,
-                         bool SkipFailures) = 0;
+  parseInstrumentRegions(const std::unique_ptr<MCInstPrinter> &IP) = 0;
 };
 
 /// This abstract class is responsible for parsing input ASM and
@@ -204,8 +202,7 @@ public:
 
   unsigned getAssemblerDialect() const { return AssemblerDialect; }
   Expected<const CodeRegions &>
-  parseCodeRegions(const std::unique_ptr<MCInstPrinter> &IP,
-                   bool SkipFailures) override;
+  parseCodeRegions(const std::unique_ptr<MCInstPrinter> &IP) override;
 };
 
 class AsmAnalysisRegionGenerator final : public AnalysisRegionGenerator,
@@ -225,10 +222,8 @@ public:
   MCStreamerWrapper *getMCStreamer() override { return &Streamer; }
 
   Expected<const AnalysisRegions &>
-  parseAnalysisRegions(const std::unique_ptr<MCInstPrinter> &IP,
-                       bool SkipFailures) override {
-    Expected<const CodeRegions &> RegionsOrErr =
-        parseCodeRegions(IP, SkipFailures);
+  parseAnalysisRegions(const std::unique_ptr<MCInstPrinter> &IP) override {
+    Expected<const CodeRegions &> RegionsOrErr = parseCodeRegions(IP);
     if (!RegionsOrErr)
       return RegionsOrErr.takeError();
     else
@@ -236,9 +231,8 @@ public:
   }
 
   Expected<const CodeRegions &>
-  parseCodeRegions(const std::unique_ptr<MCInstPrinter> &IP,
-                   bool SkipFailures) override {
-    return AsmCodeRegionGenerator::parseCodeRegions(IP, SkipFailures);
+  parseCodeRegions(const std::unique_ptr<MCInstPrinter> &IP) override {
+    return AsmCodeRegionGenerator::parseCodeRegions(IP);
   }
 };
 
@@ -260,10 +254,8 @@ public:
   MCStreamerWrapper *getMCStreamer() override { return &Streamer; }
 
   Expected<const InstrumentRegions &>
-  parseInstrumentRegions(const std::unique_ptr<MCInstPrinter> &IP,
-                         bool SkipFailures) override {
-    Expected<const CodeRegions &> RegionsOrErr =
-        parseCodeRegions(IP, SkipFailures);
+  parseInstrumentRegions(const std::unique_ptr<MCInstPrinter> &IP) override {
+    Expected<const CodeRegions &> RegionsOrErr = parseCodeRegions(IP);
     if (!RegionsOrErr)
       return RegionsOrErr.takeError();
     else
@@ -271,9 +263,8 @@ public:
   }
 
   Expected<const CodeRegions &>
-  parseCodeRegions(const std::unique_ptr<MCInstPrinter> &IP,
-                   bool SkipFailures) override {
-    return AsmCodeRegionGenerator::parseCodeRegions(IP, SkipFailures);
+  parseCodeRegions(const std::unique_ptr<MCInstPrinter> &IP) override {
+    return AsmCodeRegionGenerator::parseCodeRegions(IP);
   }
 };
 

@@ -8,53 +8,42 @@
 
 #include "llvm/Frontend/Driver/CodeGenOptions.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/IR/SystemLibraries.h"
-#include "llvm/ProfileData/InstrProfCorrelator.h"
 #include "llvm/TargetParser/Triple.h"
-
-namespace llvm {
-extern llvm::cl::opt<llvm::InstrProfCorrelator::ProfCorrelatorKind>
-    ProfileCorrelate;
-} // namespace llvm
 
 namespace llvm::driver {
 
-TargetLibraryInfoImpl *createTLII(const llvm::Triple &TargetTriple,
+TargetLibraryInfoImpl *createTLII(llvm::Triple &TargetTriple,
                                   driver::VectorLibrary Veclib) {
   TargetLibraryInfoImpl *TLII = new TargetLibraryInfoImpl(TargetTriple);
 
   using VectorLibrary = llvm::driver::VectorLibrary;
   switch (Veclib) {
   case VectorLibrary::Accelerate:
-    TLII->addVectorizableFunctionsFromVecLib(llvm::VectorLibrary::Accelerate,
+    TLII->addVectorizableFunctionsFromVecLib(TargetLibraryInfoImpl::Accelerate,
                                              TargetTriple);
     break;
   case VectorLibrary::LIBMVEC:
-    TLII->addVectorizableFunctionsFromVecLib(llvm::VectorLibrary::LIBMVEC,
+    TLII->addVectorizableFunctionsFromVecLib(TargetLibraryInfoImpl::LIBMVEC_X86,
                                              TargetTriple);
     break;
   case VectorLibrary::MASSV:
-    TLII->addVectorizableFunctionsFromVecLib(llvm::VectorLibrary::MASSV,
+    TLII->addVectorizableFunctionsFromVecLib(TargetLibraryInfoImpl::MASSV,
                                              TargetTriple);
     break;
   case VectorLibrary::SVML:
-    TLII->addVectorizableFunctionsFromVecLib(llvm::VectorLibrary::SVML,
+    TLII->addVectorizableFunctionsFromVecLib(TargetLibraryInfoImpl::SVML,
                                              TargetTriple);
     break;
   case VectorLibrary::SLEEF:
-    TLII->addVectorizableFunctionsFromVecLib(llvm::VectorLibrary::SLEEFGNUABI,
+    TLII->addVectorizableFunctionsFromVecLib(TargetLibraryInfoImpl::SLEEFGNUABI,
                                              TargetTriple);
     break;
   case VectorLibrary::Darwin_libsystem_m:
     TLII->addVectorizableFunctionsFromVecLib(
-        llvm::VectorLibrary::DarwinLibSystemM, TargetTriple);
+        TargetLibraryInfoImpl::DarwinLibSystemM, TargetTriple);
     break;
   case VectorLibrary::ArmPL:
-    TLII->addVectorizableFunctionsFromVecLib(llvm::VectorLibrary::ArmPL,
-                                             TargetTriple);
-    break;
-  case VectorLibrary::AMDLIBM:
-    TLII->addVectorizableFunctionsFromVecLib(llvm::VectorLibrary::AMDLIBM,
+    TLII->addVectorizableFunctionsFromVecLib(TargetLibraryInfoImpl::ArmPL,
                                              TargetTriple);
     break;
   default:
@@ -63,9 +52,4 @@ TargetLibraryInfoImpl *createTLII(const llvm::Triple &TargetTriple,
   return TLII;
 }
 
-std::string getDefaultProfileGenName() {
-  return llvm::ProfileCorrelate != InstrProfCorrelator::NONE
-             ? "default_%m.proflite"
-             : "default_%m.profraw";
-}
 } // namespace llvm::driver

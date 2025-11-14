@@ -48,11 +48,8 @@ ArrayRef<syntax::Token> tokens(syntax::Node *N,
 
 std::vector<TestClangConfig> clang::syntax::allTestClangConfigs() {
   std::vector<TestClangConfig> all_configs;
-  for (TestLanguage lang : {
-#define TESTLANGUAGE(lang, version, std_flag, version_index)                   \
-  Lang_##lang##version,
-#include "clang/Testing/TestLanguage.def"
-       }) {
+  for (TestLanguage lang : {Lang_C89, Lang_C99, Lang_CXX03, Lang_CXX11,
+                            Lang_CXX14, Lang_CXX17, Lang_CXX20}) {
     TestClangConfig config;
     config.Language = lang;
     config.Target = "x86_64-pc-linux-gnu";
@@ -126,7 +123,7 @@ SyntaxTreeTest::buildTree(StringRef Code, const TestClangConfig &ClangConfig) {
   FS->addFile(FileName, time_t(), llvm::MemoryBuffer::getMemBufferCopy(""));
 
   if (!Diags->getClient())
-    Diags->setClient(new TextDiagnosticPrinter(llvm::errs(), DiagOpts));
+    Diags->setClient(new TextDiagnosticPrinter(llvm::errs(), DiagOpts.get()));
   Diags->setSeverityForGroup(diag::Flavor::WarningOrError, "unused-value",
                              diag::Severity::Ignored, SourceLocation());
 
@@ -151,11 +148,11 @@ SyntaxTreeTest::buildTree(StringRef Code, const TestClangConfig &ClangConfig) {
   Invocation->getFrontendOpts().DisableFree = false;
   Invocation->getPreprocessorOpts().addRemappedFile(
       FileName, llvm::MemoryBuffer::getMemBufferCopy(Code).release());
-  CompilerInstance Compiler(Invocation);
-  Compiler.setDiagnostics(Diags);
-  Compiler.setVirtualFileSystem(FS);
-  Compiler.setFileManager(FileMgr);
-  Compiler.setSourceManager(SourceMgr);
+  CompilerInstance Compiler;
+  Compiler.setInvocation(Invocation);
+  Compiler.setDiagnostics(Diags.get());
+  Compiler.setFileManager(FileMgr.get());
+  Compiler.setSourceManager(SourceMgr.get());
 
   syntax::TranslationUnit *Root = nullptr;
   BuildSyntaxTreeAction Recorder(Root, this->TM, this->TB, this->Arena);

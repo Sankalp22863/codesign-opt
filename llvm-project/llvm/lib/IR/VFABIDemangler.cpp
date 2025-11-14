@@ -11,7 +11,6 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/VectorTypeUtils.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include <limits>
@@ -20,16 +19,15 @@ using namespace llvm;
 
 #define DEBUG_TYPE "vfabi-demangler"
 
+namespace {
 /// Utilities for the Vector Function ABI name parser.
 
-namespace {
 /// Return types for the parser functions.
 enum class ParseRet {
   OK,   // Found.
   None, // Not found.
   Error // Syntax error.
 };
-} // namespace
 
 /// Extracts the `<isa>` information from the mangled string, and
 /// sets the `ISA` accordingly. If successful, the <isa> token is removed
@@ -44,7 +42,6 @@ static ParseRet tryParseISA(StringRef &MangledName, VFISAKind &ISA) {
     ISA = StringSwitch<VFISAKind>(MangledName.take_front(1))
               .Case("n", VFISAKind::AdvancedSIMD)
               .Case("s", VFISAKind::SVE)
-              .Case("r", VFISAKind::RVV)
               .Case("b", VFISAKind::SSE)
               .Case("c", VFISAKind::AVX)
               .Case("d", VFISAKind::AVX2)
@@ -82,9 +79,9 @@ static ParseRet tryParseVLEN(StringRef &ParseString, VFISAKind ISA,
                              std::pair<unsigned, bool> &ParsedVF) {
   if (ParseString.consume_front("x")) {
     // SVE is the only scalable ISA currently supported.
-    if (ISA != VFISAKind::SVE && ISA != VFISAKind::RVV) {
+    if (ISA != VFISAKind::SVE) {
       LLVM_DEBUG(dbgs() << "Vector function variant declared with scalable VF "
-                        << "but ISA supported for SVE and RVV only\n");
+                        << "but ISA is not SVE\n");
       return ParseRet::Error;
     }
     // We can't determine the VF of a scalable vector by looking at the vlen
@@ -304,8 +301,9 @@ static ParseRet tryParseAlign(StringRef &ParseString, Align &Alignment) {
 // the number of elements of the given type which would fit in such a vector.
 static std::optional<ElementCount> getElementCountForTy(const VFISAKind ISA,
                                                         const Type *Ty) {
-  assert((ISA == VFISAKind::SVE || ISA == VFISAKind::RVV) &&
-         "Scalable VF decoding only implemented for SVE and RVV\n");
+  // Only AArch64 SVE is supported at present.
+  assert(ISA == VFISAKind::SVE &&
+         "Scalable VF decoding only implemented for SVE\n");
 
   if (Ty->isIntegerTy(64) || Ty->isDoubleTy() || Ty->isPointerTy())
     return ElementCount::getScalable(2);
@@ -348,20 +346,12 @@ getScalableECFromSignature(const FunctionType *Signature, const VFISAKind ISA,
   // Also check the return type if not void.
   Type *RetTy = Signature->getReturnType();
   if (!RetTy->isVoidTy()) {
-    // If the return type is a struct, only allow unpacked struct literals.
-    StructType *StructTy = dyn_cast<StructType>(RetTy);
-    if (StructTy && !isUnpackedStructLiteral(StructTy))
+    std::optional<ElementCount> ReturnEC = getElementCountForTy(ISA, RetTy);
+    // If we have an unknown scalar element type we can't find a reasonable VF.
+    if (!ReturnEC)
       return std::nullopt;
-
-    for (Type *RetTy : getContainedTypes(RetTy)) {
-      std::optional<ElementCount> ReturnEC = getElementCountForTy(ISA, RetTy);
-      // If we have an unknown scalar element type we can't find a reasonable
-      // VF.
-      if (!ReturnEC)
-        return std::nullopt;
-      if (ElementCount::isKnownLT(*ReturnEC, MinEC))
-        MinEC = *ReturnEC;
-    }
+    if (ElementCount::isKnownLT(*ReturnEC, MinEC))
+      MinEC = *ReturnEC;
   }
 
   // The SVE Vector function call ABI bases the VF on the widest element types
@@ -373,6 +363,7 @@ getScalableECFromSignature(const FunctionType *Signature, const VFISAKind ISA,
 
   return std::nullopt;
 }
+} // namespace
 
 // Format of the ABI name:
 // _ZGV<isa><mask><vlen><parameters>_<scalarname>[(<redirection>)]
@@ -541,7 +532,7 @@ void VFABI::getVectorVariantNames(
   SmallVector<StringRef, 8> ListAttr;
   S.split(ListAttr, ",");
 
-  for (const auto &S : SetVector<StringRef>(llvm::from_range, ListAttr)) {
+  for (const auto &S : SetVector<StringRef>(ListAttr.begin(), ListAttr.end())) {
     std::optional<VFInfo> Info =
         VFABI::tryDemangleForVFABI(S, CI.getFunctionType());
     if (Info && CI.getModule()->getFunction(Info->VectorName)) {
@@ -575,7 +566,7 @@ FunctionType *VFABI::createFunctionType(const VFInfo &Info,
 
   auto *RetTy = ScalarFTy->getReturnType();
   if (!RetTy->isVoidTy())
-    RetTy = toVectorizedTy(RetTy, VF);
+    RetTy = VectorType::get(RetTy, VF);
   return FunctionType::get(RetTy, VecTypes, false);
 }
 

@@ -17,7 +17,6 @@
 #define LLDB_SOURCE_PLUGINS_PROCESS_ELF_CORE_PROCESSELFCORE_H
 
 #include <list>
-#include <unordered_map>
 #include <vector>
 
 #include "lldb/Target/PostMortemProcess.h"
@@ -68,8 +67,10 @@ public:
   void RefreshStateAfterStop() override;
 
   lldb_private::Status WillResume() override {
-    return lldb_private::Status::FromErrorStringWithFormatv(
+    lldb_private::Status error;
+    error.SetErrorStringWithFormatv(
         "error: {0} does not support resuming processes", GetPluginName());
+    return error;
   }
 
   // Process Queries
@@ -126,6 +127,7 @@ private:
       VMRangeToPermissions;
 
   lldb::ModuleSP m_core_module_sp;
+  lldb_private::FileSpec m_core_file;
   std::string m_dyld_plugin_name;
 
   // True if m_thread_contexts contains valid entries
@@ -149,12 +151,6 @@ private:
   // NT_FILE entries found from the NOTE segment
   std::vector<NT_FILE_Entry> m_nt_file_entries;
 
-  // Map from file path to UUID for quick lookup
-  std::unordered_map<std::string, lldb_private::UUID> m_uuids;
-
-  // Executable name found from the ELF PRPSINFO
-  std::string m_executable_name;
-
   // Parse thread(s) data structures(prstatus, prpsinfo) from given NOTE segment
   llvm::Error ParseThreadContextsFromNoteSegment(
       const elf::ELFProgramHeader &segment_header,
@@ -162,17 +158,6 @@ private:
 
   // Returns number of thread contexts stored in the core file
   uint32_t GetNumThreadContexts();
-
-  // Populate gnu uuid for each NT_FILE entry
-  void UpdateBuildIdForNTFileEntries();
-
-  lldb_private::UUID FindModuleUUID(const llvm::StringRef path) override;
-
-  // Returns the main executable path
-  llvm::StringRef GetMainExecutablePath();
-
-  // Returns the value of certain type of note of a given start address
-  lldb_private::UUID FindBuidIdInCoreMemory(lldb::addr_t address);
 
   // Parse a contiguous address range of the process from LOAD segment
   lldb::addr_t

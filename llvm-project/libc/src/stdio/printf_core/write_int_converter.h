@@ -9,18 +9,16 @@
 #ifndef LLVM_LIBC_SRC_STDIO_PRINTF_CORE_WRITE_INT_CONVERTER_H
 #define LLVM_LIBC_SRC_STDIO_PRINTF_CORE_WRITE_INT_CONVERTER_H
 
-#include "src/__support/macros/config.h"
 #include "src/stdio/printf_core/core_structs.h"
 #include "src/stdio/printf_core/writer.h"
 
 #include <inttypes.h>
 #include <stddef.h>
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 namespace printf_core {
 
-template <WriteMode write_mode>
-LIBC_INLINE int convert_write_int(Writer<write_mode> *writer,
+LIBC_INLINE int convert_write_int(Writer *writer,
                                   const FormatSection &to_conv) {
 
 #ifndef LIBC_COPT_PRINTF_NO_NULLPTR_CHECKS
@@ -29,11 +27,11 @@ LIBC_INLINE int convert_write_int(Writer<write_mode> *writer,
     return NULLPTR_WRITE_ERROR;
 #endif // LIBC_COPT_PRINTF_NO_NULLPTR_CHECKS
 
-  size_t written = writer->get_chars_written();
+  int written = writer->get_chars_written();
 
   switch (to_conv.length_modifier) {
   case LengthModifier::none:
-    *reinterpret_cast<int *>(to_conv.conv_val_ptr) = static_cast<int>(written);
+    *reinterpret_cast<int *>(to_conv.conv_val_ptr) = written;
     break;
   case LengthModifier::l:
     *reinterpret_cast<long *>(to_conv.conv_val_ptr) = written;
@@ -57,8 +55,6 @@ LIBC_INLINE int convert_write_int(Writer<write_mode> *writer,
     *reinterpret_cast<ptrdiff_t *>(to_conv.conv_val_ptr) = written;
     break;
   case LengthModifier::j:
-  case LengthModifier::w:
-  case LengthModifier::wf:
     *reinterpret_cast<uintmax_t *>(to_conv.conv_val_ptr) = written;
     break;
   }
@@ -66,6 +62,6 @@ LIBC_INLINE int convert_write_int(Writer<write_mode> *writer,
 }
 
 } // namespace printf_core
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE
 
 #endif // LLVM_LIBC_SRC_STDIO_PRINTF_CORE_WRITE_INT_CONVERTER_H

@@ -13,13 +13,10 @@
 #include "lldb/Symbol/CompilerType.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
-#include "lldb/Utility/LLDBLog.h"
-#include "lldb/Utility/Log.h"
 #include "lldb/Utility/StringLexer.h"
 
 #include "clang/Basic/TargetInfo.h"
 
-#include <optional>
 #include <vector>
 
 using namespace lldb_private;
@@ -42,17 +39,13 @@ std::string AppleObjCTypeEncodingParser::ReadStructName(StringLexer &type) {
   return std::string(buffer.GetString());
 }
 
-std::optional<std::string>
-AppleObjCTypeEncodingParser::ReadQuotedString(StringLexer &type) {
-  if (!type.HasAtLeast(1))
-    return std::nullopt;
-
+std::string AppleObjCTypeEncodingParser::ReadQuotedString(StringLexer &type) {
   StreamString buffer;
-  while (type.Peek() != '"') {
+  while (type.HasAtLeast(1) && type.Peek() != '"')
     buffer.Printf("%c", type.Next());
-    if (!type.HasAtLeast(1))
-      return std::nullopt;
-  }
+  StringLexer::Character next = type.Next();
+  UNUSED_IF_ASSERT_DISABLED(next);
+  assert(next == '"');
   return std::string(buffer.GetString());
 }
 
@@ -75,12 +68,10 @@ AppleObjCTypeEncodingParser::ReadStructElement(TypeSystemClang &ast_ctx,
                                                StringLexer &type,
                                                bool for_expression) {
   StructElement retval;
-  if (type.NextIf('"')) {
-    if (auto maybe_name = ReadQuotedString(type))
-      retval.name = *maybe_name;
-    else
-      return retval;
-  }
+  if (type.NextIf('"'))
+    retval.name = ReadQuotedString(type);
+  if (!type.NextIf('"'))
+    return retval;
   uint32_t bitfield_size = 0;
   retval.type = BuildType(ast_ctx, type, for_expression, &bitfield_size);
   retval.bitfield = bitfield_size;
@@ -205,10 +196,7 @@ clang::QualType AppleObjCTypeEncodingParser::BuildObjCObjectPointerType(
     // quoted string is a class name. - If we see anything else, the quoted
     // string is a field name and we push it back onto type.
 
-    if (auto maybe_name = ReadQuotedString(type))
-      name = *maybe_name;
-    else
-      return clang::QualType();
+    name = ReadQuotedString(type);
 
     if (type.HasAtLeast(1)) {
       switch (type.Peek()) {
@@ -246,15 +234,12 @@ clang::QualType AppleObjCTypeEncodingParser::BuildObjCObjectPointerType(
 
     auto types = decl_vendor->FindTypes(ConstString(name), /*max_matches*/ 1);
 
-    if (types.empty()) {
-      // The user can forward-declare something that has no definition. The
-      // runtime doesn't prohibit this at all. This is a rare and very weird
-      // case. Assert assert in debug builds so we catch other weird cases.
-      assert(false && "forward declaration without definition");
-      LLDB_LOG(GetLog(LLDBLog::Types),
-               "forward declaration without definition: {0}", name);
+    // The user can forward-declare something that has no definition.  The runtime
+    // doesn't prohibit this at all. This is a rare and very weird case.  We keep
+    // this assert in debug builds so we catch other weird cases.
+    lldbassert(!types.empty());
+    if (types.empty())
       return ast_ctx.getObjCIdType();
-    }
 
     return ClangUtil::GetQualType(types.front().GetPointerType());
   } else {

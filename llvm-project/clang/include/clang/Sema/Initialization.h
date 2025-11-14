@@ -91,10 +91,6 @@ public:
     /// or vector.
     EK_VectorElement,
 
-    /// The entity being initialized is an element of a matrix.
-    /// or matrix.
-    EK_MatrixElement,
-
     /// The entity being initialized is a field of block descriptor for
     /// the copied-in c++ object.
     EK_BlockElement,
@@ -163,9 +159,8 @@ private:
   };
 
   struct VD {
-    /// The VarDecl, FieldDecl, TemplateParmDecl, or BindingDecl being
-    /// initialized.
-    NamedDecl *VariableOrMember;
+    /// The VarDecl, FieldDecl, or BindingDecl being initialized.
+    ValueDecl *VariableOrMember;
 
     /// When Kind == EK_Member, whether this is an implicit member
     /// initialization in a copy or move constructor. These can perform array
@@ -209,15 +204,15 @@ private:
     /// virtual base.
     llvm::PointerIntPair<const CXXBaseSpecifier *, 1> Base;
 
-    /// When Kind == EK_ArrayElement, EK_VectorElement, EK_MatrixElement,
-    /// or EK_ComplexElement, the index of the array or vector element being
+    /// When Kind == EK_ArrayElement, EK_VectorElement, or
+    /// EK_ComplexElement, the index of the array or vector element being
     /// initialized.
     unsigned Index;
 
     struct C Capture;
   };
 
-  InitializedEntity() {}
+  InitializedEntity() {};
 
   /// Create the initialization entity for a variable.
   InitializedEntity(VarDecl *Var, EntityKind EK = EK_Variable)
@@ -296,8 +291,8 @@ public:
   }
 
   /// Create the initialization entity for a template parameter.
-  static InitializedEntity InitializeTemplateParameter(QualType T,
-                                                       NamedDecl *Param) {
+  static InitializedEntity
+  InitializeTemplateParameter(QualType T, NonTypeTemplateParmDecl *Param) {
     InitializedEntity Entity;
     Entity.Kind = EK_TemplateParameter;
     Entity.Type = T;
@@ -540,7 +535,7 @@ public:
   /// element's index.
   unsigned getElementIndex() const {
     assert(getKind() == EK_ArrayElement || getKind() == EK_VectorElement ||
-           getKind() == EK_MatrixElement || getKind() == EK_ComplexElement);
+           getKind() == EK_ComplexElement);
     return Index;
   }
 
@@ -548,7 +543,7 @@ public:
   /// element, sets the element index.
   void setElementIndex(unsigned Index) {
     assert(getKind() == EK_ArrayElement || getKind() == EK_VectorElement ||
-           getKind() == EK_MatrixElement || getKind() == EK_ComplexElement);
+           getKind() == EK_ComplexElement);
     this->Index = Index;
   }
 
@@ -608,7 +603,7 @@ private:
     /// Normal context
     IC_Normal,
 
-    /// Normal context, but allows explicit conversion functions
+    /// Normal context, but allows explicit conversion functionss
     IC_ExplicitConvs,
 
     /// Implicit context (value initialization)
@@ -681,12 +676,11 @@ public:
   }
 
   /// Create a direct initialization for a functional cast.
-  static InitializationKind CreateFunctionalCast(SourceLocation StartLoc,
-                                                 SourceRange ParenRange,
+  static InitializationKind CreateFunctionalCast(SourceRange TypeRange,
                                                  bool InitList) {
     return InitializationKind(InitList ? IK_DirectList : IK_Direct,
-                              IC_FunctionalCast, StartLoc,
-                              ParenRange.getBegin(), ParenRange.getEnd());
+                              IC_FunctionalCast, TypeRange.getBegin(),
+                              TypeRange.getBegin(), TypeRange.getEnd());
   }
 
   /// Create a copy initialization.
@@ -1130,9 +1124,6 @@ public:
 
     // A designated initializer was provided for a non-aggregate type.
     FK_DesignatedInitForNonAggregate,
-
-    /// HLSL intialization list flattening failed.
-    FK_HLSLInitListFlatteningFailed,
   };
 
 private:
@@ -1392,11 +1383,6 @@ public:
   void AddOCLZeroOpaqueTypeStep(QualType T);
 
   void AddParenthesizedListInitStep(QualType T);
-
-  /// Only used when initializing structured bindings from an array with
-  /// direct-list-initialization. Unwrap the initializer list to get the array
-  /// for array copy.
-  void AddUnwrapInitListInitStep(InitListExpr *Syntactic);
 
   /// Add steps to unwrap a initializer list for a reference around a
   /// single element and rewrap it at the end.

@@ -14,6 +14,7 @@
 #include "bolt/Core/BinaryBasicBlock.h"
 #include "bolt/Passes/DataflowInfoManager.h"
 #include "bolt/Passes/FrameAnalysis.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/MC/MCInstPrinter.h"
 #include <optional>
 #include <queue>
@@ -301,7 +302,10 @@ bool ValidateInternalCalls::analyzeFunction(BinaryFunction &Function) const {
   return true;
 }
 
-Error ValidateInternalCalls::runOnFunctions(BinaryContext &BC) {
+void ValidateInternalCalls::runOnFunctions(BinaryContext &BC) {
+  if (!BC.isX86())
+    return;
+
   // Look for functions that need validation. This should be pretty rare.
   std::set<BinaryFunction *> NeedsValidation;
   for (auto &BFI : BC.getBinaryFunctions()) {
@@ -309,23 +313,17 @@ Error ValidateInternalCalls::runOnFunctions(BinaryContext &BC) {
     for (BinaryBasicBlock &BB : Function) {
       for (MCInst &Inst : BB) {
         if (getInternalCallTarget(Function, Inst)) {
-          BC.errs() << "BOLT-WARNING: internal call detected in function "
-                    << Function << '\n';
           NeedsValidation.insert(&Function);
           Function.setSimple(false);
-          Function.setPreserveNops(true);
           break;
         }
       }
     }
   }
 
-  if (!BC.isX86())
-    return Error::success();
-
   // Skip validation for non-relocation mode
   if (!BC.HasRelocations)
-    return Error::success();
+    return;
 
   // Since few functions need validation, we can work with our most expensive
   // algorithms here. Fix the CFG treating internal calls as unconditional
@@ -341,15 +339,13 @@ Error ValidateInternalCalls::runOnFunctions(BinaryContext &BC) {
   }
 
   if (!Invalid.empty()) {
-    BC.errs()
-        << "BOLT-WARNING: will skip the following function(s) as unsupported"
-           " internal calls were detected:\n";
+    errs() << "BOLT-WARNING: will skip the following function(s) as unsupported"
+              " internal calls were detected:\n";
     for (BinaryFunction *Function : Invalid) {
-      BC.errs() << "              " << *Function << "\n";
+      errs() << "              " << *Function << "\n";
       Function->setIgnored();
     }
   }
-  return Error::success();
 }
 
 } // namespace bolt

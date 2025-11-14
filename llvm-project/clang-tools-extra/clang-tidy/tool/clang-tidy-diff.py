@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# ===-----------------------------------------------------------------------===#
+# ===- clang-tidy-diff.py - ClangTidy Diff Checker -----------*- python -*--===#
 #
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
@@ -28,7 +28,6 @@ import glob
 import json
 import multiprocessing
 import os
-import queue
 import re
 import shutil
 import subprocess
@@ -36,12 +35,18 @@ import sys
 import tempfile
 import threading
 import traceback
-from pathlib import Path
 
 try:
     import yaml
 except ImportError:
     yaml = None
+
+is_py2 = sys.version[0] == "2"
+
+if is_py2:
+    import Queue as queue
+else:
+    import queue as queue
 
 
 def run_tidy(task_queue, lock, timeout, failed_files):
@@ -119,23 +124,6 @@ def merge_replacement_files(tmpdir, mergefile):
         open(mergefile, "w").close()
 
 
-def get_compiling_files(args):
-    """Read a compile_commands.json database and return a set of file paths"""
-    current_dir = Path.cwd()
-    compile_commands_json = (
-        (current_dir / args.build_path) if args.build_path else current_dir
-    )
-    compile_commands_json = compile_commands_json / "compile_commands.json"
-    files = set()
-    with open(compile_commands_json) as db_file:
-        db_json = json.load(db_file)
-        for entry in db_json:
-            if "file" not in entry:
-                continue
-            files.add(Path(entry["file"]))
-    return files
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Run clang-tidy against changed files, and "
@@ -171,7 +159,7 @@ def main():
     parser.add_argument(
         "-j",
         type=int,
-        default=0,
+        default=1,
         help="number of tidy instances to be run in parallel.",
     )
     parser.add_argument(
@@ -241,28 +229,6 @@ def main():
         default=[],
         help="Load the specified plugin in clang-tidy.",
     )
-    parser.add_argument(
-        "-allow-no-checks",
-        action="store_true",
-        help="Allow empty enabled checks.",
-    )
-    parser.add_argument(
-        "-only-check-in-db",
-        dest="skip_non_compiling",
-        default=False,
-        action="store_true",
-        help="Only check files in the compilation database",
-    )
-    parser.add_argument(
-        "-warnings-as-errors",
-        help="Upgrades clang-tidy warnings to errors. Same format as '-checks'.",
-        default="",
-    )
-    parser.add_argument(
-        "-hide-progress",
-        action="store_true",
-        help="Hide progress",
-    )
 
     clang_tidy_args = []
     argv = sys.argv[1:]
@@ -272,13 +238,11 @@ def main():
 
     args = parser.parse_args(argv)
 
-    compiling_files = get_compiling_files(args) if args.skip_non_compiling else None
-
     # Extract changed lines for each file.
     filename = None
     lines_by_file = {}
     for line in sys.stdin:
-        match = re.search(r'^\+\+\+\ "?(.*?/){%s}([^ \t\n"]*)' % args.p, line)
+        match = re.search('^\+\+\+\ "?(.*?/){%s}([^ \t\n"]*)' % args.p, line)
         if match:
             filename = match.group(2)
         if filename is None:
@@ -291,14 +255,7 @@ def main():
             if not re.match("^%s$" % args.iregex, filename, re.IGNORECASE):
                 continue
 
-        # Skip any files not in the compiling list
-        if (
-            compiling_files is not None
-            and (Path.cwd() / filename) not in compiling_files
-        ):
-            continue
-
-        match = re.search(r"^@@.*\+(\d+)(,(\d+))?", line)
+        match = re.search("^@@.*\+(\d+)(,(\d+))?", line)
         if match:
             start_line = int(match.group(1))
             line_count = 1
@@ -317,8 +274,6 @@ def main():
     if max_task_count == 0:
         max_task_count = multiprocessing.cpu_count()
     max_task_count = min(len(lines_by_file), max_task_count)
-    if not args.hide_progress:
-        print(f"Running clang-tidy in {max_task_count} threads...")
 
     combine_fixes = False
     export_fixes_dir = None
@@ -372,16 +327,12 @@ def main():
         common_clang_tidy_args.append("-p=%s" % args.build_path)
     if args.use_color:
         common_clang_tidy_args.append("--use-color")
-    if args.allow_no_checks:
-        common_clang_tidy_args.append("--allow-no-checks")
     for arg in args.extra_arg:
         common_clang_tidy_args.append("-extra-arg=%s" % arg)
     for arg in args.extra_arg_before:
         common_clang_tidy_args.append("-extra-arg-before=%s" % arg)
     for plugin in args.plugins:
         common_clang_tidy_args.append("-load=%s" % plugin)
-    if args.warnings_as_errors:
-        common_clang_tidy_args.append("-warnings-as-errors=" + args.warnings_as_errors)
 
     for name in lines_by_file:
         line_filter_json = json.dumps(
@@ -414,8 +365,7 @@ def main():
         return_code = 1
 
     if combine_fixes:
-        if not args.hide_progress:
-            print(f"Writing fixes to {args.export_fixes} ...")
+        print("Writing fixes to " + args.export_fixes + " ...")
         try:
             merge_replacement_files(export_fixes_dir, args.export_fixes)
         except:

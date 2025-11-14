@@ -13,7 +13,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclGroup.h"
-#include "clang/AST/DynamicRecursiveASTVisitor.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/FileManager.h"
@@ -135,6 +135,7 @@ static bool checkReplacementError(llvm::Error &&Error,
            << "\n";
     }
   });
+  OS.flush();
   if (ErrorMessage.empty()) return true;
   llvm::errs() << ErrorMessage;
   return false;
@@ -647,7 +648,8 @@ TEST_F(FlushRewrittenFilesTest, StoresChangesOnDisk) {
 }
 
 namespace {
-class TestVisitor : public DynamicRecursiveASTVisitor {
+template <typename T>
+class TestVisitor : public clang::RecursiveASTVisitor<T> {
 public:
   bool runOver(StringRef Code) {
     return runToolOnCode(std::make_unique<TestAction>(this), Code);
@@ -697,9 +699,9 @@ void expectReplacementAt(const Replacement &Replace,
   EXPECT_EQ(Length, Replace.getLength());
 }
 
-class ClassDeclXVisitor : public TestVisitor {
+class ClassDeclXVisitor : public TestVisitor<ClassDeclXVisitor> {
 public:
-  bool VisitCXXRecordDecl(CXXRecordDecl *Record) override {
+  bool VisitCXXRecordDecl(CXXRecordDecl *Record) {
     if (Record->getName() == "X") {
       Replace = Replacement(*SM, Record, "");
     }
@@ -720,9 +722,9 @@ TEST(Replacement, ReplacesAtSpellingLocation) {
   expectReplacementAt(ClassDeclX.Replace, "input.cc", 17, 7);
 }
 
-class CallToFVisitor : public TestVisitor {
+class CallToFVisitor : public TestVisitor<CallToFVisitor> {
 public:
-  bool VisitCallExpr(CallExpr *Call) override {
+  bool VisitCallExpr(CallExpr *Call) {
     if (Call->getDirectCallee()->getName() == "F") {
       Replace = Replacement(*SM, Call, "");
     }
@@ -744,21 +746,19 @@ TEST(Replacement, TemplatedFunctionCall) {
   expectReplacementAt(CallToF.Replace, "input.cc", 43, 8);
 }
 
-class NestedNameSpecifierAVisitor : public TestVisitor {
+class NestedNameSpecifierAVisitor
+    : public TestVisitor<NestedNameSpecifierAVisitor> {
 public:
-  bool TraverseNestedNameSpecifierLoc(NestedNameSpecifierLoc NNSLoc) override {
-    if (NestedNameSpecifier NNS = NNSLoc.getNestedNameSpecifier();
-        NNS.getKind() == NestedNameSpecifier::Kind::Namespace) {
-      if (const auto *NS =
-              dyn_cast<NamespaceDecl>(NNSLoc.getNestedNameSpecifier()
-                                          .getAsNamespaceAndPrefix()
-                                          .Namespace)) {
+  bool TraverseNestedNameSpecifierLoc(NestedNameSpecifierLoc NNSLoc) {
+    if (NNSLoc.getNestedNameSpecifier()) {
+      if (const NamespaceDecl* NS = NNSLoc.getNestedNameSpecifier()->getAsNamespace()) {
         if (NS->getName() == "a") {
           Replace = Replacement(*SM, &NNSLoc, "", Context->getLangOpts());
         }
       }
     }
-    return TestVisitor::TraverseNestedNameSpecifierLoc(NNSLoc);
+    return TestVisitor<NestedNameSpecifierAVisitor>::TraverseNestedNameSpecifierLoc(
+        NNSLoc);
   }
   Replacement Replace;
 };
@@ -1038,7 +1038,8 @@ static constexpr bool usesWindowsPaths() {
 
 TEST(DeduplicateByFileTest, PathsWithDots) {
   std::map<std::string, Replacements> FileToReplaces;
-  auto VFS = llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> VFS(
+      new llvm::vfs::InMemoryFileSystem());
   FileManager FileMgr(FileSystemOptions(), VFS);
   StringRef Path1 = usesWindowsPaths() ? "a\\b\\..\\.\\c.h" : "a/b/.././c.h";
   StringRef Path2 = usesWindowsPaths() ? "a\\c.h" : "a/c.h";
@@ -1053,7 +1054,8 @@ TEST(DeduplicateByFileTest, PathsWithDots) {
 
 TEST(DeduplicateByFileTest, PathWithDotSlash) {
   std::map<std::string, Replacements> FileToReplaces;
-  auto VFS = llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> VFS(
+      new llvm::vfs::InMemoryFileSystem());
   FileManager FileMgr(FileSystemOptions(), VFS);
   StringRef Path1 = usesWindowsPaths() ? ".\\a\\b\\c.h" : "./a/b/c.h";
   StringRef Path2 = usesWindowsPaths() ? "a\\b\\c.h" : "a/b/c.h";
@@ -1068,7 +1070,8 @@ TEST(DeduplicateByFileTest, PathWithDotSlash) {
 
 TEST(DeduplicateByFileTest, NonExistingFilePath) {
   std::map<std::string, Replacements> FileToReplaces;
-  auto VFS = llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> VFS(
+      new llvm::vfs::InMemoryFileSystem());
   FileManager FileMgr(FileSystemOptions(), VFS);
   StringRef Path1 = usesWindowsPaths() ? ".\\a\\b\\c.h" : "./a/b/c.h";
   StringRef Path2 = usesWindowsPaths() ? "a\\b\\c.h" : "a/b/c.h";

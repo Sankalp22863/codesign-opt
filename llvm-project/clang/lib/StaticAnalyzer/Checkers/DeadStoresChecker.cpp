@@ -13,8 +13,8 @@
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Attr.h"
-#include "clang/AST/DynamicRecursiveASTVisitor.h"
 #include "clang/AST/ParentMap.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Analysis/Analyses/LiveVariables.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
@@ -23,6 +23,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace clang;
@@ -31,27 +32,27 @@ using namespace ento;
 namespace {
 
 /// A simple visitor to record what VarDecls occur in EH-handling code.
-class EHCodeVisitor : public DynamicRecursiveASTVisitor {
+class EHCodeVisitor : public RecursiveASTVisitor<EHCodeVisitor> {
 public:
   bool inEH;
   llvm::DenseSet<const VarDecl *> &S;
 
-  bool TraverseObjCAtFinallyStmt(ObjCAtFinallyStmt *S) override {
+  bool TraverseObjCAtFinallyStmt(ObjCAtFinallyStmt *S) {
     SaveAndRestore inFinally(inEH, true);
-    return DynamicRecursiveASTVisitor::TraverseObjCAtFinallyStmt(S);
+    return ::RecursiveASTVisitor<EHCodeVisitor>::TraverseObjCAtFinallyStmt(S);
   }
 
-  bool TraverseObjCAtCatchStmt(ObjCAtCatchStmt *S) override {
+  bool TraverseObjCAtCatchStmt(ObjCAtCatchStmt *S) {
     SaveAndRestore inCatch(inEH, true);
-    return DynamicRecursiveASTVisitor::TraverseObjCAtCatchStmt(S);
+    return ::RecursiveASTVisitor<EHCodeVisitor>::TraverseObjCAtCatchStmt(S);
   }
 
-  bool TraverseCXXCatchStmt(CXXCatchStmt *S) override {
+  bool TraverseCXXCatchStmt(CXXCatchStmt *S) {
     SaveAndRestore inCatch(inEH, true);
     return TraverseStmt(S->getHandlerBlock());
   }
 
-  bool VisitDeclRefExpr(DeclRefExpr *DR) override {
+  bool VisitDeclRefExpr(DeclRefExpr *DR) {
     if (inEH)
       if (const VarDecl *D = dyn_cast<VarDecl>(DR->getDecl()))
         S.insert(D);
@@ -156,9 +157,9 @@ public:
       return true;
     // Lazily construct the set that records which VarDecls are in
     // EH code.
-    if (!InEH) {
+    if (!InEH.get()) {
       InEH.reset(new llvm::DenseSet<const VarDecl *>());
-      EHCodeVisitor V(*InEH);
+      EHCodeVisitor V(*InEH.get());
       V.TraverseStmt(AC->getBody());
     }
     // Treat all VarDecls that occur in EH code as being "always live"
@@ -195,7 +196,7 @@ public:
 
     // Compute reachable blocks within the CFG for trivial cases
     // where a bogus dead store can be reported because itself is unreachable.
-    if (!reachableCode) {
+    if (!reachableCode.get()) {
       reachableCode.reset(new ReachableCode(cfg));
       reachableCode->computeReachableBlocks();
     }

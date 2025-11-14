@@ -17,6 +17,7 @@
 
 #include "lldb/lldb-public.h"
 
+#include "lldb/Core/ValueObject.h"
 #include "lldb/DataFormatters/FormatClasses.h"
 #include "lldb/DataFormatters/TypeFormat.h"
 #include "lldb/DataFormatters/TypeSummary.h"
@@ -24,7 +25,6 @@
 #include "lldb/Symbol/CompilerType.h"
 #include "lldb/Utility/RegularExpression.h"
 #include "lldb/Utility/StringLexer.h"
-#include "lldb/ValueObject/ValueObject.h"
 
 namespace lldb_private {
 
@@ -193,10 +193,12 @@ public:
   bool Get(const FormattersMatchVector &candidates, ValueSP &entry) {
     for (const FormattersMatchCandidate &candidate : candidates) {
       if (Get(candidate, entry)) {
-        if (candidate.IsMatch(entry))
+        if (candidate.IsMatch(entry) == false) {
+          entry.reset();
+          continue;
+        } else {
           return true;
-        entry.reset();
-        continue;
+        }
       }
     }
     return false;

@@ -30,6 +30,7 @@
 #include "llvm/Transforms/Utils/MisExpect.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
@@ -37,6 +38,7 @@
 #include "llvm/IR/ProfDataUtils.h"
 #include "llvm/Support/BranchProbability.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/FormatVariadic.h"
 #include <algorithm>
 #include <cstdint>
@@ -48,6 +50,8 @@
 using namespace llvm;
 using namespace misexpect;
 
+namespace llvm {
+
 // Command line option to enable/disable the warning when profile data suggests
 // a mismatch with the use of the llvm.expect intrinsic
 static cl::opt<bool> PGOWarnMisExpect(
@@ -55,24 +59,27 @@ static cl::opt<bool> PGOWarnMisExpect(
     cl::desc("Use this option to turn on/off "
              "warnings about incorrect usage of llvm.expect intrinsics."));
 
-// Command line option for setting the diagnostic tolerance threshold
 static cl::opt<uint32_t> MisExpectTolerance(
     "misexpect-tolerance", cl::init(0),
-    cl::desc("Prevents emitting diagnostics when profile counts are "
+    cl::desc("Prevents emiting diagnostics when profile counts are "
              "within N% of the threshold.."));
 
-static bool isMisExpectDiagEnabled(const LLVMContext &Ctx) {
+} // namespace llvm
+
+namespace {
+
+bool isMisExpectDiagEnabled(LLVMContext &Ctx) {
   return PGOWarnMisExpect || Ctx.getMisExpectWarningRequested();
 }
 
-static uint32_t getMisExpectTolerance(const LLVMContext &Ctx) {
+uint32_t getMisExpectTolerance(LLVMContext &Ctx) {
   return std::max(static_cast<uint32_t>(MisExpectTolerance),
                   Ctx.getDiagnosticsMisExpectTolerance());
 }
 
-static const Instruction *getInstCondition(const Instruction *I) {
+Instruction *getInstCondition(Instruction *I) {
   assert(I != nullptr && "MisExpect target Instruction cannot be nullptr");
-  const Instruction *Ret = nullptr;
+  Instruction *Ret = nullptr;
   if (auto *B = dyn_cast<BranchInst>(I)) {
     Ret = dyn_cast<Instruction>(B->getCondition());
   }
@@ -91,8 +98,8 @@ static const Instruction *getInstCondition(const Instruction *I) {
   return Ret ? Ret : I;
 }
 
-static void emitMisexpectDiagnostic(const Instruction *I, LLVMContext &Ctx,
-                                    uint64_t ProfCount, uint64_t TotalCount) {
+void emitMisexpectDiagnostic(Instruction *I, LLVMContext &Ctx,
+                             uint64_t ProfCount, uint64_t TotalCount) {
   double PercentageCorrect = (double)ProfCount / TotalCount;
   auto PerString =
       formatv("{0:P} ({1} / {2})", PercentageCorrect, ProfCount, TotalCount);
@@ -100,16 +107,21 @@ static void emitMisexpectDiagnostic(const Instruction *I, LLVMContext &Ctx,
       "Potential performance regression from use of the llvm.expect intrinsic: "
       "Annotation was correct on {0} of profiled executions.",
       PerString);
-  const Instruction *Cond = getInstCondition(I);
+  Twine Msg(PerString);
+  Instruction *Cond = getInstCondition(I);
   if (isMisExpectDiagEnabled(Ctx))
-    Ctx.diagnose(DiagnosticInfoMisExpect(Cond, Twine(PerString)));
+    Ctx.diagnose(DiagnosticInfoMisExpect(Cond, Msg));
   OptimizationRemarkEmitter ORE(I->getParent()->getParent());
   ORE.emit(OptimizationRemark(DEBUG_TYPE, "misexpect", Cond) << RemStr.str());
 }
 
-void misexpect::verifyMisExpect(const Instruction &I,
-                                ArrayRef<uint32_t> RealWeights,
-                                ArrayRef<uint32_t> ExpectedWeights) {
+} // namespace
+
+namespace llvm {
+namespace misexpect {
+
+void verifyMisExpect(Instruction &I, ArrayRef<uint32_t> RealWeights,
+                     ArrayRef<uint32_t> ExpectedWeights) {
   // To determine if we emit a diagnostic, we need to compare the branch weights
   // from the profile to those added by the llvm.expect intrinsic.
   // So first, we extract the "likely" and "unlikely" weights from
@@ -118,13 +130,15 @@ void misexpect::verifyMisExpect(const Instruction &I,
   uint64_t LikelyBranchWeight = 0,
            UnlikelyBranchWeight = std::numeric_limits<uint32_t>::max();
   size_t MaxIndex = 0;
-  for (const auto &[Idx, V] : enumerate(ExpectedWeights)) {
+  for (size_t Idx = 0, End = ExpectedWeights.size(); Idx < End; Idx++) {
+    uint32_t V = ExpectedWeights[Idx];
     if (LikelyBranchWeight < V) {
       LikelyBranchWeight = V;
       MaxIndex = Idx;
     }
-    if (UnlikelyBranchWeight > V)
+    if (UnlikelyBranchWeight > V) {
       UnlikelyBranchWeight = V;
+    }
   }
 
   const uint64_t ProfiledWeight = RealWeights[MaxIndex];
@@ -136,9 +150,15 @@ void misexpect::verifyMisExpect(const Instruction &I,
   uint64_t TotalBranchWeight =
       LikelyBranchWeight + (UnlikelyBranchWeight * NumUnlikelyTargets);
 
-  // Failing this assert means that we have corrupted metadata.
-  assert((TotalBranchWeight >= LikelyBranchWeight) && (TotalBranchWeight > 0) &&
-         "TotalBranchWeight is less than the Likely branch weight");
+  // FIXME: When we've addressed sample profiling, restore the assertion
+  //
+  // We cannot calculate branch probability if either of these invariants aren't
+  // met. However, MisExpect diagnostics should not prevent code from compiling,
+  // so we simply forgo emitting diagnostics here, and return early.
+  // assert((TotalBranchWeight >= LikelyBranchWeight) && (TotalBranchWeight > 0)
+  //              && "TotalBranchWeight is less than the Likely branch weight");
+  if ((TotalBranchWeight == 0) || (TotalBranchWeight <= LikelyBranchWeight))
+    return;
 
   // To determine our threshold value we need to obtain the branch probability
   // for the weights added by llvm.expect and use that proportion to calculate
@@ -149,7 +169,7 @@ void misexpect::verifyMisExpect(const Instruction &I,
   uint64_t ScaledThreshold = LikelyProbablilty.scale(RealWeightsTotal);
 
   // clamp tolerance range to [0, 100)
-  uint32_t Tolerance = getMisExpectTolerance(I.getContext());
+  auto Tolerance = getMisExpectTolerance(I.getContext());
   Tolerance = std::clamp(Tolerance, 0u, 99u);
 
   // Allow users to relax checking by N%  i.e., if they use a 5% tolerance,
@@ -163,34 +183,32 @@ void misexpect::verifyMisExpect(const Instruction &I,
                             RealWeightsTotal);
 }
 
-void misexpect::checkBackendInstrumentation(const Instruction &I,
-                                            ArrayRef<uint32_t> RealWeights) {
-  // Backend checking assumes any existing weight comes from an `llvm.expect`
-  // intrinsic. However, SampleProfiling + ThinLTO add branch weights  multiple
-  // times, leading to an invalid assumption in our checking. Backend checks
-  // should only operate on branch weights that carry the "!expected" field,
-  // since they are guaranteed to be added by the LowerExpectIntrinsic pass.
-  if (!hasBranchWeightOrigin(I))
-    return;
+void checkBackendInstrumentation(Instruction &I,
+                                 const ArrayRef<uint32_t> RealWeights) {
   SmallVector<uint32_t> ExpectedWeights;
   if (!extractBranchWeights(I, ExpectedWeights))
     return;
   verifyMisExpect(I, RealWeights, ExpectedWeights);
 }
 
-void misexpect::checkFrontendInstrumentation(
-    const Instruction &I, ArrayRef<uint32_t> ExpectedWeights) {
+void checkFrontendInstrumentation(Instruction &I,
+                                  const ArrayRef<uint32_t> ExpectedWeights) {
   SmallVector<uint32_t> RealWeights;
   if (!extractBranchWeights(I, RealWeights))
     return;
   verifyMisExpect(I, RealWeights, ExpectedWeights);
 }
 
-void misexpect::checkExpectAnnotations(const Instruction &I,
-                                       ArrayRef<uint32_t> ExistingWeights,
-                                       bool IsFrontend) {
-  if (IsFrontend)
+void checkExpectAnnotations(Instruction &I,
+                            const ArrayRef<uint32_t> ExistingWeights,
+                            bool IsFrontend) {
+  if (IsFrontend) {
     checkFrontendInstrumentation(I, ExistingWeights);
-  else
+  } else {
     checkBackendInstrumentation(I, ExistingWeights);
+  }
 }
+
+} // namespace misexpect
+} // namespace llvm
+#undef DEBUG_TYPE

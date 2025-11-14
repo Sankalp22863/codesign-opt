@@ -49,7 +49,7 @@ namespace ParallelUtilities {
 
 namespace {
 /// A single thread pool that is used to run parallel tasks
-std::unique_ptr<ThreadPoolInterface> ThreadPoolPtr;
+std::unique_ptr<ThreadPool> ThreadPoolPtr;
 
 unsigned computeCostFor(const BinaryFunction &BF,
                         const PredicateTy &SkipPredicate,
@@ -90,9 +90,8 @@ inline unsigned estimateTotalCost(const BinaryContext &BC,
 
   // Switch to trivial scheduling if total estimated work is zero
   if (TotalCost == 0) {
-    BC.outs()
-        << "BOLT-WARNING: Running parallel work of 0 estimated cost, will "
-           "switch to  trivial scheduling.\n";
+    outs() << "BOLT-WARNING: Running parallel work of 0 estimated cost, will "
+              "switch to  trivial scheduling.\n";
 
     SchedPolicy = SP_TRIVIAL;
     TotalCost = BC.getBinaryFunctions().size();
@@ -102,15 +101,12 @@ inline unsigned estimateTotalCost(const BinaryContext &BC,
 
 } // namespace
 
-ThreadPoolInterface &getThreadPool(const unsigned ThreadsCount) {
-  if (ThreadPoolPtr)
+ThreadPool &getThreadPool() {
+  if (ThreadPoolPtr.get())
     return *ThreadPoolPtr;
 
-  if (ThreadsCount > 1)
-    ThreadPoolPtr = std::make_unique<DefaultThreadPool>(
-        llvm::hardware_concurrency(ThreadsCount));
-  else
-    ThreadPoolPtr = std::make_unique<SingleThreadExecutor>();
+  ThreadPoolPtr = std::make_unique<ThreadPool>(
+      llvm::hardware_concurrency(opts::ThreadCount));
   return *ThreadPoolPtr;
 }
 
@@ -148,7 +144,7 @@ void runOnEachFunction(BinaryContext &BC, SchedulingPolicy SchedPolicy,
       TotalCost > BlocksCount ? TotalCost / BlocksCount : 1;
 
   // Divide work into blocks of equal cost
-  ThreadPoolInterface &Pool = getThreadPool();
+  ThreadPool &Pool = getThreadPool();
   auto BlockBegin = BC.getBinaryFunctions().begin();
   unsigned CurrentCost = 0;
 
@@ -191,20 +187,8 @@ void runOnEachFunctionWithUniqueAllocId(
     LLVM_DEBUG(T.stopTimer());
   };
 
-  unsigned AllocId = 1;
-  auto EnsureAllocatorExists = [&BC](unsigned AllocId) {
-    if (!BC.MIB->checkAllocatorExists(AllocId)) {
-      MCPlusBuilder::AllocatorIdTy Id =
-          BC.MIB->initializeNewAnnotationAllocator();
-      (void)Id;
-      assert(AllocId == Id && "unexpected allocator id created");
-    }
-  };
-
   if (opts::NoThreads || ForceSequential) {
-    EnsureAllocatorExists(AllocId);
-    runBlock(BC.getBinaryFunctions().begin(), BC.getBinaryFunctions().end(),
-             AllocId);
+    runBlock(BC.getBinaryFunctions().begin(), BC.getBinaryFunctions().end(), 0);
     return;
   }
   // This lock is used to postpone task execution
@@ -217,16 +201,22 @@ void runOnEachFunctionWithUniqueAllocId(
       TotalCost > BlocksCount ? TotalCost / BlocksCount : 1;
 
   // Divide work into blocks of equal cost
-  ThreadPoolInterface &Pool = getThreadPool();
+  ThreadPool &Pool = getThreadPool();
   auto BlockBegin = BC.getBinaryFunctions().begin();
   unsigned CurrentCost = 0;
+  unsigned AllocId = 1;
   for (auto It = BC.getBinaryFunctions().begin();
        It != BC.getBinaryFunctions().end(); ++It) {
     BinaryFunction &BF = It->second;
     CurrentCost += computeCostFor(BF, SkipPredicate, SchedPolicy);
 
     if (CurrentCost >= BlockCost) {
-      EnsureAllocatorExists(AllocId);
+      if (!BC.MIB->checkAllocatorExists(AllocId)) {
+        MCPlusBuilder::AllocatorIdTy Id =
+            BC.MIB->initializeNewAnnotationAllocator();
+        (void)Id;
+        assert(AllocId == Id && "unexpected allocator id created");
+      }
       Pool.async(runBlock, BlockBegin, std::next(It), AllocId);
       AllocId++;
       BlockBegin = std::next(It);
@@ -234,7 +224,12 @@ void runOnEachFunctionWithUniqueAllocId(
     }
   }
 
-  EnsureAllocatorExists(AllocId);
+  if (!BC.MIB->checkAllocatorExists(AllocId)) {
+    MCPlusBuilder::AllocatorIdTy Id =
+        BC.MIB->initializeNewAnnotationAllocator();
+    (void)Id;
+    assert(AllocId == Id && "unexpected allocator id created");
+  }
 
   Pool.async(runBlock, BlockBegin, BC.getBinaryFunctions().end(), AllocId);
   Lock.unlock();

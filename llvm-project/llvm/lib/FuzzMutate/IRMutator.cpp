@@ -20,11 +20,8 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/IntrinsicsAMDGPU.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
-#include "llvm/IR/PassInstrumentation.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
@@ -117,47 +114,16 @@ InjectorIRStrategy::chooseOperation(Value *Src, RandomIRBuilder &IB) {
   return *RS;
 }
 
-static inline Instruction *getEffectiveTerminator(BasicBlock &BB) {
-  if (Instruction *I = BB.getTerminatingMustTailCall()) {
-    return I;
-  } else {
-    // Certain intrinsics, such as @llvm.amdgcn.cs.chain, must be immediately
-    // followed by an unreachable instruction..
-    if (UnreachableInst *UI = dyn_cast<UnreachableInst>(BB.getTerminator())) {
-      if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(UI->getPrevNode())) {
-        return II;
-      }
-    }
-  }
-
-  return BB.getTerminator();
-}
-
-static inline BasicBlock::iterator getEndIterator(BasicBlock &BB) {
-  auto End = BB.end();
-
-  if (BB.empty()) {
-    return End;
-  }
-
-  Instruction *EffectiveTerminator = getEffectiveTerminator(BB);
-  if (EffectiveTerminator != BB.getTerminator()) {
-    // Adjust range for special cases such as tail call.
-    End = std::prev(BB.end());
-  }
-
-  return End;
-}
-
 static inline iterator_range<BasicBlock::iterator>
 getInsertionRange(BasicBlock &BB) {
-  auto End = getEndIterator(BB);
+  auto End = BB.getTerminatingMustTailCall() ? std::prev(BB.end()) : BB.end();
   return make_range(BB.getFirstInsertionPt(), End);
 }
 
 void InjectorIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
-  SmallVector<Instruction *, 32> Insts(
-      llvm::make_pointer_range(getInsertionRange(BB)));
+  SmallVector<Instruction *, 32> Insts;
+  for (Instruction &I : getInsertionRange(BB))
+    Insts.push_back(&I);
   if (Insts.size() < 1)
     return;
 
@@ -181,7 +147,7 @@ void InjectorIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   for (const auto &Pred : ArrayRef(OpDesc->SourcePreds).slice(1))
     Srcs.push_back(IB.findOrCreateSource(BB, InstsBefore, Srcs, Pred));
 
-  if (Value *Op = OpDesc->BuilderFunc(Srcs, Insts[IP]->getIterator())) {
+  if (Value *Op = OpDesc->BuilderFunc(Srcs, Insts[IP])) {
     // Find a sink and wire up the results of the operation.
     IB.connectToSink(BB, InstsAfter, Op);
   }
@@ -390,68 +356,6 @@ static uint64_t getUniqueCaseValue(SmallSet<uint64_t, 4> &CasesTaken,
   return tmp;
 }
 
-/// Determines whether a function is unsupported by the current mutator's
-/// implementation. The function returns true if any of the following criteria
-/// are met:
-///   * The function accepts metadata or token types as arguments.
-///   * The function has ABI attributes that could cause UB.
-///   * The function uses a non-callable CC that may result in UB.
-static bool isUnsupportedFunction(Function *F) {
-  // Some functions accept metadata type or token type as arguments.
-  // We don't call those functions for now.
-  // For example, `@llvm.dbg.declare(metadata, metadata, metadata)`
-  // https://llvm.org/docs/SourceLevelDebugging.html#llvm-dbg-declare
-  auto IsUnsupportedTy = [](Type *T) {
-    return T->isMetadataTy() || T->isTokenTy();
-  };
-
-  if (IsUnsupportedTy(F->getReturnType()) ||
-      any_of(F->getFunctionType()->params(), IsUnsupportedTy)) {
-    return true;
-  }
-
-  // ABI attributes must be specified both at the function
-  // declaration/definition and call-site, otherwise the
-  // behavior may be undefined.
-  // We don't call those functions for now to prevent UB from happening.
-  auto IsABIAttribute = [](AttributeSet A) {
-    static const Attribute::AttrKind ABIAttrs[] = {
-        Attribute::StructRet,      Attribute::ByVal,
-        Attribute::InAlloca,       Attribute::InReg,
-        Attribute::StackAlignment, Attribute::SwiftSelf,
-        Attribute::SwiftAsync,     Attribute::SwiftError,
-        Attribute::Preallocated,   Attribute::ByRef,
-        Attribute::ZExt,           Attribute::SExt};
-
-    return llvm::any_of(ABIAttrs, [&](Attribute::AttrKind kind) {
-      return A.hasAttribute(kind);
-    });
-  };
-
-  auto FuncAttrs = F->getAttributes();
-  if (IsABIAttribute(FuncAttrs.getRetAttrs())) {
-    return true;
-  }
-  for (size_t i = 0; i < F->arg_size(); i++) {
-    if (IsABIAttribute(FuncAttrs.getParamAttrs(i))) {
-      return true;
-    }
-  }
-
-  // If it is not satisfied, the IR will be invalid.
-  if (!isCallableCC(F->getCallingConv())) {
-    return true;
-  }
-
-  // This intrinsic has specific requirements for its parameters and the caller
-  // must adhere to certain calling conventions.
-  if (F->isIntrinsic() && F->getIntrinsicID() == Intrinsic::amdgcn_cs_chain) {
-    return true;
-  }
-
-  return false;
-}
-
 void InsertFunctionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   Module *M = BB.getParent()->getParent();
   // If nullptr is selected, we will create a new function declaration.
@@ -462,8 +366,15 @@ void InsertFunctionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
 
   auto RS = makeSampler(IB.Rand, Functions);
   Function *F = RS.getSelection();
-
-  if (!F || isUnsupportedFunction(F)) {
+  // Some functions accept metadata type or token type as arguments.
+  // We don't call those functions for now.
+  // For example, `@llvm.dbg.declare(metadata, metadata, metadata)`
+  // https://llvm.org/docs/SourceLevelDebugging.html#llvm-dbg-declare
+  auto IsUnsupportedTy = [](Type *T) {
+    return T->isMetadataTy() || T->isTokenTy();
+  };
+  if (!F || IsUnsupportedTy(F->getReturnType()) ||
+      any_of(F->getFunctionType()->params(), IsUnsupportedTy)) {
     F = IB.createFunctionDeclaration(*M);
   }
 
@@ -476,16 +387,16 @@ void InsertFunctionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   }
   bool isRetVoid = (F->getReturnType() == Type::getVoidTy(M->getContext()));
   auto BuilderFunc = [FTy, F, isRetVoid](ArrayRef<Value *> Srcs,
-                                         BasicBlock::iterator InsertPt) {
+                                         Instruction *Inst) {
     StringRef Name = isRetVoid ? nullptr : "C";
-    CallInst *Call = CallInst::Create(FTy, F, Srcs, Name, InsertPt);
-    Call->setCallingConv(F->getCallingConv());
+    CallInst *Call = CallInst::Create(FTy, F, Srcs, Name, Inst);
     // Don't return this call inst if it return void as it can't be sinked.
     return isRetVoid ? nullptr : Call;
   };
 
-  SmallVector<Instruction *, 32> Insts(
-      llvm::make_pointer_range(getInsertionRange(BB)));
+  SmallVector<Instruction *, 32> Insts;
+  for (Instruction &I : getInsertionRange(BB))
+    Insts.push_back(&I);
   if (Insts.size() < 1)
     return;
 
@@ -502,15 +413,16 @@ void InsertFunctionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     Srcs.push_back(IB.findOrCreateSource(BB, InstsBefore, Srcs, Pred));
   }
 
-  if (Value *Op = BuilderFunc(Srcs, Insts[IP]->getIterator())) {
+  if (Value *Op = BuilderFunc(Srcs, Insts[IP])) {
     // Find a sink and wire up the results of the operation.
     IB.connectToSink(BB, InstsAfter, Op);
   }
 }
 
 void InsertCFGStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
-  SmallVector<Instruction *, 32> Insts(
-      llvm::make_pointer_range(getInsertionRange(BB)));
+  SmallVector<Instruction *, 32> Insts;
+  for (Instruction &I : getInsertionRange(BB))
+    Insts.push_back(&I);
   if (Insts.size() < 1)
     return;
 
@@ -630,7 +542,7 @@ void InsertPHIStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   if (&BB == &BB.getParent()->getEntryBlock())
     return;
   Type *Ty = IB.randomType();
-  PHINode *PHI = PHINode::Create(Ty, llvm::pred_size(&BB), "", BB.begin());
+  PHINode *PHI = PHINode::Create(Ty, llvm::pred_size(&BB), "", &BB.front());
 
   // Use a map to make sure the same incoming basic block has the same value.
   DenseMap<BasicBlock *, Value *> IncomingValues;
@@ -648,8 +560,9 @@ void InsertPHIStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     }
     PHI->addIncoming(Src, Pred);
   }
-  SmallVector<Instruction *, 32> InstsAfter(
-      llvm::make_pointer_range(getInsertionRange(BB)));
+  SmallVector<Instruction *, 32> InstsAfter;
+  for (Instruction &I : getInsertionRange(BB))
+    InstsAfter.push_back(&I);
   IB.connectToSink(BB, InstsAfter, PHI);
 }
 
@@ -659,8 +572,9 @@ void SinkInstructionStrategy::mutate(Function &F, RandomIRBuilder &IB) {
   }
 }
 void SinkInstructionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
-  SmallVector<Instruction *, 32> Insts(
-      llvm::make_pointer_range(getInsertionRange(BB)));
+  SmallVector<Instruction *, 32> Insts;
+  for (Instruction &I : getInsertionRange(BB))
+    Insts.push_back(&I);
   if (Insts.size() < 1)
     return;
   // Choose an Instruction to mutate.
@@ -681,9 +595,8 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   std::map<size_t, Instruction *> AliveInsts;
   std::map<Instruction *, size_t> AliveInstsLookup;
   size_t InsertIdx = 0;
-  for (auto &I : make_early_inc_range(
-           make_range(BB.getFirstInsertionPt(),
-                      getEffectiveTerminator(BB)->getIterator()))) {
+  for (auto &I : make_early_inc_range(make_range(
+           BB.getFirstInsertionPt(), BB.getTerminator()->getIterator()))) {
     // First gather all instructions that can be shuffled. Don't take
     // terminator.
     AliveInsts.insert({InsertIdx, &I});
@@ -709,11 +622,9 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   auto getAliveChildren = [&AliveInstsLookup](Instruction *I) {
     SmallSetVector<size_t, 8> Children;
     for (Value *U : I->users()) {
-      if (Instruction *P = dyn_cast<Instruction>(U)) {
-        auto It = AliveInstsLookup.find(P);
-        if (It != AliveInstsLookup.end())
-          Children.insert(It->second);
-      }
+      Instruction *P = dyn_cast<Instruction>(U);
+      if (P && AliveInstsLookup.count(P))
+        Children.insert(AliveInstsLookup[P]);
     }
     return Children;
   };
@@ -743,10 +654,10 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     }
   }
 
-  Instruction *Terminator = getEffectiveTerminator(BB);
+  Instruction *Terminator = BB.getTerminator();
   // Then put instructions back.
   for (Instruction *I : Insts) {
-    I->insertBefore(Terminator->getIterator());
+    I->insertBefore(Terminator);
   }
 }
 

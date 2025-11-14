@@ -184,8 +184,7 @@ uint64_t MachineFrameInfo::estimateStackSize(const MachineFunction &MF) const {
   return alignTo(Offset, StackAlign);
 }
 
-void MachineFrameInfo::computeMaxCallFrameSize(
-    MachineFunction &MF, std::vector<MachineBasicBlock::iterator> *FrameSDOps) {
+void MachineFrameInfo::computeMaxCallFrameSize(const MachineFunction &MF) {
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
   unsigned FrameSetupOpcode = TII.getCallFrameSetupOpcode();
   unsigned FrameDestroyOpcode = TII.getCallFrameDestroyOpcode();
@@ -193,14 +192,18 @@ void MachineFrameInfo::computeMaxCallFrameSize(
          "Can only compute MaxCallFrameSize if Setup/Destroy opcode are known");
 
   MaxCallFrameSize = 0;
-  for (MachineBasicBlock &MBB : MF) {
-    for (MachineInstr &MI : MBB) {
+  for (const MachineBasicBlock &MBB : MF) {
+    for (const MachineInstr &MI : MBB) {
       unsigned Opcode = MI.getOpcode();
       if (Opcode == FrameSetupOpcode || Opcode == FrameDestroyOpcode) {
-        uint64_t Size = TII.getFrameSize(MI);
+        unsigned Size = TII.getFrameSize(MI);
         MaxCallFrameSize = std::max(MaxCallFrameSize, Size);
-        if (FrameSDOps != nullptr)
-          FrameSDOps->push_back(&MI);
+        AdjustsStack = true;
+      } else if (MI.isInlineAsm()) {
+        // Some inline asm's need a stack frame, as indicated by operand 1.
+        unsigned ExtraInfo = MI.getOperand(InlineAsm::MIOp_ExtraInfo).getImm();
+        if (ExtraInfo & InlineAsm::Extra_IsAlignStack)
+          AdjustsStack = true;
       }
     }
   }
@@ -244,22 +247,6 @@ void MachineFrameInfo::print(const MachineFunction &MF, raw_ostream &OS) const{
     }
     OS << "\n";
   }
-  OS << "save/restore points:\n";
-
-  if (!SavePoints.empty()) {
-    OS << "save points:\n";
-
-    for (auto &item : SavePoints)
-      OS << printMBBReference(*item.first) << "\n";
-  } else
-    OS << "save points are empty\n";
-
-  if (!RestorePoints.empty()) {
-    OS << "restore points:\n";
-    for (auto &item : RestorePoints)
-      OS << printMBBReference(*item.first) << "\n";
-  } else
-    OS << "restore points are empty\n";
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)

@@ -37,14 +37,15 @@ public:
 
   // These two functions fill out the Broadcaster interface:
 
-  static llvm::StringRef GetStaticBroadcasterClass();
+  static ConstString &GetStaticBroadcasterClass();
 
-  llvm::StringRef GetBroadcasterClass() const override {
+  ConstString &GetBroadcasterClass() const override {
     return GetStaticBroadcasterClass();
   }
 
   typedef std::vector<lldb::TargetSP> collection;
-  typedef LockingAdaptedIterable<std::recursive_mutex, collection>
+  typedef LockingAdaptedIterable<collection, lldb::TargetSP, vector_adapter,
+                                 std::recursive_mutex>
       TargetIterable;
 
   /// Create a new Target.
@@ -158,17 +159,6 @@ public:
   lldb::TargetSP FindTargetWithProcessID(lldb::pid_t pid) const;
 
   lldb::TargetSP FindTargetWithProcess(lldb_private::Process *process) const;
-
-  /// Find the target that has a globally unique ID that matches ID \a id.
-  ///
-  /// \param[in] id
-  ///     The globally unique target ID to search our target list for.
-  ///
-  /// \return
-  ///     A shared pointer to a target object. The returned shared
-  ///     pointer will contain nullptr if no target objects has a
-  ///     matching target ID.
-  lldb::TargetSP FindTargetByGloballyUniqueID(lldb::user_id_t id) const;
 
   lldb::TargetSP GetTargetSP(Target *target) const;
 

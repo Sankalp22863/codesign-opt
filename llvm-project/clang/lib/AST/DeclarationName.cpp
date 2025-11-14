@@ -28,11 +28,13 @@
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <string>
 
 using namespace clang;
@@ -113,14 +115,13 @@ static void printCXXConstructorDestructorName(QualType ClassType,
                                               PrintingPolicy Policy) {
   // We know we're printing C++ here. Ensure we print types properly.
   Policy.adjustForCPlusPlus();
-  Policy.SuppressScope = true;
 
-  if (const RecordType *ClassRec = ClassType->getAsCanonical<RecordType>()) {
+  if (const RecordType *ClassRec = ClassType->getAs<RecordType>()) {
     ClassRec->getDecl()->printName(OS, Policy);
     return;
   }
   if (Policy.SuppressTemplateArgsInCXXConstructors) {
-    if (auto *InjTy = ClassType->getAsCanonical<InjectedClassNameType>()) {
+    if (auto *InjTy = ClassType->getAs<InjectedClassNameType>()) {
       InjTy->getDecl()->printName(OS, Policy);
       return;
     }

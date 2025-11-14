@@ -16,9 +16,9 @@ using namespace llvm;
 #define DEBUG_TYPE "execution-deps-fix"
 
 iterator_range<SmallVectorImpl<int>::const_iterator>
-ExecutionDomainFix::regIndices(MCRegister Reg) const {
+ExecutionDomainFix::regIndices(unsigned Reg) const {
   assert(Reg < AliasMap.size() && "Invalid register");
-  const auto &Entry = AliasMap[Reg.id()];
+  const auto &Entry = AliasMap[Reg];
   return make_range(Entry.begin(), Entry.end());
 }
 
@@ -337,9 +337,9 @@ void ExecutionDomainFix::visitSoftInstr(MachineInstr *mi, unsigned mask) {
     }
     // Sorted insertion.
     // Enables giving priority to the latest domains during merging.
-    const int Def = RDI->getReachingDef(mi, RC->getRegister(rx));
+    const int Def = RDA->getReachingDef(mi, RC->getRegister(rx));
     auto I = partition_point(Regs, [&](int I) {
-      return RDI->getReachingDef(mi, RC->getRegister(I)) <= Def;
+      return RDA->getReachingDef(mi, RC->getRegister(I)) <= Def;
     });
     Regs.insert(I, rx);
   }
@@ -435,7 +435,7 @@ bool ExecutionDomainFix::runOnMachineFunction(MachineFunction &mf) {
   if (!anyregs)
     return false;
 
-  RDI = &getAnalysis<ReachingDefInfoWrapperPass>().getRDI();
+  RDA = &getAnalysis<ReachingDefAnalysis>();
 
   // Initialize the AliasMap on the first use.
   if (AliasMap.empty()) {
@@ -445,7 +445,7 @@ bool ExecutionDomainFix::runOnMachineFunction(MachineFunction &mf) {
     for (unsigned i = 0, e = RC->getNumRegs(); i != e; ++i)
       for (MCRegAliasIterator AI(RC->getRegister(i), TRI, true); AI.isValid();
            ++AI)
-        AliasMap[(*AI).id()].push_back(i);
+        AliasMap[*AI].push_back(i);
   }
 
   // Initialize the MBBOutRegsInfos

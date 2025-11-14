@@ -17,9 +17,6 @@
 // RUN: %clang_cc1 -std=c++20 %t/named_module.cppm -emit-module-interface -o %t/M.pcm
 // RUN: %clang_cc1 -module-file-info %t/M.pcm | FileCheck %t/named_module.cppm
 
-// RUN: %clang_cc1 -std=c++20 %t/named_module.cppm -emit-reduced-module-interface -o %t/M.pcm
-// RUN: %clang_cc1 -module-file-info %t/M.pcm | FileCheck %t/named_module.cppm
-
 //--- foo.h
 #pragma once
 #define FOO
@@ -36,28 +33,28 @@
 #define REDEFINE
 
 // CHECK: Macro Definitions:
-// CHECK: CONSTANT
-// CHECK: FOO
-// CHECK: FUNC_Macro
-// CHECK: REDEFINE
+// CHECK-DAG: REDEFINE
+// CHECK-DAG: FUNC_Macro
+// CHECK-DAG: CONSTANT
+// CHECK-DAG: FOO
 // CHECK-NEXT: ===
 
 //--- include_foo.h
 #include "foo.h"
 #undef REDEFINE
 // CHECK: Macro Definitions:
-// CHECK: CONSTANT
-// CHECK: FOO
-// CHECK: FUNC_Macro
+// CHECK-DAG: CONSTANT
+// CHECK-DAG: FUNC_Macro
+// CHECK-DAG: FOO
 // CHECK-NEXT: ===
 
 //--- import_foo.h
 import "foo.h";
 #undef REDEFINE
 // CHECK: Macro Definitions:
-// CHECK: CONSTANT
-// CHECK: FOO
-// CHECK: FUNC_Macro
+// CHECK-DAG: CONSTANT
+// CHECK-DAG: FUNC_Macro
+// CHECK-DAG: FOO
 // CHECK-NEXT: ===
 
 //--- named_module.cppm

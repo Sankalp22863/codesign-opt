@@ -21,11 +21,11 @@
 #include "llvm/CodeGen/AssignmentTrackingAnalysis.h"
 #include "llvm/CodeGen/CodeGenCommonISel.h"
 #include "llvm/CodeGen/ISDOpcodes.h"
+#include "llvm/CodeGen/MachineValueType.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/SwitchLoweringUtils.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/CodeGen/ValueTypes.h"
-#include "llvm/CodeGenTypes/MachineValueType.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/Support/BranchProbability.h"
@@ -56,6 +56,7 @@ class CleanupPadInst;
 class CleanupReturnInst;
 class Constant;
 class ConstrainedFPIntrinsic;
+class DbgValueInst;
 class DataLayout;
 class DIExpression;
 class DILocalVariable;
@@ -195,11 +196,6 @@ private:
   /// Update root to include all chains from the Pending list.
   SDValue updateRoot(SmallVectorImpl<SDValue> &Pending);
 
-  /// Given a node representing a floating-point operation and its specified
-  /// exception behavior, this either updates the root or stores the node in
-  /// a list to be added to chains latter.
-  void pushFPOpOutChain(SDValue Result, fp::ExceptionBehavior EB);
-
   /// A unique monotonically increasing number used to order the SDNodes we
   /// create.
   unsigned SDNodeOrder;
@@ -229,7 +225,7 @@ public:
   static const unsigned LowestSDNodeOrder = 1;
 
   SelectionDAG &DAG;
-  BatchAAResults *BatchAA = nullptr;
+  AAResults *AA = nullptr;
   AssumptionCache *AC = nullptr;
   const TargetLibraryInfo *LibInfo = nullptr;
 
@@ -258,7 +254,7 @@ public:
 
   // Emit PHI-node-operand constants only once even if used by multiple
   // PHI nodes.
-  DenseMap<const Constant *, Register> ConstantsOut;
+  DenseMap<const Constant *, unsigned> ConstantsOut;
 
   /// Information about the function as a whole.
   FunctionLoweringInfo &FuncInfo;
@@ -284,7 +280,7 @@ public:
         SL(std::make_unique<SDAGSwitchLowering>(this, funcinfo)),
         FuncInfo(funcinfo), SwiftError(swifterror) {}
 
-  void init(GCFunctionInfo *gfi, BatchAAResults *BatchAA, AssumptionCache *AC,
+  void init(GCFunctionInfo *gfi, AAResults *AA, AssumptionCache *AC,
             const TargetLibraryInfo *li);
 
   /// Clear out the current SelectionDAG and the associated state and prepare
@@ -305,13 +301,6 @@ public:
   /// memory node that may need to be ordered after any prior load instructions.
   SDValue getMemoryRoot();
 
-  /// Return the current virtual root of the Selection DAG, flushing
-  /// PendingConstrainedFP or PendingConstrainedFPStrict items if the new
-  /// exception behavior (specified by \p EB) differs from that of the pending
-  /// instructions. This must be done before emitting constrained FP operation
-  /// call.
-  SDValue getFPOperationRoot(fp::ExceptionBehavior EB);
-
   /// Similar to getMemoryRoot, but also flushes PendingConstrainedFP(Strict)
   /// items. This must be done before emitting any call other any other node
   /// that may need to be ordered after FP instructions due to other side
@@ -331,7 +320,7 @@ public:
     return CurInst ? CurInst->getDebugLoc() : DebugLoc();
   }
 
-  void CopyValueToVirtualRegister(const Value *V, Register Reg,
+  void CopyValueToVirtualRegister(const Value *V, unsigned Reg,
                                   ISD::NodeType ExtendType = ISD::ANY_EXTEND);
 
   void visit(const Instruction &I);
@@ -396,11 +385,6 @@ public:
     N = NewN;
   }
 
-  bool shouldKeepJumpConditionsTogether(
-      const FunctionLoweringInfo &FuncInfo, const BranchInst &I,
-      Instruction::BinaryOps Opc, const Value *Lhs, const Value *Rhs,
-      TargetLoweringBase::CondMergingParams Params) const;
-
   void FindMergedConditions(const Value *Cond, MachineBasicBlock *TBB,
                             MachineBasicBlock *FBB, MachineBasicBlock *CurBB,
                             MachineBasicBlock *SwitchBB,
@@ -417,21 +401,12 @@ public:
   void CopyToExportRegsIfNeeded(const Value *V);
   void ExportFromCurrentBlock(const Value *V);
   void LowerCallTo(const CallBase &CB, SDValue Callee, bool IsTailCall,
-                   bool IsMustTailCall, const BasicBlock *EHPadBB = nullptr,
-                   const TargetLowering::PtrAuthInfo *PAI = nullptr);
-
-  // Check some of the target-independent constraints for tail calls. This does
-  // not iterate over the call arguments.
-  bool canTailCall(const CallBase &CB) const;
+                   bool IsMustTailCall, const BasicBlock *EHPadBB = nullptr);
 
   // Lower range metadata from 0 to N to assert zext to an integer of nearest
   // floor power of two.
   SDValue lowerRangeToAssertZExt(SelectionDAG &DAG, const Instruction &I,
                                  SDValue Op);
-
-  // Lower nofpclass attributes to AssertNoFPClass
-  SDValue lowerNoFPClassToAssertNoFPClass(SelectionDAG &DAG,
-                                          const Instruction &I, SDValue Op);
 
   void populateCallLoweringInfo(TargetLowering::CallLoweringInfo &CLI,
                                 const CallBase *Call, unsigned ArgIdx,
@@ -458,8 +433,8 @@ public:
     /// The set of gc.relocate calls associated with this gc.statepoint.
     SmallVector<const GCRelocateInst *, 16> GCRelocates;
 
-    /// The full list of gc-live arguments to the gc.statepoint being lowered.
-    ArrayRef<const Use> GCLives;
+    /// The full list of gc arguments to the gc.statepoint being lowered.
+    ArrayRef<const Use> GCArgs;
 
     /// The gc.statepoint instruction.
     const Instruction *StatepointInstr = nullptr;
@@ -469,7 +444,7 @@ public:
     ArrayRef<const Use> GCTransitionArgs;
 
     /// The ID that the resulting STATEPOINT instruction has to report.
-    uint64_t ID = -1;
+    unsigned ID = -1;
 
     /// Information regarding the underlying call instruction.
     TargetLowering::CallLoweringInfo CLI;
@@ -510,9 +485,6 @@ public:
                                         bool VarArgDisallowed,
                                         bool ForceVoidReturnTy);
 
-  void LowerCallSiteWithPtrAuthBundle(const CallBase &CB,
-                                      const BasicBlock *EHPadBB);
-
   /// Returns the type of FrameIndex and TargetFrameIndex nodes.
   MVT getFrameIndexTy() {
     return DAG.getTargetLoweringInfo().getFrameIndexTy(DAG.getDataLayout());
@@ -545,7 +517,7 @@ public:
   void visitBitTestHeader(SwitchCG::BitTestBlock &B,
                           MachineBasicBlock *SwitchBB);
   void visitBitTestCase(SwitchCG::BitTestBlock &BB, MachineBasicBlock *NextMBB,
-                        BranchProbability BranchProbToNext, Register Reg,
+                        BranchProbability BranchProbToNext, unsigned Reg,
                         SwitchCG::BitTestCase &B, MachineBasicBlock *SwitchBB);
   void visitJumpTable(SwitchCG::JumpTable &JT);
   void visitJumpTableHeader(SwitchCG::JumpTable &JT,
@@ -582,8 +554,8 @@ private:
   void visitShl (const User &I) { visitShift(I, ISD::SHL); }
   void visitLShr(const User &I) { visitShift(I, ISD::SRL); }
   void visitAShr(const User &I) { visitShift(I, ISD::SRA); }
-  void visitICmp(const ICmpInst &I);
-  void visitFCmp(const FCmpInst &I);
+  void visitICmp(const User &I);
+  void visitFCmp(const User &I);
   // Visit the conversion instructions
   void visitTrunc(const User &I);
   void visitZExt(const User &I);
@@ -594,7 +566,6 @@ private:
   void visitFPToSI(const User &I);
   void visitUIToFP(const User &I);
   void visitSIToFP(const User &I);
-  void visitPtrToAddr(const User &I);
   void visitPtrToInt(const User &I);
   void visitIntToPtr(const User &I);
   void visitBitCast(const User &I);
@@ -647,13 +618,8 @@ private:
   void visitIntrinsicCall(const CallInst &I, unsigned Intrinsic);
   void visitTargetIntrinsic(const CallInst &I, unsigned Intrinsic);
   void visitConstrainedFPIntrinsic(const ConstrainedFPIntrinsic &FPI);
-  void visitConvergenceControl(const CallInst &I, unsigned Intrinsic);
-  void visitVectorHistogram(const CallInst &I, unsigned IntrinsicID);
-  void visitVectorExtractLastActive(const CallInst &I, unsigned Intrinsic);
   void visitVPLoad(const VPIntrinsic &VPIntrin, EVT VT,
                    const SmallVectorImpl<SDValue> &OpValues);
-  void visitVPLoadFF(const VPIntrinsic &VPIntrin, EVT VT, EVT EVLVT,
-                     const SmallVectorImpl<SDValue> &OpValues);
   void visitVPStore(const VPIntrinsic &VPIntrin,
                     const SmallVectorImpl<SDValue> &OpValues);
   void visitVPGather(const VPIntrinsic &VPIntrin, EVT VT,
@@ -681,8 +647,8 @@ private:
   void visitVectorReduce(const CallInst &I, unsigned Intrinsic);
   void visitVectorReverse(const CallInst &I);
   void visitVectorSplice(const CallInst &I);
-  void visitVectorInterleave(const CallInst &I, unsigned Factor);
-  void visitVectorDeinterleave(const CallInst &I, unsigned Factor);
+  void visitVectorInterleave(const CallInst &I);
+  void visitVectorDeinterleave(const CallInst &I);
   void visitStepVector(const CallInst &I);
 
   void visitUserOp1(const Instruction &I) {
@@ -727,21 +693,13 @@ private:
                           DIExpression *Expr, const DebugLoc &dl,
                           unsigned DbgSDNodeOrder);
 
+  /// Lowers CallInst to an external symbol.
+  void lowerCallToExternalSymbol(const CallInst &I, const char *FunctionName);
+
   SDValue lowerStartEH(SDValue Chain, const BasicBlock *EHPadBB,
                        MCSymbol *&BeginLabel);
   SDValue lowerEndEH(SDValue Chain, const InvokeInst *II,
                      const BasicBlock *EHPadBB, MCSymbol *BeginLabel);
-
-  std::pair<bool, bool> getTargetIntrinsicCallProperties(const CallBase &I);
-  SmallVector<SDValue, 8> getTargetIntrinsicOperands(
-      const CallBase &I, bool HasChain, bool OnlyLoad,
-      TargetLowering::IntrinsicInfo *TgtMemIntrinsicInfo = nullptr);
-  SDVTList getTargetIntrinsicVTList(const CallBase &I, bool HasChain);
-  SDValue getTargetNonMemIntrinsicNode(const Type &IntrinsicVT, bool HasChain,
-                                       ArrayRef<SDValue> Ops,
-                                       const SDVTList &VTs);
-  SDValue handleTargetIntrinsicRet(const CallBase &I, bool HasChain,
-                                   bool OnlyLoad, SDValue Result);
 };
 
 /// This struct represents the registers (physical or virtual)
@@ -771,7 +729,7 @@ struct RegsForValue {
   /// This list holds the registers assigned to the values.
   /// Each legal or promoted value requires one register, and each
   /// expanded value requires multiple registers.
-  SmallVector<Register, 4> Regs;
+  SmallVector<unsigned, 4> Regs;
 
   /// This list holds the number of registers for each value.
   SmallVector<unsigned, 4> RegCount;
@@ -781,10 +739,10 @@ struct RegsForValue {
   std::optional<CallingConv::ID> CallConv;
 
   RegsForValue() = default;
-  RegsForValue(const SmallVector<Register, 4> &regs, MVT regvt, EVT valuevt,
+  RegsForValue(const SmallVector<unsigned, 4> &regs, MVT regvt, EVT valuevt,
                std::optional<CallingConv::ID> CC = std::nullopt);
   RegsForValue(LLVMContext &Context, const TargetLowering &TLI,
-               const DataLayout &DL, Register Reg, Type *Ty,
+               const DataLayout &DL, unsigned Reg, Type *Ty,
                std::optional<CallingConv::ID> CC);
 
   bool isABIMangled() const { return CallConv.has_value(); }
@@ -827,7 +785,7 @@ struct RegsForValue {
   }
 
   /// Return a list of registers and their sizes.
-  SmallVector<std::pair<Register, TypeSize>, 4> getRegsAndSizes() const;
+  SmallVector<std::pair<unsigned, TypeSize>, 4> getRegsAndSizes() const;
 };
 
 } // end namespace llvm

@@ -263,7 +263,8 @@ BuildModulesSection(Process &process, FileSpec directory) {
 
     lldb::addr_t load_addr = LLDB_INVALID_ADDRESS;
     Address base_addr(objfile->GetBaseAddress());
-    if (base_addr.IsValid() && process.GetTarget().HasLoadedSections())
+    if (base_addr.IsValid() &&
+        !process.GetTarget().GetSectionLoadList().IsEmpty())
       load_addr = base_addr.GetLoadAddress(&process.GetTarget());
 
     if (load_addr == LLDB_INVALID_ADDRESS)

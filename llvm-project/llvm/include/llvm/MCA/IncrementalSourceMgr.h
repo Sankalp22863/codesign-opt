@@ -15,7 +15,6 @@
 #define LLVM_MCA_INCREMENTALSOURCEMGR_H
 
 #include "llvm/MCA/SourceMgr.h"
-#include "llvm/Support/Compiler.h"
 #include <deque>
 
 namespace llvm {
@@ -24,7 +23,7 @@ namespace mca {
 /// An implementation of \a SourceMgr that allows users to add new instructions
 /// incrementally / dynamically.
 /// Note that this SourceMgr takes ownership of all \a mca::Instruction.
-class LLVM_ABI IncrementalSourceMgr : public SourceMgr {
+class IncrementalSourceMgr : public SourceMgr {
   /// Owner of all mca::Instruction instances. Note that we use std::deque here
   /// to have a better throughput, in comparison to std::vector or
   /// llvm::SmallVector, as they usually pay a higher re-allocation cost when
@@ -42,15 +41,11 @@ class LLVM_ABI IncrementalSourceMgr : public SourceMgr {
   bool EOS = false;
 
   /// Called when an instruction is no longer needed.
-  using InstFreedCallback = std::function<void(Instruction *)>;
+  using InstFreedCallback = llvm::function_ref<void(Instruction *)>;
   InstFreedCallback InstFreedCB;
 
 public:
   IncrementalSourceMgr() = default;
-
-  // Explicitly non-copyable.
-  IncrementalSourceMgr &operator=(const IncrementalSourceMgr &) = delete;
-  IncrementalSourceMgr(const IncrementalSourceMgr &) = delete;
 
   void clear();
 

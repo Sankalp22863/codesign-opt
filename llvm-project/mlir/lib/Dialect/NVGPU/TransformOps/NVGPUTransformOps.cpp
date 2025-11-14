@@ -38,12 +38,15 @@ using namespace mlir::NVVM;
 using namespace mlir::transform;
 
 #define DEBUG_TYPE "nvgpu-transforms"
+#define DBGS() (llvm::dbgs() << "[" DEBUG_TYPE "]: ")
+#define DBGSNL() (llvm::dbgs() << "\n")
+#define LDBG(X) LLVM_DEBUG(DBGS() << X << "\n")
 
 //===----------------------------------------------------------------------===//
 // Apply...ConversionPatternsOp
 //===----------------------------------------------------------------------===//
 
-void ApplyNVGPUToNVVMConversionPatternsOp::populatePatterns(
+void transform::ApplyNVGPUToNVVMConversionPatternsOp::populatePatterns(
     TypeConverter &typeConverter, RewritePatternSet &patterns) {
   auto &llvmTypeConverter = static_cast<LLVMTypeConverter &>(typeConverter);
   /// device-side async tokens cannot be materialized in nvvm. We just
@@ -53,67 +56,73 @@ void ApplyNVGPUToNVVMConversionPatternsOp::populatePatterns(
       llvmTypeConverter, [](gpu::AddressSpace space) -> unsigned {
         switch (space) {
         case gpu::AddressSpace::Global:
-          return static_cast<unsigned>(NVVM::NVVMMemorySpace::Global);
+          return static_cast<unsigned>(
+              NVVM::NVVMMemorySpace::kGlobalMemorySpace);
         case gpu::AddressSpace::Workgroup:
-          return static_cast<unsigned>(NVVM::NVVMMemorySpace::Shared);
+          return static_cast<unsigned>(
+              NVVM::NVVMMemorySpace::kSharedMemorySpace);
         case gpu::AddressSpace::Private:
           return 0;
         }
         llvm_unreachable("unknown address space enum value");
-        return static_cast<unsigned>(NVVM::NVVMMemorySpace::Generic);
+        return 0;
       });
-  llvmTypeConverter.addConversion([&](DeviceAsyncTokenType type) -> Type {
-    return llvmTypeConverter.convertType(
-        IntegerType::get(type.getContext(), 32));
-  });
-  llvmTypeConverter.addConversion([&](MBarrierTokenType type) -> Type {
+  llvmTypeConverter.addConversion(
+      [&](nvgpu::DeviceAsyncTokenType type) -> Type {
+        return llvmTypeConverter.convertType(
+            IntegerType::get(type.getContext(), 32));
+      });
+  llvmTypeConverter.addConversion([&](nvgpu::MBarrierTokenType type) -> Type {
     return llvmTypeConverter.convertType(
         IntegerType::get(type.getContext(), 64));
   });
-  llvmTypeConverter.addConversion([&](WarpgroupAccumulatorType type) -> Type {
-    Type elemType = type.getFragmented().getElementType();
-    int64_t sizeM = type.getFragmented().getDimSize(0);
-    int64_t sizeN = type.getFragmented().getDimSize(1);
+  llvmTypeConverter.addConversion(
+      [&](nvgpu::WarpgroupAccumulatorType type) -> Type {
+        Type elemType = type.getFragmented().getElementType();
+        int64_t sizeM = type.getFragmented().getDimSize(0);
+        int64_t sizeN = type.getFragmented().getDimSize(1);
 
-    unsigned numMembers;
-    if (elemType.isF32() || elemType.isInteger(32))
-      numMembers = sizeN / 2;
-    else if (elemType.isF16())
-      numMembers = sizeN / 4;
-    else
-      llvm_unreachable("unsupported type for warpgroup accumulator");
+        unsigned numMembers;
+        if (elemType.isF32() || elemType.isInteger(32))
+          numMembers = sizeN / 2;
+        else if (elemType.isF16())
+          numMembers = sizeN / 4;
+        else
+          llvm_unreachable("unsupported type for warpgroup accumulator");
 
-    SmallVector<Type> innerStructBody;
-    for (unsigned i = 0; i < numMembers; i++)
-      innerStructBody.push_back(elemType);
-    auto innerStructType =
-        LLVM::LLVMStructType::getLiteral(type.getContext(), innerStructBody);
+        SmallVector<Type> innerStructBody;
+        for (unsigned i = 0; i < numMembers; i++)
+          innerStructBody.push_back(elemType);
+        auto innerStructType = LLVM::LLVMStructType::getLiteral(
+            type.getContext(), innerStructBody);
 
-    SmallVector<Type> structBody;
-    for (int i = 0; i < sizeM; i += kWgmmaSizeM)
-      structBody.push_back(innerStructType);
+        SmallVector<Type> structBody;
+        for (int i = 0; i < sizeM; i += kWgmmaSizeM)
+          structBody.push_back(innerStructType);
 
-    auto convertedType =
-        LLVM::LLVMStructType::getLiteral(type.getContext(), structBody);
-    return llvmTypeConverter.convertType(convertedType);
-  });
-  llvmTypeConverter.addConversion([&](MBarrierGroupType type) -> Type {
+        auto convertedType =
+            LLVM::LLVMStructType::getLiteral(type.getContext(), structBody);
+        return llvmTypeConverter.convertType(convertedType);
+      });
+  llvmTypeConverter.addConversion([&](nvgpu::MBarrierGroupType type) -> Type {
     return llvmTypeConverter.convertType(
         getMBarrierMemrefType(type.getContext(), type));
   });
   llvmTypeConverter.addConversion(
-      [&](WarpgroupMatrixDescriptorType type) -> Type {
+      [&](nvgpu::WarpgroupMatrixDescriptorType type) -> Type {
         return llvmTypeConverter.convertType(
             IntegerType::get(type.getContext(), 64));
       });
-  llvmTypeConverter.addConversion([&](TensorMapDescriptorType type) -> Type {
-    return LLVM::LLVMPointerType::get(type.getContext());
-  });
+  llvmTypeConverter.addConversion(
+      [&](nvgpu::TensorMapDescriptorType type) -> Type {
+        return LLVM::LLVMPointerType::get(type.getContext());
+      });
   populateNVGPUToNVVMConversionPatterns(llvmTypeConverter, patterns);
 }
 
-LogicalResult ApplyNVGPUToNVVMConversionPatternsOp::verifyTypeConverter(
-    TypeConverterBuilderOpInterface builder) {
+LogicalResult
+transform::ApplyNVGPUToNVVMConversionPatternsOp::verifyTypeConverter(
+    transform::TypeConverterBuilderOpInterface builder) {
   if (builder.getTypeConverterType() != "LLVMTypeConverter")
     return emitOpError("expected LLVMTypeConverter");
   return success();
@@ -123,18 +132,17 @@ LogicalResult ApplyNVGPUToNVVMConversionPatternsOp::verifyTypeConverter(
 // CreateAsyncGroupsOp
 //===---------------------------------------------------------------------===//
 
-void CreateAsyncGroupsOp::getEffects(
+void transform::CreateAsyncGroupsOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  consumesHandle(getTargetMutable(), effects);
-  producesHandle(getOperation()->getOpResults(), effects);
-  modifiesPayload(effects);
+  transform::consumesHandle(getTarget(), effects);
+  transform::producesHandle(getResult(), effects);
+  transform::modifiesPayload(effects);
 }
 
-DiagnosedSilenceableFailure
-CreateAsyncGroupsOp::applyToOne(TransformRewriter &rewriter, Operation *target,
-                                ApplyToEachResultList &results,
-                                TransformState &state) {
-  createAsyncGroups(rewriter, target, getBypassL1());
+DiagnosedSilenceableFailure transform::CreateAsyncGroupsOp::applyToOne(
+    TransformRewriter &rewriter, Operation *target,
+    ApplyToEachResultList &results, TransformState &state) {
+  nvgpu::createAsyncGroups(rewriter, target, getBypassL1());
   results.push_back(target);
   return DiagnosedSilenceableFailure::success();
 }
@@ -164,7 +172,7 @@ static Value getValueLoadedFromGlobal(Operation *op) {
   if (!load)
     return nullptr;
 
-  auto loadType = dyn_cast<MemRefType>(load.getBase().getType());
+  auto loadType = dyn_cast<MemRefType>(load.getSource().getType());
   if (!loadType || !hasDefaultMemorySpace(loadType))
     return nullptr;
   return load;
@@ -177,7 +185,7 @@ static bool isStoreToShared(Operation *op, Value v) {
   if (!store || store.getVector() != v)
     return false;
 
-  auto storeType = dyn_cast<MemRefType>(store.getBase().getType());
+  auto storeType = dyn_cast<MemRefType>(store.getSource().getType());
   return storeType || hasSharedMemorySpace(storeType);
 }
 
@@ -215,7 +223,7 @@ collectStage0PipeliningOps(scf::ForOp forOp,
       continue;
     }
 
-    if (isa<DeviceAsyncCopyOp, DeviceAsyncCreateGroupOp>(op)) {
+    if (isa<nvgpu::DeviceAsyncCopyOp, nvgpu::DeviceAsyncCreateGroupOp>(op)) {
       ops.insert(&op);
       ops.insert(std::make_move_iterator(barriers.begin()),
                  std::make_move_iterator(barriers.end()));
@@ -243,7 +251,7 @@ setAsyncWaitGroupsInFlight(OpBuilder &builder, Operation *op,
                            unsigned iteration, unsigned depth) {
   // Based on the order of copies within the loop we need to set the number
   // of copies in flight, unless it is already set.
-  auto waitOp = dyn_cast<DeviceAsyncWaitOp>(op);
+  auto waitOp = dyn_cast<nvgpu::DeviceAsyncWaitOp>(op);
   if (!waitOp || waitOp.getNumGroups())
     return;
 
@@ -282,11 +290,8 @@ static void getPipelineStages(
   });
   options.inclusive = true;
   for (Operation &op : forOp.getBody()->getOperations()) {
-    if (stage0Ops.contains(&op)) {
-      LogicalResult result = getBackwardSlice(&op, &dependencies, options);
-      assert(result.succeeded() && "expected a backward slice");
-      (void)result;
-    }
+    if (stage0Ops.contains(&op))
+      getBackwardSlice(&op, &dependencies, options);
   }
 
   for (Operation &op : forOp.getBody()->getOperations()) {
@@ -309,12 +314,13 @@ static Operation *replaceOpWithPredicatedOp(RewriterBase &rewriter,
   // original number of iterations, in particular side-effect free operations
   // and barriers, even if they cannot be predicated.
   if (isMemoryEffectFree(op) ||
-      isa<gpu::BarrierOp, DeviceAsyncCreateGroupOp, DeviceAsyncWaitOp>(op)) {
+      isa<gpu::BarrierOp, nvgpu::DeviceAsyncCreateGroupOp,
+          nvgpu::DeviceAsyncWaitOp>(op)) {
     return op;
   }
 
   // Otherwise, only async copies can currently be predicated.
-  auto asyncCopyOp = dyn_cast<DeviceAsyncCopyOp>(op);
+  auto asyncCopyOp = dyn_cast<nvgpu::DeviceAsyncCopyOp>(op);
   if (!asyncCopyOp)
     return nullptr;
 
@@ -324,15 +330,15 @@ static Operation *replaceOpWithPredicatedOp(RewriterBase &rewriter,
   //   srcElement = (pred) ?  prevSrcElements : 0;
   //
   Location loc = asyncCopyOp->getLoc();
-  Value dstElements = arith::ConstantOp::create(
-      rewriter, loc, asyncCopyOp.getDstElementsAttr());
+  Value dstElements =
+      rewriter.create<arith::ConstantOp>(loc, asyncCopyOp.getDstElementsAttr());
   Value originalSrcElement =
       asyncCopyOp.getSrcElements() ? asyncCopyOp.getSrcElements() : dstElements;
-  Value c0Index = arith::ConstantIndexOp::create(rewriter, loc, 0);
-  auto srcElements = arith::SelectOp::create(rewriter, loc, predicate,
-                                             originalSrcElement, c0Index);
-  auto asyncCopyZeroFillOp = DeviceAsyncCopyOp::create(
-      rewriter, loc, DeviceAsyncTokenType::get(asyncCopyOp.getContext()),
+  Value c0Index = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  auto srcElements = rewriter.create<arith::SelectOp>(
+      loc, predicate, originalSrcElement, c0Index);
+  auto asyncCopyZeroFillOp = rewriter.create<nvgpu::DeviceAsyncCopyOp>(
+      loc, nvgpu::DeviceAsyncTokenType::get(asyncCopyOp.getContext()),
       asyncCopyOp.getDst(), asyncCopyOp.getDstIndices(), asyncCopyOp.getSrc(),
       asyncCopyOp.getSrcIndices(), asyncCopyOp.getDstElements(), srcElements,
       UnitAttr());
@@ -600,7 +606,7 @@ private:
   /// IndexCalculator callback.
   SmallVector<Value> buildMemRefLoads(OpBuilder &b, Location loc,
                                       OpFoldResult laneId, Value memref,
-                                      const IndexCalculator &indexFn);
+                                      IndexCalculator indexFn);
 
   /// Perform a distributed load of a vector operand of `vectorShape` for a
   /// particular MMA instruction whose `(row, col)` indices are specified via
@@ -619,7 +625,7 @@ private:
   SmallVector<Operation *> buildMemRefStores(OpBuilder &b, Location loc,
                                              ValueRange toStore,
                                              OpFoldResult laneId, Value memref,
-                                             const IndexCalculator &indexFn);
+                                             IndexCalculator indexFn);
 
   /// Perform a distributed store of a vector operand of `vectorShape` for a
   /// particular MMA instruction whose `(row, col)` indices are specified via
@@ -645,7 +651,7 @@ private:
 template <typename ApplyFn, typename ReduceFn>
 static void foreachIndividualVectorElement(Value vector, ApplyFn applyFn,
                                            ReduceFn reduceFn) {
-  VectorType vectorType = cast<VectorType>(vector.getType());
+  VectorType vectorType = vector.getType().cast<VectorType>();
   auto vectorShape = vectorType.getShape();
   auto strides = computeStrides(vectorShape);
   for (int64_t idx = 0, e = vectorShape[0] * strides[0]; idx < e; ++idx) {
@@ -654,10 +660,10 @@ static void foreachIndividualVectorElement(Value vector, ApplyFn applyFn,
   }
 }
 
-SmallVector<Value>
-MmaSyncBuilder::buildMemRefLoads(OpBuilder &b, Location loc,
-                                 OpFoldResult laneId, Value memref,
-                                 const IndexCalculator &indexFn) {
+SmallVector<Value> MmaSyncBuilder::buildMemRefLoads(OpBuilder &b, Location loc,
+                                                    OpFoldResult laneId,
+                                                    Value memref,
+                                                    IndexCalculator indexFn) {
   auto aff = [&](AffineExpr e) {
     return affine::makeComposedFoldedAffineApply(b, loc, e, laneId);
   };
@@ -666,7 +672,7 @@ MmaSyncBuilder::buildMemRefLoads(OpBuilder &b, Location loc,
   for (auto indexing : indexings) {
     Value row = getValueOrCreateConstantIndexOp(b, loc, aff(indexing.row()));
     Value col = getValueOrCreateConstantIndexOp(b, loc, aff(indexing.col()));
-    auto load = memref::LoadOp::create(b, loc, memref, ValueRange{row, col});
+    auto load = b.create<memref::LoadOp>(loc, memref, ValueRange{row, col});
     res.push_back(load);
   }
   return res;
@@ -675,11 +681,11 @@ MmaSyncBuilder::buildMemRefLoads(OpBuilder &b, Location loc,
 Value MmaSyncBuilder::buildMmaSyncMemRefLoadOperand(
     OpBuilder &b, Location loc, OpFoldResult laneId, Value memref,
     IndexCalculator indexFn, ArrayRef<int64_t> vectorShape) {
-  auto loads = buildMemRefLoads(b, loc, laneId, memref, std::move(indexFn));
+  auto loads = buildMemRefLoads(b, loc, laneId, memref, indexFn);
 
   Type elementType = getElementTypeOrSelf(memref.getType());
   auto vt = VectorType::get(vectorShape, elementType);
-  Value res = vector::BroadcastOp::create(b, loc, vt, loads[0]);
+  Value res = b.create<vector::SplatOp>(loc, vt, loads[0]);
   foreachIndividualVectorElement(
       res,
       /*applyFn=*/
@@ -688,15 +694,16 @@ Value MmaSyncBuilder::buildMmaSyncMemRefLoadOperand(
       },
       /*reduceFn=*/
       [&](Value v, int64_t linearIdx, ArrayRef<int64_t> indices) {
-        res = vector::InsertOp::create(b, loc, v, res, indices);
+        res = b.create<vector::InsertOp>(loc, v, res, indices);
       });
 
   return res;
 }
 
-SmallVector<Operation *> MmaSyncBuilder::buildMemRefStores(
-    OpBuilder &b, Location loc, ValueRange toStore, OpFoldResult laneId,
-    Value memref, const IndexCalculator &indexFn) {
+SmallVector<Operation *>
+MmaSyncBuilder::buildMemRefStores(OpBuilder &b, Location loc,
+                                  ValueRange toStore, OpFoldResult laneId,
+                                  Value memref, IndexCalculator indexFn) {
   auto aff = [&](AffineExpr e) {
     return affine::makeComposedFoldedAffineApply(b, loc, e, laneId);
   };
@@ -706,7 +713,7 @@ SmallVector<Operation *> MmaSyncBuilder::buildMemRefStores(
     Value row = getValueOrCreateConstantIndexOp(b, loc, aff(indexing.row()));
     Value col = getValueOrCreateConstantIndexOp(b, loc, aff(indexing.col()));
     Operation *store =
-        memref::StoreOp::create(b, loc, val, memref, ValueRange{row, col});
+        b.create<memref::StoreOp>(loc, val, memref, ValueRange{row, col});
     res.push_back(store);
   }
   return res;
@@ -721,22 +728,22 @@ SmallVector<Operation *> MmaSyncBuilder::buildMmaSyncMemRefStoreOperand(
       vectorToStore,
       /*applyFn=*/
       [&](Value v, int64_t linearIdx, ArrayRef<int64_t> indices) {
-        return vector::ExtractOp::create(b, loc, vectorToStore, indices);
+        return b.create<vector::ExtractOp>(loc, vectorToStore, indices);
       },
       /*reduceFn=*/
       [&](Value v, int64_t linearIdx, ArrayRef<int64_t> indices) {
         toStore.push_back(v);
       });
-  return buildMemRefStores(b, loc, toStore, laneId, memref, std::move(indexFn));
+  return buildMemRefStores(b, loc, toStore, laneId, memref, indexFn);
 }
 
 static std::tuple<SmallVector<int64_t>, SmallVector<int64_t>,
                   SmallVector<int64_t>>
 makeVectorShapes(ArrayRef<int64_t> lhs, ArrayRef<int64_t> rhs,
                  ArrayRef<int64_t> res) {
-  SmallVector<int64_t> vlhs(lhs);
-  SmallVector<int64_t> vrhs(rhs);
-  SmallVector<int64_t> vres(res);
+  SmallVector<int64_t> vlhs{lhs.begin(), lhs.end()};
+  SmallVector<int64_t> vrhs{rhs.begin(), rhs.end()};
+  SmallVector<int64_t> vres{res.begin(), res.end()};
   return std::make_tuple(vlhs, vrhs, vres);
 }
 
@@ -752,7 +759,7 @@ MmaSyncBuilder::getIndexCalculators(ArrayRef<int64_t> opShape,
                                        &MmaSyncBuilder::m16n8k4tf32Rhs,
                                        &MmaSyncBuilder::m16n8k4tf32Res),
                        makeVectorShapes({2, 1}, {1, 1}, {2, 2}),
-                       SmallVector<int64_t>{opShape},
+                       SmallVector<int64_t>{opShape.begin(), opShape.end()},
                        /*tf32Enabled=*/true};
   }
   // This is the version with f16 accumulation.
@@ -763,7 +770,7 @@ MmaSyncBuilder::getIndexCalculators(ArrayRef<int64_t> opShape,
                                        &MmaSyncBuilder::m16n8k16f16Rhs,
                                        &MmaSyncBuilder::m16n8k16f16Res),
                        makeVectorShapes({4, 2}, {2, 2}, {2, 2}),
-                       SmallVector<int64_t>{opShape},
+                       SmallVector<int64_t>{opShape.begin(), opShape.end()},
                        /*tf32Enabled=*/false};
   }
   return failure();
@@ -773,11 +780,11 @@ FailureOr<Operation *> MmaSyncBuilder::buildMmaSync(LinalgOp linalgOp) {
   Value lhsMemRef = linalgOp.getDpsInputOperand(0)->get();
   Value rhsMemRef = linalgOp.getDpsInputOperand(1)->get();
   Value resMemRef = linalgOp.getDpsInitOperand(0)->get();
-  assert(cast<MemRefType>(lhsMemRef.getType()).getRank() == 2 &&
+  assert(lhsMemRef.getType().cast<MemRefType>().getRank() == 2 &&
          "expected lhs to be a 2D memref");
-  assert(cast<MemRefType>(rhsMemRef.getType()).getRank() == 2 &&
+  assert(rhsMemRef.getType().cast<MemRefType>().getRank() == 2 &&
          "expected rhs to be a 2D memref");
-  assert(cast<MemRefType>(resMemRef.getType()).getRank() == 2 &&
+  assert(resMemRef.getType().cast<MemRefType>().getRank() == 2 &&
          "expected res to be a 2D memref");
 
   int64_t m = cast<MemRefType>(lhsMemRef.getType()).getShape()[0];
@@ -801,29 +808,24 @@ FailureOr<Operation *> MmaSyncBuilder::buildMmaSync(LinalgOp linalgOp) {
                                             rhsIndexFn, rhsShape);
   Value res = buildMmaSyncMemRefLoadOperand(b, loc, laneId, resMemRef,
                                             resIndexFn, resShape);
-  res =
-      MmaSyncOp::create(b, loc, lhs, rhs, res, info.mmaShape, info.tf32Enabled);
+  res = b.create<nvgpu::MmaSyncOp>(loc, lhs, rhs, res, info.mmaShape,
+                                   info.tf32Enabled);
   buildMmaSyncMemRefStoreOperand(b, loc, res, laneId, resMemRef, resIndexFn,
                                  resShape);
   return res.getDefiningOp();
 }
 
-DiagnosedSilenceableFailure RewriteMatmulAsMmaSyncOp::applyToOne(
-    TransformRewriter &rewriter, LinalgOp linalgOp,
-    ApplyToEachResultList &results, TransformState &state) {
+DiagnosedSilenceableFailure transform::RewriteMatmulAsMmaSyncOp::applyToOne(
+    transform::TransformRewriter &rewriter, LinalgOp linalgOp,
+    transform::ApplyToEachResultList &results,
+    transform::TransformState &state) {
   bool fail = true;
   // TODO: more robust detection of matmulOp, with transposes etc.
   if (isa_and_nonnull<linalg::MatmulOp>(linalgOp.getOperation())) {
-    // Check to not let go the matmul with extended semantic, through this
-    // transform.
-    if (linalgOp.hasUserDefinedMaps()) {
-      return emitSilenceableError()
-             << "only matmul ops with non-extended semantics are supported";
-    }
     Location loc = linalgOp.getLoc();
     // TODO: more robust computation of laneId, for now assume a single warp.
-    Value laneId = gpu::ThreadIdOp::create(
-        rewriter, loc, rewriter.getIndexType(), gpu::Dimension::x);
+    Value laneId = rewriter.create<gpu::ThreadIdOp>(
+        loc, rewriter.getIndexType(), gpu::Dimension::x);
     if (succeeded(MmaSyncBuilder(rewriter, loc, laneId).buildMmaSync(linalgOp)))
       fail = false;
   }
@@ -849,49 +851,50 @@ struct HopperBuilder {
   HopperBuilder(RewriterBase &rewriter, Location loc)
       : rewriter(rewriter), loc(loc) {}
 
-  TypedValue<MBarrierGroupType>
+  TypedValue<nvgpu::MBarrierGroupType>
   buildAndInitBarrierInSharedMemory(OpFoldResult numThreads);
 
   /// Create tma descriptor op to initiate transfer from global to shared
   /// memory. This must be done before the launch op, on the host.
-  TypedValue<TensorMapDescriptorType>
+  TypedValue<nvgpu::TensorMapDescriptorType>
   buildGlobalMemRefDescriptor(TypedValue<MemRefType> memref,
                               gpu::LaunchOp launchOp);
 
   /// Build a tma load from global memory to shared memory using `barrier` to
   /// synchronize. Return the number of bytes that will be transferred.
-  OpFoldResult buildTmaAsyncLoad(TypedValue<TensorMapDescriptorType> globalDesc,
-                                 TypedValue<MemRefType> sharedMemref,
-                                 TypedValue<MBarrierGroupType> barrier,
-                                 SmallVectorImpl<Operation *> &loadOps);
-  void buildBarrierArriveTx(TypedValue<MBarrierGroupType> barrier,
+  OpFoldResult
+  buildTmaAsyncLoad(TypedValue<nvgpu::TensorMapDescriptorType> globalDesc,
+                    TypedValue<MemRefType> sharedMemref,
+                    TypedValue<nvgpu::MBarrierGroupType> barrier,
+                    SmallVectorImpl<Operation *> &loadOps);
+  void buildBarrierArriveTx(TypedValue<nvgpu::MBarrierGroupType> barrier,
                             ArrayRef<OpFoldResult> sizes);
 
   /// If threadIdx.x == 0 does TMA request + wait, else just wait.
   /// Return the operation that performs the transfer on thread0.
   // TODO: In the future, don't hardcode to thread 0 but elect a leader.
   SmallVector<Operation *> buildPredicateLoadsOnThread0(
-      ArrayRef<TypedValue<TensorMapDescriptorType>> globalDescriptors,
+      ArrayRef<TypedValue<nvgpu::TensorMapDescriptorType>> globalDescriptors,
       ArrayRef<TypedValue<MemRefType>> sharedMemBuffers,
-      TypedValue<MBarrierGroupType> barrier);
+      TypedValue<nvgpu::MBarrierGroupType> barrier);
 
-  void buildTryWaitParity(TypedValue<MBarrierGroupType> barrier);
+  void buildTryWaitParity(TypedValue<nvgpu::MBarrierGroupType> barrier);
 
   RewriterBase &rewriter;
   Location loc;
 };
 
 SmallVector<Operation *> HopperBuilder::buildPredicateLoadsOnThread0(
-    ArrayRef<TypedValue<TensorMapDescriptorType>> globalDescriptors,
+    ArrayRef<TypedValue<nvgpu::TensorMapDescriptorType>> globalDescriptors,
     ArrayRef<TypedValue<MemRefType>> sharedMemBuffers,
-    TypedValue<MBarrierGroupType> barrier) {
+    TypedValue<nvgpu::MBarrierGroupType> barrier) {
   SmallVector<Operation *> loadOps;
-  Value zero = arith::ConstantIndexOp::create(rewriter, loc, 0);
-  Value tidx = gpu::ThreadIdOp::create(rewriter, loc, gpu::Dimension::x);
-  Value cond = arith::CmpIOp::create(rewriter, loc, arith::CmpIPredicate::eq,
-                                     tidx, zero);
+  Value zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  Value tidx = rewriter.create<gpu::ThreadIdOp>(loc, gpu::Dimension::x);
+  Value cond =
+      rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, tidx, zero);
   // clang-format off
-  scf::IfOp::create(rewriter,
+  rewriter.create<scf::IfOp>(
     /*location=*/loc,
     /*conditional=*/cond,
     /*thenBuilder=*/
@@ -906,14 +909,14 @@ SmallVector<Operation *> HopperBuilder::buildPredicateLoadsOnThread0(
       // TODO: Note that cutlass predeclares the barrier arrive tx before the tma.async.load.
       // This may or may not have perf implications.
       buildBarrierArriveTx(barrier, sizes);
-      scf::YieldOp::create(rewriter, loc);
+      rewriter.create<scf::YieldOp>(loc);
     },
     /*elseBuilder=*/
     [&](OpBuilder &lb, Location loc) {
       // TODO: is this for no-thread divergence?
       // Should we just yield the size and hoist?
       buildBarrierArriveTx(barrier, getAsIndexOpFoldResult(rewriter.getContext(), 0));
-      scf::YieldOp::create(rewriter, loc);
+      rewriter.create<scf::YieldOp>(loc);
     });
   // clang-format on
   return loadOps;
@@ -925,28 +928,27 @@ static Attribute getSharedAddressSpaceAttribute(OpBuilder &b) {
   // return b.getI64IntegerAttr(static_cast<int64_t>(kSharedMemorySpace));
 }
 
-TypedValue<MBarrierGroupType>
+TypedValue<nvgpu::MBarrierGroupType>
 HopperBuilder::buildAndInitBarrierInSharedMemory(OpFoldResult numThreads) {
   auto sharedMemorySpace = getSharedAddressSpaceAttribute(rewriter);
-  Value barrier = MBarrierCreateOp::create(
-      rewriter, loc,
-      MBarrierGroupType::get(rewriter.getContext(), sharedMemorySpace));
-  Value zero = arith::ConstantIndexOp::create(rewriter, loc, 0);
-  nvgpu::MBarrierInitOp::create(
-      rewriter, loc, barrier,
-      getValueOrCreateConstantIndexOp(rewriter, loc, numThreads), zero,
-      Value());
-  gpu::BarrierOp::create(rewriter, loc);
-  return cast<TypedValue<MBarrierGroupType>>(barrier);
+  Value barrier = rewriter.create<nvgpu::MBarrierCreateOp>(
+      loc,
+      nvgpu::MBarrierGroupType::get(rewriter.getContext(), sharedMemorySpace));
+  Value zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  rewriter.create<nvgpu::MBarrierInitOp>(
+      loc, barrier, getValueOrCreateConstantIndexOp(rewriter, loc, numThreads),
+      zero, Value());
+  rewriter.create<gpu::BarrierOp>(loc);
+  return cast<TypedValue<nvgpu::MBarrierGroupType>>(barrier);
 }
 
-TypedValue<TensorMapDescriptorType>
+TypedValue<nvgpu::TensorMapDescriptorType>
 HopperBuilder::buildGlobalMemRefDescriptor(TypedValue<MemRefType> memref,
                                            gpu::LaunchOp launchOp) {
   OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPoint(launchOp);
-  Value unrankedMemRef = memref::CastOp::create(
-      rewriter, loc,
+  Value unrankedMemRef = rewriter.create<memref::CastOp>(
+      loc,
       UnrankedMemRefType::get(memref.getType().getElementType(),
                               memref.getType().getMemorySpace()),
       memref);
@@ -956,29 +958,29 @@ HopperBuilder::buildGlobalMemRefDescriptor(TypedValue<MemRefType> memref,
       getValueOrCreateConstantIndexOp(rewriter, loc, mixedSizes);
 
   auto sharedMemorySpace = getSharedAddressSpaceAttribute(rewriter);
-  Value desc = TmaCreateDescriptorOp::create(
-      rewriter, loc,
-      TensorMapDescriptorType::get(rewriter.getContext(),
-                                   MemRefType::Builder(memref.getType())
-                                       .setMemorySpace(sharedMemorySpace),
-                                   TensorMapSwizzleKind::SWIZZLE_NONE,
-                                   TensorMapL2PromoKind::L2PROMO_NONE,
-                                   TensorMapOOBKind::OOB_ZERO,
-                                   TensorMapInterleaveKind::INTERLEAVE_NONE),
+  Value desc = rewriter.create<nvgpu::TmaCreateDescriptorOp>(
+      loc,
+      nvgpu::TensorMapDescriptorType::get(
+          rewriter.getContext(),
+          MemRefType::Builder(memref.getType())
+              .setMemorySpace(sharedMemorySpace),
+          TensorMapSwizzleKind::SWIZZLE_NONE,
+          TensorMapL2PromoKind::L2PROMO_NONE, TensorMapOOBKind::OOB_ZERO,
+          TensorMapInterleaveKind::INTERLEAVE_NONE),
       unrankedMemRef, sizes);
-  return cast<TypedValue<TensorMapDescriptorType>>(desc);
+  return cast<TypedValue<nvgpu::TensorMapDescriptorType>>(desc);
 }
 
-OpFoldResult
-HopperBuilder::buildTmaAsyncLoad(TypedValue<TensorMapDescriptorType> globalDesc,
-                                 TypedValue<MemRefType> sharedMemref,
-                                 TypedValue<MBarrierGroupType> barrier,
-                                 SmallVectorImpl<Operation *> &loadOps) {
+OpFoldResult HopperBuilder::buildTmaAsyncLoad(
+    TypedValue<nvgpu::TensorMapDescriptorType> globalDesc,
+    TypedValue<MemRefType> sharedMemref,
+    TypedValue<nvgpu::MBarrierGroupType> barrier,
+    SmallVectorImpl<Operation *> &loadOps) {
   MLIRContext *ctx = rewriter.getContext();
-  Value zero = arith::ConstantIndexOp::create(rewriter, loc, 0);
-  Operation *loadOp =
-      TmaAsyncLoadOp::create(rewriter, loc, sharedMemref, barrier, globalDesc,
-                             ValueRange{zero, zero}, zero, Value(), Value());
+  Value zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  Operation *loadOp = rewriter.create<nvgpu::TmaAsyncLoadOp>(
+      loc, sharedMemref, barrier, globalDesc, ValueRange{zero, zero}, zero,
+      Value(), Value());
   loadOps.push_back(loadOp);
   auto mixedSizes = memref::getMixedSizes(rewriter, loc, sharedMemref);
   SmallVector<AffineExpr> symbols(mixedSizes.size());
@@ -991,8 +993,9 @@ HopperBuilder::buildTmaAsyncLoad(TypedValue<TensorMapDescriptorType> globalDesc,
   return res;
 }
 
-void HopperBuilder::buildBarrierArriveTx(TypedValue<MBarrierGroupType> barrier,
-                                         ArrayRef<OpFoldResult> mixedSizes) {
+void HopperBuilder::buildBarrierArriveTx(
+    TypedValue<nvgpu::MBarrierGroupType> barrier,
+    ArrayRef<OpFoldResult> mixedSizes) {
   assert(!mixedSizes.empty() && "expecte non-empty sizes");
   MLIRContext *ctx = rewriter.getContext();
   SmallVector<AffineExpr> symbols(mixedSizes.size());
@@ -1001,22 +1004,22 @@ void HopperBuilder::buildBarrierArriveTx(TypedValue<MBarrierGroupType> barrier,
   OpFoldResult size =
       affine::makeComposedFoldedAffineApply(rewriter, loc, sumExpr, mixedSizes);
   Value sizeVal = getValueOrCreateConstantIndexOp(rewriter, loc, size);
-  Value zero = arith::ConstantIndexOp::create(rewriter, loc, 0);
-  nvgpu::MBarrierArriveExpectTxOp::create(rewriter, loc, barrier, sizeVal, zero,
-                                          Value());
+  Value zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  rewriter.create<nvgpu::MBarrierArriveExpectTxOp>(loc, barrier, sizeVal, zero,
+                                                   Value());
 }
 
-void HopperBuilder::buildTryWaitParity(TypedValue<MBarrierGroupType> barrier) {
-  Type i1 = rewriter.getI1Type();
-  Value parity = LLVM::ConstantOp::create(rewriter, loc, i1, 0);
+void HopperBuilder::buildTryWaitParity(
+    TypedValue<nvgpu::MBarrierGroupType> barrier) {
+  Value parity = rewriter.create<arith::ConstantIndexOp>(loc, 0);
   // 10M is an arbitrary, not too small or too big number to specify the number
   // of ticks before retry.
   // TODO: hoist this in a default dialect constant.
   Value ticksBeforeRetry =
-      arith::ConstantIndexOp::create(rewriter, loc, 10000000);
-  Value zero = arith::ConstantIndexOp::create(rewriter, loc, 0);
-  nvgpu::MBarrierTryWaitParityOp::create(rewriter, loc, barrier, parity,
-                                         ticksBeforeRetry, zero);
+      rewriter.create<arith::ConstantIndexOp>(loc, 10000000);
+  Value zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  rewriter.create<nvgpu::MBarrierTryWaitParityOp>(loc, barrier, parity,
+                                                  ticksBeforeRetry, zero);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1050,11 +1053,11 @@ SmallVector<Operation *> CopyBuilder::rewrite(ArrayRef<Operation *> copyOps) {
       ArrayRef<OpFoldResult>{launchOp.getBlockSizeX(), launchOp.getBlockSizeY(),
                              launchOp.getBlockSizeZ()});
 
-  TypedValue<MBarrierGroupType> barrier =
+  TypedValue<nvgpu::MBarrierGroupType> barrier =
       buildAndInitBarrierInSharedMemory(numThreads);
 
   SmallVector<TypedValue<MemRefType>> shmems;
-  SmallVector<TypedValue<TensorMapDescriptorType>> globalDescs;
+  SmallVector<TypedValue<nvgpu::TensorMapDescriptorType>> globalDescs;
   for (Operation *op : copyOps) {
     auto copyOp = cast<linalg::CopyOp>(op);
     auto inMemRef =
@@ -1063,7 +1066,7 @@ SmallVector<Operation *> CopyBuilder::rewrite(ArrayRef<Operation *> copyOps) {
            "expected in to be a 2D memref");
 
     // 2. Build global memory descriptor.
-    TypedValue<TensorMapDescriptorType> globalDesc =
+    TypedValue<nvgpu::TensorMapDescriptorType> globalDesc =
         buildGlobalMemRefDescriptor(inMemRef, launchOp);
     globalDescs.push_back(globalDesc);
 
@@ -1090,8 +1093,9 @@ SmallVector<Operation *> CopyBuilder::rewrite(ArrayRef<Operation *> copyOps) {
 }
 
 DiagnosedSilenceableFailure
-RewriteCopyAsTmaOp::apply(TransformRewriter &rewriter,
-                          TransformResults &results, TransformState &state) {
+transform::RewriteCopyAsTmaOp::apply(transform::TransformRewriter &rewriter,
+                                     transform::TransformResults &results,
+                                     transform::TransformState &state) {
   auto payloadOps = state.getPayloadOps(getTarget());
   gpu::LaunchOp commonLaunchOp;
   Operation *firstOp, *failingOp;
@@ -1128,14 +1132,13 @@ RewriteCopyAsTmaOp::apply(TransformRewriter &rewriter,
 
 namespace {
 class NVGPUTransformDialectExtension
-    : public TransformDialectExtension<NVGPUTransformDialectExtension> {
+    : public transform::TransformDialectExtension<
+          NVGPUTransformDialectExtension> {
 public:
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(NVGPUTransformDialectExtension)
-
   NVGPUTransformDialectExtension() {
     declareGeneratedDialect<arith::ArithDialect>();
     declareGeneratedDialect<affine::AffineDialect>();
-    declareGeneratedDialect<NVGPUDialect>();
+    declareGeneratedDialect<nvgpu::NVGPUDialect>();
     declareGeneratedDialect<NVVM::NVVMDialect>();
     declareGeneratedDialect<vector::VectorDialect>();
     registerTransformOps<

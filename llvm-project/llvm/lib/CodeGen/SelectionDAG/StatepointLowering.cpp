@@ -26,12 +26,13 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
+#include "llvm/CodeGen/MachineValueType.h"
+#include "llvm/CodeGen/RuntimeLibcalls.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/StackMaps.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
-#include "llvm/CodeGenTypes/MachineValueType.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/GCStrategy.h"
@@ -338,9 +339,6 @@ static std::pair<SDValue, SDNode *> lowerCallFromStatepointLoweringInfo(
   // get_return_value can either be a sequence of CopyFromReg instructions
   // to grab the return value from the return register(s), or it can be a LOAD
   // to load a value returned by reference via a stack slot.
-
-  if (CallEnd->getOpcode() == ISD::EH_LABEL)
-    CallEnd = CallEnd->getOperand(0).getNode();
 
   bool HasDef = !SI.CLI.RetTy->isVoidTy();
   if (HasDef) {
@@ -672,7 +670,7 @@ lowerStatepointMetaArgs(SmallVectorImpl<SDValue> &Ops,
   // it is the contents of the slot which may get updated, not the pointer to
   // the alloca
   SmallVector<SDValue, 4> Allocas;
-  for (Value *V : SI.GCLives) {
+  for (Value *V : SI.GCArgs) {
     SDValue Incoming = Builder.getValue(V);
     if (FrameIndexSDNode *FI = dyn_cast<FrameIndexSDNode>(Incoming)) {
       // This handles allocas as arguments to the statepoint
@@ -871,11 +869,10 @@ SDValue SelectionDAGBuilder::LowerAsSTATEPOINT(
   for (const auto *Relocate : SI.GCRelocates) {
     Value *Derived = Relocate->getDerivedPtr();
     SDValue SD = getValue(Derived);
-    auto It = LowerAsVReg.find(SD);
-    if (It == LowerAsVReg.end())
+    if (!LowerAsVReg.count(SD))
       continue;
 
-    SDValue Relocated = SDValue(StatepointMCNode, It->second);
+    SDValue Relocated = SDValue(StatepointMCNode, LowerAsVReg[SD]);
 
     // Handle local relocate. Note that different relocates might
     // map to the same SDValue.
@@ -889,8 +886,7 @@ SDValue SelectionDAGBuilder::LowerAsSTATEPOINT(
     }
 
     // Handle multiple gc.relocates of the same input efficiently.
-    auto [VRegIt, Inserted] = VirtRegs.try_emplace(SD);
-    if (!Inserted)
+    if (VirtRegs.count(SD))
       continue;
 
     auto *RetTy = Relocate->getType();
@@ -901,7 +897,7 @@ SDValue SelectionDAGBuilder::LowerAsSTATEPOINT(
     RFV.getCopyToRegs(Relocated, DAG, getCurSDLoc(), Chain, nullptr);
     PendingExports.push_back(Chain);
 
-    VRegIt->second = Reg;
+    VirtRegs[SD] = Reg;
   }
 
   // Record for later use how each relocation was lowered.  This is needed to
@@ -916,16 +912,13 @@ SDValue SelectionDAGBuilder::LowerAsSTATEPOINT(
     bool IsLocal = (Relocate->getParent() == StatepointInstr->getParent());
 
     RecordType Record;
-    if (LowerAsVReg.count(SDV)) {
-      if (IsLocal) {
-        // Result is already stored in StatepointLowering
-        Record.type = RecordType::SDValueNode;
-      } else {
-        Record.type = RecordType::VReg;
-        auto It = VirtRegs.find(SDV);
-        assert(It != VirtRegs.end());
-        Record.payload.Reg = It->second;
-      }
+    if (IsLocal && LowerAsVReg.count(SDV)) {
+      // Result is already stored in StatepointLowering
+      Record.type = RecordType::SDValueNode;
+    } else if (LowerAsVReg.count(SDV)) {
+      Record.type = RecordType::VReg;
+      assert(VirtRegs.count(SDV));
+      Record.payload.Reg = VirtRegs[SDV];
     } else if (Loc.getNode()) {
       Record.type = RecordType::Spill;
       Record.payload.FI = cast<FrameIndexSDNode>(Loc)->getIndex();
@@ -1090,7 +1083,7 @@ SelectionDAGBuilder::LowerStatepoint(const GCStatepointInst &I,
     }
   }
 
-  SI.GCLives = ArrayRef<const Use>(I.gc_live_begin(), I.gc_live_end());
+  SI.GCArgs = ArrayRef<const Use>(I.gc_args_begin(), I.gc_args_end());
   SI.StatepointInstr = &I;
   SI.ID = I.getID();
 
@@ -1258,7 +1251,7 @@ void SelectionDAGBuilder::visitGCRelocate(const GCRelocateInst &Relocate) {
 
   if (Record.type == RecordType::Spill) {
     unsigned Index = Record.payload.FI;
-    SDValue SpillSlot = DAG.getFrameIndex(Index, getFrameIndexTy());
+    SDValue SpillSlot = DAG.getTargetFrameIndex(Index, getFrameIndexTy());
 
     // All the reloads are independent and are reading memory only modified by
     // statepoints (i.e. no other aliasing stores); informing SelectionDAG of
@@ -1294,7 +1287,7 @@ void SelectionDAGBuilder::visitGCRelocate(const GCRelocateInst &Relocate) {
   if (SD.isUndef() && SD.getValueType().getSizeInBits() <= 64) {
     // Lowering relocate(undef) as arbitrary constant. Current constant value
     // is chosen such that it's unlikely to be a valid pointer.
-    setValue(&Relocate, DAG.getConstant(0xFEFEFEFE, SDLoc(SD), MVT::i64));
+    setValue(&Relocate, DAG.getTargetConstant(0xFEFEFEFE, SDLoc(SD), MVT::i64));
     return;
   }
 

@@ -17,18 +17,15 @@
 
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/CodeGen/MachinePassManager.h"
-#include "llvm/CodeGen/RegAllocCommon.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/OptimizationLevel.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/PGOOptions.h"
-#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO/Inliner.h"
 #include "llvm/Transforms/IPO/ModuleInliner.h"
+#include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/Scalar/LoopPassManager.h"
-#include <optional>
 #include <vector>
 
 namespace llvm {
@@ -36,13 +33,17 @@ class StringRef;
 class AAManager;
 class TargetMachine;
 class ModuleSummaryIndex;
+template <typename T> class IntrusiveRefCntPtr;
+namespace vfs {
+class FileSystem;
+} // namespace vfs
 
 /// Tunable parameters for passes in the default pipelines.
 class PipelineTuningOptions {
 public:
   /// Constructor sets pipeline tuning defaults based on cl::opts. Each option
   /// can be set in the PassBuilder when using a LLVM as a library.
-  LLVM_ABI PipelineTuningOptions();
+  PipelineTuningOptions();
 
   /// Tuning option to set loop interleaving on/off, set based on opt level.
   bool LoopInterleaving;
@@ -57,13 +58,6 @@ public:
 
   /// Tuning option to enable/disable loop unrolling. Its default value is true.
   bool LoopUnrolling;
-
-  /// Tuning option to enable/disable loop interchange. Its default value is
-  /// false.
-  bool LoopInterchange;
-
-  /// Tuning option to enable/disable loop fusion. Its default value is false.
-  bool LoopFusion;
 
   /// Tuning option to forget all SCEV loops in LoopUnroll. Its default value
   /// is that of the flag: `-forget-scev-loop-unroll`.
@@ -112,7 +106,6 @@ class PassBuilder {
   PipelineTuningOptions PTO;
   std::optional<PGOOptions> PGOOpt;
   PassInstrumentationCallbacks *PIC;
-  IntrusiveRefCntPtr<vfs::FileSystem> FS;
 
 public:
   /// A struct to capture parsed pass pipeline names.
@@ -128,21 +121,19 @@ public:
     std::vector<PipelineElement> InnerPipeline;
   };
 
-  LLVM_ABI explicit PassBuilder(
-      TargetMachine *TM = nullptr,
-      PipelineTuningOptions PTO = PipelineTuningOptions(),
-      std::optional<PGOOptions> PGOOpt = std::nullopt,
-      PassInstrumentationCallbacks *PIC = nullptr,
-      IntrusiveRefCntPtr<vfs::FileSystem> FS = vfs::getRealFileSystem());
+  explicit PassBuilder(TargetMachine *TM = nullptr,
+                       PipelineTuningOptions PTO = PipelineTuningOptions(),
+                       std::optional<PGOOptions> PGOOpt = std::nullopt,
+                       PassInstrumentationCallbacks *PIC = nullptr);
 
   /// Cross register the analysis managers through their proxies.
   ///
   /// This is an interface that can be used to cross register each
   /// AnalysisManager with all the others analysis managers.
-  LLVM_ABI void
-  crossRegisterProxies(LoopAnalysisManager &LAM, FunctionAnalysisManager &FAM,
-                       CGSCCAnalysisManager &CGAM, ModuleAnalysisManager &MAM,
-                       MachineFunctionAnalysisManager *MFAM = nullptr);
+  void crossRegisterProxies(LoopAnalysisManager &LAM,
+                            FunctionAnalysisManager &FAM,
+                            CGSCCAnalysisManager &CGAM,
+                            ModuleAnalysisManager &MAM);
 
   /// Registers all available module analysis passes.
   ///
@@ -150,7 +141,7 @@ public:
   /// ModuleAnalysisManager with all registered module analyses. Callers can
   /// still manually register any additional analyses. Callers can also
   /// pre-register analyses and this will not override those.
-  LLVM_ABI void registerModuleAnalyses(ModuleAnalysisManager &MAM);
+  void registerModuleAnalyses(ModuleAnalysisManager &MAM);
 
   /// Registers all available CGSCC analysis passes.
   ///
@@ -158,7 +149,7 @@ public:
   /// with all registered CGSCC analyses. Callers can still manually register any
   /// additional analyses. Callers can also pre-register analyses and this will
   /// not override those.
-  LLVM_ABI void registerCGSCCAnalyses(CGSCCAnalysisManager &CGAM);
+  void registerCGSCCAnalyses(CGSCCAnalysisManager &CGAM);
 
   /// Registers all available function analysis passes.
   ///
@@ -166,14 +157,14 @@ public:
   /// FunctionAnalysisManager with all registered function analyses. Callers can
   /// still manually register any additional analyses. Callers can also
   /// pre-register analyses and this will not override those.
-  LLVM_ABI void registerFunctionAnalyses(FunctionAnalysisManager &FAM);
+  void registerFunctionAnalyses(FunctionAnalysisManager &FAM);
 
   /// Registers all available loop analysis passes.
   ///
   /// This is an interface that can be used to populate a \c LoopAnalysisManager
   /// with all registered loop analyses. Callers can still manually register any
   /// additional analyses.
-  LLVM_ABI void registerLoopAnalyses(LoopAnalysisManager &LAM);
+  void registerLoopAnalyses(LoopAnalysisManager &LAM);
 
   /// Registers all available machine function analysis passes.
   ///
@@ -181,8 +172,7 @@ public:
   /// MachineFunctionAnalysisManager with all registered function analyses.
   /// Callers can still manually register any additional analyses. Callers can
   /// also pre-register analyses and this will not override those.
-  LLVM_ABI void
-  registerMachineFunctionAnalyses(MachineFunctionAnalysisManager &MFAM);
+  void registerMachineFunctionAnalyses(MachineFunctionAnalysisManager &MFAM);
 
   /// Construct the core LLVM function canonicalization and simplification
   /// pipeline.
@@ -198,8 +188,9 @@ public:
   /// build them.
   ///
   /// \p Phase indicates the current ThinLTO phase.
-  LLVM_ABI FunctionPassManager buildFunctionSimplificationPipeline(
-      OptimizationLevel Level, ThinOrFullLTOPhase Phase);
+  FunctionPassManager
+  buildFunctionSimplificationPipeline(OptimizationLevel Level,
+                                      ThinOrFullLTOPhase Phase);
 
   /// Construct the core LLVM module canonicalization and simplification
   /// pipeline.
@@ -216,18 +207,18 @@ public:
   /// build them.
   ///
   /// \p Phase indicates the current ThinLTO phase.
-  LLVM_ABI ModulePassManager buildModuleSimplificationPipeline(
-      OptimizationLevel Level, ThinOrFullLTOPhase Phase);
+  ModulePassManager buildModuleSimplificationPipeline(OptimizationLevel Level,
+                                                      ThinOrFullLTOPhase Phase);
 
   /// Construct the module pipeline that performs inlining as well as
   /// the inlining-driven cleanups.
-  LLVM_ABI ModuleInlinerWrapperPass
-  buildInlinerPipeline(OptimizationLevel Level, ThinOrFullLTOPhase Phase);
+  ModuleInlinerWrapperPass buildInlinerPipeline(OptimizationLevel Level,
+                                                ThinOrFullLTOPhase Phase);
 
   /// Construct the module pipeline that performs inlining with
   /// module inliner pass.
-  LLVM_ABI ModulePassManager
-  buildModuleInlinerPipeline(OptimizationLevel Level, ThinOrFullLTOPhase Phase);
+  ModulePassManager buildModuleInlinerPipeline(OptimizationLevel Level,
+                                               ThinOrFullLTOPhase Phase);
 
   /// Construct the core LLVM module optimization pipeline.
   ///
@@ -242,8 +233,9 @@ public:
   /// only intended for use when attempting to optimize code. If frontends
   /// require some transformations for semantic reasons, they should explicitly
   /// build them.
-  LLVM_ABI ModulePassManager buildModuleOptimizationPipeline(
-      OptimizationLevel Level, ThinOrFullLTOPhase LTOPhase);
+  ModulePassManager
+  buildModuleOptimizationPipeline(OptimizationLevel Level,
+                                  ThinOrFullLTOPhase LTOPhase);
 
   /// Build a per-module default optimization pipeline.
   ///
@@ -251,18 +243,16 @@ public:
   /// optimization and code generation without any link-time optimization. It
   /// typically correspond to frontend "-O[123]" options for optimization
   /// levels \c O1, \c O2 and \c O3 resp.
-  LLVM_ABI ModulePassManager buildPerModuleDefaultPipeline(
-      OptimizationLevel Level,
-      ThinOrFullLTOPhase Phase = ThinOrFullLTOPhase::None);
+  ModulePassManager buildPerModuleDefaultPipeline(OptimizationLevel Level,
+                                                  bool LTOPreLink = false);
 
   /// Build a fat object default optimization pipeline.
   ///
   /// This builds a pipeline that runs the LTO/ThinLTO  pre-link pipeline, and
   /// emits a section containing the pre-link bitcode along side the object code
   /// generated in non-LTO compilation.
-  LLVM_ABI ModulePassManager buildFatLTODefaultPipeline(OptimizationLevel Level,
-                                                        bool ThinLTO,
-                                                        bool EmitSummary);
+  ModulePassManager buildFatLTODefaultPipeline(OptimizationLevel Level,
+                                               bool ThinLTO, bool EmitSummary);
 
   /// Build a pre-link, ThinLTO-targeting default optimization pipeline to
   /// a pass manager.
@@ -271,17 +261,17 @@ public:
   /// a ThinLTO run. It works to minimize the IR which needs to be analyzed
   /// without making irreversible decisions which could be made better during
   /// the LTO run.
-  LLVM_ABI ModulePassManager
-  buildThinLTOPreLinkDefaultPipeline(OptimizationLevel Level);
+  ModulePassManager buildThinLTOPreLinkDefaultPipeline(OptimizationLevel Level);
 
-  /// Build a ThinLTO default optimization pipeline to a pass manager.
+  /// Build an ThinLTO default optimization pipeline to a pass manager.
   ///
   /// This provides a good default optimization pipeline for link-time
   /// optimization and code generation. It is particularly tuned to fit well
   /// when IR coming into the LTO phase was first run through \c
-  /// buildThinLTOPreLinkDefaultPipeline, and the two coordinate closely.
-  LLVM_ABI ModulePassManager buildThinLTODefaultPipeline(
-      OptimizationLevel Level, const ModuleSummaryIndex *ImportSummary);
+  /// addPreLinkLTODefaultPipeline, and the two coordinate closely.
+  ModulePassManager
+  buildThinLTODefaultPipeline(OptimizationLevel Level,
+                              const ModuleSummaryIndex *ImportSummary);
 
   /// Build a pre-link, LTO-targeting default optimization pipeline to a pass
   /// manager.
@@ -290,31 +280,29 @@ public:
   /// run. It works to minimize the IR which needs to be analyzed without
   /// making irreversible decisions which could be made better during the LTO
   /// run.
-  LLVM_ABI ModulePassManager
-  buildLTOPreLinkDefaultPipeline(OptimizationLevel Level);
+  ModulePassManager buildLTOPreLinkDefaultPipeline(OptimizationLevel Level);
 
   /// Build an LTO default optimization pipeline to a pass manager.
   ///
   /// This provides a good default optimization pipeline for link-time
   /// optimization and code generation. It is particularly tuned to fit well
   /// when IR coming into the LTO phase was first run through \c
-  /// buildLTOPreLinkDefaultPipeline, and the two coordinate closely.
-  LLVM_ABI ModulePassManager buildLTODefaultPipeline(
-      OptimizationLevel Level, ModuleSummaryIndex *ExportSummary);
+  /// addPreLinkLTODefaultPipeline, and the two coordinate closely.
+  ModulePassManager buildLTODefaultPipeline(OptimizationLevel Level,
+                                            ModuleSummaryIndex *ExportSummary);
 
   /// Build an O0 pipeline with the minimal semantically required passes.
   ///
   /// This should only be used for non-LTO and LTO pre-link pipelines.
-  LLVM_ABI ModulePassManager
-  buildO0DefaultPipeline(OptimizationLevel Level,
-                         ThinOrFullLTOPhase Phase = ThinOrFullLTOPhase::None);
+  ModulePassManager buildO0DefaultPipeline(OptimizationLevel Level,
+                                           bool LTOPreLink = false);
 
   /// Build the default `AAManager` with the default alias analysis pipeline
   /// registered.
   ///
   /// This also adds target-specific alias analyses registered via
   /// TargetMachine::registerDefaultAliasAnalyses().
-  LLVM_ABI AAManager buildDefaultAAPipeline();
+  AAManager buildDefaultAAPipeline();
 
   /// Parse a textual pass pipeline description into a \c
   /// ModulePassManager.
@@ -356,8 +344,7 @@ public:
   /// specifically want the pass to run under a adaptor directly. This is
   /// preferred when a pipeline is largely of one type, but one or just a few
   /// passes are of different types(See PassBuilder.cpp for examples).
-  LLVM_ABI Error parsePassPipeline(ModulePassManager &MPM,
-                                   StringRef PipelineText);
+  Error parsePassPipeline(ModulePassManager &MPM, StringRef PipelineText);
 
   /// {{@ Parse a textual pass pipeline description into a specific PassManager
   ///
@@ -366,12 +353,9 @@ public:
   /// this is the valid pipeline text:
   ///
   ///   function(lpass)
-  LLVM_ABI Error parsePassPipeline(CGSCCPassManager &CGPM,
-                                   StringRef PipelineText);
-  LLVM_ABI Error parsePassPipeline(FunctionPassManager &FPM,
-                                   StringRef PipelineText);
-  LLVM_ABI Error parsePassPipeline(LoopPassManager &LPM,
-                                   StringRef PipelineText);
+  Error parsePassPipeline(CGSCCPassManager &CGPM, StringRef PipelineText);
+  Error parsePassPipeline(FunctionPassManager &FPM, StringRef PipelineText);
+  Error parsePassPipeline(LoopPassManager &LPM, StringRef PipelineText);
   /// @}}
 
   /// Parse a textual MIR pipeline into the provided \c MachineFunctionPass
@@ -383,8 +367,8 @@ public:
   ///
   /// There is no need to specify the pass nesting, and this function
   /// currently cannot handle the pass nesting.
-  LLVM_ABI Error parsePassPipeline(MachineFunctionPassManager &MFPM,
-                                   StringRef PipelineText);
+  Error parsePassPipeline(MachineFunctionPassManager &MFPM,
+                          StringRef PipelineText);
 
   /// Parse a textual alias analysis pipeline into the provided AA manager.
   ///
@@ -401,14 +385,10 @@ public:
   /// Returns false if the text cannot be parsed cleanly. The specific state of
   /// the \p AA manager is unspecified if such an error is encountered and this
   /// returns false.
-  LLVM_ABI Error parseAAPipeline(AAManager &AA, StringRef PipelineText);
-
-  /// Parse RegAllocFilterName to get RegAllocFilterFunc.
-  LLVM_ABI std::optional<RegAllocFilterFunc>
-  parseRegAllocFilter(StringRef RegAllocFilterName);
+  Error parseAAPipeline(AAManager &AA, StringRef PipelineText);
 
   /// Print pass names.
-  LLVM_ABI void printPassNames(raw_ostream &OS);
+  void printPassNames(raw_ostream &OS);
 
   /// Register a callback for a default optimizer pipeline extension
   /// point
@@ -477,17 +457,6 @@ public:
     VectorizerStartEPCallbacks.push_back(C);
   }
 
-  /// Register a callback for a default optimizer pipeline extension
-  /// point
-  ///
-  /// This extension point allows adding optimization passes after the
-  /// vectorizer and other highly target specific optimization passes are
-  /// executed.
-  void registerVectorizerEndEPCallback(
-      const std::function<void(FunctionPassManager &, OptimizationLevel)> &C) {
-    VectorizerEndEPCallbacks.push_back(C);
-  }
-
   /// Register a callback for a default optimizer pipeline extension point.
   ///
   /// This extension point allows adding optimization once at the start of the
@@ -503,8 +472,7 @@ public:
   /// This extension point allows adding optimization right after passes that do
   /// basic simplification of the input IR.
   void registerPipelineEarlySimplificationEPCallback(
-      const std::function<void(ModulePassManager &, OptimizationLevel,
-                               ThinOrFullLTOPhase)> &C) {
+      const std::function<void(ModulePassManager &, OptimizationLevel)> &C) {
     PipelineEarlySimplificationEPCallbacks.push_back(C);
   }
 
@@ -513,8 +481,7 @@ public:
   /// This extension point allows adding optimizations before the function
   /// optimization pipeline.
   void registerOptimizerEarlyEPCallback(
-      const std::function<void(ModulePassManager &, OptimizationLevel,
-                               ThinOrFullLTOPhase Phase)> &C) {
+      const std::function<void(ModulePassManager &, OptimizationLevel)> &C) {
     OptimizerEarlyEPCallbacks.push_back(C);
   }
 
@@ -523,8 +490,7 @@ public:
   /// This extension point allows adding optimizations at the very end of the
   /// function optimization pipeline.
   void registerOptimizerLastEPCallback(
-      const std::function<void(ModulePassManager &, OptimizationLevel,
-                               ThinOrFullLTOPhase)> &C) {
+      const std::function<void(ModulePassManager &, OptimizationLevel)> &C) {
     OptimizerLastEPCallbacks.push_back(C);
   }
 
@@ -603,35 +569,27 @@ public:
     ModulePipelineParsingCallbacks.push_back(C);
   }
   void registerPipelineParsingCallback(
-      const std::function<bool(StringRef Name, MachineFunctionPassManager &,
-                               ArrayRef<PipelineElement>)> &C) {
-    MachineFunctionPipelineParsingCallbacks.push_back(C);
+      const std::function<bool(StringRef Name, MachineFunctionPassManager &)>
+          &C) {
+    MachinePipelineParsingCallbacks.push_back(C);
   }
   /// @}}
-
-  /// Register callbacks to parse target specific filter field if regalloc pass
-  /// needs it. E.g. AMDGPU requires regalloc passes can handle sgpr and vgpr
-  /// separately.
-  void registerRegClassFilterParsingCallback(
-      const std::function<RegAllocFilterFunc(StringRef)> &C) {
-    RegClassFilterParsingCallbacks.push_back(C);
-  }
 
   /// Register a callback for a top-level pipeline entry.
   ///
   /// If the PassManager type is not given at the top level of the pipeline
   /// text, this Callback should be used to determine the appropriate stack of
   /// PassManagers and populate the passed ModulePassManager.
-  LLVM_ABI void registerParseTopLevelPipelineCallback(
+  void registerParseTopLevelPipelineCallback(
       const std::function<bool(ModulePassManager &, ArrayRef<PipelineElement>)>
           &C);
 
   /// Add PGOInstrumenation passes for O0 only.
-  LLVM_ABI void addPGOInstrPassesForO0(ModulePassManager &MPM,
-                                       bool RunProfileGen, bool IsCS,
-                                       bool AtomicCounterUpdate,
-                                       std::string ProfileFile,
-                                       std::string ProfileRemappingFile);
+  void addPGOInstrPassesForO0(ModulePassManager &MPM, bool RunProfileGen,
+                              bool IsCS, bool AtomicCounterUpdate,
+                              std::string ProfileFile,
+                              std::string ProfileRemappingFile,
+                              IntrusiveRefCntPtr<vfs::FileSystem> FS);
 
   /// Returns PIC. External libraries can use this to register pass
   /// instrumentation callbacks.
@@ -639,99 +597,33 @@ public:
     return PIC;
   }
 
-  /// Returns the virtual file system.
-  IntrusiveRefCntPtr<vfs::FileSystem> getVirtualFileSystemPtr() const {
-    return FS;
-  }
-
   // Invoke the callbacks registered for the various extension points.
   // Custom pipelines should use these to invoke the callbacks registered
   // by TargetMachines and other clients.
-  LLVM_ABI void invokePeepholeEPCallbacks(FunctionPassManager &FPM,
-                                          OptimizationLevel Level);
-  LLVM_ABI void invokeLateLoopOptimizationsEPCallbacks(LoopPassManager &LPM,
-                                                       OptimizationLevel Level);
-  LLVM_ABI void invokeLoopOptimizerEndEPCallbacks(LoopPassManager &LPM,
-                                                  OptimizationLevel Level);
-  LLVM_ABI void invokeScalarOptimizerLateEPCallbacks(FunctionPassManager &FPM,
+  void invokePeepholeEPCallbacks(FunctionPassManager &FPM,
+                                 OptimizationLevel Level);
+  void invokeLateLoopOptimizationsEPCallbacks(LoopPassManager &LPM,
+                                              OptimizationLevel Level);
+  void invokeLoopOptimizerEndEPCallbacks(LoopPassManager &LPM,
+                                         OptimizationLevel Level);
+  void invokeScalarOptimizerLateEPCallbacks(FunctionPassManager &FPM,
+                                            OptimizationLevel Level);
+  void invokeCGSCCOptimizerLateEPCallbacks(CGSCCPassManager &CGPM,
+                                           OptimizationLevel Level);
+  void invokeVectorizerStartEPCallbacks(FunctionPassManager &FPM,
+                                        OptimizationLevel Level);
+  void invokeOptimizerEarlyEPCallbacks(ModulePassManager &MPM,
+                                       OptimizationLevel Level);
+  void invokeOptimizerLastEPCallbacks(ModulePassManager &MPM,
+                                      OptimizationLevel Level);
+  void invokeFullLinkTimeOptimizationEarlyEPCallbacks(ModulePassManager &MPM,
+                                                      OptimizationLevel Level);
+  void invokeFullLinkTimeOptimizationLastEPCallbacks(ModulePassManager &MPM,
                                                      OptimizationLevel Level);
-  LLVM_ABI void invokeCGSCCOptimizerLateEPCallbacks(CGSCCPassManager &CGPM,
+  void invokePipelineStartEPCallbacks(ModulePassManager &MPM,
+                                      OptimizationLevel Level);
+  void invokePipelineEarlySimplificationEPCallbacks(ModulePassManager &MPM,
                                                     OptimizationLevel Level);
-  LLVM_ABI void invokeVectorizerStartEPCallbacks(FunctionPassManager &FPM,
-                                                 OptimizationLevel Level);
-  LLVM_ABI void invokeVectorizerEndEPCallbacks(FunctionPassManager &FPM,
-                                               OptimizationLevel Level);
-  LLVM_ABI void invokeOptimizerEarlyEPCallbacks(ModulePassManager &MPM,
-                                                OptimizationLevel Level,
-                                                ThinOrFullLTOPhase Phase);
-  LLVM_ABI void invokeOptimizerLastEPCallbacks(ModulePassManager &MPM,
-                                               OptimizationLevel Level,
-                                               ThinOrFullLTOPhase Phase);
-  LLVM_ABI void
-  invokeFullLinkTimeOptimizationEarlyEPCallbacks(ModulePassManager &MPM,
-                                                 OptimizationLevel Level);
-  LLVM_ABI void
-  invokeFullLinkTimeOptimizationLastEPCallbacks(ModulePassManager &MPM,
-                                                OptimizationLevel Level);
-  LLVM_ABI void invokePipelineStartEPCallbacks(ModulePassManager &MPM,
-                                               OptimizationLevel Level);
-  LLVM_ABI void
-  invokePipelineEarlySimplificationEPCallbacks(ModulePassManager &MPM,
-                                               OptimizationLevel Level,
-                                               ThinOrFullLTOPhase Phase);
-
-  static bool checkParametrizedPassName(StringRef Name, StringRef PassName) {
-    if (!Name.consume_front(PassName))
-      return false;
-    // normal pass name w/o parameters == default parameters
-    if (Name.empty())
-      return true;
-    return Name.starts_with("<") && Name.ends_with(">");
-  }
-
-  /// This performs customized parsing of pass name with parameters.
-  ///
-  /// We do not need parametrization of passes in textual pipeline very often,
-  /// yet on a rare occasion ability to specify parameters right there can be
-  /// useful.
-  ///
-  /// \p Name - parameterized specification of a pass from a textual pipeline
-  /// is a string in a form of :
-  ///      PassName '<' parameter-list '>'
-  ///
-  /// Parameter list is being parsed by the parser callable argument, \p Parser,
-  /// It takes a string-ref of parameters and returns either StringError or a
-  /// parameter list in a form of a custom parameters type, all wrapped into
-  /// Expected<> template class.
-  ///
-  template <typename ParametersParseCallableT>
-  static auto parsePassParameters(ParametersParseCallableT &&Parser,
-                                  StringRef Name, StringRef PassName)
-      -> decltype(Parser(StringRef{})) {
-    using ParametersT = typename decltype(Parser(StringRef{}))::value_type;
-
-    StringRef Params = Name;
-    if (!Params.consume_front(PassName)) {
-      llvm_unreachable(
-          "unable to strip pass name from parametrized pass specification");
-    }
-    if (!Params.empty() &&
-        (!Params.consume_front("<") || !Params.consume_back(">"))) {
-      llvm_unreachable("invalid format for parametrized pass name");
-    }
-
-    Expected<ParametersT> Result = Parser(Params);
-    assert((Result || Result.template errorIsA<StringError>()) &&
-           "Pass parameter parser can only return StringErrors.");
-    return Result;
-  }
-
-  /// Handle passes only accept one bool-valued parameter.
-  ///
-  /// \return false when Params is empty.
-  LLVM_ABI static Expected<bool> parseSinglePassOption(StringRef Params,
-                                                       StringRef OptionName,
-                                                       StringRef PassName);
 
 private:
   // O1 pass pipeline
@@ -742,7 +634,7 @@ private:
   void addRequiredLTOPreLinkPasses(ModulePassManager &MPM);
 
   void addVectorPasses(OptimizationLevel Level, FunctionPassManager &FPM,
-                       ThinOrFullLTOPhase LTOPhase);
+                       bool IsFullLTO);
 
   static std::optional<std::vector<PipelineElement>>
   parsePipelineText(StringRef Text);
@@ -775,10 +667,8 @@ private:
   void addPGOInstrPasses(ModulePassManager &MPM, OptimizationLevel Level,
                          bool RunProfileGen, bool IsCS,
                          bool AtomicCounterUpdate, std::string ProfileFile,
-                         std::string ProfileRemappingFile);
-  void addPostPGOLoopRotation(ModulePassManager &MPM, OptimizationLevel Level);
-
-  bool isInstrumentedPGOUse() const;
+                         std::string ProfileRemappingFile,
+                         IntrusiveRefCntPtr<vfs::FileSystem> FS);
 
   // Extension Point callbacks
   SmallVector<std::function<void(FunctionPassManager &, OptimizationLevel)>, 2>
@@ -793,16 +683,10 @@ private:
       CGSCCOptimizerLateEPCallbacks;
   SmallVector<std::function<void(FunctionPassManager &, OptimizationLevel)>, 2>
       VectorizerStartEPCallbacks;
-  SmallVector<std::function<void(FunctionPassManager &, OptimizationLevel)>, 2>
-      VectorizerEndEPCallbacks;
   // Module callbacks
-  SmallVector<std::function<void(ModulePassManager &, OptimizationLevel,
-                                 ThinOrFullLTOPhase)>,
-              2>
+  SmallVector<std::function<void(ModulePassManager &, OptimizationLevel)>, 2>
       OptimizerEarlyEPCallbacks;
-  SmallVector<std::function<void(ModulePassManager &, OptimizationLevel,
-                                 ThinOrFullLTOPhase)>,
-              2>
+  SmallVector<std::function<void(ModulePassManager &, OptimizationLevel)>, 2>
       OptimizerLastEPCallbacks;
   SmallVector<std::function<void(ModulePassManager &, OptimizationLevel)>, 2>
       FullLinkTimeOptimizationEarlyEPCallbacks;
@@ -810,9 +694,7 @@ private:
       FullLinkTimeOptimizationLastEPCallbacks;
   SmallVector<std::function<void(ModulePassManager &, OptimizationLevel)>, 2>
       PipelineStartEPCallbacks;
-  SmallVector<std::function<void(ModulePassManager &, OptimizationLevel,
-                                 ThinOrFullLTOPhase)>,
-              2>
+  SmallVector<std::function<void(ModulePassManager &, OptimizationLevel)>, 2>
       PipelineEarlySimplificationEPCallbacks;
 
   SmallVector<std::function<void(ModuleAnalysisManager &)>, 2>
@@ -851,13 +733,8 @@ private:
   // Machine pass callbackcs
   SmallVector<std::function<void(MachineFunctionAnalysisManager &)>, 2>
       MachineFunctionAnalysisRegistrationCallbacks;
-  SmallVector<std::function<bool(StringRef, MachineFunctionPassManager &,
-                                 ArrayRef<PipelineElement>)>,
-              2>
-      MachineFunctionPipelineParsingCallbacks;
-  // Callbacks to parse `filter` parameter in register allocation passes
-  SmallVector<std::function<RegAllocFilterFunc(StringRef)>, 2>
-      RegClassFilterParsingCallbacks;
+  SmallVector<std::function<bool(StringRef, MachineFunctionPassManager &)>, 2>
+      MachinePipelineParsingCallbacks;
 };
 
 /// This utility template takes care of adding require<> and invalidate<>
@@ -915,7 +792,7 @@ struct NoOpModulePass : PassInfoMixin<NoOpModulePass> {
 /// No-op module analysis.
 class NoOpModuleAnalysis : public AnalysisInfoMixin<NoOpModuleAnalysis> {
   friend AnalysisInfoMixin<NoOpModuleAnalysis>;
-  LLVM_ABI static AnalysisKey Key;
+  static AnalysisKey Key;
 
 public:
   struct Result {};
@@ -933,7 +810,7 @@ struct NoOpCGSCCPass : PassInfoMixin<NoOpCGSCCPass> {
 /// No-op CGSCC analysis.
 class NoOpCGSCCAnalysis : public AnalysisInfoMixin<NoOpCGSCCAnalysis> {
   friend AnalysisInfoMixin<NoOpCGSCCAnalysis>;
-  LLVM_ABI static AnalysisKey Key;
+  static AnalysisKey Key;
 
 public:
   struct Result {};
@@ -952,7 +829,7 @@ struct NoOpFunctionPass : PassInfoMixin<NoOpFunctionPass> {
 /// No-op function analysis.
 class NoOpFunctionAnalysis : public AnalysisInfoMixin<NoOpFunctionAnalysis> {
   friend AnalysisInfoMixin<NoOpFunctionAnalysis>;
-  LLVM_ABI static AnalysisKey Key;
+  static AnalysisKey Key;
 
 public:
   struct Result {};
@@ -975,17 +852,10 @@ struct NoOpLoopPass : PassInfoMixin<NoOpLoopPass> {
   }
 };
 
-/// No-op machine function pass which does nothing.
-struct NoOpMachineFunctionPass : public PassInfoMixin<NoOpMachineFunctionPass> {
-  PreservedAnalyses run(MachineFunction &, MachineFunctionAnalysisManager &) {
-    return PreservedAnalyses::all();
-  }
-};
-
 /// No-op loop analysis.
 class NoOpLoopAnalysis : public AnalysisInfoMixin<NoOpLoopAnalysis> {
   friend AnalysisInfoMixin<NoOpLoopAnalysis>;
-  LLVM_ABI static AnalysisKey Key;
+  static AnalysisKey Key;
 
 public:
   struct Result {};
@@ -993,9 +863,6 @@ public:
     return Result();
   }
 };
-
-/// Common option used by multiple tools to print pipeline passes
-LLVM_ABI extern cl::opt<bool> PrintPipelinePasses;
 }
 
 #endif

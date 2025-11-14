@@ -25,7 +25,7 @@ DiagnosedSilenceableFailure transform::MatchSparseInOut::matchOperation(
     return emitSilenceableFailure(current->getLoc(),
                                   "operation has no sparse input or output");
   }
-  results.set(cast<OpResult>(getResult()), state.getPayloadOps(getTarget()));
+  results.set(getResult().cast<OpResult>(), state.getPayloadOps(getTarget()));
   return DiagnosedSilenceableFailure::success();
 }
 
@@ -38,9 +38,6 @@ class SparseTensorTransformDialectExtension
     : public transform::TransformDialectExtension<
           SparseTensorTransformDialectExtension> {
 public:
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(
-      SparseTensorTransformDialectExtension)
-
   SparseTensorTransformDialectExtension() {
     declareGeneratedDialect<sparse_tensor::SparseTensorDialect>();
     registerTransformOps<

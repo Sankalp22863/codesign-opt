@@ -18,11 +18,7 @@
 ;; ) {
 ;; }
 
-; RUN: llc -verify-machineinstrs -O0 -mtriple=spirv64-unknown-unknown %s -o - | FileCheck %s --check-prefix=CHECK-SPIRV
-; RUN: %if spirv-tools %{ llc -O0 -mtriple=spirv64-unknown-unknown %s -o - -filetype=obj | spirv-val %}
-
-; RUN: llc -verify-machineinstrs -O0 -mtriple=spirv32-unknown-unknown %s -o - | FileCheck %s --check-prefix=CHECK-SPIRV
-; RUN: %if spirv-tools %{ llc -O0 -mtriple=spirv32-unknown-unknown %s -o - -filetype=obj | spirv-val %}
+; RUN: llc -O0 -mtriple=spirv32-unknown-unknown %s -o - | FileCheck %s --check-prefix=CHECK-SPIRV
 
 ; CHECK-SPIRV-DAG: OpCapability Sampled1D
 ; CHECK-SPIRV-DAG: OpCapability SampledBuffer
@@ -39,7 +35,7 @@
 ; CHECK-SPIRV-DAG: %[[#SAMP:]] = OpTypeSampler
 ; CHECK-SPIRV-DAG: %[[#SAMPIMG:]] = OpTypeSampledImage %[[#IMG2D_RD]]
 
-; CHECK-SPIRV-DAG: %[[#SAMP_CONST:]] = OpConstantSampler %[[#SAMP]] None 0 Linear
+; CHECK-SPIRV:     %[[#SAMP_CONST:]] = OpConstantSampler %[[#SAMP]] None 0 Linear
 
 ; CHECK-SPIRV: %[[#]] = OpFunctionParameter %[[#PIPE_RD]]
 ; CHECK-SPIRV: %[[#]] = OpFunctionParameter %[[#PIPE_WR]]

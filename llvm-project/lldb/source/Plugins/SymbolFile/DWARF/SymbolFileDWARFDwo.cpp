@@ -85,27 +85,13 @@ lldb::offset_t SymbolFileDWARFDwo::GetVendorDWARFOpcodeSize(
   return GetBaseSymbolFile().GetVendorDWARFOpcodeSize(data, data_offset, op);
 }
 
-uint64_t SymbolFileDWARFDwo::GetDebugInfoSize(bool load_all_debug_info) {
-  // Directly get debug info from current dwo object file's section list
-  // instead of asking SymbolFileCommon::GetDebugInfo() which parses from
-  // owning module which is wrong.
-  SectionList *section_list =
-      m_objfile_sp->GetSectionList(/*update_module_section_list=*/false);
-  if (section_list)
-    return section_list->GetDebugInfoSize();
-  return 0;
-}
-
 bool SymbolFileDWARFDwo::ParseVendorDWARFOpcode(
-    uint8_t op, const DataExtractor &opcodes, lldb::offset_t &offset,
-    RegisterContext *reg_ctx, lldb::RegisterKind reg_kind,
-    std::vector<Value> &stack) const {
-  return GetBaseSymbolFile().ParseVendorDWARFOpcode(op, opcodes, offset,
-                                                    reg_ctx, reg_kind, stack);
+    uint8_t op, const lldb_private::DataExtractor &opcodes,
+    lldb::offset_t &offset, std::vector<lldb_private::Value> &stack) const {
+  return GetBaseSymbolFile().ParseVendorDWARFOpcode(op, opcodes, offset, stack);
 }
 
-llvm::DenseMap<const DWARFDebugInfoEntry *, Type *> &
-SymbolFileDWARFDwo::GetDIEToType() {
+SymbolFileDWARF::DIEToTypePtr &SymbolFileDWARFDwo::GetDIEToType() {
   return GetBaseSymbolFile().GetDIEToType();
 }
 
@@ -113,14 +99,19 @@ SymbolFileDWARF::DIEToVariableSP &SymbolFileDWARFDwo::GetDIEToVariable() {
   return GetBaseSymbolFile().GetDIEToVariable();
 }
 
-llvm::DenseMap<lldb::opaque_compiler_type_t, DIERef> &
+SymbolFileDWARF::DIEToCompilerType &
+SymbolFileDWARFDwo::GetForwardDeclDIEToCompilerType() {
+  return GetBaseSymbolFile().GetForwardDeclDIEToCompilerType();
+}
+
+SymbolFileDWARF::CompilerTypeToDIE &
 SymbolFileDWARFDwo::GetForwardDeclCompilerTypeToDIE() {
   return GetBaseSymbolFile().GetForwardDeclCompilerTypeToDIE();
 }
 
 void SymbolFileDWARFDwo::GetObjCMethods(
     lldb_private::ConstString class_name,
-    llvm::function_ref<IterationAction(DWARFDIE die)> callback) {
+    llvm::function_ref<bool(DWARFDIE die)> callback) {
   GetBaseSymbolFile().GetObjCMethods(class_name, callback);
 }
 
@@ -128,8 +119,9 @@ UniqueDWARFASTTypeMap &SymbolFileDWARFDwo::GetUniqueDWARFASTTypeMap() {
   return GetBaseSymbolFile().GetUniqueDWARFASTTypeMap();
 }
 
-DWARFDIE SymbolFileDWARFDwo::FindDefinitionDIE(const DWARFDIE &die) {
-  return GetBaseSymbolFile().FindDefinitionDIE(die);
+lldb::TypeSP
+SymbolFileDWARFDwo::FindDefinitionTypeForDWARFDeclContext(const DWARFDIE &die) {
+  return GetBaseSymbolFile().FindDefinitionTypeForDWARFDeclContext(die);
 }
 
 lldb::TypeSP SymbolFileDWARFDwo::FindCompleteObjCDefinitionTypeForDIE(
@@ -147,7 +139,7 @@ SymbolFileDWARFDwo::GetTypeSystemForLanguage(LanguageType language) {
 DWARFDIE
 SymbolFileDWARFDwo::GetDIE(const DIERef &die_ref) {
   if (die_ref.file_index() == GetFileIndex())
-    return DebugInfo().GetDIE(die_ref.section(), die_ref.die_offset());
+    return DebugInfo().GetDIE(die_ref);
   return GetBaseSymbolFile().GetDIE(die_ref);
 }
 
@@ -156,28 +148,4 @@ void SymbolFileDWARFDwo::FindGlobalVariables(
     uint32_t max_matches, VariableList &variables) {
   GetBaseSymbolFile().FindGlobalVariables(name, parent_decl_ctx, max_matches,
                                           variables);
-}
-
-bool SymbolFileDWARFDwo::GetDebugInfoIndexWasLoadedFromCache() const {
-  return GetBaseSymbolFile().GetDebugInfoIndexWasLoadedFromCache();
-}
-void SymbolFileDWARFDwo::SetDebugInfoIndexWasLoadedFromCache() {
-  GetBaseSymbolFile().SetDebugInfoIndexWasLoadedFromCache();
-}
-bool SymbolFileDWARFDwo::GetDebugInfoIndexWasSavedToCache() const {
-  return GetBaseSymbolFile().GetDebugInfoIndexWasSavedToCache();
-}
-void SymbolFileDWARFDwo::SetDebugInfoIndexWasSavedToCache() {
-  GetBaseSymbolFile().SetDebugInfoIndexWasSavedToCache();
-}
-bool SymbolFileDWARFDwo::GetDebugInfoHadFrameVariableErrors() const {
-  return GetBaseSymbolFile().GetDebugInfoHadFrameVariableErrors();
-}
-void SymbolFileDWARFDwo::SetDebugInfoHadFrameVariableErrors() {
-  return GetBaseSymbolFile().SetDebugInfoHadFrameVariableErrors();
-}
-
-SymbolFileDWARF *
-SymbolFileDWARFDwo::GetDIERefSymbolFile(const DIERef &die_ref) {
-  return GetBaseSymbolFile().GetDIERefSymbolFile(die_ref);
 }

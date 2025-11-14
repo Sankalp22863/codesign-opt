@@ -84,7 +84,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Transforms/Utils/Local.h"
 
 using namespace llvm;
 
@@ -200,7 +199,7 @@ StoreInst *MergedLoadStoreMotion::canSinkFromBlock(BasicBlock *BB1,
         CastInst::isBitOrNoopPointerCastable(
             Store0->getValueOperand()->getType(),
             Store1->getValueOperand()->getType(),
-            Store0->getDataLayout()))
+            Store0->getModule()->getDataLayout()))
       return Store1;
   }
   return nullptr;
@@ -256,8 +255,7 @@ void MergedLoadStoreMotion::sinkStoresAndGEPs(BasicBlock *BB, StoreInst *S0,
   BasicBlock::iterator InsertPt = BB->getFirstInsertionPt();
   // Intersect optional metadata.
   S0->andIRFlags(S1);
-
-  combineMetadataForCSE(S0, S1, true);
+  S0->dropUnknownNonDebugMetadata();
   S0->applyMergedLocation(S0->getDebugLoc(), S1->getDebugLoc());
   S0->mergeDIAssignID(S1);
 
@@ -281,7 +279,7 @@ void MergedLoadStoreMotion::sinkStoresAndGEPs(BasicBlock *BB, StoreInst *S0,
     auto *GEP0 = cast<GetElementPtrInst>(Ptr0);
     auto *GEP1 = cast<GetElementPtrInst>(Ptr1);
     Instruction *GEPNew = GEP0->clone();
-    GEPNew->insertBefore(SNew->getIterator());
+    GEPNew->insertBefore(SNew);
     GEPNew->applyMergedLocation(GEP0->getDebugLoc(), GEP1->getDebugLoc());
     SNew->setOperand(1, GEPNew);
     GEP0->replaceAllUsesWith(GEPNew);

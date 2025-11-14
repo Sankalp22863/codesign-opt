@@ -11,7 +11,6 @@
 #define LLVM_ANALYSIS_INLINEMODELFEATUREMAPS_H
 
 #include "llvm/Analysis/TensorSpec.h"
-#include "llvm/Support/Compiler.h"
 
 #include <array>
 #include <vector>
@@ -40,8 +39,6 @@ namespace llvm {
   M(int64_t, {1}, jump_table_penalty, "Accumulation of costs for jump tables") \
   M(int64_t, {1}, case_cluster_penalty,                                        \
     "Accumulation of costs for case clusters")                                 \
-  M(int64_t, {1}, switch_default_dest_penalty,                                 \
-    "Accumulation of costs for switch default destination")                    \
   M(int64_t, {1}, switch_penalty,                                              \
     "Accumulation of costs for switch statements")                             \
   M(int64_t, {1}, unsimplified_common_instructions,                            \
@@ -122,21 +119,8 @@ constexpr bool isHeuristicInlineCostFeature(InlineCostFeatureIndex Feature) {
     "number of blocks reached from a conditional instruction, in the callee")  \
   M(int64_t, {1}, callee_users,                                                \
     "number of module-internal users of the callee, +1 if the callee is "      \
-    "exposed externally")                                                      \
-  M(int64_t, {1}, is_callee_avail_external,                                    \
-    "Is callee an available-externally linkage type (i.e. could be DCEd if "   \
-    "not "                                                                     \
-    "fully inlined by ElimAvailExtern)")                                       \
-  M(int64_t, {1}, is_caller_avail_external,                                    \
-    "Is caller an available-externally linkage type (i.e. could be DCEd if "   \
-    "not "                                                                     \
-    "fully inlined by ElimAvailExtern)")
+    "exposed externally")
 
-// Not all features listed in FeatureIndex are used by the ML model.
-// Specifically, callee_embedding and caller_embedding are used only when the
-// usage of IR2Vec embeddings is explicitly enabled. Meaning, the size/number of
-// features is not static. So, we cannot determine number of features based on
-// the number of elements in this enum.
 // clang-format off
 enum class FeatureIndex : size_t {
 #define POPULATE_INDICES(DTYPE, SHAPE, NAME, COMMENT) NAME,
@@ -147,11 +131,7 @@ enum class FeatureIndex : size_t {
   INLINE_FEATURE_ITERATOR(POPULATE_INDICES)
 #undef POPULATE_INDICES
 
-// IR2Vec embeddings
-// Dimensions of embeddings are not known in the compile time (until vocab is 
-// read). Hence macros cannot be used here.
-  callee_embedding,
-  caller_embedding
+  NumberOfFeatures
 };
 // clang-format on
 
@@ -160,11 +140,16 @@ inlineCostFeatureToMlFeature(InlineCostFeatureIndex Feature) {
   return static_cast<FeatureIndex>(static_cast<size_t>(Feature));
 }
 
-LLVM_ABI extern const char *const DecisionName;
-LLVM_ABI extern const TensorSpec InlineDecisionSpec;
-LLVM_ABI extern const char *const DefaultDecisionName;
-LLVM_ABI extern const TensorSpec DefaultDecisionSpec;
-LLVM_ABI extern const char *const RewardName;
+constexpr size_t NumberOfFeatures =
+    static_cast<size_t>(FeatureIndex::NumberOfFeatures);
+
+extern const std::vector<TensorSpec> FeatureMap;
+
+extern const char *const DecisionName;
+extern const TensorSpec InlineDecisionSpec;
+extern const char *const DefaultDecisionName;
+extern const TensorSpec DefaultDecisionSpec;
+extern const char *const RewardName;
 
 using InlineFeatures = std::vector<int64_t>;
 

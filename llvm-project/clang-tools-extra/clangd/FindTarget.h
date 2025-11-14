@@ -33,10 +33,8 @@
 #include <bitset>
 
 namespace clang {
-
-class HeuristicResolver;
-
 namespace clangd {
+class HeuristicResolver;
 
 /// Describes the link between an AST node and a Decl it refers to.
 enum class DeclRelation : unsigned;

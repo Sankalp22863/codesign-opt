@@ -6,18 +6,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Option/Option.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Option/Option.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
+#include <cstring>
 
 using namespace llvm;
 using namespace llvm::opt;
@@ -57,13 +58,10 @@ void Option::print(raw_ostream &O, bool AddNewLine) const {
 #undef P
   }
 
-  if (!Info->hasNoPrefix()) {
+  if (!Info->Prefixes.empty()) {
     O << " Prefixes:[";
-    for (size_t I = 0, N = Info->getNumPrefixes(Owner->getPrefixesTable());
-         I != N; ++I)
-      O << '"'
-        << Info->getPrefix(Owner->getStrTable(), Owner->getPrefixesTable(), I)
-        << (I == N - 1 ? "\"" : "\", ");
+    for (size_t I = 0, N = Info->Prefixes.size(); I != N; ++I)
+      O << '"' << Info->Prefixes[I] << (I == N - 1 ? "\"" : "\", ");
     O << ']';
   }
 

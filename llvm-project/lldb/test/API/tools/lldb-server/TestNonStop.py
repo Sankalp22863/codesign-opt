@@ -220,15 +220,15 @@ class LldbGdbServerTestCase(gdbremote_testcase.GdbRemoteTestCaseBase):
         self.expect_gdbremote_sequence()
 
     @add_test_categories(["llgs"])
-    def test_multiple_C_continue_with_signal(self):
+    def test_multiple_C(self):
         self.multiple_resume_test("C05")
 
     @add_test_categories(["llgs"])
-    def test_multiple_c_continue_with_addr(self):
+    def test_multiple_c(self):
         self.multiple_resume_test("c")
 
     @add_test_categories(["llgs"])
-    def test_multiple_s_single_step_with_addr(self):
+    def test_multiple_s(self):
         self.multiple_resume_test("s")
 
     @skipIfWindows
@@ -276,7 +276,6 @@ class LldbGdbServerTestCase(gdbremote_testcase.GdbRemoteTestCaseBase):
         self.expect_gdbremote_sequence()
 
     @add_test_categories(["llgs"])
-    @skipIfWindows  # Sometimes results in '$E37' instead of expected '$OK'
     def test_vCont_then_stop(self):
         self.build()
         self.set_inferior_startup_launch()

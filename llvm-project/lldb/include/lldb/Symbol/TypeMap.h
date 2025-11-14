@@ -44,8 +44,7 @@ public:
   lldb::TypeSP FirstType() const;
 
   typedef std::multimap<lldb::user_id_t, lldb::TypeSP> collection;
-  typedef llvm::iterator_range<ValueMapIterator<collection::const_iterator>>
-      TypeIterable;
+  typedef AdaptedIterable<collection, lldb::TypeSP, map_adapter> TypeIterable;
 
   TypeIterable Types() const { return TypeIterable(m_types); }
 
@@ -55,6 +54,10 @@ public:
   void ForEach(std::function<bool(lldb::TypeSP &type_sp)> const &callback);
 
   bool Remove(const lldb::TypeSP &type_sp);
+
+  void RemoveMismatchedTypes(llvm::StringRef type_scope,
+                             llvm::StringRef type_basename,
+                             lldb::TypeClass type_class, bool exact_match);
 
 private:
   typedef collection::iterator iterator;

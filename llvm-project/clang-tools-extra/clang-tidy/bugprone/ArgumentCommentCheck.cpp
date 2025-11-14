@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- ArgumentCommentCheck.cpp - clang-tidy ----------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -32,7 +32,7 @@ AST_MATCHER(Decl, isFromStdNamespaceOrSystemHeader) {
 ArgumentCommentCheck::ArgumentCommentCheck(StringRef Name,
                                            ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context),
-      StrictMode(Options.get("StrictMode", false)),
+      StrictMode(Options.getLocalOrGlobal("StrictMode", false)),
       IgnoreSingleArgument(Options.get("IgnoreSingleArgument", false)),
       CommentBoolLiterals(Options.get("CommentBoolLiterals", false)),
       CommentIntegerLiterals(Options.get("CommentIntegerLiterals", false)),
@@ -81,16 +81,14 @@ static std::vector<std::pair<SourceLocation, StringRef>>
 getCommentsInRange(ASTContext *Ctx, CharSourceRange Range) {
   std::vector<std::pair<SourceLocation, StringRef>> Comments;
   auto &SM = Ctx->getSourceManager();
-  const std::pair<FileID, unsigned> BeginLoc =
-                                        SM.getDecomposedLoc(Range.getBegin()),
-                                    EndLoc =
-                                        SM.getDecomposedLoc(Range.getEnd());
+  std::pair<FileID, unsigned> BeginLoc = SM.getDecomposedLoc(Range.getBegin()),
+                              EndLoc = SM.getDecomposedLoc(Range.getEnd());
 
   if (BeginLoc.first != EndLoc.first)
     return Comments;
 
   bool Invalid = false;
-  const StringRef Buffer = SM.getBufferData(BeginLoc.first, &Invalid);
+  StringRef Buffer = SM.getBufferData(BeginLoc.first, &Invalid);
   if (Invalid)
     return Comments;
 
@@ -108,7 +106,7 @@ getCommentsInRange(ASTContext *Ctx, CharSourceRange Range) {
       break;
 
     if (Tok.is(tok::comment)) {
-      const std::pair<FileID, unsigned> CommentLoc =
+      std::pair<FileID, unsigned> CommentLoc =
           SM.getDecomposedLoc(Tok.getLocation());
       assert(CommentLoc.first == BeginLoc.first);
       Comments.emplace_back(
@@ -127,7 +125,7 @@ static std::vector<std::pair<SourceLocation, StringRef>>
 getCommentsBeforeLoc(ASTContext *Ctx, SourceLocation Loc) {
   std::vector<std::pair<SourceLocation, StringRef>> Comments;
   while (Loc.isValid()) {
-    const clang::Token Tok = utils::lexer::getPreviousToken(
+    clang::Token Tok = utils::lexer::getPreviousToken(
         Loc, Ctx->getSourceManager(), Ctx->getLangOpts(),
         /*SkipComments=*/false);
     if (Tok.isNot(tok::comment))
@@ -144,11 +142,11 @@ getCommentsBeforeLoc(ASTContext *Ctx, SourceLocation Loc) {
 
 static bool isLikelyTypo(llvm::ArrayRef<ParmVarDecl *> Params,
                          StringRef ArgName, unsigned ArgIndex) {
-  const std::string ArgNameLowerStr = ArgName.lower();
-  const StringRef ArgNameLower = ArgNameLowerStr;
+  std::string ArgNameLowerStr = ArgName.lower();
+  StringRef ArgNameLower = ArgNameLowerStr;
   // The threshold is arbitrary.
-  const unsigned UpperBound = ((ArgName.size() + 2) / 3) + 1;
-  const unsigned ThisED = ArgNameLower.edit_distance(
+  unsigned UpperBound = (ArgName.size() + 2) / 3 + 1;
+  unsigned ThisED = ArgNameLower.edit_distance(
       Params[ArgIndex]->getIdentifier()->getName().lower(),
       /*AllowReplacements=*/true, UpperBound);
   if (ThisED >= UpperBound)
@@ -157,7 +155,7 @@ static bool isLikelyTypo(llvm::ArrayRef<ParmVarDecl *> Params,
   for (unsigned I = 0, E = Params.size(); I != E; ++I) {
     if (I == ArgIndex)
       continue;
-    const IdentifierInfo *II = Params[I]->getIdentifier();
+    IdentifierInfo *II = Params[I]->getIdentifier();
     if (!II)
       continue;
 
@@ -165,9 +163,9 @@ static bool isLikelyTypo(llvm::ArrayRef<ParmVarDecl *> Params,
     // Other parameters must be an edit distance at least Threshold more away
     // from this parameter. This gives us greater confidence that this is a
     // typo of this parameter and not one with a similar name.
-    const unsigned OtherED = ArgNameLower.edit_distance(
-        II->getName().lower(),
-        /*AllowReplacements=*/true, ThisED + Threshold);
+    unsigned OtherED = ArgNameLower.edit_distance(II->getName().lower(),
+                                                  /*AllowReplacements=*/true,
+                                                  ThisED + Threshold);
     if (OtherED < ThisED + Threshold)
       return false;
   }
@@ -269,8 +267,7 @@ void ArgumentCommentCheck::checkCallArgs(ASTContext *Ctx,
     return;
 
   Callee = Callee->getFirstDecl();
-  const unsigned NumArgs =
-      std::min<unsigned>(Args.size(), Callee->getNumParams());
+  unsigned NumArgs = std::min<unsigned>(Args.size(), Callee->getNumParams());
   if ((NumArgs == 0) || (IgnoreSingleArgument && NumArgs == 1))
     return;
 
@@ -282,7 +279,7 @@ void ArgumentCommentCheck::checkCallArgs(ASTContext *Ctx,
 
   for (unsigned I = 0; I < NumArgs; ++I) {
     const ParmVarDecl *PVD = Callee->getParamDecl(I);
-    const IdentifierInfo *II = PVD->getIdentifier();
+    IdentifierInfo *II = PVD->getIdentifier();
     if (!II)
       continue;
     if (FunctionDecl *Template = Callee->getTemplateInstantiationPattern()) {
@@ -296,7 +293,7 @@ void ArgumentCommentCheck::checkCallArgs(ASTContext *Ctx,
       }
     }
 
-    const CharSourceRange BeforeArgument =
+    CharSourceRange BeforeArgument =
         MakeFileCharRange(ArgBeginLoc, Args[I]->getBeginLoc());
     ArgBeginLoc = Args[I]->getEndLoc();
 
@@ -305,7 +302,7 @@ void ArgumentCommentCheck::checkCallArgs(ASTContext *Ctx,
       Comments = getCommentsInRange(Ctx, BeforeArgument);
     } else {
       // Fall back to parsing back from the start of the argument.
-      const CharSourceRange ArgsRange =
+      CharSourceRange ArgsRange =
           MakeFileCharRange(Args[I]->getBeginLoc(), Args[I]->getEndLoc());
       Comments = getCommentsBeforeLoc(Ctx, ArgsRange.getBegin());
     }
@@ -315,7 +312,7 @@ void ArgumentCommentCheck::checkCallArgs(ASTContext *Ctx,
       if (IdentRE.match(Comment.second, &Matches) &&
           !sameName(Matches[2], II->getName(), StrictMode)) {
         {
-          const DiagnosticBuilder Diag =
+          DiagnosticBuilder Diag =
               diag(Comment.first, "argument name '%0' in comment does not "
                                   "match parameter name %1")
               << Matches[2] << II;
@@ -335,9 +332,9 @@ void ArgumentCommentCheck::checkCallArgs(ASTContext *Ctx,
 
     // If the argument comments are missing for literals add them.
     if (Comments.empty() && shouldAddComment(Args[I])) {
-      const std::string ArgComment =
+      std::string ArgComment =
           (llvm::Twine("/*") + II->getName() + "=*/").str();
-      const DiagnosticBuilder Diag =
+      DiagnosticBuilder Diag =
           diag(Args[I]->getBeginLoc(),
                "argument comment missing for literal argument %0")
           << II

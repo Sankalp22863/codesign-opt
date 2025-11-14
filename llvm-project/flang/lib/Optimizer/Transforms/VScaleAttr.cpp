@@ -14,7 +14,7 @@
 /// likely harmless to run it on something else, but it is also not valuable].
 //===----------------------------------------------------------------------===//
 
-#include "flang/Common/ISO_Fortran_binding_wrapper.h"
+#include "flang/ISO_Fortran_binding_wrapper.h"
 #include "flang/Optimizer/Builder/BoxValue.h"
 #include "flang/Optimizer/Builder/FIRBuilder.h"
 #include "flang/Optimizer/Builder/Runtime/Inquiry.h"
@@ -38,6 +38,7 @@
 #include <algorithm>
 
 namespace fir {
+#define GEN_PASS_DECL_VSCALEATTR
 #define GEN_PASS_DEF_VSCALEATTR
 #include "flang/Optimizer/Transforms/Passes.h.inc"
 } // namespace fir
@@ -75,4 +76,15 @@ void VScaleAttrPass::runOnOperation() {
                     mlir::IntegerAttr::get(intTy, vscaleRange.second)));
 
   LLVM_DEBUG(llvm::dbgs() << "=== End " DEBUG_TYPE " ===\n");
+}
+
+std::unique_ptr<mlir::Pass>
+fir::createVScaleAttrPass(std::pair<unsigned, unsigned> vscaleAttr) {
+  VScaleAttrOptions opts;
+  opts.vscaleRange = vscaleAttr;
+  return std::make_unique<VScaleAttrPass>(opts);
+}
+
+std::unique_ptr<mlir::Pass> fir::createVScaleAttrPass() {
+  return std::make_unique<VScaleAttrPass>();
 }

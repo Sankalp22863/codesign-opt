@@ -17,7 +17,6 @@
 #include "flang/Evaluate/common.h"
 #include "flang/Optimizer/Builder/FIRBuilder.h"
 #include "flang/Optimizer/Builder/MutableBox.h"
-#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
 
 namespace fir {
@@ -1085,13 +1084,13 @@ void PPCIntrinsicLibrary::genMtfsf(llvm::ArrayRef<fir::ExtendedValue> args) {
   if (isImm) {
     libFuncType = genFuncType<Ty::Void, Ty::Integer<4>, Ty::Integer<4>>(
         builder.getContext(), builder);
-    funcOp = builder.createFunction(loc, "llvm.ppc.mtfsfi", libFuncType);
+    funcOp = builder.addNamedFunction(loc, "llvm.ppc.mtfsfi", libFuncType);
   } else {
     libFuncType = genFuncType<Ty::Void, Ty::Integer<4>, Ty::Real<8>>(
         builder.getContext(), builder);
-    funcOp = builder.createFunction(loc, "llvm.ppc.mtfsf", libFuncType);
+    funcOp = builder.addNamedFunction(loc, "llvm.ppc.mtfsf", libFuncType);
   }
-  fir::CallOp::create(builder, loc, funcOp, scalarArgs);
+  builder.create<fir::CallOp>(loc, funcOp, scalarArgs);
 }
 
 // VEC_ABS
@@ -1117,10 +1116,10 @@ PPCIntrinsicLibrary::genVecAbs(mlir::Type resultType,
           genFuncType<Ty::RealVector<8>, Ty::RealVector<8>>(context, builder);
     }
 
-    funcOp = builder.createFunction(loc, fname, ftype);
-    auto callOp{fir::CallOp::create(builder, loc, funcOp, argBases[0])};
+    funcOp = builder.addNamedFunction(loc, fname, ftype);
+    auto callOp{builder.create<fir::CallOp>(loc, funcOp, argBases[0])};
     return callOp.getResult(0);
-  } else if (auto eleTy = mlir::dyn_cast<mlir::IntegerType>(vTypeInfo.eleTy)) {
+  } else if (auto eleTy = vTypeInfo.eleTy.dyn_cast<mlir::IntegerType>()) {
     // vec_abs(arg1) = max(0 - arg1, arg1)
 
     auto newVecTy{mlir::VectorType::get(vTypeInfo.len, eleTy)};
@@ -1128,8 +1127,8 @@ PPCIntrinsicLibrary::genVecAbs(mlir::Type resultType,
     // construct vector(0,..)
     auto zeroVal{builder.createIntegerConstant(loc, eleTy, 0)};
     auto vZero{
-        mlir::vector::BroadcastOp::create(builder, loc, newVecTy, zeroVal)};
-    auto zeroSubVarg1{mlir::arith::SubIOp::create(builder, loc, vZero, varg1)};
+        builder.create<mlir::vector::BroadcastOp>(loc, newVecTy, zeroVal)};
+    auto zeroSubVarg1{builder.create<mlir::arith::SubIOp>(loc, vZero, varg1)};
 
     mlir::func::FuncOp funcOp{nullptr};
     switch (eleTy.getWidth()) {
@@ -1156,10 +1155,10 @@ PPCIntrinsicLibrary::genVecAbs(mlir::Type resultType,
     default:
       llvm_unreachable("invalid integer size");
     }
-    funcOp = builder.createFunction(loc, fname, ftype);
+    funcOp = builder.addNamedFunction(loc, fname, ftype);
 
     mlir::Value args[] = {zeroSubVarg1, varg1};
-    auto callOp{fir::CallOp::create(builder, loc, funcOp, args)};
+    auto callOp{builder.create<fir::CallOp>(loc, funcOp, args)};
     return builder.createConvert(loc, argBases[0].getType(),
                                  callOp.getResult(0));
   }
@@ -1174,13 +1173,12 @@ fir::ExtendedValue PPCIntrinsicLibrary::genVecAddAndMulSubXor(
   assert(args.size() == 2);
   auto argBases{getBasesForArgs(args)};
   auto argsTy{getTypesForArgs(argBases)};
-  assert(mlir::isa<fir::VectorType>(argsTy[0]) &&
-         mlir::isa<fir::VectorType>(argsTy[1]));
+  assert(argsTy[0].isa<fir::VectorType>() && argsTy[1].isa<fir::VectorType>());
 
   auto vecTyInfo{getVecTypeFromFir(argBases[0])};
 
-  const auto isInteger{mlir::isa<mlir::IntegerType>(vecTyInfo.eleTy)};
-  const auto isFloat{mlir::isa<mlir::FloatType>(vecTyInfo.eleTy)};
+  const auto isInteger{vecTyInfo.eleTy.isa<mlir::IntegerType>()};
+  const auto isFloat{vecTyInfo.eleTy.isa<mlir::FloatType>()};
   assert((isInteger || isFloat) && "unknown vector type");
 
   auto vargs{convertVecArgs(builder, loc, vecTyInfo, argBases)};
@@ -1189,21 +1187,21 @@ fir::ExtendedValue PPCIntrinsicLibrary::genVecAddAndMulSubXor(
   switch (vop) {
   case VecOp::Add:
     if (isInteger)
-      r = mlir::arith::AddIOp::create(builder, loc, vargs[0], vargs[1]);
+      r = builder.create<mlir::arith::AddIOp>(loc, vargs[0], vargs[1]);
     else if (isFloat)
-      r = mlir::arith::AddFOp::create(builder, loc, vargs[0], vargs[1]);
+      r = builder.create<mlir::arith::AddFOp>(loc, vargs[0], vargs[1]);
     break;
   case VecOp::Mul:
     if (isInteger)
-      r = mlir::arith::MulIOp::create(builder, loc, vargs[0], vargs[1]);
+      r = builder.create<mlir::arith::MulIOp>(loc, vargs[0], vargs[1]);
     else if (isFloat)
-      r = mlir::arith::MulFOp::create(builder, loc, vargs[0], vargs[1]);
+      r = builder.create<mlir::arith::MulFOp>(loc, vargs[0], vargs[1]);
     break;
   case VecOp::Sub:
     if (isInteger)
-      r = mlir::arith::SubIOp::create(builder, loc, vargs[0], vargs[1]);
+      r = builder.create<mlir::arith::SubIOp>(loc, vargs[0], vargs[1]);
     else if (isFloat)
-      r = mlir::arith::SubFOp::create(builder, loc, vargs[0], vargs[1]);
+      r = builder.create<mlir::arith::SubFOp>(loc, vargs[0], vargs[1]);
     break;
   case VecOp::And:
   case VecOp::Xor: {
@@ -1214,19 +1212,19 @@ fir::ExtendedValue PPCIntrinsicLibrary::genVecAddAndMulSubXor(
       arg2 = vargs[1];
     } else if (isFloat) {
       // bitcast the arguments to integer
-      auto wd{mlir::dyn_cast<mlir::FloatType>(vecTyInfo.eleTy).getWidth()};
+      auto wd{vecTyInfo.eleTy.dyn_cast<mlir::FloatType>().getWidth()};
       auto ftype{builder.getIntegerType(wd)};
       auto bcVecTy{mlir::VectorType::get(vecTyInfo.len, ftype)};
-      arg1 = mlir::vector::BitCastOp::create(builder, loc, bcVecTy, vargs[0]);
-      arg2 = mlir::vector::BitCastOp::create(builder, loc, bcVecTy, vargs[1]);
+      arg1 = builder.create<mlir::vector::BitCastOp>(loc, bcVecTy, vargs[0]);
+      arg2 = builder.create<mlir::vector::BitCastOp>(loc, bcVecTy, vargs[1]);
     }
     if (vop == VecOp::And)
-      r = mlir::arith::AndIOp::create(builder, loc, arg1, arg2);
+      r = builder.create<mlir::arith::AndIOp>(loc, arg1, arg2);
     else if (vop == VecOp::Xor)
-      r = mlir::arith::XOrIOp::create(builder, loc, arg1, arg2);
+      r = builder.create<mlir::arith::XOrIOp>(loc, arg1, arg2);
 
     if (isFloat)
-      r = mlir::vector::BitCastOp::create(builder, loc, vargs[0].getType(), r);
+      r = builder.create<mlir::vector::BitCastOp>(loc, vargs[0].getType(), r);
 
     break;
   }
@@ -1341,8 +1339,8 @@ PPCIntrinsicLibrary::genVecAnyCompare(mlir::Type resultType,
   }
   assert((!fname.empty() && ftype) && "invalid type");
 
-  mlir::func::FuncOp funcOp{builder.createFunction(loc, fname, ftype)};
-  auto callOp{fir::CallOp::create(builder, loc, funcOp, cmpArgs)};
+  mlir::func::FuncOp funcOp{builder.addNamedFunction(loc, fname, ftype)};
+  auto callOp{builder.create<fir::CallOp>(loc, funcOp, cmpArgs)};
   return callOp.getResult(0);
 }
 
@@ -1447,12 +1445,12 @@ PPCIntrinsicLibrary::genVecCmp(mlir::Type resultType,
   std::pair<llvm::StringRef, mlir::FunctionType> funcTyNam{
       getVecCmpFuncTypeAndName(vecTyInfo, vop, builder)};
 
-  mlir::func::FuncOp funcOp = builder.createFunction(
+  mlir::func::FuncOp funcOp = builder.addNamedFunction(
       loc, std::get<0>(funcTyNam), std::get<1>(funcTyNam));
 
   mlir::Value res{nullptr};
 
-  if (auto eTy = mlir::dyn_cast<mlir::IntegerType>(vecTyInfo.eleTy)) {
+  if (auto eTy = vecTyInfo.eleTy.dyn_cast<mlir::IntegerType>()) {
     constexpr int firstArg{0};
     constexpr int secondArg{1};
     std::map<VecOp, std::array<int, 2>> argOrder{
@@ -1473,7 +1471,7 @@ PPCIntrinsicLibrary::genVecCmp(mlir::Type resultType,
       // arg1 < arg2 --> vcmpgt(arg2, arg1)
       mlir::Value vargs[]{argBases[argOrder[vop][0]],
                           argBases[argOrder[vop][1]]};
-      auto callOp{fir::CallOp::create(builder, loc, funcOp, vargs)};
+      auto callOp{builder.create<fir::CallOp>(loc, funcOp, vargs)};
       res = callOp.getResult(0);
       break;
     }
@@ -1487,15 +1485,14 @@ PPCIntrinsicLibrary::genVecCmp(mlir::Type resultType,
       // Construct a constant vector(-1)
       auto negOneVal{builder.createIntegerConstant(
           loc, getConvertedElementType(context, eTy), -1)};
-      auto vNegOne{mlir::vector::BroadcastOp::create(
-          builder, loc, vecTyInfo.toMlirVectorType(context), negOneVal)};
+      auto vNegOne{builder.create<mlir::vector::BroadcastOp>(
+          loc, vecTyInfo.toMlirVectorType(context), negOneVal)};
 
-      auto callOp{fir::CallOp::create(builder, loc, funcOp, vargs)};
+      auto callOp{builder.create<fir::CallOp>(loc, funcOp, vargs)};
       mlir::Value callRes{callOp.getResult(0)};
       auto vargs2{
           convertVecArgs(builder, loc, vecTyInfo, mlir::ValueRange{callRes})};
-      auto xorRes{
-          mlir::arith::XOrIOp::create(builder, loc, vargs2[0], vNegOne)};
+      auto xorRes{builder.create<mlir::arith::XOrIOp>(loc, vargs2[0], vNegOne)};
 
       res = builder.createConvert(loc, returnType, xorRes);
       break;
@@ -1520,7 +1517,7 @@ PPCIntrinsicLibrary::genVecCmp(mlir::Type resultType,
     default:
       llvm_unreachable("Invalid vector operation for generator");
     }
-    auto callOp{fir::CallOp::create(builder, loc, funcOp, vargs)};
+    auto callOp{builder.create<fir::CallOp>(loc, funcOp, vargs)};
     res = callOp.getResult(0);
   } else
     llvm_unreachable("invalid vector type");
@@ -1536,13 +1533,13 @@ static inline mlir::Value swapVectorWordPairs(fir::FirOpBuilder &builder,
   auto vtype{mlir::VectorType::get(16, mlir::IntegerType::get(context, 8))};
 
   if (ty != vtype)
-    arg = mlir::LLVM::BitcastOp::create(builder, loc, vtype, arg).getResult();
+    arg = builder.create<mlir::LLVM::BitcastOp>(loc, vtype, arg).getResult();
 
   llvm::SmallVector<int64_t, 16> mask{4,  5,  6,  7,  0, 1, 2,  3,
                                       12, 13, 14, 15, 8, 9, 10, 11};
-  arg = mlir::vector::ShuffleOp::create(builder, loc, arg, arg, mask);
+  arg = builder.create<mlir::vector::ShuffleOp>(loc, arg, arg, mask);
   if (ty != vtype)
-    arg = mlir::LLVM::BitcastOp::create(builder, loc, ty, arg);
+    arg = builder.create<mlir::LLVM::BitcastOp>(loc, ty, arg);
   return arg;
 }
 
@@ -1562,7 +1559,7 @@ PPCIntrinsicLibrary::genVecConvert(mlir::Type resultType,
   case VecOp::Ctf: {
     assert(args.size() == 2);
     auto convArg{builder.createConvert(loc, i32Ty, argBases[1])};
-    auto eTy{mlir::dyn_cast<mlir::IntegerType>(vecTyInfo.eleTy)};
+    auto eTy{vecTyInfo.eleTy.dyn_cast<mlir::IntegerType>()};
     assert(eTy && "Unsupported vector type");
     const auto isUnsigned{eTy.isUnsignedInteger()};
     const auto width{eTy.getWidth()};
@@ -1575,32 +1572,33 @@ PPCIntrinsicLibrary::genVecConvert(mlir::Type resultType,
                                    Ty::Integer<4>>(context, builder)};
       const llvm::StringRef fname{(isUnsigned) ? "llvm.ppc.altivec.vcfux"
                                                : "llvm.ppc.altivec.vcfsx"};
-      auto funcOp{builder.createFunction(loc, fname, ftype)};
+      auto funcOp{builder.addNamedFunction(loc, fname, ftype)};
       mlir::Value newArgs[] = {argBases[0], convArg};
-      auto callOp{fir::CallOp::create(builder, loc, funcOp, newArgs)};
+      auto callOp{builder.create<fir::CallOp>(loc, funcOp, newArgs)};
 
       return callOp.getResult(0);
     } else if (width == 64) {
-      auto fTy{mlir::Float64Type::get(context)};
+      auto fTy{mlir::FloatType::getF64(context)};
       auto ty{mlir::VectorType::get(2, fTy)};
 
       // vec_vtf(arg1, arg2) = fmul(1.0 / (1 << arg2), llvm.sitofp(arg1))
       auto convOp{(isUnsigned)
-                      ? mlir::LLVM::UIToFPOp::create(builder, loc, ty, vArg1)
-                      : mlir::LLVM::SIToFPOp::create(builder, loc, ty, vArg1)};
+                      ? builder.create<mlir::LLVM::UIToFPOp>(loc, ty, vArg1)
+                      : builder.create<mlir::LLVM::SIToFPOp>(loc, ty, vArg1)};
 
       // construct vector<1./(1<<arg1), 1.0/(1<<arg1)>
-      auto constInt{mlir::dyn_cast_or_null<mlir::IntegerAttr>(
+      auto constInt{
           mlir::dyn_cast<mlir::arith::ConstantOp>(argBases[1].getDefiningOp())
-              .getValue())};
+              .getValue()
+              .dyn_cast_or_null<mlir::IntegerAttr>()};
       assert(constInt && "expected integer constant argument");
       double f{1.0 / (1 << constInt.getInt())};
       llvm::SmallVector<double> vals{f, f};
-      auto constOp{mlir::arith::ConstantOp::create(
-          builder, loc, ty, builder.getF64VectorAttr(vals))};
+      auto constOp{builder.create<mlir::arith::ConstantOp>(
+          loc, ty, builder.getF64VectorAttr(vals))};
 
-      auto mulOp{mlir::LLVM::FMulOp::create(builder, loc, ty,
-                                            convOp->getResult(0), constOp)};
+      auto mulOp{builder.create<mlir::LLVM::FMulOp>(
+          loc, ty, convOp->getResult(0), constOp)};
 
       return builder.createConvert(loc, fir::VectorType::get(2, fTy), mulOp);
     }
@@ -1614,7 +1612,7 @@ PPCIntrinsicLibrary::genVecConvert(mlir::Type resultType,
     auto firTy{resTyInfo.toFirVectorType()};
 
     // vec_convert(v, mold) = bitcast v to "type of mold"
-    auto conv{mlir::LLVM::BitcastOp::create(builder, loc, moldTy, vArg1)};
+    auto conv{builder.create<mlir::LLVM::BitcastOp>(loc, moldTy, vArg1)};
 
     return builder.createConvert(loc, firTy, conv);
   }
@@ -1629,19 +1627,19 @@ PPCIntrinsicLibrary::genVecConvert(mlir::Type resultType,
       const llvm::StringRef fname{"llvm.ppc.vsx.xvcvspdp"};
       auto ftype{
           genFuncType<Ty::RealVector<8>, Ty::RealVector<4>>(context, builder)};
-      auto funcOp{builder.createFunction(loc, fname, ftype)};
-      auto callOp{fir::CallOp::create(builder, loc, funcOp, newArgs)};
+      auto funcOp{builder.addNamedFunction(loc, fname, ftype)};
+      auto callOp{builder.create<fir::CallOp>(loc, funcOp, newArgs)};
 
       return callOp.getResult(0);
     } else if (vecTyInfo.isFloat64()) {
       const llvm::StringRef fname{"llvm.ppc.vsx.xvcvdpsp"};
       auto ftype{
           genFuncType<Ty::RealVector<4>, Ty::RealVector<8>>(context, builder)};
-      auto funcOp{builder.createFunction(loc, fname, ftype)};
+      auto funcOp{builder.addNamedFunction(loc, fname, ftype)};
       newArgs[0] =
-          fir::CallOp::create(builder, loc, funcOp, newArgs).getResult(0);
+          builder.create<fir::CallOp>(loc, funcOp, newArgs).getResult(0);
       auto fvf32Ty{newArgs[0].getType()};
-      auto f32type{mlir::Float32Type::get(context)};
+      auto f32type{mlir::FloatType::getF32(context)};
       auto mvf32Ty{mlir::VectorType::get(4, f32type)};
       newArgs[0] = builder.createConvert(loc, mvf32Ty, newArgs[0]);
 
@@ -1663,7 +1661,7 @@ static mlir::Value convertVectorElementOrder(fir::FirOpBuilder &builder,
                                              mlir::Value idx) {
   mlir::Value numSub1{
       builder.createIntegerConstant(loc, idx.getType(), vecInfo.len - 1)};
-  return mlir::LLVM::SubOp::create(builder, loc, idx.getType(), numSub1, idx);
+  return builder.create<mlir::LLVM::SubOp>(loc, idx.getType(), numSub1, idx);
 }
 
 // VEC_EXTRACT
@@ -1682,14 +1680,12 @@ PPCIntrinsicLibrary::genVecExtract(mlir::Type resultType,
   // position
   auto numEle{builder.createIntegerConstant(loc, argTypes[1], vecTyInfo.len)};
   mlir::Value uremOp{
-      mlir::LLVM::URemOp::create(builder, loc, argBases[1], numEle)};
+      builder.create<mlir::LLVM::URemOp>(loc, argBases[1], numEle)};
 
   if (!isNativeVecElemOrderOnLE())
     uremOp = convertVectorElementOrder(builder, loc, vecTyInfo, uremOp);
 
-  mlir::Value index = builder.createOrFold<mlir::index::CastUOp>(
-      loc, builder.getIndexType(), uremOp);
-  return mlir::vector::ExtractOp::create(builder, loc, varg0, index);
+  return builder.create<mlir::vector::ExtractElementOp>(loc, varg0, uremOp);
 }
 
 // VEC_INSERT
@@ -1705,16 +1701,14 @@ PPCIntrinsicLibrary::genVecInsert(mlir::Type resultType,
 
   auto numEle{builder.createIntegerConstant(loc, argTypes[2], vecTyInfo.len)};
   mlir::Value uremOp{
-      mlir::LLVM::URemOp::create(builder, loc, argBases[2], numEle)};
+      builder.create<mlir::LLVM::URemOp>(loc, argBases[2], numEle)};
 
   if (!isNativeVecElemOrderOnLE())
     uremOp = convertVectorElementOrder(builder, loc, vecTyInfo, uremOp);
 
-  mlir::Value index = builder.createOrFold<mlir::index::CastUOp>(
-      loc, builder.getIndexType(), uremOp);
-  mlir::Value res =
-      mlir::vector::InsertOp::create(builder, loc, argBases[0], varg1, index);
-  return fir::ConvertOp::create(builder, loc, vecTyInfo.toFirVectorType(), res);
+  auto res{builder.create<mlir::vector::InsertElementOp>(loc, argBases[0],
+                                                         varg1, uremOp)};
+  return builder.create<fir::ConvertOp>(loc, vecTyInfo.toFirVectorType(), res);
 }
 
 // VEC_MERGEH, VEC_MERGEL
@@ -1800,8 +1794,8 @@ PPCIntrinsicLibrary::genVecMerge(mlir::Type resultType,
   llvm::SmallVector<int64_t, 16> &mergeMask =
       (isBEVecElemOrderOnLE()) ? rMask : mMask;
 
-  auto callOp{mlir::vector::ShuffleOp::create(builder, loc, vargs[0], vargs[1],
-                                              mergeMask)};
+  auto callOp{builder.create<mlir::vector::ShuffleOp>(loc, vargs[0], vargs[1],
+                                                      mergeMask)};
   return builder.createConvert(loc, resultType, callOp);
 }
 
@@ -1813,22 +1807,22 @@ static mlir::Value addOffsetToAddress(fir::FirOpBuilder &builder,
   auto arrRefTy{builder.getRefType(fir::SequenceType::get(
       {typeExtent}, mlir::IntegerType::get(builder.getContext(), 8)))};
   // Convert arg to !fir.ref<!ref.array<?xi8>>
-  auto resAddr{fir::ConvertOp::create(builder, loc, arrRefTy, baseAddr)};
+  auto resAddr{builder.create<fir::ConvertOp>(loc, arrRefTy, baseAddr)};
 
-  return fir::CoordinateOp::create(builder, loc, arrRefTy, resAddr, offset);
+  return builder.create<fir::CoordinateOp>(loc, arrRefTy, resAddr, offset);
 }
 
 static mlir::Value reverseVectorElements(fir::FirOpBuilder &builder,
                                          mlir::Location loc, mlir::Value v,
                                          int64_t len) {
-  assert(mlir::isa<mlir::VectorType>(v.getType()));
+  assert(v.getType().isa<mlir::VectorType>());
   assert(len > 0);
   llvm::SmallVector<int64_t, 16> mask;
   for (int64_t i = 0; i < len; ++i) {
     mask.push_back(len - 1 - i);
   }
-  auto undefVec{fir::UndefOp::create(builder, loc, v.getType())};
-  return mlir::vector::ShuffleOp::create(builder, loc, v, undefVec, mask);
+  auto undefVec{builder.create<fir::UndefOp>(loc, v.getType())};
+  return builder.create<mlir::vector::ShuffleOp>(loc, v, undefVec, mask);
 }
 
 static mlir::NamedAttribute getAlignmentAttr(fir::FirOpBuilder &builder,
@@ -1877,8 +1871,8 @@ fir::ExtendedValue PPCIntrinsicLibrary::genVecLdNoCallGrp(
 
   const auto triple{fir::getTargetTriple(builder.getModule())};
   // Need to get align 1.
-  auto result{fir::LoadOp::create(builder, loc, mlirTy, addr,
-                                  getAlignmentAttr(builder, 1))};
+  auto result{builder.create<fir::LoadOp>(loc, mlirTy, addr,
+                                          getAlignmentAttr(builder, 1))};
   if ((vop == VecOp::Xl && isBEVecElemOrderOnLE()) ||
       (vop == VecOp::Xlbe && triple.isLittleEndian()))
     return builder.createConvert(
@@ -1955,7 +1949,7 @@ PPCIntrinsicLibrary::genVecLdCallGrp(mlir::Type resultType,
     fname = isBEVecElemOrderOnLE() ? "llvm.ppc.vsx.lxvd2x.be"
                                    : "llvm.ppc.vsx.lxvd2x";
     // llvm.ppc.altivec.lxvd2x* returns <2 x double>
-    intrinResTy = mlir::VectorType::get(2, mlir::Float64Type::get(context));
+    intrinResTy = mlir::VectorType::get(2, mlir::FloatType::getF64(context));
   } break;
   case VecOp::Xlw4:
     fname = isBEVecElemOrderOnLE() ? "llvm.ppc.vsx.lxvw4x.be"
@@ -1969,15 +1963,15 @@ PPCIntrinsicLibrary::genVecLdCallGrp(mlir::Type resultType,
 
   auto funcType{
       mlir::FunctionType::get(context, {addr.getType()}, {intrinResTy})};
-  auto funcOp{builder.createFunction(loc, fname, funcType)};
+  auto funcOp{builder.addNamedFunction(loc, fname, funcType)};
   auto result{
-      fir::CallOp::create(builder, loc, funcOp, parsedArgs).getResult(0)};
+      builder.create<fir::CallOp>(loc, funcOp, parsedArgs).getResult(0)};
 
   if (vop == VecOp::Lxvp)
     return result;
 
   if (intrinResTy != mlirTy)
-    result = mlir::vector::BitCastOp::create(builder, loc, mlirTy, result);
+    result = builder.create<mlir::vector::BitCastOp>(loc, mlirTy, result);
 
   if (vop != VecOp::Xld2 && vop != VecOp::Xlw4 && isBEVecElemOrderOnLE())
     return builder.createConvert(
@@ -2004,13 +1998,13 @@ PPCIntrinsicLibrary::genVecLvsGrp(mlir::Type resultType,
   // Convert arg0 to i64 type if needed
   auto i64ty{mlir::IntegerType::get(context, 64)};
   if (arg0.getType() != i64ty)
-    arg0 = fir::ConvertOp::create(builder, loc, i64ty, arg0);
+    arg0 = builder.create<fir::ConvertOp>(loc, i64ty, arg0);
 
   // offset is modulo 16, so shift left 56 bits and then right 56 bits to clear
   //   upper 56 bit while preserving sign
   auto shiftVal{builder.createIntegerConstant(loc, i64ty, 56)};
-  auto offset{mlir::arith::ShLIOp::create(builder, loc, arg0, shiftVal)};
-  auto offset2{mlir::arith::ShRSIOp::create(builder, loc, offset, shiftVal)};
+  auto offset{builder.create<mlir::arith::ShLIOp>(loc, arg0, shiftVal)};
+  auto offset2{builder.create<mlir::arith::ShRSIOp>(loc, offset, shiftVal)};
 
   // Add the offsetArg to %addr of arg1
   auto addr{addOffsetToAddress(builder, loc, arg1, offset2)};
@@ -2028,9 +2022,9 @@ PPCIntrinsicLibrary::genVecLvsGrp(mlir::Type resultType,
     llvm_unreachable("invalid vector operation for generator");
   }
   auto funcType{mlir::FunctionType::get(context, {addr.getType()}, {mlirTy})};
-  auto funcOp{builder.createFunction(loc, fname, funcType)};
+  auto funcOp{builder.addNamedFunction(loc, fname, funcType)};
   auto result{
-      fir::CallOp::create(builder, loc, funcOp, parsedArgs).getResult(0)};
+      builder.create<fir::CallOp>(loc, funcOp, parsedArgs).getResult(0)};
 
   if (isNativeVecElemOrderOnLE())
     return builder.createConvert(
@@ -2063,23 +2057,23 @@ PPCIntrinsicLibrary::genVecNmaddMsub(mlir::Type resultType,
            genFuncType<Ty::RealVector<8>, Ty::RealVector<8>, Ty::RealVector<8>>(
                context, builder))}};
 
-  auto funcOp{builder.createFunction(loc, std::get<0>(fmaMap[width]),
-                                     std::get<1>(fmaMap[width]))};
+  auto funcOp{builder.addNamedFunction(loc, std::get<0>(fmaMap[width]),
+                                       std::get<1>(fmaMap[width]))};
   if (vop == VecOp::Nmadd) {
     // vec_nmadd(arg1, arg2, arg3) = -fma(arg1, arg2, arg3)
-    auto callOp{fir::CallOp::create(builder, loc, funcOp, newArgs)};
+    auto callOp{builder.create<fir::CallOp>(loc, funcOp, newArgs)};
 
     // We need to convert fir.vector to MLIR vector to use fneg and then back
     // to fir.vector to store.
     auto vCall{builder.createConvert(loc, vTypeInfo.toMlirVectorType(context),
                                      callOp.getResult(0))};
-    auto neg{mlir::arith::NegFOp::create(builder, loc, vCall)};
+    auto neg{builder.create<mlir::arith::NegFOp>(loc, vCall)};
     return builder.createConvert(loc, vTypeInfo.toFirVectorType(), neg);
   } else if (vop == VecOp::Msub) {
     // vec_msub(arg1, arg2, arg3) = fma(arg1, arg2, -arg3)
-    newArgs[2] = mlir::arith::NegFOp::create(builder, loc, newArgs[2]);
+    newArgs[2] = builder.create<mlir::arith::NegFOp>(loc, newArgs[2]);
 
-    auto callOp{fir::CallOp::create(builder, loc, funcOp, newArgs)};
+    auto callOp{builder.create<fir::CallOp>(loc, funcOp, newArgs)};
     return callOp.getResult(0);
   }
   llvm_unreachable("Invalid vector operation for generator");
@@ -2098,7 +2092,7 @@ PPCIntrinsicLibrary::genVecPerm(mlir::Type resultType,
   auto mlirTy{vecTyInfo.toMlirVectorType(context)};
 
   auto vi32Ty{mlir::VectorType::get(4, mlir::IntegerType::get(context, 32))};
-  auto vf64Ty{mlir::VectorType::get(2, mlir::Float64Type::get(context))};
+  auto vf64Ty{mlir::VectorType::get(2, mlir::FloatType::getF64(context))};
 
   auto mArg0{builder.createConvert(loc, mlirTy, argBases[0])};
   auto mArg1{builder.createConvert(loc, mlirTy, argBases[1])};
@@ -2110,13 +2104,13 @@ PPCIntrinsicLibrary::genVecPerm(mlir::Type resultType,
     auto mMask{builder.createConvert(loc, mlirMaskTy, argBases[2])};
 
     if (mlirTy != vi32Ty) {
-      mArg0 = mlir::LLVM::BitcastOp::create(builder, loc, vi32Ty, mArg0)
-                  .getResult();
-      mArg1 = mlir::LLVM::BitcastOp::create(builder, loc, vi32Ty, mArg1)
-                  .getResult();
+      mArg0 =
+          builder.create<mlir::LLVM::BitcastOp>(loc, vi32Ty, mArg0).getResult();
+      mArg1 =
+          builder.create<mlir::LLVM::BitcastOp>(loc, vi32Ty, mArg1).getResult();
     }
 
-    auto funcOp{builder.createFunction(
+    auto funcOp{builder.addNamedFunction(
         loc, "llvm.ppc.altivec.vperm",
         genFuncType<Ty::IntegerVector<4>, Ty::IntegerVector<4>,
                     Ty::IntegerVector<4>, Ty::IntegerVector<1>>(context,
@@ -2126,41 +2120,42 @@ PPCIntrinsicLibrary::genVecPerm(mlir::Type resultType,
     if (isNativeVecElemOrderOnLE()) {
       auto i8Ty{mlir::IntegerType::get(context, 8)};
       auto v8Ty{mlir::VectorType::get(16, i8Ty)};
-      auto negOne{builder.createMinusOneInteger(loc, i8Ty)};
+      auto negOne{builder.createIntegerConstant(loc, i8Ty, -1)};
       auto vNegOne{
-          mlir::vector::BroadcastOp::create(builder, loc, v8Ty, negOne)};
+          builder.create<mlir::vector::BroadcastOp>(loc, v8Ty, negOne)};
 
-      mMask = mlir::arith::XOrIOp::create(builder, loc, mMask, vNegOne);
+      mMask = builder.create<mlir::arith::XOrIOp>(loc, mMask, vNegOne);
       newArgs = {mArg1, mArg0, mMask};
     } else {
       newArgs = {mArg0, mArg1, mMask};
     }
 
-    auto res{fir::CallOp::create(builder, loc, funcOp, newArgs).getResult(0)};
+    auto res{builder.create<fir::CallOp>(loc, funcOp, newArgs).getResult(0)};
 
     if (res.getType() != argTypes[0]) {
       // fir.call llvm.ppc.altivec.vperm returns !fir.vector<i4:32>
       // convert the result back to the original type
       res = builder.createConvert(loc, vi32Ty, res);
       if (mlirTy != vi32Ty)
-        res = mlir::LLVM::BitcastOp::create(builder, loc, mlirTy, res)
-                  .getResult();
+        res =
+            builder.create<mlir::LLVM::BitcastOp>(loc, mlirTy, res).getResult();
     }
     return builder.createConvert(loc, resultType, res);
   }
   case VecOp::Permi: {
     // arg3 is a constant
-    auto constIntOp{mlir::dyn_cast_or_null<mlir::IntegerAttr>(
+    auto constIntOp{
         mlir::dyn_cast<mlir::arith::ConstantOp>(argBases[2].getDefiningOp())
-            .getValue())};
+            .getValue()
+            .dyn_cast_or_null<mlir::IntegerAttr>()};
     assert(constIntOp && "expected integer constant argument");
     auto constInt{constIntOp.getInt()};
     // arg1, arg2, and result type share same VecTypeInfo
     if (vecTyInfo.isFloat()) {
-      mArg0 = mlir::LLVM::BitcastOp::create(builder, loc, vf64Ty, mArg0)
-                  .getResult();
-      mArg1 = mlir::LLVM::BitcastOp::create(builder, loc, vf64Ty, mArg1)
-                  .getResult();
+      mArg0 =
+          builder.create<mlir::LLVM::BitcastOp>(loc, vf64Ty, mArg0).getResult();
+      mArg1 =
+          builder.create<mlir::LLVM::BitcastOp>(loc, vf64Ty, mArg1).getResult();
     }
 
     llvm::SmallVector<int64_t, 2> nMask; // native vector element order mask
@@ -2189,9 +2184,9 @@ PPCIntrinsicLibrary::genVecPerm(mlir::Type resultType,
 
     llvm::SmallVector<int64_t, 2> mask =
         (isBEVecElemOrderOnLE()) ? rMask : nMask;
-    auto res{mlir::vector::ShuffleOp::create(builder, loc, mArg0, mArg1, mask)};
+    auto res{builder.create<mlir::vector::ShuffleOp>(loc, mArg0, mArg1, mask)};
     if (res.getType() != mlirTy) {
-      auto cast{mlir::LLVM::BitcastOp::create(builder, loc, mlirTy, res)};
+      auto cast{builder.create<mlir::LLVM::BitcastOp>(loc, mlirTy, res)};
       return builder.createConvert(loc, resultType, cast);
     }
     return builder.createConvert(loc, resultType, res);
@@ -2214,27 +2209,26 @@ PPCIntrinsicLibrary::genVecSel(mlir::Type resultType,
   auto vargs{convertVecArgs(builder, loc, vecTyInfos, argBases)};
 
   auto i8Ty{mlir::IntegerType::get(builder.getContext(), 8)};
-  auto negOne{builder.createMinusOneInteger(loc, i8Ty)};
+  auto negOne{builder.createIntegerConstant(loc, i8Ty, -1)};
 
   // construct a constant <16 x i8> vector with value -1 for bitcast
   auto bcVecTy{mlir::VectorType::get(16, i8Ty)};
-  auto vNegOne{
-      mlir::vector::BroadcastOp::create(builder, loc, bcVecTy, negOne)};
+  auto vNegOne{builder.create<mlir::vector::BroadcastOp>(loc, bcVecTy, negOne)};
 
   // bitcast arguments to bcVecTy
-  auto arg1{mlir::vector::BitCastOp::create(builder, loc, bcVecTy, vargs[0])};
-  auto arg2{mlir::vector::BitCastOp::create(builder, loc, bcVecTy, vargs[1])};
-  auto arg3{mlir::vector::BitCastOp::create(builder, loc, bcVecTy, vargs[2])};
+  auto arg1{builder.create<mlir::vector::BitCastOp>(loc, bcVecTy, vargs[0])};
+  auto arg2{builder.create<mlir::vector::BitCastOp>(loc, bcVecTy, vargs[1])};
+  auto arg3{builder.create<mlir::vector::BitCastOp>(loc, bcVecTy, vargs[2])};
 
   // vec_sel(arg1, arg2, arg3) =
   //   (arg2 and arg3) or (arg1 and (arg3 xor vector(-1,...)))
-  auto comp{mlir::arith::XOrIOp::create(builder, loc, arg3, vNegOne)};
-  auto a1AndComp{mlir::arith::AndIOp::create(builder, loc, arg1, comp)};
-  auto a1OrA2{mlir::arith::AndIOp::create(builder, loc, arg2, arg3)};
-  auto res{mlir::arith::OrIOp::create(builder, loc, a1AndComp, a1OrA2)};
+  auto comp{builder.create<mlir::arith::XOrIOp>(loc, arg3, vNegOne)};
+  auto a1AndComp{builder.create<mlir::arith::AndIOp>(loc, arg1, comp)};
+  auto a1OrA2{builder.create<mlir::arith::AndIOp>(loc, arg2, arg3)};
+  auto res{builder.create<mlir::arith::OrIOp>(loc, a1AndComp, a1OrA2)};
 
   auto bcRes{
-      mlir::vector::BitCastOp::create(builder, loc, vargs[0].getType(), res)};
+      builder.create<mlir::vector::BitCastOp>(loc, vargs[0].getType(), res)};
 
   return builder.createConvert(loc, vecTyInfos[0].toFirVectorType(), bcRes);
 }
@@ -2271,14 +2265,14 @@ PPCIntrinsicLibrary::genVecShift(mlir::Type resultType,
     auto vecVal{builder.createIntegerConstant(
         loc, getConvertedElementType(context, vecTyInfoArgs[0].eleTy), width)};
     auto mask{
-        mlir::vector::BroadcastOp::create(builder, loc, mlirTyArgs[1], vecVal)};
-    auto shft{mlir::arith::RemUIOp::create(builder, loc, mlirVecArgs[1], mask)};
+        builder.create<mlir::vector::BroadcastOp>(loc, mlirTyArgs[1], vecVal)};
+    auto shft{builder.create<mlir::arith::RemUIOp>(loc, mlirVecArgs[1], mask)};
 
     mlir::Value res{nullptr};
     if (vop == VecOp::Sr)
-      res = mlir::arith::ShRUIOp::create(builder, loc, mlirVecArgs[0], shft);
+      res = builder.create<mlir::arith::ShRUIOp>(loc, mlirVecArgs[0], shft);
     else if (vop == VecOp::Sl)
-      res = mlir::arith::ShLIOp::create(builder, loc, mlirVecArgs[0], shft);
+      res = builder.create<mlir::arith::ShLIOp>(loc, mlirVecArgs[0], shft);
 
     shftRes = builder.createConvert(loc, argTypes[0], res);
   } else if (vop == VecOp::Sll || vop == VecOp::Slo || vop == VecOp::Srl ||
@@ -2288,11 +2282,11 @@ PPCIntrinsicLibrary::genVecShift(mlir::Type resultType,
     // Bitcast to vector<4xi32>
     auto bcVecTy{mlir::VectorType::get(4, builder.getIntegerType(32))};
     if (mlirTyArgs[0] != bcVecTy)
-      mlirVecArgs[0] = mlir::vector::BitCastOp::create(builder, loc, bcVecTy,
-                                                       mlirVecArgs[0]);
+      mlirVecArgs[0] =
+          builder.create<mlir::vector::BitCastOp>(loc, bcVecTy, mlirVecArgs[0]);
     if (mlirTyArgs[1] != bcVecTy)
-      mlirVecArgs[1] = mlir::vector::BitCastOp::create(builder, loc, bcVecTy,
-                                                       mlirVecArgs[1]);
+      mlirVecArgs[1] =
+          builder.create<mlir::vector::BitCastOp>(loc, bcVecTy, mlirVecArgs[1]);
 
     llvm::StringRef funcName;
     switch (vop) {
@@ -2313,33 +2307,34 @@ PPCIntrinsicLibrary::genVecShift(mlir::Type resultType,
     }
     auto funcTy{genFuncType<Ty::IntegerVector<4>, Ty::IntegerVector<4>,
                             Ty::IntegerVector<4>>(context, builder)};
-    mlir::func::FuncOp funcOp{builder.createFunction(loc, funcName, funcTy)};
-    auto callOp{fir::CallOp::create(builder, loc, funcOp, mlirVecArgs)};
+    mlir::func::FuncOp funcOp{builder.addNamedFunction(loc, funcName, funcTy)};
+    auto callOp{builder.create<fir::CallOp>(loc, funcOp, mlirVecArgs)};
 
     // If the result vector type is different from the original type, need
     // to convert to mlir vector, bitcast and then convert back to fir vector.
     if (callOp.getResult(0).getType() != argTypes[0]) {
       auto res = builder.createConvert(loc, bcVecTy, callOp.getResult(0));
-      res = mlir::vector::BitCastOp::create(builder, loc, mlirTyArgs[0], res);
+      res = builder.create<mlir::vector::BitCastOp>(loc, mlirTyArgs[0], res);
       shftRes = builder.createConvert(loc, argTypes[0], res);
     } else {
       shftRes = callOp.getResult(0);
     }
   } else if (vop == VecOp::Sld || vop == VecOp::Sldw) {
     assert(args.size() == 3);
-    auto constIntOp = mlir::dyn_cast_or_null<mlir::IntegerAttr>(
+    auto constIntOp =
         mlir::dyn_cast<mlir::arith::ConstantOp>(argBases[2].getDefiningOp())
-            .getValue());
+            .getValue()
+            .dyn_cast_or_null<mlir::IntegerAttr>();
     assert(constIntOp && "expected integer constant argument");
 
     // Bitcast to vector<16xi8>
     auto vi8Ty{mlir::VectorType::get(16, builder.getIntegerType(8))};
     if (mlirTyArgs[0] != vi8Ty) {
       mlirVecArgs[0] =
-          mlir::LLVM::BitcastOp::create(builder, loc, vi8Ty, mlirVecArgs[0])
+          builder.create<mlir::LLVM::BitcastOp>(loc, vi8Ty, mlirVecArgs[0])
               .getResult();
       mlirVecArgs[1] =
-          mlir::LLVM::BitcastOp::create(builder, loc, vi8Ty, mlirVecArgs[1])
+          builder.create<mlir::LLVM::BitcastOp>(loc, vi8Ty, mlirVecArgs[1])
               .getResult();
     }
 
@@ -2354,19 +2349,19 @@ PPCIntrinsicLibrary::genVecShift(mlir::Type resultType,
     if (triple.isLittleEndian()) {
       for (int i = 16; i < 32; ++i)
         mask.push_back(i - shiftVal);
-      shftRes = mlir::vector::ShuffleOp::create(builder, loc, mlirVecArgs[1],
-                                                mlirVecArgs[0], mask);
+      shftRes = builder.create<mlir::vector::ShuffleOp>(loc, mlirVecArgs[1],
+                                                        mlirVecArgs[0], mask);
     } else {
       for (int i = 0; i < 16; ++i)
         mask.push_back(i + shiftVal);
-      shftRes = mlir::vector::ShuffleOp::create(builder, loc, mlirVecArgs[0],
-                                                mlirVecArgs[1], mask);
+      shftRes = builder.create<mlir::vector::ShuffleOp>(loc, mlirVecArgs[0],
+                                                        mlirVecArgs[1], mask);
     }
 
     // Bitcast to the original type
     if (shftRes.getType() != mlirTyArgs[0])
       shftRes =
-          mlir::LLVM::BitcastOp::create(builder, loc, mlirTyArgs[0], shftRes);
+          builder.create<mlir::LLVM::BitcastOp>(loc, mlirTyArgs[0], shftRes);
 
     return builder.createConvert(loc, resultType, shftRes);
   } else
@@ -2383,7 +2378,7 @@ PPCIntrinsicLibrary::genVecSplat(mlir::Type resultType,
   auto context{builder.getContext()};
   auto argBases{getBasesForArgs(args)};
 
-  mlir::vector::BroadcastOp splatOp{nullptr};
+  mlir::vector::SplatOp splatOp{nullptr};
   mlir::Type retTy{nullptr};
   switch (vop) {
   case VecOp::Splat: {
@@ -2391,9 +2386,8 @@ PPCIntrinsicLibrary::genVecSplat(mlir::Type resultType,
     auto vecTyInfo{getVecTypeFromFir(argBases[0])};
 
     auto extractOp{genVecExtract(resultType, args)};
-    splatOp = mlir::vector::BroadcastOp::create(
-        builder, loc, vecTyInfo.toMlirVectorType(context),
-        *(extractOp.getUnboxed()));
+    splatOp = builder.create<mlir::vector::SplatOp>(
+        loc, *(extractOp.getUnboxed()), vecTyInfo.toMlirVectorType(context));
     retTy = vecTyInfo.toFirVectorType();
     break;
   }
@@ -2401,8 +2395,8 @@ PPCIntrinsicLibrary::genVecSplat(mlir::Type resultType,
     assert(args.size() == 1);
     auto vecTyInfo{getVecTypeFromEle(argBases[0])};
 
-    splatOp = mlir::vector::BroadcastOp::create(
-        builder, loc, vecTyInfo.toMlirVectorType(context), argBases[0]);
+    splatOp = builder.create<mlir::vector::SplatOp>(
+        loc, argBases[0], vecTyInfo.toMlirVectorType(context));
     retTy = vecTyInfo.toFirVectorType();
     break;
   }
@@ -2412,8 +2406,8 @@ PPCIntrinsicLibrary::genVecSplat(mlir::Type resultType,
     auto intOp{builder.createConvert(loc, eleTy, argBases[0])};
 
     // the intrinsic always returns vector(integer(4))
-    splatOp = mlir::vector::BroadcastOp::create(
-        builder, loc, mlir::VectorType::get(4, eleTy), intOp);
+    splatOp = builder.create<mlir::vector::SplatOp>(
+        loc, intOp, mlir::VectorType::get(4, eleTy));
     retTy = fir::VectorType::get(4, eleTy);
     break;
   }
@@ -2441,15 +2435,14 @@ PPCIntrinsicLibrary::genVecXlds(mlir::Type resultType,
   auto i64Ty{mlir::IntegerType::get(builder.getContext(), 64)};
   auto i64VecTy{mlir::VectorType::get(2, i64Ty)};
   auto i64RefTy{builder.getRefType(i64Ty)};
-  auto addrConv{fir::ConvertOp::create(builder, loc, i64RefTy, addr)};
+  auto addrConv{builder.create<fir::ConvertOp>(loc, i64RefTy, addr)};
 
-  auto addrVal{fir::LoadOp::create(builder, loc, addrConv)};
-  auto splatRes{
-      mlir::vector::BroadcastOp::create(builder, loc, i64VecTy, addrVal)};
+  auto addrVal{builder.create<fir::LoadOp>(loc, addrConv)};
+  auto splatRes{builder.create<mlir::vector::SplatOp>(loc, addrVal, i64VecTy)};
 
   mlir::Value result{nullptr};
   if (mlirTy != splatRes.getType()) {
-    result = mlir::vector::BitCastOp::create(builder, loc, mlirTy, splatRes);
+    result = builder.create<mlir::vector::BitCastOp>(loc, mlirTy, splatRes);
   } else
     result = splatRes;
 
@@ -2762,7 +2755,7 @@ void PPCIntrinsicLibrary::genMmaIntr(llvm::ArrayRef<fir::ExtendedValue> args) {
   auto context{builder.getContext()};
   mlir::FunctionType intrFuncType{getMmaIrFuncType(context, IntrId)};
   mlir::func::FuncOp funcOp{
-      builder.createFunction(loc, getMmaIrIntrName(IntrId), intrFuncType)};
+      builder.addNamedFunction(loc, getMmaIrIntrName(IntrId), intrFuncType)};
   llvm::SmallVector<mlir::Value> intrArgs;
 
   // Depending on SubToFunc, change the subroutine call to a function call.
@@ -2799,21 +2792,21 @@ void PPCIntrinsicLibrary::genMmaIntr(llvm::ArrayRef<fir::ExtendedValue> args) {
     if (i == 0 && HandlerOp == MMAHandlerOp::FirstArgIsResult) {
       // First argument is passed in as an address. We need to load
       // the content to match the LLVM interface.
-      v = fir::LoadOp::create(builder, loc, v);
+      v = builder.create<fir::LoadOp>(loc, v);
     }
     auto vType{v.getType()};
     mlir::Type targetType{intrFuncType.getInput(j)};
     if (vType != targetType) {
-      if (mlir::isa<mlir::VectorType>(targetType)) {
+      if (targetType.isa<mlir::VectorType>()) {
         // Perform vector type conversion for arguments passed by value.
-        auto eleTy{mlir::dyn_cast<fir::VectorType>(vType).getElementType()};
-        auto len{mlir::dyn_cast<fir::VectorType>(vType).getLen()};
+        auto eleTy{vType.dyn_cast<fir::VectorType>().getEleTy()};
+        auto len{vType.dyn_cast<fir::VectorType>().getLen()};
         mlir::VectorType mlirType = mlir::VectorType::get(len, eleTy);
         auto v0{builder.createConvert(loc, mlirType, v)};
-        auto v1{mlir::vector::BitCastOp::create(builder, loc, targetType, v0)};
+        auto v1{builder.create<mlir::vector::BitCastOp>(loc, targetType, v0)};
         intrArgs.push_back(v1);
-      } else if (mlir::isa<mlir::IntegerType>(targetType) &&
-                 mlir::isa<mlir::IntegerType>(vType)) {
+      } else if (targetType.isa<mlir::IntegerType>() &&
+                 vType.isa<mlir::IntegerType>()) {
         auto v0{builder.createConvert(loc, targetType, v)};
         intrArgs.push_back(v0);
       } else {
@@ -2826,7 +2819,7 @@ void PPCIntrinsicLibrary::genMmaIntr(llvm::ArrayRef<fir::ExtendedValue> args) {
       intrArgs.push_back(v);
     }
   }
-  auto callSt{fir::CallOp::create(builder, loc, funcOp, intrArgs)};
+  auto callSt{builder.create<fir::CallOp>(loc, funcOp, intrArgs)};
   if (HandlerOp == MMAHandlerOp::SubToFunc ||
       HandlerOp == MMAHandlerOp::SubToFuncReverseArgOnLE ||
       HandlerOp == MMAHandlerOp::FirstArgIsResult) {
@@ -2835,11 +2828,10 @@ void PPCIntrinsicLibrary::genMmaIntr(llvm::ArrayRef<fir::ExtendedValue> args) {
     mlir::Value destPtr{fir::getBase(args[0])};
     mlir::Type callResultPtrType{builder.getRefType(callResult.getType())};
     if (destPtr.getType() != callResultPtrType) {
-      destPtr =
-          fir::ConvertOp::create(builder, loc, callResultPtrType, destPtr);
+      destPtr = builder.create<fir::ConvertOp>(loc, callResultPtrType, destPtr);
     }
     // Copy the result.
-    fir::StoreOp::create(builder, loc, callResult, destPtr);
+    builder.create<fir::StoreOp>(loc, callResult, destPtr);
   }
 }
 
@@ -2869,7 +2861,7 @@ void PPCIntrinsicLibrary::genVecStore(llvm::ArrayRef<fir::ExtendedValue> args) {
     if (arg1TyInfo.isFloat32()) {
       stTy = mlir::VectorType::get(len, i32ty);
       fname = "llvm.ppc.altivec.stvewx";
-    } else if (mlir::isa<mlir::IntegerType>(arg1TyInfo.eleTy)) {
+    } else if (arg1TyInfo.eleTy.isa<mlir::IntegerType>()) {
       stTy = mlir::VectorType::get(len, mlir::IntegerType::get(context, width));
 
       switch (width) {
@@ -2898,15 +2890,16 @@ void PPCIntrinsicLibrary::genVecStore(llvm::ArrayRef<fir::ExtendedValue> args) {
     llvm_unreachable("invalid vector operation for generator");
   }
 
-  auto funcType{mlir::FunctionType::get(context, {stTy, addr.getType()}, {})};
-  mlir::func::FuncOp funcOp = builder.createFunction(loc, fname, funcType);
+  auto funcType{
+      mlir::FunctionType::get(context, {stTy, addr.getType()}, std::nullopt)};
+  mlir::func::FuncOp funcOp = builder.addNamedFunction(loc, fname, funcType);
 
   llvm::SmallVector<mlir::Value, 4> biArgs;
 
   if (vop == VecOp::Stxvp) {
     biArgs.push_back(argBases[0]);
     biArgs.push_back(addr);
-    fir::CallOp::create(builder, loc, funcOp, biArgs);
+    builder.create<fir::CallOp>(loc, funcOp, biArgs);
     return;
   }
 
@@ -2916,7 +2909,7 @@ void PPCIntrinsicLibrary::genVecStore(llvm::ArrayRef<fir::ExtendedValue> args) {
 
   mlir::Value newArg1{nullptr};
   if (stTy != arg1TyInfo.toMlirVectorType(context))
-    newArg1 = mlir::vector::BitCastOp::create(builder, loc, stTy, cnv);
+    newArg1 = builder.create<mlir::vector::BitCastOp>(loc, stTy, cnv);
   else
     newArg1 = cnv;
 
@@ -2927,7 +2920,7 @@ void PPCIntrinsicLibrary::genVecStore(llvm::ArrayRef<fir::ExtendedValue> args) {
   biArgs.push_back(newArg1);
   biArgs.push_back(addr);
 
-  fir::CallOp::create(builder, loc, funcOp, biArgs);
+  builder.create<fir::CallOp>(loc, funcOp, biArgs);
 }
 
 // VEC_XST, VEC_XST_BE, VEC_STXV, VEC_XSTD2, VEC_XSTW4
@@ -2976,7 +2969,7 @@ void PPCIntrinsicLibrary::genVecXStore(
 
     mlir::Type srcTy{nullptr};
     if (numElem != arg1TyInfo.len) {
-      cnv = mlir::vector::BitCastOp::create(builder, loc, mlirVecTy, cnv);
+      cnv = builder.create<mlir::vector::BitCastOp>(loc, mlirVecTy, cnv);
       srcTy = firVecTy;
     } else {
       srcTy = arg1TyInfo.toFirVectorType();
@@ -2999,9 +2992,9 @@ void PPCIntrinsicLibrary::genVecXStore(
   default:
     assert(false && "Invalid vector operation for generator");
   }
-  fir::StoreOp::create(builder, loc, mlir::TypeRange{},
-                       mlir::ValueRange{src, trg},
-                       getAlignmentAttr(builder, 1));
+  builder.create<fir::StoreOp>(loc, mlir::TypeRange{},
+                               mlir::ValueRange{src, trg},
+                               getAlignmentAttr(builder, 1));
 }
 
 } // namespace fir

@@ -11,21 +11,16 @@
 
 #include <memory>
 
-namespace llvm {
+namespace mlir {
 struct LogicalResult;
+
 namespace lsp {
 class JSONTransport;
-} // namespace lsp
-} // namespace llvm
-
-namespace mlir {
-namespace lsp {
 class PDLLServer;
 
 /// Run the main loop of the LSP server using the given PDLL server and
 /// transport.
-llvm::LogicalResult runPdllLSPServer(PDLLServer &server,
-                                     llvm::lsp::JSONTransport &transport);
+LogicalResult runPdllLSPServer(PDLLServer &server, JSONTransport &transport);
 
 } // namespace lsp
 } // namespace mlir

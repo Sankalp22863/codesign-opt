@@ -17,9 +17,9 @@
 #define LLVM_ADT_APFIXEDPOINT_H
 
 #include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallString.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace llvm {
@@ -85,11 +85,11 @@ public:
   /// precision semantic that can precisely represent the precision and ranges
   /// of both input values. This does not compute the resulting semantics for a
   /// given binary operation.
-  LLVM_ABI FixedPointSemantics
+  FixedPointSemantics
   getCommonSemantics(const FixedPointSemantics &Other) const;
 
   /// Print semantics for debug purposes
-  LLVM_ABI void print(llvm::raw_ostream &OS) const;
+  void print(llvm::raw_ostream& OS) const;
 
   /// Returns true if this fixed-point semantic with its value bits interpreted
   /// as an integer can fit in the given floating point semantic without
@@ -98,7 +98,7 @@ public:
   /// minimum integer representation of 127 and -128, respectively. If both of
   /// these values can be represented (possibly inexactly) in the floating
   /// point semantic without overflowing, this returns true.
-  LLVM_ABI bool fitsInFloatSemantics(const fltSemantics &FloatSema) const;
+  bool fitsInFloatSemantics(const fltSemantics &FloatSema) const;
 
   /// Return the FixedPointSemantics for an integer type.
   static FixedPointSemantics GetIntegerSemantics(unsigned Width,
@@ -114,15 +114,6 @@ public:
            HasUnsignedPadding == Other.HasUnsignedPadding;
   }
   bool operator!=(FixedPointSemantics Other) const { return !(*this == Other); }
-
-  /// Convert the semantics to a 32-bit unsigned integer.
-  /// The result is dependent on the host endianness and not stable across LLVM
-  /// versions. See getFromOpaqueInt() to convert it back to a
-  /// FixedPointSemantics object.
-  LLVM_ABI uint32_t toOpaqueInt() const;
-  /// Create a FixedPointSemantics object from an integer created via
-  /// toOpaqueInt().
-  LLVM_ABI static FixedPointSemantics getFromOpaqueInt(uint32_t);
 
 private:
   unsigned Width          : WidthBitWidth;
@@ -169,9 +160,7 @@ public:
   }
 
   APFixedPoint(uint64_t Val, const FixedPointSemantics &Sema)
-      : APFixedPoint(APInt(Sema.getWidth(), Val, Sema.isSigned(),
-                           /*implicitTrunc=*/true),
-                     Sema) {}
+      : APFixedPoint(APInt(Sema.getWidth(), Val, Sema.isSigned()), Sema) {}
 
   // Zero initialization.
   APFixedPoint(const FixedPointSemantics &Sema) : APFixedPoint(0, Sema) {}
@@ -191,26 +180,22 @@ public:
   // Convert this number to match the semantics provided. If the overflow
   // parameter is provided, set this value to true or false to indicate if this
   // operation results in an overflow.
-  LLVM_ABI APFixedPoint convert(const FixedPointSemantics &DstSema,
-                                bool *Overflow = nullptr) const;
+  APFixedPoint convert(const FixedPointSemantics &DstSema,
+                       bool *Overflow = nullptr) const;
 
   // Perform binary operations on a fixed point type. The resulting fixed point
   // value will be in the common, full precision semantics that can represent
   // the precision and ranges of both input values. See convert() for an
   // explanation of the Overflow parameter.
-  LLVM_ABI APFixedPoint add(const APFixedPoint &Other,
-                            bool *Overflow = nullptr) const;
-  LLVM_ABI APFixedPoint sub(const APFixedPoint &Other,
-                            bool *Overflow = nullptr) const;
-  LLVM_ABI APFixedPoint mul(const APFixedPoint &Other,
-                            bool *Overflow = nullptr) const;
-  LLVM_ABI APFixedPoint div(const APFixedPoint &Other,
-                            bool *Overflow = nullptr) const;
+  APFixedPoint add(const APFixedPoint &Other, bool *Overflow = nullptr) const;
+  APFixedPoint sub(const APFixedPoint &Other, bool *Overflow = nullptr) const;
+  APFixedPoint mul(const APFixedPoint &Other, bool *Overflow = nullptr) const;
+  APFixedPoint div(const APFixedPoint &Other, bool *Overflow = nullptr) const;
 
   // Perform shift operations on a fixed point type. Unlike the other binary
   // operations, the resulting fixed point value will be in the original
   // semantic.
-  LLVM_ABI APFixedPoint shl(unsigned Amt, bool *Overflow = nullptr) const;
+  APFixedPoint shl(unsigned Amt, bool *Overflow = nullptr) const;
   APFixedPoint shr(unsigned Amt, bool *Overflow = nullptr) const {
     // Right shift cannot overflow.
     if (Overflow)
@@ -220,7 +205,7 @@ public:
 
   /// Perform a unary negation (-X) on this fixed point type, taking into
   /// account saturation if applicable.
-  LLVM_ABI APFixedPoint negate(bool *Overflow = nullptr) const;
+  APFixedPoint negate(bool *Overflow = nullptr) const;
 
   /// Return the integral part of this fixed point number, rounded towards
   /// zero. (-2.5k -> -2)
@@ -239,28 +224,25 @@ public:
   /// If the overflow parameter is provided, and the integral value is not able
   /// to be fully stored in the provided width and sign, the overflow parameter
   /// is set to true.
-  LLVM_ABI APSInt convertToInt(unsigned DstWidth, bool DstSign,
-                               bool *Overflow = nullptr) const;
+  APSInt convertToInt(unsigned DstWidth, bool DstSign,
+                      bool *Overflow = nullptr) const;
 
   /// Convert this fixed point number to a floating point value with the
   /// provided semantics.
-  LLVM_ABI APFloat convertToFloat(const fltSemantics &FloatSema) const;
+  APFloat convertToFloat(const fltSemantics &FloatSema) const;
 
-  LLVM_ABI void toString(SmallVectorImpl<char> &Str) const;
+  void toString(SmallVectorImpl<char> &Str) const;
   std::string toString() const {
     SmallString<40> S;
     toString(S);
     return std::string(S);
   }
 
-  LLVM_ABI void print(raw_ostream &) const;
-
-#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-  LLVM_DUMP_METHOD void dump() const;
-#endif
+  void print(raw_ostream &) const;
+  void dump() const;
 
   // If LHS > RHS, return 1. If LHS == RHS, return 0. If LHS < RHS, return -1.
-  LLVM_ABI int compare(const APFixedPoint &Other) const;
+  int compare(const APFixedPoint &Other) const;
   bool operator==(const APFixedPoint &Other) const {
     return compare(Other) == 0;
   }
@@ -276,22 +258,20 @@ public:
     return compare(Other) <= 0;
   }
 
-  LLVM_ABI static APFixedPoint getMax(const FixedPointSemantics &Sema);
-  LLVM_ABI static APFixedPoint getMin(const FixedPointSemantics &Sema);
-  LLVM_ABI static APFixedPoint getEpsilon(const FixedPointSemantics &Sema);
+  static APFixedPoint getMax(const FixedPointSemantics &Sema);
+  static APFixedPoint getMin(const FixedPointSemantics &Sema);
 
   /// Given a floating point semantic, return the next floating point semantic
   /// with a larger exponent and larger or equal mantissa.
-  LLVM_ABI static const fltSemantics *
-  promoteFloatSemantics(const fltSemantics *S);
+  static const fltSemantics *promoteFloatSemantics(const fltSemantics *S);
 
   /// Create an APFixedPoint with a value equal to that of the provided integer,
   /// and in the same semantics as the provided target semantics. If the value
   /// is not able to fit in the specified fixed point semantics, and the
   /// overflow parameter is provided, it is set to true.
-  LLVM_ABI static APFixedPoint
-  getFromIntValue(const APSInt &Value, const FixedPointSemantics &DstFXSema,
-                  bool *Overflow = nullptr);
+  static APFixedPoint getFromIntValue(const APSInt &Value,
+                                      const FixedPointSemantics &DstFXSema,
+                                      bool *Overflow = nullptr);
 
   /// Create an APFixedPoint with a value equal to that of the provided
   /// floating point value, in the provided target semantics. If the value is
@@ -300,9 +280,9 @@ public:
   /// For NaN, the Overflow flag is always set. For +inf and -inf, if the
   /// semantic is saturating, the value saturates. Otherwise, the Overflow flag
   /// is set.
-  LLVM_ABI static APFixedPoint
-  getFromFloatValue(const APFloat &Value, const FixedPointSemantics &DstFXSema,
-                    bool *Overflow = nullptr);
+  static APFixedPoint getFromFloatValue(const APFloat &Value,
+                                        const FixedPointSemantics &DstFXSema,
+                                        bool *Overflow = nullptr);
 
 private:
   APSInt Val;

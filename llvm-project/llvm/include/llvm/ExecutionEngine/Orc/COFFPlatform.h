@@ -20,10 +20,8 @@
 #include "llvm/ExecutionEngine/Orc/ExecutorProcessControl.h"
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/Orc/Shared/ExecutorAddress.h"
-#include "llvm/Support/Compiler.h"
 
 #include <future>
-#include <list>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -32,7 +30,7 @@ namespace llvm {
 namespace orc {
 
 /// Mediates between COFF initialization and ExecutionSession state.
-class LLVM_ABI COFFPlatform : public Platform {
+class COFFPlatform : public Platform {
 public:
   /// A function that will be called with the name of dll file that must be
   /// loaded.
@@ -42,16 +40,18 @@ public:
   /// Try to create a COFFPlatform instance, adding the ORC runtime to the
   /// given JITDylib.
   static Expected<std::unique_ptr<COFFPlatform>>
-  Create(ObjectLinkingLayer &ObjLinkingLayer, JITDylib &PlatformJD,
+  Create(ExecutionSession &ES, ObjectLinkingLayer &ObjLinkingLayer,
+         JITDylib &PlatformJD,
          std::unique_ptr<MemoryBuffer> OrcRuntimeArchiveBuffer,
          LoadDynamicLibrary LoadDynLibrary, bool StaticVCRuntime = false,
          const char *VCRuntimePath = nullptr,
          std::optional<SymbolAliasMap> RuntimeAliases = std::nullopt);
 
   static Expected<std::unique_ptr<COFFPlatform>>
-  Create(ObjectLinkingLayer &ObjLinkingLayer, JITDylib &PlatformJD,
-         const char *OrcRuntimePath, LoadDynamicLibrary LoadDynLibrary,
-         bool StaticVCRuntime = false, const char *VCRuntimePath = nullptr,
+  Create(ExecutionSession &ES, ObjectLinkingLayer &ObjLinkingLayer,
+         JITDylib &PlatformJD, const char *OrcRuntimePath,
+         LoadDynamicLibrary LoadDynLibrary, bool StaticVCRuntime = false,
+         const char *VCRuntimePath = nullptr,
          std::optional<SymbolAliasMap> RuntimeAliases = std::nullopt);
 
   ExecutionSession &getExecutionSession() const { return ES; }
@@ -91,13 +91,16 @@ private:
   // The COFFPlatformPlugin scans/modifies LinkGraphs to support COFF
   // platform features including initializers, exceptions, and language
   // runtime registration.
-  class LLVM_ABI COFFPlatformPlugin : public ObjectLinkingLayer::Plugin {
+  class COFFPlatformPlugin : public ObjectLinkingLayer::Plugin {
   public:
     COFFPlatformPlugin(COFFPlatform &CP) : CP(CP) {}
 
     void modifyPassConfig(MaterializationResponsibility &MR,
                           jitlink::LinkGraph &G,
                           jitlink::PassConfiguration &Config) override;
+
+    SyntheticSymbolDependenciesMap
+    getSyntheticSymbolDependencies(MaterializationResponsibility &MR) override;
 
     // FIXME: We should be tentatively tracking scraped sections and discarding
     // if the MR fails.
@@ -113,6 +116,9 @@ private:
                                      ResourceKey SrcKey) override {}
 
   private:
+    using InitSymbolDepMap =
+        DenseMap<MaterializationResponsibility *, JITLinkSymbolSet>;
+
     Error associateJITDylibHeaderSymbol(jitlink::LinkGraph &G,
                                         MaterializationResponsibility &MR,
                                         bool Bootstrap);
@@ -125,6 +131,7 @@ private:
 
     std::mutex PluginMutex;
     COFFPlatform &CP;
+    InitSymbolDepMap InitSymbolDeps;
   };
 
   struct JDBootstrapState {
@@ -138,9 +145,9 @@ private:
   static bool supportedTarget(const Triple &TT);
 
   COFFPlatform(
-      ObjectLinkingLayer &ObjLinkingLayer, JITDylib &PlatformJD,
+      ExecutionSession &ES, ObjectLinkingLayer &ObjLinkingLayer,
+      JITDylib &PlatformJD,
       std::unique_ptr<StaticLibraryDefinitionGenerator> OrcRuntimeGenerator,
-      std::set<std::string> DylibsToPreload,
       std::unique_ptr<MemoryBuffer> OrcRuntimeArchiveBuffer,
       std::unique_ptr<object::Archive> OrcRuntimeArchive,
       LoadDynamicLibrary LoadDynLibrary, bool StaticVCRuntime,
@@ -203,6 +210,8 @@ private:
   DenseMap<ExecutorAddr, JITDylib *> HeaderAddrToJITDylib;
 
   DenseMap<JITDylib *, SymbolLookupSet> RegisteredInitSymbols;
+
+  std::set<std::string> DylibsToPreload;
 
   std::mutex PlatformMutex;
 };

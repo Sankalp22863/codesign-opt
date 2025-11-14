@@ -24,13 +24,14 @@
 
 namespace detail
 {
-[[noreturn]] inline void throw_bad_alloc_helper() {
+   TEST_NORETURN
+   inline void throw_bad_alloc_helper() {
 #ifndef TEST_HAS_NO_EXCEPTIONS
-  throw std::bad_alloc();
+       throw std::bad_alloc();
 #else
        std::abort();
 #endif
-}
+   }
 }
 
 class MemCounter
@@ -98,18 +99,15 @@ public:
 
     void deleteCalled(void * p)
     {
-      if (p) {
+        assert(p);
         --outstanding_new;
         ++delete_called;
-      }
     }
 
     void alignedDeleteCalled(void *p, std::size_t a) {
-      if (p) {
-        deleteCalled(p);
-        ++aligned_delete_called;
-        last_delete_align = a;
-      }
+      deleteCalled(p);
+      ++aligned_delete_called;
+      last_delete_align = a;
     }
 
     void newArrayCalled(std::size_t s)
@@ -384,8 +382,6 @@ MemCounter &globalMemCounter = *getGlobalMemCounter();
 // operator new(size_t[, nothrow_t]) and operator delete(size_t[, nothrow_t])
 void* operator new(std::size_t s) TEST_THROW_SPEC(std::bad_alloc) {
   getGlobalMemCounter()->newCalled(s);
-  if (s == 0)
-    ++s;
   void* p = std::malloc(s);
   if (p == nullptr)
     detail::throw_bad_alloc_helper();
@@ -418,8 +414,6 @@ void operator delete(void* p, std::nothrow_t const&) TEST_NOEXCEPT {
 // operator new[](size_t[, nothrow_t]) and operator delete[](size_t[, nothrow_t])
 void* operator new[](std::size_t s) TEST_THROW_SPEC(std::bad_alloc) {
   getGlobalMemCounter()->newArrayCalled(s);
-  if (s == 0)
-    s++;
   void* p = std::malloc(s);
   if (p == nullptr)
     detail::throw_bad_alloc_helper();
@@ -454,23 +448,11 @@ void operator delete[](void* p, std::nothrow_t const&) TEST_NOEXCEPT {
 #      define USE_ALIGNED_ALLOC
 #    endif
 
-#    if defined(__APPLE__)
-#      if (defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) &&                                                   \
-           __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 101500)
-#        define TEST_HAS_NO_C11_ALIGNED_ALLOC
-#      endif
-#    elif defined(__ANDROID__) && __ANDROID_API__ < 28
-#      define TEST_HAS_NO_C11_ALIGNED_ALLOC
-#    endif
-
-inline void* allocate_aligned_impl(std::size_t size, std::align_val_t align) {
+inline void* alocate_aligned_impl(std::size_t size, std::align_val_t align) {
   const std::size_t alignment = static_cast<std::size_t>(align);
   void* ret                   = nullptr;
 #    ifdef USE_ALIGNED_ALLOC
   ret = _aligned_malloc(size, alignment);
-#    elif TEST_STD_VER >= 17 && !defined(TEST_HAS_NO_C11_ALIGNED_ALLOC)
-  size_t rounded_size = (size + alignment - 1) & ~(alignment - 1);
-  ret                 = aligned_alloc(alignment, size > rounded_size ? size : rounded_size);
 #    else
   assert(posix_memalign(&ret, std::max(alignment, sizeof(void*)), size) != EINVAL);
 #    endif
@@ -490,7 +472,7 @@ inline void free_aligned_impl(void* ptr, std::align_val_t) {
 // operator new(size_t, align_val_t[, nothrow_t]) and operator delete(size_t, align_val_t[, nothrow_t])
 void* operator new(std::size_t s, std::align_val_t av) TEST_THROW_SPEC(std::bad_alloc) {
   getGlobalMemCounter()->alignedNewCalled(s, static_cast<std::size_t>(av));
-  void* p = allocate_aligned_impl(s, av);
+  void* p = alocate_aligned_impl(s, av);
   if (p == nullptr)
     detail::throw_bad_alloc_helper();
   return p;
@@ -506,7 +488,7 @@ void* operator new(std::size_t s, std::align_val_t av, std::nothrow_t const&) TE
     return nullptr;
   }
 #    endif
-  return allocate_aligned_impl(s, av);
+  return alocate_aligned_impl(s, av);
 }
 
 void operator delete(void* p, std::align_val_t av) TEST_NOEXCEPT {
@@ -522,7 +504,7 @@ void operator delete(void* p, std::align_val_t av, std::nothrow_t const&) TEST_N
 // operator new[](size_t, align_val_t[, nothrow_t]) and operator delete[](size_t, align_val_t[, nothrow_t])
 void* operator new[](std::size_t s, std::align_val_t av) TEST_THROW_SPEC(std::bad_alloc) {
   getGlobalMemCounter()->alignedNewArrayCalled(s, static_cast<std::size_t>(av));
-  void* p = allocate_aligned_impl(s, av);
+  void* p = alocate_aligned_impl(s, av);
   if (p == nullptr)
     detail::throw_bad_alloc_helper();
   return p;
@@ -538,7 +520,7 @@ void* operator new[](std::size_t s, std::align_val_t av, std::nothrow_t const&) 
     return nullptr;
   }
 #    endif
-  return allocate_aligned_impl(s, av);
+  return alocate_aligned_impl(s, av);
 }
 
 void operator delete[](void* p, std::align_val_t av) TEST_NOEXCEPT {
@@ -626,11 +608,7 @@ struct RequireAllocationGuard {
     void requireExactly(std::size_t N) { m_req_alloc = N; m_exactly = true; }
 
     ~RequireAllocationGuard() {
-#ifdef ALLOW_MISMATCHING_LIBRRARY_INTERNAL_ALLOCATIONS
-        ASSERT_WITH_LIBRARY_INTERNAL_ALLOCATIONS(globalMemCounter.checkOutstandingNewEq(static_cast<int>(m_outstanding_new_on_init)));
-#else
         assert(globalMemCounter.checkOutstandingNewEq(static_cast<int>(m_outstanding_new_on_init)));
-#endif
         std::size_t Expect = m_new_count_on_init + m_req_alloc;
         assert(globalMemCounter.checkNewCalledEq(static_cast<int>(Expect)) ||
                (!m_exactly && globalMemCounter.checkNewCalledGreaterThan(static_cast<int>(Expect))));

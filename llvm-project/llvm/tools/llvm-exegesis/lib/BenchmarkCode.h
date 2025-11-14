@@ -23,7 +23,7 @@ struct BenchmarkCode {
 
   // We also need to provide the registers that are live on entry for the
   // assembler to generate proper prologue/epilogue.
-  std::vector<MCRegister> LiveIns;
+  std::vector<unsigned> LiveIns;
 
   // Informations about how this configuration was built.
   std::string Info;

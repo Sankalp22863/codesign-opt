@@ -19,7 +19,6 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Pass.h"
-#include "llvm/Support/Compiler.h"
 
 #define DEBUG_TYPE "instcombine"
 #include "llvm/Transforms/Utils/InstructionWorklist.h"
@@ -29,11 +28,17 @@ namespace llvm {
 static constexpr unsigned InstCombineDefaultMaxIterations = 1;
 
 struct InstCombineOptions {
+  bool UseLoopInfo = false;
   // Verify that a fix point has been reached after MaxIterations.
   bool VerifyFixpoint = false;
   unsigned MaxIterations = InstCombineDefaultMaxIterations;
 
   InstCombineOptions() = default;
+
+  InstCombineOptions &setUseLoopInfo(bool Value) {
+    UseLoopInfo = Value;
+    return *this;
+  }
 
   InstCombineOptions &setVerifyFixpoint(bool Value) {
     VerifyFixpoint = Value;
@@ -50,22 +55,20 @@ class InstCombinePass : public PassInfoMixin<InstCombinePass> {
 private:
   InstructionWorklist Worklist;
   InstCombineOptions Options;
-  static char ID;
 
 public:
-  LLVM_ABI explicit InstCombinePass(InstCombineOptions Opts = {});
-  LLVM_ABI void
-  printPipeline(raw_ostream &OS,
-                function_ref<StringRef(StringRef)> MapClassName2PassName);
+  explicit InstCombinePass(InstCombineOptions Opts = {});
+  void printPipeline(raw_ostream &OS,
+                     function_ref<StringRef(StringRef)> MapClassName2PassName);
 
-  LLVM_ABI PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
+  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
 };
 
 /// The legacy pass manager's instcombine pass.
 ///
 /// This is a basic whole-function wrapper around the instcombine utility. It
 /// will try to combine all instructions in the function.
-class LLVM_ABI InstructionCombiningPass : public FunctionPass {
+class InstructionCombiningPass : public FunctionPass {
   InstructionWorklist Worklist;
 
 public:
@@ -89,7 +92,7 @@ public:
 // into:
 //    %Z = add int 2, %X
 //
-LLVM_ABI FunctionPass *createInstructionCombiningPass();
+FunctionPass *createInstructionCombiningPass();
 }
 
 #undef DEBUG_TYPE

@@ -55,9 +55,6 @@ static const int &foo() {
      // CHECK-DAG: @_Z1tIKiE
      return t<const int>;
    }
-
-   static int x;
-   return x;
 }
 
 

@@ -19,7 +19,7 @@ namespace format {
 
 enum class Base { Binary, Decimal, Hex, Other };
 
-static Base getBase(StringRef IntegerLiteral) {
+static Base getBase(const StringRef IntegerLiteral) {
   assert(IntegerLiteral.size() > 1);
 
   if (IntegerLiteral[0] > '0') {
@@ -45,18 +45,15 @@ std::pair<tooling::Replacements, unsigned>
 IntegerLiteralSeparatorFixer::process(const Environment &Env,
                                       const FormatStyle &Style) {
   switch (Style.Language) {
+  case FormatStyle::LK_Cpp:
+  case FormatStyle::LK_ObjC:
+    Separator = '\'';
+    break;
   case FormatStyle::LK_CSharp:
   case FormatStyle::LK_Java:
   case FormatStyle::LK_JavaScript:
     Separator = '_';
     break;
-  case FormatStyle::LK_Cpp:
-  case FormatStyle::LK_ObjC:
-    if (Style.Standard >= FormatStyle::LS_Cpp14) {
-      Separator = '\'';
-      break;
-    }
-    [[fallthrough]];
   default:
     return {};
   }
@@ -117,7 +114,7 @@ IntegerLiteralSeparatorFixer::process(const Environment &Env,
     }
     if (Style.isCpp()) {
       // Hex alpha digits a-f/A-F must be at the end of the string literal.
-      static constexpr StringRef Suffixes("_himnsuyd");
+      StringRef Suffixes = "_himnsuyd";
       if (const auto Pos =
               Text.find_first_of(IsBase16 ? Suffixes.drop_back() : Suffixes);
           Pos != StringRef::npos) {
@@ -167,8 +164,8 @@ IntegerLiteralSeparatorFixer::process(const Environment &Env,
   return {Result, 0};
 }
 
-bool IntegerLiteralSeparatorFixer::checkSeparator(StringRef IntegerLiteral,
-                                                  int DigitsPerGroup) const {
+bool IntegerLiteralSeparatorFixer::checkSeparator(
+    const StringRef IntegerLiteral, int DigitsPerGroup) const {
   assert(DigitsPerGroup > 0);
 
   int I = 0;
@@ -187,7 +184,7 @@ bool IntegerLiteralSeparatorFixer::checkSeparator(StringRef IntegerLiteral,
   return true;
 }
 
-std::string IntegerLiteralSeparatorFixer::format(StringRef IntegerLiteral,
+std::string IntegerLiteralSeparatorFixer::format(const StringRef IntegerLiteral,
                                                  int DigitsPerGroup,
                                                  int DigitCount,
                                                  bool RemoveSeparator) const {

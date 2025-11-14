@@ -16,8 +16,13 @@
 #include "X86InstrInfo.h"
 #include "llvm/ADT/SetOperations.h"
 
+#include <unordered_set>
+
 namespace llvm {
 namespace exegesis {
+
+void InitializeX86ExegesisTarget();
+
 namespace {
 
 using testing::AnyOf;
@@ -177,9 +182,8 @@ TEST_F(X86SerialSnippetGeneratorTest,
     EXPECT_THAT(IT.getOpcode(), Opcode);
     ASSERT_THAT(IT.getVariableValues(), SizeIs(3));
     for (const auto &Var : IT.getVariableValues()) {
-      if (Var.isReg()) {
-        EXPECT_FALSE(ForbiddenRegisters[Var.getReg().id()]);
-      }
+      if (Var.isReg())
+        EXPECT_FALSE(ForbiddenRegisters[Var.getReg()]);
     }
   }
 }
@@ -283,8 +287,8 @@ TEST_F(X86ParallelSnippetGeneratorTest, ReadAfterWrite_CMOV32rr) {
     EXPECT_THAT(CT.Info, HasSubstr("avoiding Read-After-Write issue"));
     EXPECT_THAT(CT.Execution, ExecutionMode::UNKNOWN);
     ASSERT_GT(CT.Instructions.size(), 1U);
-    std::set<MCRegister> AllDefRegisters;
-    std::set<MCRegister> AllUseRegisters;
+    std::unordered_set<unsigned> AllDefRegisters;
+    std::unordered_set<unsigned> AllUseRegisters;
     for (const auto &IT : CT.Instructions) {
       ASSERT_THAT(IT.getVariableValues(), SizeIs(3));
       AllDefRegisters.insert(IT.getVariableValues()[0].getReg());
@@ -323,8 +327,8 @@ TEST_F(X86ParallelSnippetGeneratorTest, ReadAfterWrite_VFMADD132PDr) {
     EXPECT_THAT(CT.Info, HasSubstr("avoiding Read-After-Write issue"));
     EXPECT_THAT(CT.Execution, ExecutionMode::UNKNOWN);
     ASSERT_GT(CT.Instructions.size(), 1U);
-    std::set<MCRegister> AllDefRegisters;
-    std::set<MCRegister> AllUseRegisters;
+    std::unordered_set<unsigned> AllDefRegisters;
+    std::unordered_set<unsigned> AllUseRegisters;
     for (const auto &IT : CT.Instructions) {
       ASSERT_THAT(IT.getVariableValues(), SizeIs(3));
       AllDefRegisters.insert(IT.getVariableValues()[0].getReg());
@@ -407,9 +411,9 @@ TEST_F(X86ParallelSnippetGeneratorTest, MemoryUse) {
     EXPECT_THAT(IT.getOpcode(), Opcode);
     ASSERT_THAT(IT.getVariableValues(), SizeIs(6));
     EXPECT_EQ(IT.getVariableValues()[2].getImm(), 1);
-    EXPECT_FALSE(IT.getVariableValues()[3].getReg().isValid());
+    EXPECT_EQ(IT.getVariableValues()[3].getReg(), 0u);
     EXPECT_EQ(IT.getVariableValues()[4].getImm(), 0);
-    EXPECT_FALSE(IT.getVariableValues()[5].getReg().isValid());
+    EXPECT_EQ(IT.getVariableValues()[5].getReg(), 0u);
   }
 }
 

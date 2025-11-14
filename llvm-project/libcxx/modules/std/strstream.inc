@@ -8,12 +8,10 @@
 //===----------------------------------------------------------------------===//
 
 export namespace std {
-#if _LIBCPP_HAS_LOCALIZATION
-#  if _LIBCPP_STD_VER < 26 || defined(_LIBCPP_ENABLE_CXX26_REMOVED_STRSTREAM)
+#ifndef _LIBCPP_HAS_NO_LOCALIZATION
   using std::istrstream;
   using std::ostrstream;
   using std::strstream;
   using std::strstreambuf;
-#  endif // _LIBCPP_STD_VER < 26 || defined(_LIBCPP_ENABLE_CXX26_REMOVED_STRSTREAM)
-#endif   // _LIBCPP_HAS_LOCALIZATION
+#endif // _LIBCPP_HAS_NO_LOCALIZATION
 } // namespace std

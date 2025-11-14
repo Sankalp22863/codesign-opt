@@ -17,6 +17,11 @@
 
 #include "Encoding.h"
 #include "FormatToken.h"
+#include "clang/Format/Format.h"
+#include "llvm/Support/Regex.h"
+#include <map>
+#include <optional>
+#include <tuple>
 
 namespace clang {
 class SourceManager;
@@ -99,7 +104,7 @@ private:
   /// Update 'State' according to the next token being one of ")>}]".
   void moveStatePastScopeCloser(LineState &State);
   /// Update 'State' with the next token opening a nested block.
-  void moveStateToNewBlock(LineState &State, bool NewLine);
+  void moveStateToNewBlock(LineState &State);
 
   /// Reformats a raw string literal.
   ///
@@ -200,18 +205,17 @@ struct ParenState {
       : Tok(Tok), Indent(Indent), LastSpace(LastSpace),
         NestedBlockIndent(Indent), IsAligned(false),
         BreakBeforeClosingBrace(false), BreakBeforeClosingParen(false),
-        BreakBeforeClosingAngle(false), AvoidBinPacking(AvoidBinPacking),
-        BreakBeforeParameter(false), NoLineBreak(NoLineBreak),
-        NoLineBreakInOperand(false), LastOperatorWrapped(true),
-        ContainsLineBreak(false), ContainsUnwrappedBuilder(false),
-        AlignColons(true), ObjCSelectorNameFound(false),
-        HasMultipleNestedBlocks(false), NestedBlockInlined(false),
-        IsInsideObjCArrayLiteral(false), IsCSharpGenericTypeConstraint(false),
-        IsChainedConditional(false), IsWrappedConditional(false),
-        UnindentOperator(false) {}
+        AvoidBinPacking(AvoidBinPacking), BreakBeforeParameter(false),
+        NoLineBreak(NoLineBreak), NoLineBreakInOperand(false),
+        LastOperatorWrapped(true), ContainsLineBreak(false),
+        ContainsUnwrappedBuilder(false), AlignColons(true),
+        ObjCSelectorNameFound(false), HasMultipleNestedBlocks(false),
+        NestedBlockInlined(false), IsInsideObjCArrayLiteral(false),
+        IsCSharpGenericTypeConstraint(false), IsChainedConditional(false),
+        IsWrappedConditional(false), UnindentOperator(false) {}
 
-  /// The token opening this parenthesis level, or nullptr if this level is
-  /// opened by fake parenthesis.
+  /// \brief The token opening this parenthesis level, or nullptr if this level
+  /// is opened by fake parenthesis.
   ///
   /// Not considered for memoization as it will always have the same value at
   /// the same token.
@@ -281,9 +285,6 @@ struct ParenState {
   /// was a newline after the beginning left paren.
   bool BreakBeforeClosingParen : 1;
 
-  /// Whether a newline needs to be inserted before a closing angle `>`.
-  bool BreakBeforeClosingAngle : 1;
-
   /// Avoid bin packing, i.e. multiple parameters/elements on multiple
   /// lines, in this context.
   bool AvoidBinPacking : 1;
@@ -344,15 +345,16 @@ struct ParenState {
 
   bool IsCSharpGenericTypeConstraint : 1;
 
-  /// true if the current \c ParenState represents the false branch of a chained
-  /// conditional expression (e.g. else-if)
+  /// \brief true if the current \c ParenState represents the false branch of
+  /// a chained conditional expression (e.g. else-if)
   bool IsChainedConditional : 1;
 
-  /// true if there conditionnal was wrapped on the first operator (the question
-  /// mark)
+  /// \brief true if there conditionnal was wrapped on the first operator (the
+  /// question mark)
   bool IsWrappedConditional : 1;
 
-  /// Indicates the indent should be reduced by the length of the operator.
+  /// \brief Indicates the indent should be reduced by the length of the
+  /// operator.
   bool UnindentOperator : 1;
 
   bool operator<(const ParenState &Other) const {
@@ -370,8 +372,6 @@ struct ParenState {
       return BreakBeforeClosingBrace;
     if (BreakBeforeClosingParen != Other.BreakBeforeClosingParen)
       return BreakBeforeClosingParen;
-    if (BreakBeforeClosingAngle != Other.BreakBeforeClosingAngle)
-      return BreakBeforeClosingAngle;
     if (QuestionColumn != Other.QuestionColumn)
       return QuestionColumn < Other.QuestionColumn;
     if (AvoidBinPacking != Other.AvoidBinPacking)

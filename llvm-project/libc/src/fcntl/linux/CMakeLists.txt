@@ -5,19 +5,7 @@ add_entrypoint_object(
   HDRS
     ../creat.h
   DEPENDS
-    libc.hdr.fcntl_macros
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
-)
-
-add_entrypoint_object(
-  fcntl
-  SRCS
-    fcntl.cpp
-  HDRS
-    ../fcntl.h
-  DEPENDS
-    libc.hdr.fcntl_macros
+    libc.include.fcntl
     libc.src.__support.OSUtil.osutil
     libc.src.errno.errno
 )
@@ -29,8 +17,7 @@ add_entrypoint_object(
   HDRS
     ../open.h
   DEPENDS
-    libc.hdr.types.mode_t
-    libc.hdr.fcntl_macros
+    libc.include.fcntl
     libc.src.__support.OSUtil.osutil
     libc.src.errno.errno
 )
@@ -42,7 +29,7 @@ add_entrypoint_object(
   HDRS
     ../openat.h
   DEPENDS
-    libc.hdr.types.mode_t
+    libc.include.fcntl
     libc.src.__support.OSUtil.osutil
     libc.src.errno.errno
 )

@@ -15,6 +15,7 @@
 #include "Targets/RuntimeDyldCOFFI386.h"
 #include "Targets/RuntimeDyldCOFFThumb.h"
 #include "Targets/RuntimeDyldCOFFX86_64.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/TargetParser/Triple.h"
@@ -86,17 +87,17 @@ uint64_t RuntimeDyldCOFF::getDLLImportOffset(unsigned SectionID, StubMap &Stubs,
          "Not a DLLImport symbol?");
   RelocationValueRef Reloc;
   Reloc.SymbolName = Name.data();
-  auto [It, Inserted] = Stubs.try_emplace(Reloc);
-  if (!Inserted) {
-    LLVM_DEBUG(dbgs() << format("{0:x8}", It->second) << "\n");
-    return It->second;
+  auto I = Stubs.find(Reloc);
+  if (I != Stubs.end()) {
+    LLVM_DEBUG(dbgs() << format("{0:x8}", I->second) << "\n");
+    return I->second;
   }
 
   assert(SectionID < Sections.size() && "SectionID out of range");
   auto &Sec = Sections[SectionID];
   auto EntryOffset = alignTo(Sec.getStubOffset(), PointerSize);
   Sec.advanceStubOffset(EntryOffset + PointerSize - Sec.getStubOffset());
-  It->second = EntryOffset;
+  Stubs[Reloc] = EntryOffset;
 
   RelocationEntry RE(SectionID, EntryOffset, PointerReloc, 0, false,
                      Log2_64(PointerSize));
@@ -116,16 +117,6 @@ uint64_t RuntimeDyldCOFF::getDLLImportOffset(unsigned SectionID, StubMap &Stubs,
 
 bool RuntimeDyldCOFF::isCompatibleFile(const object::ObjectFile &Obj) const {
   return Obj.isCOFF();
-}
-
-bool RuntimeDyldCOFF::relocationNeedsDLLImportStub(
-    const RelocationRef &R) const {
-  object::symbol_iterator Symbol = R.getSymbol();
-  Expected<StringRef> TargetNameOrErr = Symbol->getName();
-  if (!TargetNameOrErr)
-    return false;
-
-  return TargetNameOrErr->starts_with(getImportSymbolPrefix());
 }
 
 } // namespace llvm

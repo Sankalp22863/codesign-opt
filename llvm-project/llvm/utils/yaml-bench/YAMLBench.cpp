@@ -52,9 +52,20 @@ static cl::opt<unsigned>
                   "Do not use more megabytes of memory"),
                 cl::init(1000));
 
-static cl::opt<cl::boolOrDefault>
+cl::opt<cl::boolOrDefault>
     UseColor("use-color", cl::desc("Emit colored output (default=autodetect)"),
              cl::init(cl::BOU_UNSET));
+
+struct indent {
+  unsigned distance;
+  indent(unsigned d) : distance(d) {}
+};
+
+static raw_ostream &operator <<(raw_ostream &os, const indent &in) {
+  for (unsigned i = 0; i < in.distance; ++i)
+    os << "  ";
+  return os;
+}
 
 /// Pretty print a tag by replacing tag:yaml.org,2002: with !!.
 static std::string prettyTag(yaml::Node *N) {

@@ -29,9 +29,8 @@ public:
   AppleObjCExternalASTSource(AppleObjCDeclVendor &decl_vendor)
       : m_decl_vendor(decl_vendor) {}
 
-  bool FindExternalVisibleDeclsByName(
-      const clang::DeclContext *decl_ctx, clang::DeclarationName name,
-      const clang::DeclContext *original_dc) override {
+  bool FindExternalVisibleDeclsByName(const clang::DeclContext *decl_ctx,
+                                      clang::DeclarationName name) override {
 
     Log *log(GetLog(
         LLDBLog::Expressions)); // FIXME - a more appropriate log channel?
@@ -131,14 +130,14 @@ private:
 };
 
 AppleObjCDeclVendor::AppleObjCDeclVendor(ObjCLanguageRuntime &runtime)
-    : DeclVendor(eAppleObjCDeclVendor), m_runtime(runtime),
+    : ClangDeclVendor(eAppleObjCDeclVendor), m_runtime(runtime),
       m_type_realizer_sp(m_runtime.GetEncodingToType()) {
   m_ast_ctx = std::make_shared<TypeSystemClang>(
       "AppleObjCDeclVendor AST",
       runtime.GetProcess()->GetTarget().GetArchitecture().GetTriple());
-  auto external_source_owning_ptr =
-      llvm::makeIntrusiveRefCnt<AppleObjCExternalASTSource>(*this);
-  m_external_source = external_source_owning_ptr.get();
+  m_external_source = new AppleObjCExternalASTSource(*this);
+  llvm::IntrusiveRefCntPtr<clang::ExternalASTSource> external_source_owning_ptr(
+      m_external_source);
   m_ast_ctx->getASTContext().setExternalSource(external_source_owning_ptr);
 }
 
@@ -317,7 +316,7 @@ public:
     const bool HasRelatedResultType = false;
     const bool for_expression = true;
 
-    std::vector<const clang::IdentifierInfo *> selector_components;
+    std::vector<clang::IdentifierInfo *> selector_components;
 
     const char *name_cursor = name;
     bool is_zero_argument = true;
@@ -336,7 +335,7 @@ public:
       }
     }
 
-    const clang::IdentifierInfo **identifier_infos = selector_components.data();
+    clang::IdentifierInfo **identifier_infos = selector_components.data();
     if (!identifier_infos) {
       return nullptr;
     }
@@ -399,9 +398,9 @@ bool AppleObjCDeclVendor::FinishDecl(clang::ObjCInterfaceDecl *interface_decl) {
   Log *log(
       GetLog(LLDBLog::Expressions)); // FIXME - a more appropriate log channel?
 
+  ClangASTMetadata *metadata = m_ast_ctx->GetMetadata(interface_decl);
   ObjCLanguageRuntime::ObjCISA objc_isa = 0;
-  if (std::optional<ClangASTMetadata> metadata =
-          m_ast_ctx->GetMetadata(interface_decl))
+  if (metadata)
     objc_isa = metadata->GetISAPtr();
 
   if (!objc_isa)
@@ -537,75 +536,83 @@ uint32_t AppleObjCDeclVendor::FindDecls(ConstString name, bool append,
   if (!append)
     decls.clear();
 
-  // See if the type is already in our ASTContext.
+  uint32_t ret = 0;
 
-  clang::ASTContext &ast_ctx = m_ast_ctx->getASTContext();
+  do {
+    // See if the type is already in our ASTContext.
 
-  clang::IdentifierInfo &identifier_info =
-      ast_ctx.Idents.get(name.GetStringRef());
-  clang::DeclarationName decl_name =
-      ast_ctx.DeclarationNames.getIdentifier(&identifier_info);
+    clang::ASTContext &ast_ctx = m_ast_ctx->getASTContext();
 
-  clang::DeclContext::lookup_result lookup_result =
-      ast_ctx.getTranslationUnitDecl()->lookup(decl_name);
+    clang::IdentifierInfo &identifier_info =
+        ast_ctx.Idents.get(name.GetStringRef());
+    clang::DeclarationName decl_name =
+        ast_ctx.DeclarationNames.getIdentifier(&identifier_info);
 
-  if (!lookup_result.empty()) {
-    if (clang::ObjCInterfaceDecl *result_iface_decl =
-            llvm::dyn_cast<clang::ObjCInterfaceDecl>(*lookup_result.begin())) {
-      if (log) {
-        clang::QualType result_iface_type =
-            ast_ctx.getObjCInterfaceType(result_iface_decl);
+    clang::DeclContext::lookup_result lookup_result =
+        ast_ctx.getTranslationUnitDecl()->lookup(decl_name);
 
-        uint64_t isa_value = LLDB_INVALID_ADDRESS;
-        if (std::optional<ClangASTMetadata> metadata =
-                m_ast_ctx->GetMetadata(result_iface_decl))
-          isa_value = metadata->GetISAPtr();
+    if (!lookup_result.empty()) {
+      if (clang::ObjCInterfaceDecl *result_iface_decl =
+             llvm::dyn_cast<clang::ObjCInterfaceDecl>(*lookup_result.begin())) {
+        if (log) {
+          clang::QualType result_iface_type =
+              ast_ctx.getObjCInterfaceType(result_iface_decl);
 
-        LLDB_LOGF(log,
-                  "AOCTV::FT Found %s (isa 0x%" PRIx64 ") in the ASTContext",
-                  result_iface_type.getAsString().data(), isa_value);
+          uint64_t isa_value = LLDB_INVALID_ADDRESS;
+          ClangASTMetadata *metadata = m_ast_ctx->GetMetadata(result_iface_decl);
+          if (metadata)
+            isa_value = metadata->GetISAPtr();
+
+          LLDB_LOGF(log,
+                    "AOCTV::FT Found %s (isa 0x%" PRIx64 ") in the ASTContext",
+                    result_iface_type.getAsString().data(), isa_value);
+        }
+
+        decls.push_back(m_ast_ctx->GetCompilerDecl(result_iface_decl));
+        ret++;
+        break;
+      } else {
+        LLDB_LOGF(log, "AOCTV::FT There's something in the ASTContext, but "
+                       "it's not something we know about");
+        break;
       }
-
-      decls.push_back(m_ast_ctx->GetCompilerDecl(result_iface_decl));
-      return 1;
+    } else if (log) {
+      LLDB_LOGF(log, "AOCTV::FT Couldn't find %s in the ASTContext",
+                name.AsCString());
     }
 
-    LLDB_LOGF(log, "AOCTV::FT There's something in the ASTContext, but "
-                   "it's not something we know about");
-    return 0;
-  }
+    // It's not.  If it exists, we have to put it into our ASTContext.
 
-  LLDB_LOGF(log, "AOCTV::FT Couldn't find %s in the ASTContext",
-            name.AsCString());
+    ObjCLanguageRuntime::ObjCISA isa = m_runtime.GetISA(name);
 
-  // It's not.  If it exists, we have to put it into our ASTContext.
+    if (!isa) {
+      LLDB_LOGF(log, "AOCTV::FT Couldn't find the isa");
 
-  ObjCLanguageRuntime::ObjCISA isa = m_runtime.GetISA(name);
+      break;
+    }
 
-  if (!isa) {
-    LLDB_LOGF(log, "AOCTV::FT Couldn't find the isa");
+    clang::ObjCInterfaceDecl *iface_decl = GetDeclForISA(isa);
 
-    return 0;
-  }
+    if (!iface_decl) {
+      LLDB_LOGF(log,
+                "AOCTV::FT Couldn't get the Objective-C interface for "
+                "isa 0x%" PRIx64,
+                (uint64_t)isa);
 
-  clang::ObjCInterfaceDecl *iface_decl = GetDeclForISA(isa);
+      break;
+    }
 
-  if (!iface_decl) {
-    LLDB_LOGF(log,
-              "AOCTV::FT Couldn't get the Objective-C interface for "
-              "isa 0x%" PRIx64,
-              (uint64_t)isa);
+    if (log) {
+      clang::QualType new_iface_type = ast_ctx.getObjCInterfaceType(iface_decl);
 
-    return 0;
-  }
+      LLDB_LOG(log, "AOCTV::FT Created {1} (isa 0x{2:x})",
+               new_iface_type.getAsString(), (uint64_t)isa);
+    }
 
-  if (log) {
-    clang::QualType new_iface_type = ast_ctx.getObjCInterfaceType(iface_decl);
+    decls.push_back(m_ast_ctx->GetCompilerDecl(iface_decl));
+    ret++;
+    break;
+  } while (false);
 
-    LLDB_LOG(log, "AOCTV::FT Created {0} (isa 0x{1:x})",
-             new_iface_type.getAsString(), (uint64_t)isa);
-  }
-
-  decls.push_back(m_ast_ctx->GetCompilerDecl(iface_decl));
-  return 1;
+  return ret;
 }

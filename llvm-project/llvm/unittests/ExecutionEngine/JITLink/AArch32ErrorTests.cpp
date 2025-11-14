@@ -6,11 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ExecutionEngine/Orc/SymbolStringPool.h"
-#include "llvm/TargetParser/Triple.h"
+#include <llvm/ExecutionEngine/JITLink/aarch32.h>
+
 #include "llvm/Testing/Support/Error.h"
 #include "gtest/gtest.h"
-#include <llvm/ExecutionEngine/JITLink/aarch32.h>
 
 using namespace llvm;
 using namespace llvm::jitlink;
@@ -18,10 +17,10 @@ using namespace llvm::jitlink::aarch32;
 using namespace llvm::support;
 using namespace llvm::support::endian;
 
-auto G = std::make_unique<LinkGraph>(
-    "foo", std::make_shared<orc::SymbolStringPool>(),
-    Triple("armv7-linux-gnueabi"), SubtargetFeatures(),
-    aarch32::getEdgeKindName);
+constexpr unsigned PointerSize = 4;
+auto G = std::make_unique<LinkGraph>("foo", Triple("armv7-linux-gnueabi"),
+                                     PointerSize, endianness::little,
+                                     aarch32::getEdgeKindName);
 auto &Sec =
     G->createSection("__data", orc::MemProt::Read | orc::MemProt::Write);
 
@@ -47,10 +46,9 @@ public:
   static void SetUpTestCase() {}
 
   void SetUp() override {
-    G = std::make_unique<LinkGraph>(
-        "foo", std::make_shared<orc::SymbolStringPool>(),
-        Triple("armv7-linux-gnueabi"), SubtargetFeatures(),
-        aarch32::getEdgeKindName);
+    G = std::make_unique<LinkGraph>("foo", Triple("armv7-linux-gnueabi"),
+                                    PointerSize, endianness::little,
+                                    aarch32::getEdgeKindName);
     S = &G->createSection("__data", orc::MemProt::Read | orc::MemProt::Write);
   }
 
@@ -78,7 +76,7 @@ protected:
   Symbol &createSymbolWithDistance(Block &Origin, uint64_t Dist) {
     uint64_t TargetAddr = Origin.getAddress().getValue() + Dist;
     return G->addAnonymousSymbol(createBlock(Zeros, TargetAddr), 0 /*Offset*/,
-                                 G->getPointerSize(), false, false);
+                                 PointerSize, false, false);
   };
 
   template <endianness Endian> void write(uint8_t *Mem, HalfWords Data) {
@@ -149,8 +147,8 @@ TEST_F(AArch32Errors, applyFixupDataGeneric) {
   Block &TargetBlock = createBlock(Zeros, 0x2000);
 
   constexpr uint64_t OffsetInTarget = 0;
-  Symbol &TargetSymbol = G->addAnonymousSymbol(
-      TargetBlock, OffsetInTarget, G->getPointerSize(), false, false);
+  Symbol &TargetSymbol = G->addAnonymousSymbol(TargetBlock, OffsetInTarget,
+                                               PointerSize, false, false);
 
   constexpr uint64_t OffsetInOrigin = 0;
   Edge::Kind Invalid = Edge::GenericEdgeKind::Invalid;

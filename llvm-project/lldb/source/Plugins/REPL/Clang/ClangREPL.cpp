@@ -51,7 +51,7 @@ lldb::REPLSP ClangREPL::CreateInstance(Status &error,
                                        const char *repl_options) {
   // Creating a dummy target if only a debugger is given isn't implemented yet.
   if (!target) {
-    error = Status::FromErrorString("must have a target to create a REPL");
+    error.SetErrorString("must have a target to create a REPL");
     return nullptr;
   }
   lldb::REPLSP result = std::make_shared<ClangREPL>(language, *target);
@@ -95,9 +95,7 @@ bool ClangREPL::PrintOneVariable(Debugger &debugger,
     if (m_implicit_expr_result_regex.Execute(var->GetName().GetStringRef()))
       return true;
   }
-  if (llvm::Error error = valobj_sp->Dump(*output_sp))
-    *output_sp << "error: " << toString(std::move(error));
-
+  valobj_sp->Dump(*output_sp);
   return true;
 }
 

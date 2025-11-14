@@ -1,5 +1,3 @@
-set_property(DIRECTORY PROPERTY LLDB_PLUGIN_KIND ObjectFile)
-
 add_subdirectory(Breakpad)
 add_subdirectory(COFF)
 add_subdirectory(ELF)
@@ -8,6 +6,5 @@ add_subdirectory(Mach-O)
 add_subdirectory(Minidump)
 add_subdirectory(PDB)
 add_subdirectory(PECOFF)
-add_subdirectory(XCOFF)
 add_subdirectory(Placeholder)
 add_subdirectory(wasm)

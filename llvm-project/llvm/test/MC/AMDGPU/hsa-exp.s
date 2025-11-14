@@ -13,6 +13,9 @@
 // ELF: Section: .text
 // ELF: }
 
+.text
+// ASM: .text
+
 .amdgcn_target "amdgcn-unknown-amdhsa--gfx700"
 // ASM: .amdgcn_target "amdgcn-unknown-amdhsa--gfx700"
 

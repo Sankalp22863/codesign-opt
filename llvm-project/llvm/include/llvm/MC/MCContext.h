@@ -19,17 +19,13 @@
 #include "llvm/BinaryFormat/XCOFF.h"
 #include "llvm/MC/MCAsmMacro.h"
 #include "llvm/MC/MCDwarf.h"
-#include "llvm/MC/MCGOFFAttributes.h"
 #include "llvm/MC/MCPseudoProbe.h"
 #include "llvm/MC/MCSection.h"
-#include "llvm/MC/MCSectionGOFF.h"
-#include "llvm/MC/MCSymbolTableEntry.h"
 #include "llvm/MC/SectionKind.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MD5.h"
-#include "llvm/Support/StringSaver.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
@@ -55,6 +51,7 @@ class MCSection;
 class MCSectionCOFF;
 class MCSectionDXContainer;
 class MCSectionELF;
+class MCSectionGOFF;
 class MCSectionMachO;
 class MCSectionSPIRV;
 class MCSectionWasm;
@@ -73,16 +70,12 @@ class SMLoc;
 class SourceMgr;
 enum class EmitDwarfUnwindType;
 
-namespace wasm {
-struct WasmSignature;
-}
-
 /// Context object for machine code objects.  This class owns all of the
 /// sections that it creates.
 ///
 class MCContext {
 public:
-  using SymbolTable = StringMap<MCSymbolTableValue, BumpPtrAllocator &>;
+  using SymbolTable = StringMap<MCSymbol *, BumpPtrAllocator &>;
   using DiagHandlerTy =
       std::function<void(const SMDiagnostic &, bool, const SourceMgr &,
                          std::vector<const MDNode *> &)>;
@@ -136,9 +129,6 @@ private:
   /// objects.
   BumpPtrAllocator Allocator;
 
-  /// For MCFragment instances.
-  BumpPtrAllocator FragmentAllocator;
-
   SpecificBumpPtrAllocator<MCSectionCOFF> COFFAllocator;
   SpecificBumpPtrAllocator<MCSectionDXContainer> DXCAllocator;
   SpecificBumpPtrAllocator<MCSectionELF> ELFAllocator;
@@ -149,9 +139,7 @@ private:
   SpecificBumpPtrAllocator<MCSectionXCOFF> XCOFFAllocator;
   SpecificBumpPtrAllocator<MCInst> MCInstAllocator;
 
-  SpecificBumpPtrAllocator<wasm::WasmSignature> WasmSignatureAllocator;
-
-  /// Bindings of names to symbol table values.
+  /// Bindings of names to symbols.
   SymbolTable Symbols;
 
   /// A mapping from a local label number and an instance count to a symbol.
@@ -162,8 +150,18 @@ private:
   /// We have three labels represented by the pairs (1, 0), (2, 0) and (1, 1)
   DenseMap<std::pair<unsigned, unsigned>, MCSymbol *> LocalSymbols;
 
+  /// Keeps tracks of names that were used both for used declared and
+  /// artificial symbols. The value is "true" if the name has been used for a
+  /// non-section symbol (there can be at most one of those, plus an unlimited
+  /// number of section symbols with the same name).
+  StringMap<bool, BumpPtrAllocator &> UsedNames;
+
   /// Keeps track of labels that are used in inline assembly.
-  StringMap<MCSymbol *, BumpPtrAllocator &> InlineAsmUsedLabelNames;
+  SymbolTable InlineAsmUsedLabelNames;
+
+  /// The next ID to dole out to an unnamed assembler temporary symbol with
+  /// a given prefix.
+  StringMap<unsigned> NextID;
 
   /// Instances of directional local labels.
   DenseMap<unsigned, MCLabel *> Instances;
@@ -174,8 +172,8 @@ private:
   /// for the LocalLabelVal and adds it to the map if needed.
   unsigned GetInstance(unsigned LocalLabelVal);
 
-  /// SHT_LLVM_BB_ADDR_MAP version to emit.
-  uint8_t BBAddrMapVersion = 4;
+  /// LLVM_BB_ADDR_MAP version to emit.
+  uint8_t BBAddrMapVersion = 2;
 
   /// The file name of the log file from the environment variable
   /// AS_SECURE_LOG_FILE.  Which must be set before the .secure_log_unique
@@ -238,7 +236,7 @@ private:
   /// Honor temporary labels, this is useful for debugging semantic
   /// differences between temporary and non-temporary labels (primarily on
   /// Darwin).
-  bool SaveTempLabels = false;
+  bool AllowTemporaryLabels = true;
   bool UseNamesOnTempLabels = false;
 
   /// The Compile Unit ID that we are currently processing.
@@ -246,6 +244,31 @@ private:
 
   /// A collection of MCPseudoProbe in the current module
   MCPseudoProbeTable PseudoProbeTable;
+
+  // Sections are differentiated by the quadruple (section_name, group_name,
+  // unique_id, link_to_symbol_name). Sections sharing the same quadruple are
+  // combined into one section.
+  struct ELFSectionKey {
+    std::string SectionName;
+    StringRef GroupName;
+    StringRef LinkedToName;
+    unsigned UniqueID;
+
+    ELFSectionKey(StringRef SectionName, StringRef GroupName,
+                  StringRef LinkedToName, unsigned UniqueID)
+        : SectionName(SectionName), GroupName(GroupName),
+          LinkedToName(LinkedToName), UniqueID(UniqueID) {}
+
+    bool operator<(const ELFSectionKey &Other) const {
+      if (SectionName != Other.SectionName)
+        return SectionName < Other.SectionName;
+      if (GroupName != Other.GroupName)
+        return GroupName < Other.GroupName;
+      if (int O = LinkedToName.compare(Other.LinkedToName))
+        return O < 0;
+      return UniqueID < Other.UniqueID;
+    }
+  };
 
   struct COFFSectionKey {
     std::string SectionName;
@@ -259,9 +282,13 @@ private:
           SelectionKey(SelectionKey), UniqueID(UniqueID) {}
 
     bool operator<(const COFFSectionKey &Other) const {
-      return std::tie(SectionName, GroupName, SelectionKey, UniqueID) <
-             std::tie(Other.SectionName, Other.GroupName, Other.SelectionKey,
-                      Other.UniqueID);
+      if (SectionName != Other.SectionName)
+        return SectionName < Other.SectionName;
+      if (GroupName != Other.GroupName)
+        return GroupName < Other.GroupName;
+      if (SelectionKey != Other.SelectionKey)
+        return SelectionKey < Other.SelectionKey;
+      return UniqueID < Other.UniqueID;
     }
   };
 
@@ -275,8 +302,11 @@ private:
         : SectionName(SectionName), GroupName(GroupName), UniqueID(UniqueID) {}
 
     bool operator<(const WasmSectionKey &Other) const {
-      return std::tie(SectionName, GroupName, UniqueID) <
-             std::tie(Other.SectionName, Other.GroupName, Other.UniqueID);
+      if (SectionName != Other.SectionName)
+        return SectionName < Other.SectionName;
+      if (GroupName != Other.GroupName)
+        return GroupName < Other.GroupName;
+      return UniqueID < Other.UniqueID;
     }
   };
 
@@ -313,8 +343,8 @@ private:
   };
 
   StringMap<MCSectionMachO *> MachOUniquingMap;
+  std::map<ELFSectionKey, MCSectionELF *> ELFUniquingMap;
   std::map<COFFSectionKey, MCSectionCOFF *> COFFUniquingMap;
-  StringMap<MCSectionELF *> ELFUniquingMap;
   std::map<std::string, MCSectionGOFF *> GOFFUniquingMap;
   std::map<WasmSectionKey, MCSectionWasm *> WasmUniquingMap;
   std::map<XCOFFSectionKey, MCSectionXCOFF *> XCOFFUniquingMap;
@@ -333,42 +363,50 @@ private:
   void reportCommon(SMLoc Loc,
                     std::function<void(SMDiagnostic &, const SourceMgr *)>);
 
-  MCSymbolTableEntry &getSymbolTableEntry(StringRef Name);
-
-  MCSymbol *createSymbolImpl(const MCSymbolTableEntry *Name, bool IsTemporary);
-  MCSymbol *createRenamableSymbol(const Twine &Name, bool AlwaysAddSuffix,
-                                  bool IsTemporary);
+  MCSymbol *createSymbolImpl(const StringMapEntry<bool> *Name,
+                             bool CanBeUnnamed);
+  MCSymbol *createSymbol(StringRef Name, bool AlwaysAddSuffix,
+                         bool IsTemporary);
 
   MCSymbol *getOrCreateDirectionalLocalSymbol(unsigned LocalLabelVal,
                                               unsigned Instance);
 
-  template <typename Symbol>
-  Symbol *getOrCreateSectionSymbol(StringRef Section);
-
   MCSectionELF *createELFSectionImpl(StringRef Section, unsigned Type,
-                                     unsigned Flags, unsigned EntrySize,
+                                     unsigned Flags, SectionKind K,
+                                     unsigned EntrySize,
                                      const MCSymbolELF *Group, bool IsComdat,
                                      unsigned UniqueID,
                                      const MCSymbolELF *LinkedToSym);
 
-  MCSymbolXCOFF *createXCOFFSymbolImpl(const MCSymbolTableEntry *Name,
+  MCSymbolXCOFF *createXCOFFSymbolImpl(const StringMapEntry<bool> *Name,
                                        bool IsTemporary);
-
-  template <typename TAttr>
-  MCSectionGOFF *getGOFFSection(SectionKind Kind, StringRef Name,
-                                TAttr SDAttributes, MCSection *Parent,
-                                bool IsVirtual);
 
   /// Map of currently defined macros.
   StringMap<MCAsmMacro> MacroMap;
+
+  struct ELFEntrySizeKey {
+    std::string SectionName;
+    unsigned Flags;
+    unsigned EntrySize;
+
+    ELFEntrySizeKey(StringRef SectionName, unsigned Flags, unsigned EntrySize)
+        : SectionName(SectionName), Flags(Flags), EntrySize(EntrySize) {}
+
+    bool operator<(const ELFEntrySizeKey &Other) const {
+      if (SectionName != Other.SectionName)
+        return SectionName < Other.SectionName;
+      if (Flags != Other.Flags)
+        return Flags < Other.Flags;
+      return EntrySize < Other.EntrySize;
+    }
+  };
 
   // Symbols must be assigned to a section with a compatible entry size and
   // flags. This map is used to assign unique IDs to sections to distinguish
   // between sections with identical names but incompatible entry sizes and/or
   // flags. This can occur when a symbol is explicitly assigned to a section,
-  // e.g. via __attribute__((section("myname"))). The map key is the tuple
-  // (section name, flags, entry size).
-  DenseMap<std::tuple<StringRef, unsigned, unsigned>, unsigned> ELFEntrySizeMap;
+  // e.g. via __attribute__((section("myname"))).
+  std::map<ELFEntrySizeKey, unsigned> ELFEntrySizeMap;
 
   // This set is used to record the generic mergeable section names seen.
   // These are sections that are created as mergeable e.g. .debug_str. We need
@@ -378,21 +416,17 @@ private:
   DenseSet<StringRef> ELFSeenGenericMergeableSections;
 
 public:
-  LLVM_ABI explicit MCContext(const Triple &TheTriple, const MCAsmInfo *MAI,
-                              const MCRegisterInfo *MRI,
-                              const MCSubtargetInfo *MSTI,
-                              const SourceMgr *Mgr = nullptr,
-                              MCTargetOptions const *TargetOpts = nullptr,
-                              bool DoAutoReset = true,
-                              StringRef Swift5ReflSegmentName = {});
+  explicit MCContext(const Triple &TheTriple, const MCAsmInfo *MAI,
+                     const MCRegisterInfo *MRI, const MCSubtargetInfo *MSTI,
+                     const SourceMgr *Mgr = nullptr,
+                     MCTargetOptions const *TargetOpts = nullptr,
+                     bool DoAutoReset = true,
+                     StringRef Swift5ReflSegmentName = {});
   MCContext(const MCContext &) = delete;
   MCContext &operator=(const MCContext &) = delete;
-  LLVM_ABI ~MCContext();
+  ~MCContext();
 
   Environment getObjectFileType() const { return Env; }
-  bool isELF() const { return Env == IsELF; }
-  bool isMachO() const { return Env == IsMachO; }
-  bool isXCOFF() const { return Env == IsXCOFF; }
 
   const StringRef &getSwift5ReflectionSegmentName() const {
     return Swift5ReflectionSegmentName;
@@ -400,7 +434,7 @@ public:
   const Triple &getTargetTriple() const { return TT; }
   const SourceMgr *getSourceManager() const { return SrcMgr; }
 
-  LLVM_ABI void initInlineSourceManager();
+  void initInlineSourceManager();
   SourceMgr *getInlineSourceManager() { return InlineSrcMgr.get(); }
   std::vector<const MDNode *> &getLocInfos() { return LocInfos; }
   void setDiagnosticHandler(DiagHandlerTy DiagHandler) {
@@ -417,10 +451,9 @@ public:
 
   const MCSubtargetInfo *getSubtargetInfo() const { return MSTI; }
 
-  const MCTargetOptions *getTargetOptions() const { return TargetOptions; }
+  CodeViewContext &getCVContext();
 
-  LLVM_ABI CodeViewContext &getCVContext();
-
+  void setAllowTemporaryLabels(bool Value) { AllowTemporaryLabels = Value; }
   void setUseNamesOnTempLabels(bool Value) { UseNamesOnTempLabels = Value; }
 
   /// \name Module Lifetime Management
@@ -428,14 +461,14 @@ public:
 
   /// reset - return object to right after construction state to prepare
   /// to process a new module
-  LLVM_ABI void reset();
+  void reset();
 
   /// @}
 
   /// \name McInst Management
 
   /// Create and return a new MC instruction.
-  LLVM_ABI MCInst *createMCInst();
+  MCInst *createMCInst();
 
   /// \name Symbol Management
   /// @{
@@ -443,73 +476,49 @@ public:
   /// Create a new linker temporary symbol with the specified prefix (Name) or
   /// "tmp". This creates a "l"-prefixed symbol for Mach-O and is identical to
   /// createNamedTempSymbol for other object file formats.
-  LLVM_ABI MCSymbol *createLinkerPrivateTempSymbol();
-  LLVM_ABI MCSymbol *createLinkerPrivateSymbol(const Twine &Name);
+  MCSymbol *createLinkerPrivateTempSymbol();
+  MCSymbol *createLinkerPrivateSymbol(const Twine &Name);
 
   /// Create a temporary symbol with a unique name. The name will be omitted
   /// in the symbol table if UseNamesOnTempLabels is false (default except
   /// MCAsmStreamer). The overload without Name uses an unspecified name.
-  LLVM_ABI MCSymbol *createTempSymbol();
-  LLVM_ABI MCSymbol *createTempSymbol(const Twine &Name,
-                                      bool AlwaysAddSuffix = true);
+  MCSymbol *createTempSymbol();
+  MCSymbol *createTempSymbol(const Twine &Name, bool AlwaysAddSuffix = true);
 
   /// Create a temporary symbol with a unique name whose name cannot be
   /// omitted in the symbol table. This is rarely used.
-  LLVM_ABI MCSymbol *createNamedTempSymbol();
-  LLVM_ABI MCSymbol *createNamedTempSymbol(const Twine &Name);
-
-  /// Get or create a symbol for a basic block. For non-always-emit symbols,
-  /// this behaves like createTempSymbol, except that it uses the
-  /// PrivateLabelPrefix instead of the PrivateGlobalPrefix. When AlwaysEmit is
-  /// true, behaves like getOrCreateSymbol, prefixed with PrivateLabelPrefix.
-  LLVM_ABI MCSymbol *createBlockSymbol(const Twine &Name,
-                                       bool AlwaysEmit = false);
-
-  /// Create a local, non-temporary symbol like an ELF mapping symbol. Calling
-  /// the function with the same name will generate new, unique instances.
-  LLVM_ABI MCSymbol *createLocalSymbol(StringRef Name);
+  MCSymbol *createNamedTempSymbol();
+  MCSymbol *createNamedTempSymbol(const Twine &Name);
 
   /// Create the definition of a directional local symbol for numbered label
   /// (used for "1:" definitions).
-  LLVM_ABI MCSymbol *createDirectionalLocalSymbol(unsigned LocalLabelVal);
+  MCSymbol *createDirectionalLocalSymbol(unsigned LocalLabelVal);
 
   /// Create and return a directional local symbol for numbered label (used
   /// for "1b" or 1f" references).
-  LLVM_ABI MCSymbol *getDirectionalLocalSymbol(unsigned LocalLabelVal,
-                                               bool Before);
+  MCSymbol *getDirectionalLocalSymbol(unsigned LocalLabelVal, bool Before);
 
   /// Lookup the symbol inside with the specified \p Name.  If it exists,
   /// return it.  If not, create a forward reference and return it.
   ///
   /// \param Name - The symbol name, which must be unique across all symbols.
-  LLVM_ABI MCSymbol *getOrCreateSymbol(const Twine &Name);
-
-  /// Variant of getOrCreateSymbol that handles backslash-escaped symbols.
-  /// For example, parse "a\"b\\" as a"\.
-  LLVM_ABI MCSymbol *parseSymbol(const Twine &Name);
+  MCSymbol *getOrCreateSymbol(const Twine &Name);
 
   /// Gets a symbol that will be defined to the final stack offset of a local
   /// variable after codegen.
   ///
   /// \param Idx - The index of a local variable passed to \@llvm.localescape.
-  LLVM_ABI MCSymbol *getOrCreateFrameAllocSymbol(const Twine &FuncName,
-                                                 unsigned Idx);
+  MCSymbol *getOrCreateFrameAllocSymbol(const Twine &FuncName, unsigned Idx);
 
-  LLVM_ABI MCSymbol *getOrCreateParentFrameOffsetSymbol(const Twine &FuncName);
+  MCSymbol *getOrCreateParentFrameOffsetSymbol(const Twine &FuncName);
 
-  LLVM_ABI MCSymbol *getOrCreateLSDASymbol(const Twine &FuncName);
+  MCSymbol *getOrCreateLSDASymbol(const Twine &FuncName);
 
   /// Get the symbol for \p Name, or null.
-  LLVM_ABI MCSymbol *lookupSymbol(const Twine &Name) const;
-
-  /// Clone a symbol for the .set directive, replacing it in the symbol table.
-  /// Existing references to the original symbol remain unchanged, and the
-  /// original symbol is not emitted to the symbol table.
-  LLVM_ABI MCSymbol *cloneSymbol(MCSymbol &Sym);
+  MCSymbol *lookupSymbol(const Twine &Name) const;
 
   /// Set value for a symbol.
-  LLVM_ABI void setSymbolValue(MCStreamer &Streamer, const Twine &Sym,
-                               uint64_t Val);
+  void setSymbolValue(MCStreamer &Streamer, const Twine &Sym, uint64_t Val);
 
   /// getSymbols - Get a reference for the symbol table for clients that
   /// want to, for example, iterate over all symbols. 'const' because we
@@ -525,23 +534,26 @@ public:
 
   /// registerInlineAsmLabel - Records that the name is a label referenced in
   /// inline assembly.
-  LLVM_ABI void registerInlineAsmLabel(MCSymbol *Sym);
-
-  /// Allocates and returns a new `WasmSignature` instance (with empty parameter
-  /// and return type lists).
-  LLVM_ABI wasm::WasmSignature *createWasmSignature();
+  void registerInlineAsmLabel(MCSymbol *Sym);
 
   /// @}
 
   /// \name Section Management
   /// @{
 
+  enum : unsigned {
+    /// Pass this value as the UniqueID during section creation to get the
+    /// generic section with the given name and characteristics. The usual
+    /// sections such as .text use this ID.
+    GenericSectionID = ~0U
+  };
+
   /// Return the MCSection for the specified mach-o section.  This requires
   /// the operands to be valid.
-  LLVM_ABI MCSectionMachO *getMachOSection(StringRef Segment, StringRef Section,
-                                           unsigned TypeAndAttributes,
-                                           unsigned Reserved2, SectionKind K,
-                                           const char *BeginSymName = nullptr);
+  MCSectionMachO *getMachOSection(StringRef Segment, StringRef Section,
+                                  unsigned TypeAndAttributes,
+                                  unsigned Reserved2, SectionKind K,
+                                  const char *BeginSymName = nullptr);
 
   MCSectionMachO *getMachOSection(StringRef Segment, StringRef Section,
                                   unsigned TypeAndAttributes, SectionKind K,
@@ -568,106 +580,108 @@ public:
                          MCSection::NonUniqueID, nullptr);
   }
 
-  LLVM_ABI MCSectionELF *getELFSection(const Twine &Section, unsigned Type,
-                                       unsigned Flags, unsigned EntrySize,
-                                       const Twine &Group, bool IsComdat,
-                                       unsigned UniqueID,
-                                       const MCSymbolELF *LinkedToSym);
+  MCSectionELF *getELFSection(const Twine &Section, unsigned Type,
+                              unsigned Flags, unsigned EntrySize,
+                              const Twine &Group, bool IsComdat,
+                              unsigned UniqueID,
+                              const MCSymbolELF *LinkedToSym);
 
-  LLVM_ABI MCSectionELF *getELFSection(const Twine &Section, unsigned Type,
-                                       unsigned Flags, unsigned EntrySize,
-                                       const MCSymbolELF *Group, bool IsComdat,
-                                       unsigned UniqueID,
-                                       const MCSymbolELF *LinkedToSym);
+  MCSectionELF *getELFSection(const Twine &Section, unsigned Type,
+                              unsigned Flags, unsigned EntrySize,
+                              const MCSymbolELF *Group, bool IsComdat,
+                              unsigned UniqueID,
+                              const MCSymbolELF *LinkedToSym);
 
   /// Get a section with the provided group identifier. This section is
   /// named by concatenating \p Prefix with '.' then \p Suffix. The \p Type
   /// describes the type of the section and \p Flags are used to further
   /// configure this named section.
-  LLVM_ABI MCSectionELF *getELFNamedSection(const Twine &Prefix,
-                                            const Twine &Suffix, unsigned Type,
-                                            unsigned Flags,
-                                            unsigned EntrySize = 0);
+  MCSectionELF *getELFNamedSection(const Twine &Prefix, const Twine &Suffix,
+                                   unsigned Type, unsigned Flags,
+                                   unsigned EntrySize = 0);
 
-  LLVM_ABI MCSectionELF *
-  createELFRelSection(const Twine &Name, unsigned Type, unsigned Flags,
-                      unsigned EntrySize, const MCSymbolELF *Group,
-                      const MCSectionELF *RelInfoSection);
+  MCSectionELF *createELFRelSection(const Twine &Name, unsigned Type,
+                                    unsigned Flags, unsigned EntrySize,
+                                    const MCSymbolELF *Group,
+                                    const MCSectionELF *RelInfoSection);
 
-  LLVM_ABI MCSectionELF *createELFGroupSection(const MCSymbolELF *Group,
-                                               bool IsComdat);
+  MCSectionELF *createELFGroupSection(const MCSymbolELF *Group, bool IsComdat);
 
-  LLVM_ABI void recordELFMergeableSectionInfo(StringRef SectionName,
-                                              unsigned Flags, unsigned UniqueID,
-                                              unsigned EntrySize);
+  void recordELFMergeableSectionInfo(StringRef SectionName, unsigned Flags,
+                                     unsigned UniqueID, unsigned EntrySize);
 
-  LLVM_ABI bool isELFImplicitMergeableSectionNamePrefix(StringRef Name);
+  bool isELFImplicitMergeableSectionNamePrefix(StringRef Name);
 
-  LLVM_ABI bool isELFGenericMergeableSection(StringRef Name);
+  bool isELFGenericMergeableSection(StringRef Name);
 
   /// Return the unique ID of the section with the given name, flags and entry
   /// size, if it exists.
-  LLVM_ABI std::optional<unsigned>
-  getELFUniqueIDForEntsize(StringRef SectionName, unsigned Flags,
-                           unsigned EntrySize);
+  std::optional<unsigned> getELFUniqueIDForEntsize(StringRef SectionName,
+                                                   unsigned Flags,
+                                                   unsigned EntrySize);
 
-  LLVM_ABI MCSectionGOFF *getGOFFSection(SectionKind Kind, StringRef Name,
-                                         GOFF::SDAttr SDAttributes);
-  LLVM_ABI MCSectionGOFF *getGOFFSection(SectionKind Kind, StringRef Name,
-                                         GOFF::EDAttr EDAttributes,
-                                         MCSection *Parent);
-  LLVM_ABI MCSectionGOFF *getGOFFSection(SectionKind Kind, StringRef Name,
-                                         GOFF::PRAttr PRAttributes,
-                                         MCSection *Parent);
+  MCSectionGOFF *getGOFFSection(StringRef Section, SectionKind Kind,
+                                MCSection *Parent, const MCExpr *SubsectionId);
 
-  LLVM_ABI MCSectionCOFF *
-  getCOFFSection(StringRef Section, unsigned Characteristics,
-                 StringRef COMDATSymName, int Selection,
-                 unsigned UniqueID = MCSection::NonUniqueID);
+  MCSectionCOFF *getCOFFSection(StringRef Section, unsigned Characteristics,
+                                SectionKind Kind, StringRef COMDATSymName,
+                                int Selection,
+                                unsigned UniqueID = GenericSectionID,
+                                const char *BeginSymName = nullptr);
 
-  LLVM_ABI MCSectionCOFF *getCOFFSection(StringRef Section,
-                                         unsigned Characteristics);
+  MCSectionCOFF *getCOFFSection(StringRef Section, unsigned Characteristics,
+                                SectionKind Kind,
+                                const char *BeginSymName = nullptr);
 
   /// Gets or creates a section equivalent to Sec that is associated with the
   /// section containing KeySym. For example, to create a debug info section
   /// associated with an inline function, pass the normal debug info section
   /// as Sec and the function symbol as KeySym.
-  LLVM_ABI MCSectionCOFF *
+  MCSectionCOFF *
   getAssociativeCOFFSection(MCSectionCOFF *Sec, const MCSymbol *KeySym,
-                            unsigned UniqueID = MCSection::NonUniqueID);
+                            unsigned UniqueID = GenericSectionID);
 
-  LLVM_ABI MCSectionSPIRV *getSPIRVSection();
+  MCSectionSPIRV *getSPIRVSection();
 
   MCSectionWasm *getWasmSection(const Twine &Section, SectionKind K,
                                 unsigned Flags = 0) {
-    return getWasmSection(Section, K, Flags, "", ~0);
+    return getWasmSection(Section, K, Flags, nullptr);
   }
 
-  LLVM_ABI MCSectionWasm *getWasmSection(const Twine &Section, SectionKind K,
-                                         unsigned Flags, const Twine &Group,
-                                         unsigned UniqueID);
+  MCSectionWasm *getWasmSection(const Twine &Section, SectionKind K,
+                                unsigned Flags, const char *BeginSymName) {
+    return getWasmSection(Section, K, Flags, "", ~0, BeginSymName);
+  }
 
-  LLVM_ABI MCSectionWasm *getWasmSection(const Twine &Section, SectionKind K,
-                                         unsigned Flags,
-                                         const MCSymbolWasm *Group,
-                                         unsigned UniqueID);
+  MCSectionWasm *getWasmSection(const Twine &Section, SectionKind K,
+                                unsigned Flags, const Twine &Group,
+                                unsigned UniqueID) {
+    return getWasmSection(Section, K, Flags, Group, UniqueID, nullptr);
+  }
+
+  MCSectionWasm *getWasmSection(const Twine &Section, SectionKind K,
+                                unsigned Flags, const Twine &Group,
+                                unsigned UniqueID, const char *BeginSymName);
+
+  MCSectionWasm *getWasmSection(const Twine &Section, SectionKind K,
+                                unsigned Flags, const MCSymbolWasm *Group,
+                                unsigned UniqueID, const char *BeginSymName);
 
   /// Get the section for the provided Section name
-  LLVM_ABI MCSectionDXContainer *getDXContainerSection(StringRef Section,
-                                                       SectionKind K);
+  MCSectionDXContainer *getDXContainerSection(StringRef Section, SectionKind K);
 
-  LLVM_ABI bool hasXCOFFSection(StringRef Section,
-                                XCOFF::CsectProperties CsectProp) const;
+  bool hasXCOFFSection(StringRef Section,
+                       XCOFF::CsectProperties CsectProp) const;
 
-  LLVM_ABI MCSectionXCOFF *getXCOFFSection(
+  MCSectionXCOFF *getXCOFFSection(
       StringRef Section, SectionKind K,
       std::optional<XCOFF::CsectProperties> CsectProp = std::nullopt,
-      bool MultiSymbolsAllowed = false,
+      bool MultiSymbolsAllowed = false, const char *BeginSymName = nullptr,
       std::optional<XCOFF::DwarfSectionSubtypeFlags> DwarfSubtypeFlags =
           std::nullopt);
 
   // Create and save a copy of STI and return a reference to the copy.
-  LLVM_ABI MCSubtargetInfo &getSubtargetCopy(const MCSubtargetInfo &STI);
+  MCSubtargetInfo &getSubtargetCopy(const MCSubtargetInfo &STI);
 
   uint8_t getBBAddrMapVersion() const { return BBAddrMapVersion; }
 
@@ -685,14 +699,13 @@ public:
   void setCompilationDir(StringRef S) { CompilationDir = S.str(); }
 
   /// Add an entry to the debug prefix map.
-  LLVM_ABI void addDebugPrefixMapEntry(const std::string &From,
-                                       const std::string &To);
+  void addDebugPrefixMapEntry(const std::string &From, const std::string &To);
 
   /// Remap one path in-place as per the debug prefix map.
-  LLVM_ABI void remapDebugPath(SmallVectorImpl<char> &Path);
+  void remapDebugPath(SmallVectorImpl<char> &Path);
 
   // Remaps all debug directory paths in-place as per the debug prefix map.
-  LLVM_ABI void RemapDebugPaths();
+  void RemapDebugPaths();
 
   /// Get the main file name for use in error messages and debug
   /// info. This can be set to ensure we've got the correct file name
@@ -703,12 +716,13 @@ public:
   void setMainFileName(StringRef S) { MainFileName = std::string(S); }
 
   /// Creates an entry in the dwarf file and directory tables.
-  LLVM_ABI Expected<unsigned>
-  getDwarfFile(StringRef Directory, StringRef FileName, unsigned FileNumber,
-               std::optional<MD5::MD5Result> Checksum,
-               std::optional<StringRef> Source, unsigned CUID);
+  Expected<unsigned> getDwarfFile(StringRef Directory, StringRef FileName,
+                                  unsigned FileNumber,
+                                  std::optional<MD5::MD5Result> Checksum,
+                                  std::optional<StringRef> Source,
+                                  unsigned CUID);
 
-  LLVM_ABI bool isValidDwarfFileNumber(unsigned FileNumber, unsigned CUID = 0);
+  bool isValidDwarfFileNumber(unsigned FileNumber, unsigned CUID = 0);
 
   const std::map<unsigned, MCDwarfLineTable> &getMCDwarfLineTables() const {
     return MCDwarfLineTablesCUMap;
@@ -775,8 +789,8 @@ public:
   bool getGenDwarfForAssembly() { return GenDwarfForAssembly; }
   void setGenDwarfForAssembly(bool Value) { GenDwarfForAssembly = Value; }
   unsigned getGenDwarfFileNumber() { return GenDwarfFileNumber; }
-  LLVM_ABI EmitDwarfUnwindType emitDwarfUnwindInfo() const;
-  LLVM_ABI bool emitCompactUnwindNonCanonical() const;
+  EmitDwarfUnwindType emitDwarfUnwindInfo() const;
+  bool emitCompactUnwindNonCanonical() const;
 
   void setGenDwarfFileNumber(unsigned FileNumber) {
     GenDwarfFileNumber = FileNumber;
@@ -784,7 +798,7 @@ public:
 
   /// Specifies information about the "root file" for assembler clients
   /// (e.g., llvm-mc). Assumes compilation dir etc. have been set up.
-  LLVM_ABI void setGenDwarfRootFile(StringRef FileName, StringRef Buffer);
+  void setGenDwarfRootFile(StringRef FileName, StringRef Buffer);
 
   const SetVector<MCSection *> &getGenDwarfSectionSyms() {
     return SectionsForRanges;
@@ -794,7 +808,7 @@ public:
     return SectionsForRanges.insert(Sec);
   }
 
-  LLVM_ABI void finalizeDwarfSections(MCStreamer &MCOS);
+  void finalizeDwarfSections(MCStreamer &MCOS);
 
   const std::vector<MCGenDwarfLabelEntry> &getMCGenDwarfLabelEntries() const {
     return MCGenDwarfLabelEntries;
@@ -834,18 +848,12 @@ public:
 
   void deallocate(void *Ptr) {}
 
-  /// Allocates a copy of the given string on the allocator managed by this
-  /// context and returns the result.
-  StringRef allocateString(StringRef s) {
-    return StringSaver(Allocator).save(s);
-  }
-
   bool hadError() { return HadError; }
-  LLVM_ABI void diagnose(const SMDiagnostic &SMD);
-  LLVM_ABI void reportError(SMLoc L, const Twine &Msg);
-  LLVM_ABI void reportWarning(SMLoc L, const Twine &Msg);
+  void diagnose(const SMDiagnostic &SMD);
+  void reportError(SMLoc L, const Twine &Msg);
+  void reportWarning(SMLoc L, const Twine &Msg);
 
-  MCAsmMacro *lookupMacro(StringRef Name) {
+  const MCAsmMacro *lookupMacro(StringRef Name) {
     StringMap<MCAsmMacro>::iterator I = MacroMap.find(Name);
     return (I == MacroMap.end()) ? nullptr : &I->getValue();
   }

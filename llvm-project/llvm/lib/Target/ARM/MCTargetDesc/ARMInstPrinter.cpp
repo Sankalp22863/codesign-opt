@@ -11,9 +11,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARMInstPrinter.h"
+#include "Utils/ARMBaseInfo.h"
 #include "MCTargetDesc/ARMAddressingModes.h"
 #include "MCTargetDesc/ARMBaseInfo.h"
-#include "Utils/ARMBaseInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
@@ -23,8 +23,10 @@
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/SubtargetFeature.h"
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 
@@ -48,7 +50,7 @@ static unsigned translateShiftImm(unsigned imm) {
 }
 
 static void printRegImmShift(raw_ostream &O, ARM_AM::ShiftOpc ShOpc,
-                             unsigned ShImm, ARMInstPrinter &printer) {
+                             unsigned ShImm, const ARMInstPrinter &printer) {
   if (ShOpc == ARM_AM::no_shift || (ShOpc == ARM_AM::lsl && !ShImm))
     return;
   O << ", ";
@@ -79,7 +81,7 @@ bool ARMInstPrinter::applyTargetSpecificCLOption(StringRef Opt) {
   return false;
 }
 
-void ARMInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) {
+void ARMInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) const {
   markup(OS, Markup::Register) << getRegisterName(Reg, DefaultAltIdx);
 }
 
@@ -89,38 +91,6 @@ void ARMInstPrinter::printInst(const MCInst *MI, uint64_t Address,
   unsigned Opcode = MI->getOpcode();
 
   switch (Opcode) {
-  case ARM::VLLDM: {
-    const MCOperand &Reg = MI->getOperand(0);
-    O << '\t' << "vlldm" << '\t';
-    printRegName(O, Reg.getReg());
-    O << ", "
-      << "{d0 - d15}";
-    return;
-  }
-  case ARM::VLLDM_T2: {
-    const MCOperand &Reg = MI->getOperand(0);
-    O << '\t' << "vlldm" << '\t';
-    printRegName(O, Reg.getReg());
-    O << ", "
-      << "{d0 - d31}";
-    return;
-  }
-  case ARM::VLSTM: {
-    const MCOperand &Reg = MI->getOperand(0);
-    O << '\t' << "vlstm" << '\t';
-    printRegName(O, Reg.getReg());
-    O << ", "
-      << "{d0 - d15}";
-    return;
-  }
-  case ARM::VLSTM_T2: {
-    const MCOperand &Reg = MI->getOperand(0);
-    O << '\t' << "vlstm" << '\t';
-    printRegName(O, Reg.getReg());
-    O << ", "
-      << "{d0 - d31}";
-    return;
-  }
   // Check for MOVs and print canonical forms, instead.
   case ARM::MOVsr: {
     // FIXME: Thumb variants?
@@ -258,7 +228,7 @@ void ARMInstPrinter::printInst(const MCInst *MI, uint64_t Address,
 
   case ARM::tLDMIA: {
     bool Writeback = true;
-    MCRegister BaseReg = MI->getOperand(0).getReg();
+    unsigned BaseReg = MI->getOperand(0).getReg();
     for (unsigned i = 3; i < MI->getNumOperands(); ++i) {
       if (MI->getOperand(i).getReg() == BaseReg)
         Writeback = false;
@@ -289,7 +259,7 @@ void ARMInstPrinter::printInst(const MCInst *MI, uint64_t Address,
   case ARM::STLEXD: {
     const MCRegisterClass &MRC = MRI.getRegClass(ARM::GPRRegClassID);
     bool isStore = Opcode == ARM::STREXD || Opcode == ARM::STLEXD;
-    MCRegister Reg = MI->getOperand(isStore ? 1 : 0).getReg();
+    unsigned Reg = MI->getOperand(isStore ? 1 : 0).getReg();
     if (MRC.contains(Reg)) {
       MCInst NewMI;
       MCOperand NewReg;
@@ -340,7 +310,7 @@ void ARMInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
                                   const MCSubtargetInfo &STI, raw_ostream &O) {
   const MCOperand &Op = MI->getOperand(OpNo);
   if (Op.isReg()) {
-    MCRegister Reg = Op.getReg();
+    unsigned Reg = Op.getReg();
     printRegName(O, Reg);
   } else if (Op.isImm()) {
     markup(O, Markup::Immediate) << '#' << formatImm(Op.getImm());
@@ -350,7 +320,7 @@ void ARMInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
     switch (Expr->getKind()) {
     case MCExpr::Binary:
       O << '#';
-      MAI.printExpr(O, *Expr);
+      Expr->print(O, &MAI);
       break;
     case MCExpr::Constant: {
       // If a symbolic branch target was added as a constant expression then
@@ -360,7 +330,7 @@ void ARMInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
       int64_t TargetAddress;
       if (!Constant->evaluateAsAbsolute(TargetAddress)) {
         O << '#';
-        MAI.printExpr(O, *Expr);
+        Expr->print(O, &MAI);
       } else {
         O << "0x";
         O.write_hex(static_cast<uint32_t>(TargetAddress));
@@ -370,7 +340,7 @@ void ARMInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
     default:
       // FIXME: Should we always treat this as if it is a constant literal and
       // prefix it with '#'?
-      MAI.printExpr(O, *Expr);
+      Expr->print(O, &MAI);
       break;
     }
   }
@@ -395,7 +365,7 @@ void ARMInstPrinter::printThumbLdrLabelOperand(const MCInst *MI, unsigned OpNum,
                                                raw_ostream &O) {
   const MCOperand &MO1 = MI->getOperand(OpNum);
   if (MO1.isExpr()) {
-    MAI.printExpr(O, *MO1.getExpr());
+    MO1.getExpr()->print(O, &MAI);
     return;
   }
 
@@ -765,7 +735,7 @@ void ARMInstPrinter::printAddrMode6OffsetOperand(const MCInst *MI,
                                                  const MCSubtargetInfo &STI,
                                                  raw_ostream &O) {
   const MCOperand &MO = MI->getOperand(OpNum);
-  if (!MO.getReg())
+  if (MO.getReg() == 0)
     O << "!";
   else {
     O << ", ";
@@ -849,7 +819,7 @@ void ARMInstPrinter::printPKHASRShiftImm(const MCInst *MI, unsigned OpNum,
 void ARMInstPrinter::printRegisterList(const MCInst *MI, unsigned OpNum,
                                        const MCSubtargetInfo &STI,
                                        raw_ostream &O) {
-  if (MI->getOpcode() != ARM::t2CLRM && MI->getOpcode() != ARM::VSCCLRMS) {
+  if (MI->getOpcode() != ARM::t2CLRM) {
     assert(is_sorted(drop_begin(*MI, OpNum),
                      [&](const MCOperand &LHS, const MCOperand &RHS) {
                        return MRI.getEncodingValue(LHS.getReg()) <
@@ -869,7 +839,7 @@ void ARMInstPrinter::printRegisterList(const MCInst *MI, unsigned OpNum,
 void ARMInstPrinter::printGPRPairOperand(const MCInst *MI, unsigned OpNum,
                                          const MCSubtargetInfo &STI,
                                          raw_ostream &O) {
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg = MI->getOperand(OpNum).getReg();
   printRegName(O, MRI.getSubReg(Reg, ARM::gsub_0));
   O << ", ";
   printRegName(O, MRI.getSubReg(Reg, ARM::gsub_1));
@@ -1081,7 +1051,7 @@ void ARMInstPrinter::printAdrLabelOperand(const MCInst *MI, unsigned OpNum,
   const MCOperand &MO = MI->getOperand(OpNum);
 
   if (MO.isExpr()) {
-    MAI.printExpr(O, *MO.getExpr());
+    MO.getExpr()->print(O, &MAI);
     return;
   }
 
@@ -1139,7 +1109,7 @@ void ARMInstPrinter::printThumbAddrModeRROperand(const MCInst *MI, unsigned Op,
   WithMarkup ScopedMarkup = markup(O, Markup::Memory);
   O << "[";
   printRegName(O, MO1.getReg());
-  if (MCRegister RegNum = MO2.getReg()) {
+  if (unsigned RegNum = MO2.getReg()) {
     O << ", ";
     printRegName(O, RegNum);
   }
@@ -1206,7 +1176,7 @@ void ARMInstPrinter::printT2SOOperand(const MCInst *MI, unsigned OpNum,
   const MCOperand &MO1 = MI->getOperand(OpNum);
   const MCOperand &MO2 = MI->getOperand(OpNum + 1);
 
-  MCRegister Reg = MO1.getReg();
+  unsigned Reg = MO1.getReg();
   printRegName(O, Reg);
 
   // Print the shift opc.
@@ -1488,9 +1458,9 @@ void ARMInstPrinter::printVectorListOne(const MCInst *MI, unsigned OpNum,
 void ARMInstPrinter::printVectorListTwo(const MCInst *MI, unsigned OpNum,
                                         const MCSubtargetInfo &STI,
                                         raw_ostream &O) {
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
-  MCRegister Reg0 = MRI.getSubReg(Reg, ARM::dsub_0);
-  MCRegister Reg1 = MRI.getSubReg(Reg, ARM::dsub_1);
+  unsigned Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg0 = MRI.getSubReg(Reg, ARM::dsub_0);
+  unsigned Reg1 = MRI.getSubReg(Reg, ARM::dsub_1);
   O << "{";
   printRegName(O, Reg0);
   O << ", ";
@@ -1501,9 +1471,9 @@ void ARMInstPrinter::printVectorListTwo(const MCInst *MI, unsigned OpNum,
 void ARMInstPrinter::printVectorListTwoSpaced(const MCInst *MI, unsigned OpNum,
                                               const MCSubtargetInfo &STI,
                                               raw_ostream &O) {
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
-  MCRegister Reg0 = MRI.getSubReg(Reg, ARM::dsub_0);
-  MCRegister Reg1 = MRI.getSubReg(Reg, ARM::dsub_2);
+  unsigned Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg0 = MRI.getSubReg(Reg, ARM::dsub_0);
+  unsigned Reg1 = MRI.getSubReg(Reg, ARM::dsub_2);
   O << "{";
   printRegName(O, Reg0);
   O << ", ";
@@ -1556,9 +1526,9 @@ void ARMInstPrinter::printVectorListTwoAllLanes(const MCInst *MI,
                                                 unsigned OpNum,
                                                 const MCSubtargetInfo &STI,
                                                 raw_ostream &O) {
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
-  MCRegister Reg0 = MRI.getSubReg(Reg, ARM::dsub_0);
-  MCRegister Reg1 = MRI.getSubReg(Reg, ARM::dsub_1);
+  unsigned Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg0 = MRI.getSubReg(Reg, ARM::dsub_0);
+  unsigned Reg1 = MRI.getSubReg(Reg, ARM::dsub_1);
   O << "{";
   printRegName(O, Reg0);
   O << "[], ";
@@ -1603,9 +1573,9 @@ void ARMInstPrinter::printVectorListFourAllLanes(const MCInst *MI,
 void ARMInstPrinter::printVectorListTwoSpacedAllLanes(
     const MCInst *MI, unsigned OpNum, const MCSubtargetInfo &STI,
     raw_ostream &O) {
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
-  MCRegister Reg0 = MRI.getSubReg(Reg, ARM::dsub_0);
-  MCRegister Reg1 = MRI.getSubReg(Reg, ARM::dsub_2);
+  unsigned Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg0 = MRI.getSubReg(Reg, ARM::dsub_0);
+  unsigned Reg1 = MRI.getSubReg(Reg, ARM::dsub_2);
   O << "{";
   printRegName(O, Reg0);
   O << "[], ";
@@ -1682,7 +1652,7 @@ template<unsigned NumRegs>
 void ARMInstPrinter::printMVEVectorList(const MCInst *MI, unsigned OpNum,
                                         const MCSubtargetInfo &STI,
                                         raw_ostream &O) {
-  MCRegister Reg = MI->getOperand(OpNum).getReg();
+  unsigned Reg = MI->getOperand(OpNum).getReg();
   const char *Prefix = "{";
   for (unsigned i = 0; i < NumRegs; i++) {
     O << Prefix;

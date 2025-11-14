@@ -73,7 +73,6 @@
 using namespace llvm;
 using namespace polly;
 
-#include "polly/Support/PollyDebug.h"
 #define DEBUG_TYPE "polly-scops"
 
 STATISTIC(AssumptionsAliasing, "Number of aliasing assumptions taken.");
@@ -215,7 +214,7 @@ static const ScopArrayInfo *identifyBasePtrOriginSAI(Scop *S, Value *BasePtr) {
 
   ScalarEvolution &SE = *S->getSE();
 
-  const SCEV *OriginBaseSCEV =
+  auto *OriginBaseSCEV =
       SE.getPointerBase(SE.getSCEV(BasePtrLI->getPointerOperand()));
   if (!OriginBaseSCEV)
     return nullptr;
@@ -527,15 +526,12 @@ void MemoryAccess::updateDimensionality() {
   }
 }
 
-std::string
+const std::string
 MemoryAccess::getReductionOperatorStr(MemoryAccess::ReductionType RT) {
   switch (RT) {
   case MemoryAccess::RT_NONE:
     llvm_unreachable("Requested a reduction operator string for a memory "
                      "access which isn't a reduction");
-  case MemoryAccess::RT_BOTTOM:
-    llvm_unreachable("Requested a reduction operator string for a internal "
-                     "reduction type!");
   case MemoryAccess::RT_ADD:
     return "+";
   case MemoryAccess::RT_MUL:
@@ -713,11 +709,11 @@ void MemoryAccess::computeBoundsOnAccessRelation(unsigned ElementSize) {
   if (!Ptr || !SE->isSCEVable(Ptr->getType()))
     return;
 
-  const SCEV *PtrSCEV = SE->getSCEV(Ptr);
+  auto *PtrSCEV = SE->getSCEV(Ptr);
   if (isa<SCEVCouldNotCompute>(PtrSCEV))
     return;
 
-  const SCEV *BasePtrSCEV = SE->getPointerBase(PtrSCEV);
+  auto *BasePtrSCEV = SE->getPointerBase(PtrSCEV);
   if (BasePtrSCEV && !isa<SCEVCouldNotCompute>(BasePtrSCEV))
     PtrSCEV = SE->getMinusSCEV(PtrSCEV, BasePtrSCEV);
 
@@ -910,7 +906,7 @@ void MemoryAccess::realignParams() {
   AccessRelation = AccessRelation.align_params(CtxSpace);
 }
 
-std::string MemoryAccess::getReductionOperatorStr() const {
+const std::string MemoryAccess::getReductionOperatorStr() const {
   return MemoryAccess::getReductionOperatorStr(getReductionType());
 }
 
@@ -918,15 +914,10 @@ isl::id MemoryAccess::getId() const { return Id; }
 
 raw_ostream &polly::operator<<(raw_ostream &OS,
                                MemoryAccess::ReductionType RT) {
-  switch (RT) {
-  case MemoryAccess::RT_NONE:
-  case MemoryAccess::RT_BOTTOM:
+  if (RT == MemoryAccess::RT_NONE)
     OS << "NONE";
-    break;
-  default:
+  else
     OS << MemoryAccess::getReductionOperatorStr(RT);
-    break;
-  }
   return OS;
 }
 
@@ -1384,10 +1375,10 @@ public:
   }
 
   const SCEV *visitAddRecExpr(const SCEVAddRecExpr *E) {
-    const SCEV *Start = visit(E->getStart());
-    const SCEV *AddRec = SE.getAddRecExpr(SE.getConstant(E->getType(), 0),
-                                          visit(E->getStepRecurrence(SE)),
-                                          E->getLoop(), SCEV::FlagAnyWrap);
+    auto *Start = visit(E->getStart());
+    auto *AddRec = SE.getAddRecExpr(SE.getConstant(E->getType(), 0),
+                                    visit(E->getStepRecurrence(SE)),
+                                    E->getLoop(), SCEV::FlagAnyWrap);
     return SE.getAddExpr(Start, AddRec);
   }
 
@@ -1818,9 +1809,11 @@ std::pair<std::string, std::string> Scop::getEntryExitStr() const {
   raw_string_ostream EntryStr(EntryName);
 
   R.getEntry()->printAsOperand(EntryStr, false);
+  EntryStr.str();
 
   if (R.getExit()) {
     R.getExit()->printAsOperand(ExitStr, false);
+    ExitStr.str();
   } else
     ExitName = "FunctionExit";
 
@@ -2049,7 +2042,7 @@ void Scop::intersectDefinedBehavior(isl::set Set, AssumptionSign Sign) {
 }
 
 void Scop::invalidate(AssumptionKind Kind, DebugLoc Loc, BasicBlock *BB) {
-  POLLY_DEBUG(dbgs() << "Invalidate SCoP because of reason " << Kind << "\n");
+  LLVM_DEBUG(dbgs() << "Invalidate SCoP because of reason " << Kind << "\n");
   addAssumption(Kind, isl::set::empty(getParamSpace()), Loc, AS_ASSUMPTION, BB);
 }
 

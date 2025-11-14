@@ -27,7 +27,9 @@ Expected<JITTargetMachineBuilder> JITTargetMachineBuilder::detectHost() {
   // Retrieve host CPU name and sub-target features and add them to builder.
   // Relocation model, code model and codegen opt level are kept to default
   // values.
-  for (const auto &Feature : llvm::sys::getHostCPUFeatures())
+  llvm::StringMap<bool> FeatureMap;
+  llvm::sys::getHostCPUFeatures(FeatureMap);
+  for (auto &Feature : FeatureMap)
     TMBuilder.getFeatures().AddFeature(Feature.first(), Feature.second);
 
   TMBuilder.setCPU(std::string(llvm::sys::getHostCPUName()));
@@ -39,7 +41,7 @@ Expected<std::unique_ptr<TargetMachine>>
 JITTargetMachineBuilder::createTargetMachine() {
 
   std::string ErrMsg;
-  auto *TheTarget = TargetRegistry::lookupTarget(TT, ErrMsg);
+  auto *TheTarget = TargetRegistry::lookupTarget(TT.getTriple(), ErrMsg);
   if (!TheTarget)
     return make_error<StringError>(std::move(ErrMsg), inconvertibleErrorCode());
 
@@ -47,8 +49,9 @@ JITTargetMachineBuilder::createTargetMachine() {
     return make_error<StringError>("Target has no JIT support",
                                    inconvertibleErrorCode());
 
-  auto *TM = TheTarget->createTargetMachine(
-      TT, CPU, Features.getString(), Options, RM, CM, OptLevel, /*JIT=*/true);
+  auto *TM =
+      TheTarget->createTargetMachine(TT.getTriple(), CPU, Features.getString(),
+                                     Options, RM, CM, OptLevel, /*JIT*/ true);
   if (!TM)
     return make_error<StringError>("Could not allocate target machine",
                                    inconvertibleErrorCode());

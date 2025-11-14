@@ -9,6 +9,8 @@
 #include "lldb/Symbol/Variable.h"
 
 #include "lldb/Core/Module.h"
+#include "lldb/Core/ValueObject.h"
+#include "lldb/Core/ValueObjectVariable.h"
 #include "lldb/Symbol/Block.h"
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/CompilerDecl.h"
@@ -25,12 +27,8 @@
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
-#include "lldb/Utility/LLDBLog.h"
-#include "lldb/Utility/Log.h"
 #include "lldb/Utility/RegularExpression.h"
 #include "lldb/Utility/Stream.h"
-#include "lldb/ValueObject/ValueObject.h"
-#include "lldb/ValueObject/ValueObjectVariable.h"
 
 #include "llvm/ADT/Twine.h"
 
@@ -221,7 +219,8 @@ bool Variable::LocationIsValidForFrame(StackFrame *frame) {
       TargetSP target_sp(frame->CalculateTarget());
 
       addr_t loclist_base_load_addr =
-          function->GetAddress().GetLoadAddress(target_sp.get());
+          function->GetAddressRange().GetBaseAddress().GetLoadAddress(
+              target_sp.get());
       if (loclist_base_load_addr == LLDB_INVALID_ADDRESS)
         return false;
       // It is a location list. We just need to tell if the location list
@@ -258,7 +257,7 @@ bool Variable::LocationIsValidForAddress(const Address &address) {
 
       if (sc.function) {
         addr_t loclist_base_file_addr =
-            sc.function->GetAddress().GetFileAddress();
+            sc.function->GetAddressRange().GetBaseAddress().GetFileAddress();
         if (loclist_base_file_addr == LLDB_INVALID_ADDRESS)
           return false;
         // It is a location list. We just need to tell if the location list
@@ -290,9 +289,28 @@ bool Variable::IsInScope(StackFrame *frame) {
       // this variable was defined in is currently
       Block *deepest_frame_block =
           frame->GetSymbolContext(eSymbolContextBlock).block;
-      Address frame_addr = frame->GetFrameCodeAddress();
-      if (deepest_frame_block)
-        return IsInScope(*deepest_frame_block, frame_addr);
+      if (deepest_frame_block) {
+        SymbolContext variable_sc;
+        CalculateSymbolContext(&variable_sc);
+
+        // Check for static or global variable defined at the compile unit
+        // level that wasn't defined in a block
+        if (variable_sc.block == nullptr)
+          return true;
+
+        // Check if the variable is valid in the current block
+        if (variable_sc.block != deepest_frame_block &&
+            !variable_sc.block->Contains(deepest_frame_block))
+          return false;
+
+        // If no scope range is specified then it means that the scope is the
+        // same as the scope of the enclosing lexical block.
+        if (m_scope_range.IsEmpty())
+          return true;
+
+        addr_t file_address = frame->GetFrameCodeAddress().GetFileAddress();
+        return m_scope_range.FindEntryThatContains(file_address) != nullptr;
+      }
     }
     break;
 
@@ -302,34 +320,13 @@ bool Variable::IsInScope(StackFrame *frame) {
   return false;
 }
 
-bool Variable::IsInScope(const Block &block, const Address &addr) {
-  SymbolContext variable_sc;
-  CalculateSymbolContext(&variable_sc);
-
-  // Check for static or global variable defined at the compile unit
-  // level that wasn't defined in a block
-  if (variable_sc.block == nullptr)
-    return true;
-
-  // Check if the variable is valid in the current block
-  if (variable_sc.block != &block && !variable_sc.block->Contains(&block))
-    return false;
-
-  // If no scope range is specified then it means that the scope is the
-  // same as the scope of the enclosing lexical block.
-  if (m_scope_range.IsEmpty())
-    return true;
-
-  return m_scope_range.FindEntryThatContains(addr.GetFileAddress()) != nullptr;
-}
-
 Status Variable::GetValuesForVariableExpressionPath(
     llvm::StringRef variable_expr_path, ExecutionContextScope *scope,
     GetVariableCallback callback, void *baton, VariableList &variable_list,
     ValueObjectList &valobj_list) {
   Status error;
   if (!callback || variable_expr_path.empty()) {
-    error = Status::FromErrorString("unknown error");
+    error.SetErrorString("unknown error");
     return error;
   }
 
@@ -339,7 +336,7 @@ Status Variable::GetValuesForVariableExpressionPath(
         variable_expr_path.drop_front(), scope, callback, baton, variable_list,
         valobj_list);
     if (error.Fail()) {
-      error = Status::FromErrorString("unknown error");
+      error.SetErrorString("unknown error");
       return error;
     }
     for (uint32_t i = 0; i < valobj_list.GetSize();) {
@@ -373,7 +370,7 @@ Status Variable::GetValuesForVariableExpressionPath(
         }
       }
     } else {
-      error = Status::FromErrorString("unknown error");
+      error.SetErrorString("unknown error");
     }
     return error;
   } break;
@@ -384,13 +381,13 @@ Status Variable::GetValuesForVariableExpressionPath(
     llvm::SmallVector<llvm::StringRef, 2> matches;
     variable_list.Clear();
     if (!g_regex.Execute(variable_expr_path, &matches)) {
-      error = Status::FromErrorStringWithFormatv(
+      error.SetErrorStringWithFormatv(
           "unable to extract a variable name from '{0}'", variable_expr_path);
       return error;
     }
     std::string variable_name = matches[1].str();
     if (!callback(baton, variable_name.c_str(), variable_list)) {
-      error = Status::FromErrorString("unknown error");
+      error.SetErrorString("unknown error");
       return error;
     }
     uint32_t i = 0;
@@ -414,7 +411,7 @@ Status Variable::GetValuesForVariableExpressionPath(
         valobj_sp = variable_valobj_sp->GetValueForExpressionPath(
             variable_sub_expr_path);
         if (!valobj_sp) {
-          error = Status::FromErrorStringWithFormatv(
+          error.SetErrorStringWithFormatv(
               "invalid expression path '{0}' for variable '{1}'",
               variable_sub_expr_path, var_sp->GetName().GetCString());
           variable_list.RemoveVariableAtIndex(i);
@@ -435,7 +432,7 @@ Status Variable::GetValuesForVariableExpressionPath(
     }
   } break;
   }
-  error = Status::FromErrorString("unknown error");
+  error.SetErrorString("unknown error");
   return error;
 }
 
@@ -451,7 +448,8 @@ bool Variable::DumpLocations(Stream *s, const Address &address) {
 
   const addr_t file_addr = address.GetFileAddress();
   if (sc.function) {
-    addr_t loclist_base_file_addr = sc.function->GetAddress().GetFileAddress();
+    addr_t loclist_base_file_addr =
+        sc.function->GetAddressRange().GetBaseAddress().GetFileAddress();
     if (loclist_base_file_addr == LLDB_INVALID_ADDRESS)
       return false;
     return m_location_list.DumpLocations(s, eDescriptionLevelBrief,
@@ -511,17 +509,15 @@ static void PrivateAutoCompleteMembers(
       CompilerType member_compiler_type = compiler_type.GetFieldAtIndex(
           i, member_name, nullptr, nullptr, nullptr);
 
-      if (partial_member_name.empty()) {
-        request.AddCompletion((prefix_path + member_name).str());
-      } else if (llvm::StringRef(member_name)
-                     .starts_with(partial_member_name)) {
+      if (partial_member_name.empty() ||
+          llvm::StringRef(member_name).starts_with(partial_member_name)) {
         if (member_name == partial_member_name) {
           PrivateAutoComplete(
               frame, partial_path,
               prefix_path + member_name, // Anything that has been resolved
                                          // already will be in here
               member_compiler_type.GetCanonicalType(), request);
-        } else if (partial_path.empty()) {
+        } else {
           request.AddCompletion((prefix_path + member_name).str());
         }
       }
@@ -570,9 +566,7 @@ static void PrivateAutoComplete(
       case eTypeClassObjCObjectPointer:
       case eTypeClassPointer: {
         bool omit_empty_base_classes = true;
-        if (llvm::expectedToStdOptional(
-                compiler_type.GetNumChildren(omit_empty_base_classes, nullptr))
-                .value_or(0))
+        if (compiler_type.GetNumChildren(omit_empty_base_classes, nullptr) > 0)
           request.AddCompletion((prefix_path + "->").str());
         else {
           request.AddCompletion(prefix_path.str());

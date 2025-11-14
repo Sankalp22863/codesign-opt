@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <unistd.h>
 
 int recurse(int x) {
   if (x <= 1)
@@ -7,6 +8,6 @@ int recurse(int x) {
 }
 
 int main(int argc, char const *argv[]) {
-  recurse(40); // recurse invocation
+  recurse(20); // recurse invocation
   return 0;
 }

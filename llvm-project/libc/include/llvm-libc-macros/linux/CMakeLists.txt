@@ -1,19 +1,7 @@
 add_header(
-  error_number_macros
-  HDR
-    error-number-macros.h
-)
-
-add_header(
   fcntl_macros
   HDR
     fcntl-macros.h
-)
-
-add_header(
-  poll-macros
-  HDR
-    poll-macros.h
 )
 
 add_header(
@@ -23,15 +11,15 @@ add_header(
 )
 
 add_header(
-  sys_epoll_macros
-  HDR
-    sys-epoll-macros.h
-)
-
-add_header(
   sys_ioctl_macros
   HDR
     sys-ioctl-macros.h
+)
+
+add_header(
+  sys_mman_macros
+  HDR
+    sys-mman-macros.h
 )
 
 add_header(

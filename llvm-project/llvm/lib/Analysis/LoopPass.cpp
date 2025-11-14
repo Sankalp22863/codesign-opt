@@ -16,7 +16,6 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
 #include "llvm/IR/OptBisect.h"
 #include "llvm/IR/PassTimingInfo.h"
 #include "llvm/IR/PrintPasses.h"
@@ -60,7 +59,7 @@ public:
 };
 
 char PrintLoopPassWrapper::ID = 0;
-} // namespace
+}
 
 //===----------------------------------------------------------------------===//
 // LPPassManager
@@ -373,7 +372,7 @@ bool LoopPass::skipLoop(const Loop *L) const {
   if (!F)
     return false;
   // Check the opt bisect limit.
-  const OptPassGate &Gate = F->getContext().getOptPassGate();
+  OptPassGate &Gate = F->getContext().getOptPassGate();
   if (Gate.isEnabled() &&
       !Gate.shouldRunPass(this->getPassName(), getDescription(*L)))
     return true;
@@ -388,7 +387,9 @@ bool LoopPass::skipLoop(const Loop *L) const {
   return false;
 }
 
-LCSSAVerificationPass::LCSSAVerificationPass() : FunctionPass(ID) {}
+LCSSAVerificationPass::LCSSAVerificationPass() : FunctionPass(ID) {
+  initializeLCSSAVerificationPassPass(*PassRegistry::getPassRegistry());
+}
 
 char LCSSAVerificationPass::ID = 0;
 INITIALIZE_PASS(LCSSAVerificationPass, "lcssa-verification", "LCSSA Verifier",

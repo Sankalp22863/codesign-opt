@@ -18,7 +18,6 @@
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
-#include "llvm/IR/Module.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/TargetParser/Triple.h"
@@ -30,9 +29,6 @@ using OperandBundleDef = OperandBundleDefT<Value *>;
 #define DEBUG_TYPE "cfguard"
 
 STATISTIC(CFGuardCounter, "Number of Control Flow Guard checks added");
-
-constexpr StringRef GuardCheckFunctionName = "__guard_check_icall_fptr";
-constexpr StringRef GuardDispatchFunctionName = "__guard_dispatch_icall_fptr";
 
 namespace {
 
@@ -48,10 +44,10 @@ public:
     // Get or insert the guard check or dispatch global symbols.
     switch (GuardMechanism) {
     case Mechanism::Check:
-      GuardFnName = GuardCheckFunctionName;
+      GuardFnName = "__guard_check_icall_fptr";
       break;
     case Mechanism::Dispatch:
-      GuardFnName = GuardDispatchFunctionName;
+      GuardFnName = "__guard_dispatch_icall_fptr";
       break;
     }
   }
@@ -147,7 +143,7 @@ public:
 
 private:
   // Only add checks if the module has the cfguard=2 flag.
-  int CFGuardModuleFlag = 0;
+  int cfguard_module_flag = 0;
   StringRef GuardFnName;
   Mechanism GuardMechanism = Mechanism::Check;
   FunctionType *GuardFnType = nullptr;
@@ -162,7 +158,9 @@ public:
   static char ID;
 
   // Default constructor required for the INITIALIZE_PASS macro.
-  CFGuard(CFGuardImpl::Mechanism M) : FunctionPass(ID), Impl(M) {}
+  CFGuard(CFGuardImpl::Mechanism M) : FunctionPass(ID), Impl(M) {
+    initializeCFGuardPass(*PassRegistry::getPassRegistry());
+  }
 
   bool doInitialization(Module &M) override { return Impl.doInitialization(M); }
   bool runOnFunction(Function &F) override { return Impl.runOnFunction(F); }
@@ -171,7 +169,8 @@ public:
 } // end anonymous namespace
 
 void CFGuardImpl::insertCFGuardCheck(CallBase *CB) {
-  assert(CB->getModule()->getTargetTriple().isOSWindows() &&
+
+  assert(Triple(CB->getModule()->getTargetTriple()).isOSWindows() &&
          "Only applicable for Windows targets");
   assert(CB->isIndirectCall() &&
          "Control Flow Guard checks can only be added to indirect calls");
@@ -199,7 +198,8 @@ void CFGuardImpl::insertCFGuardCheck(CallBase *CB) {
 }
 
 void CFGuardImpl::insertCFGuardDispatch(CallBase *CB) {
-  assert(CB->getModule()->getTargetTriple().isOSWindows() &&
+
+  assert(Triple(CB->getModule()->getTargetTriple()).isOSWindows() &&
          "Only applicable for Windows targets");
   assert(CB->isIndirectCall() &&
          "Control Flow Guard checks can only be added to indirect calls");
@@ -219,7 +219,7 @@ void CFGuardImpl::insertCFGuardDispatch(CallBase *CB) {
   // Create a copy of the call/invoke instruction and add the new bundle.
   assert((isa<CallInst>(CB) || isa<InvokeInst>(CB)) &&
          "Unknown indirect call type");
-  CallBase *NewCB = CallBase::Create(CB, Bundles, CB->getIterator());
+  CallBase *NewCB = CallBase::Create(CB, Bundles, CB);
 
   // Change the target of the call to be the guard dispatch function.
   NewCB->setCalledOperand(GuardDispatchLoad);
@@ -232,20 +232,21 @@ void CFGuardImpl::insertCFGuardDispatch(CallBase *CB) {
 }
 
 bool CFGuardImpl::doInitialization(Module &M) {
+
   // Check if this module has the cfguard flag and read its value.
   if (auto *MD =
           mdconst::extract_or_null<ConstantInt>(M.getModuleFlag("cfguard")))
-    CFGuardModuleFlag = MD->getZExtValue();
+    cfguard_module_flag = MD->getZExtValue();
 
   // Skip modules for which CFGuard checks have been disabled.
-  if (CFGuardModuleFlag != 2)
+  if (cfguard_module_flag != 2)
     return false;
 
   // Set up prototypes for the guard check and dispatch functions.
   GuardFnType =
       FunctionType::get(Type::getVoidTy(M.getContext()),
                         {PointerType::getUnqual(M.getContext())}, false);
-  GuardFnPtrType = PointerType::get(M.getContext(), 0);
+  GuardFnPtrType = PointerType::get(GuardFnType, 0);
 
   GuardFnGlobal = M.getOrInsertGlobal(GuardFnName, GuardFnPtrType, [&] {
     auto *Var = new GlobalVariable(M, GuardFnPtrType, false,
@@ -259,8 +260,9 @@ bool CFGuardImpl::doInitialization(Module &M) {
 }
 
 bool CFGuardImpl::runOnFunction(Function &F) {
+
   // Skip modules for which CFGuard checks have been disabled.
-  if (CFGuardModuleFlag != 2)
+  if (cfguard_module_flag != 2)
     return false;
 
   SmallVector<CallBase *, 8> IndirectCalls;
@@ -280,16 +282,19 @@ bool CFGuardImpl::runOnFunction(Function &F) {
   }
 
   // If no checks are needed, return early.
-  if (IndirectCalls.empty())
+  if (IndirectCalls.empty()) {
     return false;
+  }
 
   // For each indirect call/invoke, add the appropriate dispatch or check.
   if (GuardMechanism == Mechanism::Dispatch) {
-    for (CallBase *CB : IndirectCalls)
+    for (CallBase *CB : IndirectCalls) {
       insertCFGuardDispatch(CB);
+    }
   } else {
-    for (CallBase *CB : IndirectCalls)
+    for (CallBase *CB : IndirectCalls) {
       insertCFGuardCheck(CB);
+    }
   }
 
   return true;
@@ -311,12 +316,4 @@ FunctionPass *llvm::createCFGuardCheckPass() {
 
 FunctionPass *llvm::createCFGuardDispatchPass() {
   return new CFGuard(CFGuardPass::Mechanism::Dispatch);
-}
-
-bool llvm::isCFGuardFunction(const GlobalValue *GV) {
-  if (GV->getLinkage() != GlobalValue::ExternalLinkage)
-    return false;
-
-  StringRef Name = GV->getName();
-  return Name == GuardCheckFunctionName || Name == GuardDispatchFunctionName;
 }

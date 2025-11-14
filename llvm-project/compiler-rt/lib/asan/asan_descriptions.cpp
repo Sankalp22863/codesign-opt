@@ -20,20 +20,24 @@
 namespace __asan {
 
 AsanThreadIdAndName::AsanThreadIdAndName(AsanThreadContext *t) {
-  if (!t) {
-    internal_snprintf(name, sizeof(name), "T-1");
-    return;
-  }
-  int len = internal_snprintf(name, sizeof(name), "T%llu", t->unique_id);
-  CHECK(((unsigned int)len) < sizeof(name));
-  if (internal_strlen(t->name))
-    internal_snprintf(&name[len], sizeof(name) - len, " (%s)", t->name);
+  Init(t->tid, t->name);
 }
 
-AsanThreadIdAndName::AsanThreadIdAndName(u32 tid)
-    : AsanThreadIdAndName(
-          tid == kInvalidTid ? nullptr : GetThreadContextByTidLocked(tid)) {
-  asanThreadRegistry().CheckLocked();
+AsanThreadIdAndName::AsanThreadIdAndName(u32 tid) {
+  if (tid == kInvalidTid) {
+    Init(tid, "");
+  } else {
+    asanThreadRegistry().CheckLocked();
+    AsanThreadContext *t = GetThreadContextByTidLocked(tid);
+    Init(tid, t->name);
+  }
+}
+
+void AsanThreadIdAndName::Init(u32 tid, const char *tname) {
+  int len = internal_snprintf(name, sizeof(name), "T%d", tid);
+  CHECK(((unsigned int)len) < sizeof(name));
+  if (tname[0] != '\0')
+    internal_snprintf(&name[len], sizeof(name) - len, " (%s)", tname);
 }
 
 void DescribeThread(AsanThreadContext *context) {
@@ -44,18 +48,9 @@ void DescribeThread(AsanThreadContext *context) {
     return;
   }
   context->announced = true;
-
   InternalScopedString str;
   str.AppendF("Thread %s", AsanThreadIdAndName(context).c_str());
-
-  AsanThreadContext *parent_context =
-      context->parent_tid == kInvalidTid
-          ? nullptr
-          : GetThreadContextByTidLocked(context->parent_tid);
-
-  // `context->parent_tid` may point to reused slot. Check `unique_id` which
-  // is always smaller for the parent, always greater for a new user.
-  if (!parent_context || context->unique_id <= parent_context->unique_id) {
+  if (context->parent_tid == kInvalidTid) {
     str.Append(" created by unknown thread\n");
     Printf("%s", str.data());
     return;
@@ -65,8 +60,11 @@ void DescribeThread(AsanThreadContext *context) {
   Printf("%s", str.data());
   StackDepotGet(context->stack_id).Print();
   // Recursively described parent thread if needed.
-  if (flags()->print_full_thread_history)
+  if (flags()->print_full_thread_history) {
+    AsanThreadContext *parent_context =
+        GetThreadContextByTidLocked(context->parent_tid);
     DescribeThread(parent_context);
+  }
 }
 
 // Shadow descriptions
@@ -211,10 +209,10 @@ bool GetStackAddressInformation(uptr addr, uptr access_size,
   descr->frame_pc = access.frame_pc;
   descr->frame_descr = access.frame_descr;
 
-#if SANITIZER_PPC64V1 || SANITIZER_AIX
-  // On PowerPC64 ELFv1 or AIX, the address of a function actually points to a
-  // three-doubleword (or three-word for 32-bit AIX) data structure with
-  // the first field containing the address of the function's code.
+#if SANITIZER_PPC64V1
+  // On PowerPC64 ELFv1, the address of a function actually points to a
+  // three-doubleword data structure with the first field containing
+  // the address of the function's code.
   descr->frame_pc = *reinterpret_cast<uptr *>(descr->frame_pc);
 #endif
   descr->frame_pc += 16;
@@ -247,11 +245,11 @@ static void PrintAccessAndVarIntersection(const StackVarDescr &var, uptr addr,
   InternalScopedString str;
   str.AppendF("    [%zd, %zd)", var.beg, var_end);
   // Render variable name.
-  str.Append(" '");
+  str.AppendF(" '");
   for (uptr i = 0; i < var.name_len; ++i) {
     str.AppendF("%c", var.name_pos[i]);
   }
-  str.Append("'");
+  str.AppendF("'");
   if (var.line > 0) {
     str.AppendF(" (line %zd)", var.line);
   }
@@ -262,7 +260,7 @@ static void PrintAccessAndVarIntersection(const StackVarDescr &var, uptr addr,
     str.AppendF("%s <== Memory access at offset %zd %s this variable%s\n",
                 d.Location(), addr, pos_descr, d.Default());
   } else {
-    str.Append("\n");
+    str.AppendF("\n");
   }
   Printf("%s", str.data());
 }
@@ -294,7 +292,7 @@ static void DescribeAddressRelativeToGlobal(uptr addr, uptr access_size,
   str.AppendF(" global variable '%s' defined in '",
               MaybeDemangleGlobalName(g.name));
   PrintGlobalLocation(&str, g, /*print_module_name=*/false);
-  str.AppendF("' (%p) of size %zu\n", (void *)g.beg, g.size);
+  str.AppendF("' (0x%zx) of size %zu\n", g.beg, g.size);
   str.Append(d.Default());
   PrintGlobalNameIfASCII(&str, g);
   Printf("%s", str.data());
@@ -444,18 +442,6 @@ AddressDescription::AddressDescription(uptr addr, uptr access_size,
     data.kind = kAddressKindShadow;
     return;
   }
-
-  // Check global first. On AIX, some global data defined in shared libraries
-  // are put to the STACK region for unknown reasons. Check global first can
-  // workaround this issue.
-  // TODO: Look into whether there's a different solution to this problem.
-#if SANITIZER_AIX
-  if (GetGlobalAddressInformation(addr, access_size, &data.global)) {
-    data.kind = kAddressKindGlobal;
-    return;
-  }
-#endif
-
   if (GetHeapAddressInformation(addr, access_size, &data.heap)) {
     data.kind = kAddressKindHeap;
     return;
@@ -473,14 +459,10 @@ AddressDescription::AddressDescription(uptr addr, uptr access_size,
     return;
   }
 
-// GetGlobalAddressInformation is called earlier on AIX due to a workaround
-#if !SANITIZER_AIX
   if (GetGlobalAddressInformation(addr, access_size, &data.global)) {
     data.kind = kAddressKindGlobal;
     return;
   }
-#endif
-
   data.kind = kAddressKindWild;
   data.wild.addr = addr;
   data.wild.access_size = access_size;

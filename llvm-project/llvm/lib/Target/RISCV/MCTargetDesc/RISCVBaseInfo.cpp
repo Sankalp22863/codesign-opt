@@ -12,9 +12,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "RISCVBaseInfo.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
+#include "llvm/Support/RISCVISAInfo.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/TargetParser.h"
 #include "llvm/TargetParser/Triple.h"
@@ -33,31 +35,12 @@ namespace RISCVInsnOpcode {
 #include "RISCVGenSearchableTables.inc"
 } // namespace RISCVInsnOpcode
 
-namespace RISCVVInversePseudosTable {
-using namespace RISCV;
-#define GET_RISCVVInversePseudosTable_IMPL
-#include "RISCVGenSearchableTables.inc"
-} // namespace RISCVVInversePseudosTable
-
-namespace RISCV {
-#define GET_RISCVVSSEGTable_IMPL
-#define GET_RISCVVLSEGTable_IMPL
-#define GET_RISCVVLXSEGTable_IMPL
-#define GET_RISCVVSXSEGTable_IMPL
-#define GET_RISCVVLETable_IMPL
-#define GET_RISCVVSETable_IMPL
-#define GET_RISCVVLXTable_IMPL
-#define GET_RISCVVSXTable_IMPL
-#define GET_RISCVNDSVLNTable_IMPL
-#include "RISCVGenSearchableTables.inc"
-} // namespace RISCV
-
 namespace RISCVABI {
 ABI computeTargetABI(const Triple &TT, const FeatureBitset &FeatureBits,
                      StringRef ABIName) {
   auto TargetABI = getTargetABI(ABIName);
   bool IsRV64 = TT.isArch64Bit();
-  bool IsRVE = FeatureBits[RISCV::FeatureStdExtE];
+  bool IsRVE = FeatureBits[RISCV::FeatureRVE];
 
   if (!ABIName.empty() && TargetABI == ABI_Unknown) {
     errs()
@@ -88,7 +71,7 @@ ABI computeTargetABI(const Triple &TT, const FeatureBitset &FeatureBits,
   if ((TargetABI == RISCVABI::ABI::ABI_ILP32E ||
        (TargetABI == ABI_Unknown && IsRVE && !IsRV64)) &&
       FeatureBits[RISCV::FeatureStdExtD])
-    reportFatalUsageError("ILP32E cannot be used with the D ISA extension");
+    report_fatal_error("ILP32E cannot be used with the D ISA extension");
 
   if (TargetABI != ABI_Unknown)
     return TargetABI;
@@ -96,7 +79,7 @@ ABI computeTargetABI(const Triple &TT, const FeatureBitset &FeatureBits,
   // If no explicit ABI is given, try to compute the default ABI.
   auto ISAInfo = RISCVFeatures::parseFeatureBits(IsRV64, FeatureBits);
   if (!ISAInfo)
-    reportFatalUsageError(ISAInfo.takeError());
+    report_fatal_error(ISAInfo.takeError());
   return getTargetABI((*ISAInfo)->computeDefaultABI());
 }
 
@@ -128,12 +111,12 @@ namespace RISCVFeatures {
 
 void validate(const Triple &TT, const FeatureBitset &FeatureBits) {
   if (TT.isArch64Bit() && !FeatureBits[RISCV::Feature64Bit])
-    reportFatalUsageError("RV64 target requires an RV64 CPU");
+    report_fatal_error("RV64 target requires an RV64 CPU");
   if (!TT.isArch64Bit() && !FeatureBits[RISCV::Feature32Bit])
-    reportFatalUsageError("RV32 target requires an RV32 CPU");
+    report_fatal_error("RV32 target requires an RV32 CPU");
   if (FeatureBits[RISCV::Feature32Bit] &&
       FeatureBits[RISCV::Feature64Bit])
-    reportFatalUsageError("RV32 and RV64 can't be combined");
+    report_fatal_error("RV32 and RV64 can't be combined");
 }
 
 llvm::Expected<std::unique_ptr<RISCVISAInfo>>
@@ -150,6 +133,93 @@ parseFeatureBits(bool IsRV64, const FeatureBitset &FeatureBits) {
 }
 
 } // namespace RISCVFeatures
+
+// Encode VTYPE into the binary format used by the the VSETVLI instruction which
+// is used by our MC layer representation.
+//
+// Bits | Name       | Description
+// -----+------------+------------------------------------------------
+// 7    | vma        | Vector mask agnostic
+// 6    | vta        | Vector tail agnostic
+// 5:3  | vsew[2:0]  | Standard element width (SEW) setting
+// 2:0  | vlmul[2:0] | Vector register group multiplier (LMUL) setting
+unsigned RISCVVType::encodeVTYPE(RISCVII::VLMUL VLMUL, unsigned SEW,
+                                 bool TailAgnostic, bool MaskAgnostic) {
+  assert(isValidSEW(SEW) && "Invalid SEW");
+  unsigned VLMULBits = static_cast<unsigned>(VLMUL);
+  unsigned VSEWBits = encodeSEW(SEW);
+  unsigned VTypeI = (VSEWBits << 3) | (VLMULBits & 0x7);
+  if (TailAgnostic)
+    VTypeI |= 0x40;
+  if (MaskAgnostic)
+    VTypeI |= 0x80;
+
+  return VTypeI;
+}
+
+std::pair<unsigned, bool> RISCVVType::decodeVLMUL(RISCVII::VLMUL VLMUL) {
+  switch (VLMUL) {
+  default:
+    llvm_unreachable("Unexpected LMUL value!");
+  case RISCVII::VLMUL::LMUL_1:
+  case RISCVII::VLMUL::LMUL_2:
+  case RISCVII::VLMUL::LMUL_4:
+  case RISCVII::VLMUL::LMUL_8:
+    return std::make_pair(1 << static_cast<unsigned>(VLMUL), false);
+  case RISCVII::VLMUL::LMUL_F2:
+  case RISCVII::VLMUL::LMUL_F4:
+  case RISCVII::VLMUL::LMUL_F8:
+    return std::make_pair(1 << (8 - static_cast<unsigned>(VLMUL)), true);
+  }
+}
+
+void RISCVVType::printVType(unsigned VType, raw_ostream &OS) {
+  unsigned Sew = getSEW(VType);
+  OS << "e" << Sew;
+
+  unsigned LMul;
+  bool Fractional;
+  std::tie(LMul, Fractional) = decodeVLMUL(getVLMUL(VType));
+
+  if (Fractional)
+    OS << ", mf";
+  else
+    OS << ", m";
+  OS << LMul;
+
+  if (isTailAgnostic(VType))
+    OS << ", ta";
+  else
+    OS << ", tu";
+
+  if (isMaskAgnostic(VType))
+    OS << ", ma";
+  else
+    OS << ", mu";
+}
+
+unsigned RISCVVType::getSEWLMULRatio(unsigned SEW, RISCVII::VLMUL VLMul) {
+  unsigned LMul;
+  bool Fractional;
+  std::tie(LMul, Fractional) = decodeVLMUL(VLMul);
+
+  // Convert LMul to a fixed point value with 3 fractional bits.
+  LMul = Fractional ? (8 / LMul) : (LMul * 8);
+
+  assert(SEW >= 8 && "Unexpected SEW value");
+  return (SEW * 8) / LMul;
+}
+
+std::optional<RISCVII::VLMUL>
+RISCVVType::getSameRatioLMUL(unsigned SEW, RISCVII::VLMUL VLMUL, unsigned EEW) {
+  unsigned Ratio = RISCVVType::getSEWLMULRatio(SEW, VLMUL);
+  unsigned EMULFixedPoint = (EEW * 8) / Ratio;
+  bool Fractional = EMULFixedPoint < 8;
+  unsigned EMUL = Fractional ? 8 / EMULFixedPoint : EMULFixedPoint / 8;
+  if (!isValidLMUL(EMUL, Fractional))
+    return std::nullopt;
+  return RISCVVType::encodeLMUL(EMUL, Fractional);
+}
 
 // Include the auto-generated portion of the compress emitter.
 #define GEN_UNCOMPRESS_INSTR
@@ -241,18 +311,18 @@ float RISCVLoadFPImm::getFPImm(unsigned Imm) {
   return bit_cast<float>(I);
 }
 
-void RISCVZC::printRegList(unsigned RlistEncode, raw_ostream &OS) {
-  assert(RlistEncode >= RLISTENCODE::RA &&
-         RlistEncode <= RLISTENCODE::RA_S0_S11 && "Invalid Rlist");
+void RISCVZC::printRlist(unsigned SlistEncode, raw_ostream &OS) {
   OS << "{ra";
-  if (RlistEncode > RISCVZC::RA) {
+  if (SlistEncode > 4) {
     OS << ", s0";
-    if (RlistEncode == RISCVZC::RA_S0_S11)
+    if (SlistEncode == 15)
       OS << "-s11";
-    else if (RlistEncode > RISCVZC::RA_S0 && RlistEncode <= RISCVZC::RA_S0_S11)
-      OS << "-s" << (RlistEncode - RISCVZC::RA_S0);
+    else if (SlistEncode > 5 && SlistEncode <= 14)
+      OS << "-s" << (SlistEncode - 5);
   }
   OS << "}";
 }
+
+void RISCVZC::printSpimm(int64_t Spimm, raw_ostream &OS) { OS << Spimm; }
 
 } // namespace llvm

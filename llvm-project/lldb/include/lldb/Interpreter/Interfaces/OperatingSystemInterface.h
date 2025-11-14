@@ -27,8 +27,6 @@ public:
   virtual std::optional<std::string> GetRegisterContextForTID(lldb::tid_t tid) {
     return std::nullopt;
   }
-
-  virtual std::optional<bool> DoesPluginReportAllThreads() { return {}; }
 };
 } // namespace lldb_private
 

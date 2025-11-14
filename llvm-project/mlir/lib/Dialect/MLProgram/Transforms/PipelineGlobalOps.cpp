@@ -9,24 +9,27 @@
 #include "mlir/Dialect/MLProgram/Transforms/Passes.h"
 
 #include "mlir/Dialect/MLProgram/IR/MLProgram.h"
+#include "mlir/Dialect/MLProgram/Transforms/Passes.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace mlir {
 namespace ml_program {
-#define GEN_PASS_DEF_MLPROGRAMPIPELINEGLOBALSPASS
+#define GEN_PASS_DEF_MLPROGRAMPIPELINEGLOBALS
 #include "mlir/Dialect/MLProgram/Transforms/Passes.h.inc"
 
 namespace {
 
 class MLProgramPipelineGlobals
-    : public impl::MLProgramPipelineGlobalsPassBase<MLProgramPipelineGlobals> {
+    : public impl::MLProgramPipelineGlobalsBase<MLProgramPipelineGlobals> {
 public:
   void runOnOperation() override;
 
 private:
   LogicalResult buildGlobalMap(ModuleOp op);
 
-  void processBlock(Block &block, llvm::DenseSet<SymbolRefAttr> &symbolLoad,
+  void ProcessBlock(Block &block, llvm::DenseSet<SymbolRefAttr> &symbolLoad,
                     llvm::DenseSet<SymbolRefAttr> &symbolStore);
 
   llvm::DenseMap<SymbolRefAttr, llvm::DenseSet<SymbolRefAttr>> loadSymbolsMap;
@@ -35,8 +38,8 @@ private:
 
 // Traverses upwards searchign for the operation mapped by the symbol.
 static Operation *getFromSymbol(Operation *baseOp, SymbolRefAttr symbol) {
-  for (auto *op = baseOp; op; op = op->getParentOp()) {
-    auto *lookup = SymbolTable::lookupNearestSymbolFrom(op, symbol);
+  for (auto op = baseOp; op; op = op->getParentOp()) {
+    auto lookup = SymbolTable::lookupNearestSymbolFrom(op, symbol);
     if (lookup)
       return lookup;
   }
@@ -56,7 +59,7 @@ LogicalResult MLProgramPipelineGlobals::buildGlobalMap(ModuleOp module) {
       }
 
       auto symbol = mlir::dyn_cast<SymbolRefAttr>(callable);
-      auto *func = getFromSymbol(op, symbol);
+      auto func = getFromSymbol(op, symbol);
       callableMap[symbol] = func;
     }
     return WalkResult::advance();
@@ -97,13 +100,17 @@ LogicalResult MLProgramPipelineGlobals::buildGlobalMap(ModuleOp module) {
     for (size_t i = 0; i < work.size(); ++i) {
       callableMap[work[i]]->walk([&](CallOpInterface call) {
         auto symbol = dyn_cast<SymbolRefAttr>(call.getCallableForCallee());
-        if (visited.insert(symbol).second)
+        if (!visited.contains(symbol)) {
+          visited.insert(symbol);
           work.push_back(symbol);
+        }
       });
 
-      loadSymbols.insert_range(opLoadSymbols[work[i]]);
+      for (auto load : opLoadSymbols[work[i]])
+        loadSymbols.insert(load);
 
-      storeSymbols.insert_range(opStoreSymbols[work[i]]);
+      for (auto store : opStoreSymbols[work[i]])
+        storeSymbols.insert(store);
     }
 
     loadSymbolsMap[thisSymbol] = std::move(loadSymbols);
@@ -115,7 +122,7 @@ LogicalResult MLProgramPipelineGlobals::buildGlobalMap(ModuleOp module) {
 
 // Process each operation in the block deleting unneeded loads / stores,
 // recursing on subblocks and checking function calls.
-void MLProgramPipelineGlobals::processBlock(
+void MLProgramPipelineGlobals::ProcessBlock(
     Block &block, llvm::DenseSet<SymbolRefAttr> &symbolLoad,
     llvm::DenseSet<SymbolRefAttr> &symbolStore) {
 
@@ -143,9 +150,8 @@ void MLProgramPipelineGlobals::processBlock(
     if (auto store = mlir::dyn_cast<GlobalStoreOp>(op)) {
       auto ref = store.getGlobal();
       symbolStore.insert(ref);
-      auto it = previousStores.find(ref);
-      if (it != previousStores.end()) {
-        toDelete.push_back(it->getSecond());
+      if (previousStores.contains(ref)) {
+        toDelete.push_back(previousStores.find(ref)->getSecond());
       }
 
       previousLoads[ref] = store.getValue();
@@ -178,7 +184,7 @@ void MLProgramPipelineGlobals::processBlock(
     llvm::DenseSet<SymbolRefAttr> opSymbolStore;
     for (auto &region : op.getRegions()) {
       for (auto &block : region) {
-        processBlock(block, opSymbolLoad, opSymbolStore);
+        ProcessBlock(block, opSymbolLoad, opSymbolStore);
       }
     }
 
@@ -195,7 +201,7 @@ void MLProgramPipelineGlobals::processBlock(
     }
   }
 
-  for (auto *op : toDelete) {
+  for (auto op : toDelete) {
     op->erase();
   }
 }
@@ -211,13 +217,18 @@ void MLProgramPipelineGlobals::runOnOperation() {
       for (auto &block : region.getBlocks()) {
         llvm::DenseSet<SymbolRefAttr> symbolsLoaded;
         llvm::DenseSet<SymbolRefAttr> symbolsStored;
-        processBlock(block, symbolsLoaded, symbolsStored);
+        ProcessBlock(block, symbolsLoaded, symbolsStored);
       }
     }
   }
 }
 
 } // namespace
+
+std::unique_ptr<OperationPass<mlir::ModuleOp>>
+createMLProgramPipelineGlobalsPass() {
+  return std::make_unique<MLProgramPipelineGlobals>();
+}
 
 } // namespace ml_program
 } // namespace mlir

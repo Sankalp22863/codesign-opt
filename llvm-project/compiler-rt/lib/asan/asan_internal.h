@@ -61,7 +61,6 @@ using __sanitizer::StackTrace;
 
 void AsanInitFromRtl();
 bool TryAsanInitFromRtl();
-void ApplyFlags();
 
 // asan_win.cpp
 void InitializePlatformExceptionHandlers();
@@ -81,9 +80,9 @@ void ReplaceSystemMalloc();
 
 // asan_linux.cpp / asan_mac.cpp / asan_win.cpp
 uptr FindDynamicShadowStart();
+void *AsanDoesNotSupportStaticLinkage();
 void AsanCheckDynamicRTPrereqs();
 void AsanCheckIncompatibleRT();
-void TryReExecWithoutASLR();
 
 // Unpoisons platform-specific stacks.
 // Returns true if all stacks have been unpoisoned.

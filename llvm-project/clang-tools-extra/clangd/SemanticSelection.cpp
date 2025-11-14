@@ -11,6 +11,9 @@
 #include "Protocol.h"
 #include "Selection.h"
 #include "SourceCode.h"
+#include "clang-pseudo/Bracket.h"
+#include "clang-pseudo/DirectiveTree.h"
+#include "clang-pseudo/Token.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
@@ -22,9 +25,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Error.h"
-#include "support/Bracket.h"
-#include "support/DirectiveTree.h"
-#include "support/Token.h"
 #include <optional>
 #include <queue>
 #include <vector>
@@ -175,15 +175,22 @@ llvm::Expected<std::vector<FoldingRange>> getFoldingRanges(ParsedAST &AST) {
   return collectFoldingRanges(SyntaxTree, TM);
 }
 
-// FIXME( usaxena95): Collect includes and other code regions (e.g.
-// public/private/protected sections of classes, control flow statement bodies).
+// FIXME( usaxena95): Collect PP conditional regions, includes and other code
+// regions (e.g. public/private/protected sections of classes, control flow
+// statement bodies).
 // Related issue: https://github.com/clangd/clangd/issues/310
 llvm::Expected<std::vector<FoldingRange>>
 getFoldingRanges(const std::string &Code, bool LineFoldingOnly) {
-  auto OrigStream = lex(Code, genericLangOpts());
+  auto OrigStream = pseudo::lex(Code, clang::pseudo::genericLangOpts());
 
-  auto DirectiveStructure = DirectiveTree::parse(OrigStream);
-  chooseConditionalBranches(DirectiveStructure, OrigStream);
+  auto DirectiveStructure = pseudo::DirectiveTree::parse(OrigStream);
+  pseudo::chooseConditionalBranches(DirectiveStructure, OrigStream);
+
+  // FIXME: Provide ranges in the disabled-PP regions as well.
+  auto Preprocessed = DirectiveStructure.stripDirectives(OrigStream);
+
+  auto ParseableStream = cook(Preprocessed, clang::pseudo::genericLangOpts());
+  pseudo::pairBrackets(ParseableStream);
 
   std::vector<FoldingRange> Result;
   auto AddFoldingRange = [&](Position Start, Position End,
@@ -198,47 +205,22 @@ getFoldingRanges(const std::string &Code, bool LineFoldingOnly) {
     FR.kind = Kind.str();
     Result.push_back(FR);
   };
-  auto OriginalToken = [&](const Token &T) {
+  auto OriginalToken = [&](const pseudo::Token &T) {
     return OrigStream.tokens()[T.OriginalIndex];
   };
-  auto StartOffset = [&](const Token &T) {
+  auto StartOffset = [&](const pseudo::Token &T) {
     return OriginalToken(T).text().data() - Code.data();
   };
-  auto StartPosition = [&](const Token &T) {
+  auto StartPosition = [&](const pseudo::Token &T) {
     return offsetToPosition(Code, StartOffset(T));
   };
-  auto EndOffset = [&](const Token &T) {
+  auto EndOffset = [&](const pseudo::Token &T) {
     return StartOffset(T) + OriginalToken(T).Length;
   };
-  auto EndPosition = [&](const Token &T) {
+  auto EndPosition = [&](const pseudo::Token &T) {
     return offsetToPosition(Code, EndOffset(T));
   };
-
-  // Preprocessor directives
-  auto PPRanges = pairDirectiveRanges(DirectiveStructure, OrigStream);
-  for (const auto &R : PPRanges) {
-    auto BTok = OrigStream.tokens()[R.Begin];
-    auto ETok = OrigStream.tokens()[R.End];
-    if (ETok.Kind == tok::eof)
-      continue;
-    if (BTok.Line >= ETok.Line)
-      continue;
-
-    Position Start = EndPosition(BTok);
-    Position End = StartPosition(ETok);
-    if (LineFoldingOnly)
-      End.line--;
-    AddFoldingRange(Start, End, FoldingRange::REGION_KIND);
-  }
-
-  // FIXME: Provide ranges in the disabled-PP regions as well.
-  auto Preprocessed = DirectiveStructure.stripDirectives(OrigStream);
-
-  auto ParseableStream = cook(Preprocessed, genericLangOpts());
-  pairBrackets(ParseableStream);
-
   auto Tokens = ParseableStream.tokens();
-
   // Brackets.
   for (const auto &Tok : Tokens) {
     if (auto *Paired = Tok.pair()) {
@@ -253,22 +235,21 @@ getFoldingRanges(const std::string &Code, bool LineFoldingOnly) {
       }
     }
   }
-  auto IsBlockComment = [&](const Token &T) {
+  auto IsBlockComment = [&](const pseudo::Token &T) {
     assert(T.Kind == tok::comment);
     return OriginalToken(T).Length >= 2 &&
            Code.substr(StartOffset(T), 2) == "/*";
   };
-
   // Multi-line comments.
   for (auto *T = Tokens.begin(); T != Tokens.end();) {
     if (T->Kind != tok::comment) {
       T++;
       continue;
     }
-    Token *FirstComment = T;
+    pseudo::Token *FirstComment = T;
     // Show starting sentinals (// and /*) of the comment.
     Position Start = offsetToPosition(Code, 2 + StartOffset(*FirstComment));
-    Token *LastComment = T;
+    pseudo::Token *LastComment = T;
     Position End = EndPosition(*T);
     while (T != Tokens.end() && T->Kind == tok::comment &&
            StartPosition(*T).line <= End.line + 1) {

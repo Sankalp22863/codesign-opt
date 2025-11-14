@@ -66,8 +66,7 @@ int use3(void) {
   return mv_after_use();
 }
 
-// expected-error@+2 {{function declaration cannot become a multiversioned function after first usage}}
-// expected-note@-6 {{previous declaration is here}}
+// expected-error@+1 {{function declaration cannot become a multiversioned function after first usage}}
 int __attribute__((target("arch=sandybridge")))  mv_after_use(void) { return 2; }
 
 int __attribute__((target("sse4.2,arch=sandybridge"))) mangle(void) { return 1; }
@@ -171,17 +170,3 @@ int __attribute__((__overloadable__)) __attribute__((target("arch=sandybridge"))
 
 int __attribute__((__overloadable__)) __attribute__((target("sse4.2"))) good_overload7(void);
 int __attribute__((target("arch=sandybridge"))) good_overload7(int);
-
-// expected-error@+2 {{function multiversioning doesn't support feature 'sha'}}
-// expected-note@+2 {{function multiversioning caused by this declaration}}
-int __attribute__((target("sha"))) no_priority1(void);
-int __attribute__((target("default"))) no_priority1(void);
-
-int __attribute__((target("default"))) no_priority2(void);
-// expected-error@+1 {{function multiversioning doesn't support feature 'sha'}}
-int __attribute__((target("sha"))) no_priority2(void);
-
-int __attribute__((target("default"))) no_priority3(void);
-int __attribute__((target("avx2"))) no_priority3(void);
-// expected-error@+1 {{function multiversioning doesn't support feature 'sha'}}
-int __attribute__((target("sha"))) no_priority3(void);

@@ -14,18 +14,18 @@
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/Affine/Transforms/Transforms.h"
 #include "mlir/Dialect/Affine/Utils.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/IntegerSet.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/Passes.h"
 
 namespace mlir {
-#define GEN_PASS_DEF_LOWERAFFINEPASS
+#define GEN_PASS_DEF_CONVERTAFFINETOSTANDARD
 #include "mlir/Conversion/Passes.h.inc"
 } // namespace mlir
 
@@ -34,7 +34,12 @@ using namespace mlir::affine;
 using namespace mlir::vector;
 
 /// Given a range of values, emit the code that reduces them with "min" or "max"
-/// depending on the provided comparison predicate, sgt for max and slt for min.
+/// depending on the provided comparison predicate.  The predicate defines which
+/// comparison to perform, "lt" for "min", "gt" for "max" and is used for the
+/// `cmpi` operation followed by the `select` operation:
+///
+///   %cond   = arith.cmpi "predicate" %v0, %v1
+///   %result = select %cond, %v0, %v1
 ///
 /// Multiple values are scanned in a linear sequence.  This creates a data
 /// dependences that wouldn't exist in a tree reduction, but is easier to
@@ -43,16 +48,13 @@ static Value buildMinMaxReductionSeq(Location loc,
                                      arith::CmpIPredicate predicate,
                                      ValueRange values, OpBuilder &builder) {
   assert(!values.empty() && "empty min/max chain");
-  assert(predicate == arith::CmpIPredicate::sgt ||
-         predicate == arith::CmpIPredicate::slt);
 
   auto valueIt = values.begin();
   Value value = *valueIt++;
   for (; valueIt != values.end(); ++valueIt) {
-    if (predicate == arith::CmpIPredicate::sgt)
-      value = arith::MaxSIOp::create(builder, loc, value, *valueIt);
-    else
-      value = arith::MinSIOp::create(builder, loc, value, *valueIt);
+    auto cmpOp = builder.create<arith::CmpIOp>(loc, predicate, value, *valueIt);
+    value = builder.create<arith::SelectOp>(loc, cmpOp.getResult(), value,
+                                            *valueIt);
   }
 
   return value;
@@ -154,9 +156,9 @@ public:
     Value lowerBound = lowerAffineLowerBound(op, rewriter);
     Value upperBound = lowerAffineUpperBound(op, rewriter);
     Value step =
-        arith::ConstantIndexOp::create(rewriter, loc, op.getStepAsInt());
-    auto scfForOp = scf::ForOp::create(rewriter, loc, lowerBound, upperBound,
-                                       step, op.getInits());
+        rewriter.create<arith::ConstantIndexOp>(loc, op.getStepAsInt());
+    auto scfForOp = rewriter.create<scf::ForOp>(loc, lowerBound, upperBound,
+                                                step, op.getInits());
     rewriter.eraseBlock(scfForOp.getBody());
     rewriter.inlineRegionBefore(op.getRegion(), scfForOp.getRegion(),
                                 scfForOp.getRegion().end());
@@ -197,7 +199,7 @@ public:
     }
     steps.reserve(op.getSteps().size());
     for (int64_t step : op.getSteps())
-      steps.push_back(arith::ConstantIndexOp::create(rewriter, loc, step));
+      steps.push_back(rewriter.create<arith::ConstantIndexOp>(loc, step));
 
     // Get the terminator op.
     auto affineParOpTerminator =
@@ -205,9 +207,9 @@ public:
     scf::ParallelOp parOp;
     if (op.getResults().empty()) {
       // Case with no reduction operations/return values.
-      parOp = scf::ParallelOp::create(rewriter, loc, lowerBoundTuple,
-                                      upperBoundTuple, steps,
-                                      /*bodyBuilderFn=*/nullptr);
+      parOp = rewriter.create<scf::ParallelOp>(loc, lowerBoundTuple,
+                                               upperBoundTuple, steps,
+                                               /*bodyBuilderFn=*/nullptr);
       rewriter.eraseBlock(parOp.getBody());
       rewriter.inlineRegionBefore(op.getRegion(), parOp.getRegion(),
                                   parOp.getRegion().end());
@@ -233,9 +235,9 @@ public:
       identityVals.push_back(
           arith::getIdentityValue(reductionOpValue, resultType, rewriter, loc));
     }
-    parOp = scf::ParallelOp::create(rewriter, loc, lowerBoundTuple,
-                                    upperBoundTuple, steps, identityVals,
-                                    /*bodyBuilderFn=*/nullptr);
+    parOp = rewriter.create<scf::ParallelOp>(
+        loc, lowerBoundTuple, upperBoundTuple, steps, identityVals,
+        /*bodyBuilderFn=*/nullptr);
 
     //  Copy the body of the affine.parallel op.
     rewriter.eraseBlock(parOp.getBody());
@@ -261,7 +263,7 @@ public:
       Value reductionResult = arith::getReductionOp(
           reductionOpValue, rewriter, loc, reductionBody.getArgument(0),
           reductionBody.getArgument(1));
-      scf::ReduceReturnOp::create(rewriter, loc, reductionResult);
+      rewriter.create<scf::ReduceReturnOp>(loc, reductionResult);
     }
     rewriter.replaceOp(op, parOp.getResults());
     return success();
@@ -278,7 +280,7 @@ public:
 
     // Now we just have to handle the condition logic.
     auto integerSet = op.getIntegerSet();
-    Value zeroConstant = arith::ConstantIndexOp::create(rewriter, loc, 0);
+    Value zeroConstant = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     SmallVector<Value, 8> operands(op.getOperands());
     auto operandsRef = llvm::ArrayRef(operands);
 
@@ -298,18 +300,18 @@ public:
       auto pred =
           isEquality ? arith::CmpIPredicate::eq : arith::CmpIPredicate::sge;
       Value cmpVal =
-          arith::CmpIOp::create(rewriter, loc, pred, affResult, zeroConstant);
-      cond =
-          cond ? arith::AndIOp::create(rewriter, loc, cond, cmpVal).getResult()
-               : cmpVal;
+          rewriter.create<arith::CmpIOp>(loc, pred, affResult, zeroConstant);
+      cond = cond
+                 ? rewriter.create<arith::AndIOp>(loc, cond, cmpVal).getResult()
+                 : cmpVal;
     }
     cond = cond ? cond
-                : arith::ConstantIntOp::create(rewriter, loc, /*value=*/1,
-                                               /*width=*/1);
+                : rewriter.create<arith::ConstantIntOp>(loc, /*value=*/1,
+                                                        /*width=*/1);
 
     bool hasElseRegion = !op.getElseRegion().empty();
-    auto ifOp = scf::IfOp::create(rewriter, loc, op.getResultTypes(), cond,
-                                  hasElseRegion);
+    auto ifOp = rewriter.create<scf::IfOp>(loc, op.getResultTypes(), cond,
+                                           hasElseRegion);
     rewriter.inlineRegionBefore(op.getThenRegion(),
                                 &ifOp.getThenRegion().back());
     rewriter.eraseBlock(&ifOp.getThenRegion().back());
@@ -552,12 +554,12 @@ void mlir::populateAffineToVectorConversionPatterns(
 }
 
 namespace {
-class LowerAffine : public impl::LowerAffinePassBase<LowerAffine> {
+class LowerAffinePass
+    : public impl::ConvertAffineToStandardBase<LowerAffinePass> {
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
     populateAffineToStdConversionPatterns(patterns);
     populateAffineToVectorConversionPatterns(patterns);
-    populateAffineExpandIndexOpsPatterns(patterns);
     ConversionTarget target(getContext());
     target.addLegalDialect<arith::ArithDialect, memref::MemRefDialect,
                            scf::SCFDialect, VectorDialect>();
@@ -567,3 +569,9 @@ class LowerAffine : public impl::LowerAffinePassBase<LowerAffine> {
   }
 };
 } // namespace
+
+/// Lowers If and For operations within a function into their lower level CFG
+/// equivalent blocks.
+std::unique_ptr<Pass> mlir::createLowerAffinePass() {
+  return std::make_unique<LowerAffinePass>();
+}

@@ -26,7 +26,6 @@
 #ifndef LLVM_SUPPORT_SUFFIXTREE_NODE_H
 #define LLVM_SUPPORT_SUFFIXTREE_NODE_H
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/Support/Compiler.h"
 
 namespace llvm {
 
@@ -47,47 +46,24 @@ private:
   /// the root to this node.
   unsigned ConcatLen = 0;
 
-  /// These two indices give a range of indices for its leaf descendants.
-  /// Imagine drawing a tree on paper and assigning a unique index to each leaf
-  /// node in monotonically increasing order from left to right. This way of
-  /// numbering the leaf nodes allows us to associate a continuous range of
-  /// indices with each internal node. For example, if a node has leaf
-  /// descendants with indices i, i+1, ..., j, then its LeftLeafIdx is i and
-  /// its RightLeafIdx is j. These indices are for LeafNodes in the SuffixTree
-  /// class, which is constructed using post-order depth-first traversal.
-  unsigned LeftLeafIdx = EmptyIdx;
-  unsigned RightLeafIdx = EmptyIdx;
-
 public:
   // LLVM RTTI boilerplate.
   NodeKind getKind() const { return Kind; }
 
   /// \return the start index of this node's substring in the entire string.
-  LLVM_ABI unsigned getStartIdx() const;
+  unsigned getStartIdx() const;
 
   /// \returns the end index of this node.
   virtual unsigned getEndIdx() const = 0;
 
-  /// \return the index of this node's left most leaf node.
-  LLVM_ABI unsigned getLeftLeafIdx() const;
-
-  /// \return the index of this node's right most leaf node.
-  LLVM_ABI unsigned getRightLeafIdx() const;
-
-  /// Set the index of the left most leaf node of this node to \p Idx.
-  LLVM_ABI void setLeftLeafIdx(unsigned Idx);
-
-  /// Set the index of the right most leaf node of this node to \p Idx.
-  LLVM_ABI void setRightLeafIdx(unsigned Idx);
-
   /// Advance this node's StartIdx by \p Inc.
-  LLVM_ABI void incrementStartIdx(unsigned Inc);
+  void incrementStartIdx(unsigned Inc);
 
   /// Set the length of the string from the root to this node to \p Len.
-  LLVM_ABI void setConcatLen(unsigned Len);
+  void setConcatLen(unsigned Len);
 
   /// \returns the length of the string from the root to this node.
-  LLVM_ABI unsigned getConcatLen() const;
+  unsigned getConcatLen() const;
 
   SuffixTreeNode(NodeKind Kind, unsigned StartIdx)
       : Kind(Kind), StartIdx(StartIdx) {}
@@ -95,7 +71,7 @@ public:
 };
 
 // A node with two or more children, or the root.
-struct LLVM_ABI SuffixTreeInternalNode : SuffixTreeNode {
+struct SuffixTreeInternalNode : SuffixTreeNode {
 private:
   /// The end index of this node's substring in the main string.
   ///
@@ -155,11 +131,11 @@ public:
       : SuffixTreeNode(NodeKind::ST_Internal, StartIdx), EndIdx(EndIdx),
         Link(Link) {}
 
-  ~SuffixTreeInternalNode() override = default;
+  virtual ~SuffixTreeInternalNode() = default;
 };
 
 // A node representing a suffix.
-struct LLVM_ABI SuffixTreeLeafNode : SuffixTreeNode {
+struct SuffixTreeLeafNode : SuffixTreeNode {
 private:
   /// The start index of the suffix represented by this leaf.
   unsigned SuffixIdx = EmptyIdx;
@@ -189,7 +165,7 @@ public:
   SuffixTreeLeafNode(unsigned StartIdx, unsigned *EndIdx)
       : SuffixTreeNode(NodeKind::ST_Leaf, StartIdx), EndIdx(EndIdx) {}
 
-  ~SuffixTreeLeafNode() override = default;
+  virtual ~SuffixTreeLeafNode() = default;
 };
 } // namespace llvm
 #endif // LLVM_SUPPORT_SUFFIXTREE_NODE_H

@@ -15,6 +15,9 @@
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Value.h"
+#include "lldb/Core/ValueObjectConstResult.h"
+#include "lldb/Core/ValueObjectMemory.h"
+#include "lldb/Core/ValueObjectRegister.h"
 #include "lldb/Symbol/UnwindPlan.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
@@ -27,9 +30,6 @@
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/RegisterValue.h"
 #include "lldb/Utility/Status.h"
-#include "lldb/ValueObject/ValueObjectConstResult.h"
-#include "lldb/ValueObject/ValueObjectMemory.h"
-#include "lldb/ValueObject/ValueObjectRegister.h"
 
 #include <optional>
 #include <vector>
@@ -79,7 +79,6 @@ ABISysV_x86_64::CreateInstance(lldb::ProcessSP process_sp, const ArchSpec &arch)
     case llvm::Triple::OSType::IOS:
     case llvm::Triple::OSType::TvOS:
     case llvm::Triple::OSType::WatchOS:
-    case llvm::Triple::OSType::XROS:
       switch (os_env) {
       case llvm::Triple::EnvironmentType::MacABI:
       case llvm::Triple::EnvironmentType::Simulator:
@@ -96,7 +95,6 @@ ABISysV_x86_64::CreateInstance(lldb::ProcessSP process_sp, const ArchSpec &arch)
     case llvm::Triple::OSType::Linux:
     case llvm::Triple::OSType::MacOSX:
     case llvm::Triple::OSType::NetBSD:
-    case llvm::Triple::OSType::OpenBSD:
     case llvm::Triple::OSType::Solaris:
     case llvm::Triple::OSType::UnknownOS:
       return ABISP(
@@ -270,8 +268,7 @@ bool ABISysV_x86_64::GetArgumentValues(Thread &thread,
     // We currently only support extracting values with Clang QualTypes. Do we
     // care about others?
     CompilerType compiler_type = value->GetCompilerType();
-    std::optional<uint64_t> bit_size =
-        llvm::expectedToOptional(compiler_type.GetBitSize(&thread));
+    std::optional<uint64_t> bit_size = compiler_type.GetBitSize(&thread);
     if (!bit_size)
       return false;
     bool is_signed;
@@ -294,19 +291,20 @@ Status ABISysV_x86_64::SetReturnValueObject(lldb::StackFrameSP &frame_sp,
                                             lldb::ValueObjectSP &new_value_sp) {
   Status error;
   if (!new_value_sp) {
-    error = Status::FromErrorString("Empty value object for return value.");
+    error.SetErrorString("Empty value object for return value.");
     return error;
   }
 
   CompilerType compiler_type = new_value_sp->GetCompilerType();
   if (!compiler_type) {
-    error = Status::FromErrorString("Null clang type for return value.");
+    error.SetErrorString("Null clang type for return value.");
     return error;
   }
 
   Thread *thread = frame_sp->GetThread().get();
 
   bool is_signed;
+  uint32_t count;
   bool is_complex;
 
   RegisterContext *reg_ctx = thread->GetRegisterContext().get();
@@ -320,7 +318,7 @@ Status ABISysV_x86_64::SetReturnValueObject(lldb::StackFrameSP &frame_sp,
     Status data_error;
     size_t num_bytes = new_value_sp->GetData(data, data_error);
     if (data_error.Fail()) {
-      error = Status::FromErrorStringWithFormat(
+      error.SetErrorStringWithFormat(
           "Couldn't convert return value to raw data: %s",
           data_error.AsCString());
       return error;
@@ -332,19 +330,18 @@ Status ABISysV_x86_64::SetReturnValueObject(lldb::StackFrameSP &frame_sp,
       if (reg_ctx->WriteRegisterFromUnsigned(reg_info, raw_value))
         set_it_simple = true;
     } else {
-      error = Status::FromErrorString(
-          "We don't support returning longer than 64 bit "
-          "integer values at present.");
+      error.SetErrorString("We don't support returning longer than 64 bit "
+                           "integer values at present.");
     }
-  } else if (compiler_type.IsFloatingPointType(is_complex)) {
+  } else if (compiler_type.IsFloatingPointType(count, is_complex)) {
     if (is_complex)
-      error = Status::FromErrorString(
+      error.SetErrorString(
           "We don't support returning complex values at present");
     else {
       std::optional<uint64_t> bit_width =
-          llvm::expectedToOptional(compiler_type.GetBitSize(frame_sp.get()));
+          compiler_type.GetBitSize(frame_sp.get());
       if (!bit_width) {
-        error = Status::FromErrorString("can't get type size");
+        error.SetErrorString("can't get type size");
         return error;
       }
       if (*bit_width <= 64) {
@@ -355,7 +352,7 @@ Status ABISysV_x86_64::SetReturnValueObject(lldb::StackFrameSP &frame_sp,
         Status data_error;
         size_t num_bytes = new_value_sp->GetData(data, data_error);
         if (data_error.Fail()) {
-          error = Status::FromErrorStringWithFormat(
+          error.SetErrorStringWithFormat(
               "Couldn't convert return value to raw data: %s",
               data_error.AsCString());
           return error;
@@ -370,7 +367,7 @@ Status ABISysV_x86_64::SetReturnValueObject(lldb::StackFrameSP &frame_sp,
         set_it_simple = true;
       } else {
         // FIXME - don't know how to do 80 bit long doubles yet.
-        error = Status::FromErrorString(
+        error.SetErrorString(
             "We don't support returning float values > 64 bits at present");
       }
     }
@@ -380,9 +377,8 @@ Status ABISysV_x86_64::SetReturnValueObject(lldb::StackFrameSP &frame_sp,
     // Okay we've got a structure or something that doesn't fit in a simple
     // register. We should figure out where it really goes, but we don't
     // support this yet.
-    error = Status::FromErrorString(
-        "We only support setting simple integer and float "
-        "return types at present.");
+    error.SetErrorString("We only support setting simple integer and float "
+                         "return types at present.");
   }
 
   return error;
@@ -412,7 +408,7 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectSimple(
       // Extract the register context so we can read arguments from registers
 
       std::optional<uint64_t> byte_size =
-          llvm::expectedToOptional(return_compiler_type.GetByteSize(&thread));
+          return_compiler_type.GetByteSize(&thread);
       if (!byte_size)
         return return_valobj_sp;
       uint64_t raw_value = thread.GetRegisterContext()->ReadRegisterAsUnsigned(
@@ -459,7 +455,7 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectSimple(
         // Don't handle complex yet.
       } else {
         std::optional<uint64_t> byte_size =
-            llvm::expectedToOptional(return_compiler_type.GetByteSize(&thread));
+            return_compiler_type.GetByteSize(&thread);
         if (byte_size && *byte_size <= sizeof(long double)) {
           const RegisterInfo *xmm0_info =
               reg_ctx->GetRegisterInfoByName("xmm0", 0);
@@ -498,7 +494,7 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectSimple(
         thread.GetStackFrameAtIndex(0).get(), value, ConstString(""));
   } else if (type_flags & eTypeIsVector) {
     std::optional<uint64_t> byte_size =
-        llvm::expectedToOptional(return_compiler_type.GetByteSize(&thread));
+        return_compiler_type.GetByteSize(&thread);
     if (byte_size && *byte_size > 0) {
       const RegisterInfo *altivec_reg =
           reg_ctx->GetRegisterInfoByName("xmm0", 0);
@@ -586,13 +582,14 @@ static bool FlattenAggregateType(
   for (uint32_t idx = 0; idx < num_children; ++idx) {
     std::string name;
     bool is_signed;
+    uint32_t count;
     bool is_complex;
 
     uint64_t field_bit_offset = 0;
     CompilerType field_compiler_type = return_compiler_type.GetFieldAtIndex(
         idx, name, &field_bit_offset, nullptr, nullptr);
     std::optional<uint64_t> field_bit_width =
-        llvm::expectedToOptional(field_compiler_type.GetBitSize(&thread));
+        field_compiler_type.GetBitSize(&thread);
 
     // if we don't know the size of the field (e.g. invalid type), exit
     if (!field_bit_width || *field_bit_width == 0) {
@@ -604,7 +601,7 @@ static bool FlattenAggregateType(
     const uint32_t field_type_flags = field_compiler_type.GetTypeInfo();
     if (field_compiler_type.IsIntegerOrEnumerationType(is_signed) ||
         field_compiler_type.IsPointerType() ||
-        field_compiler_type.IsFloatingPointType(is_complex)) {
+        field_compiler_type.IsFloatingPointType(count, is_complex)) {
       aggregate_field_offsets.push_back(field_byte_offset);
       aggregate_compiler_types.push_back(field_compiler_type);
     } else if (field_type_flags & eTypeHasChildren) {
@@ -634,8 +631,7 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectImpl(
   if (!reg_ctx_sp)
     return return_valobj_sp;
 
-  std::optional<uint64_t> bit_width =
-      llvm::expectedToOptional(return_compiler_type.GetBitSize(&thread));
+  std::optional<uint64_t> bit_width = return_compiler_type.GetBitSize(&thread);
   if (!bit_width)
     return return_valobj_sp;
   if (return_compiler_type.IsAggregateType()) {
@@ -694,13 +690,11 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectImpl(
       is_memory = false;
       for (uint32_t idx = 0; idx < num_children; idx++) {
         bool is_signed;
+        uint32_t count;
         bool is_complex;
 
         CompilerType field_compiler_type = aggregate_compiler_types[idx];
-        uint32_t field_byte_width =
-            (uint32_t)(llvm::expectedToOptional(
-                           field_compiler_type.GetByteSize(&thread))
-                           .value_or(0));
+        uint32_t field_byte_width = (uint32_t) (*field_compiler_type.GetByteSize(&thread));
         uint32_t field_byte_offset = aggregate_field_offsets[idx];
 
         uint32_t field_bit_width = field_byte_width * 8;
@@ -733,7 +727,7 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectImpl(
             // return a nullptr return value object.
             return return_valobj_sp;
           }
-        } else if (field_compiler_type.IsFloatingPointType(is_complex)) {
+        } else if (field_compiler_type.IsFloatingPointType(count, is_complex)) {
           // Structs with long doubles are always passed in memory.
           if (field_bit_width == 128) {
             is_memory = true;
@@ -860,20 +854,21 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectImpl(
 // the saved pc is at CFA-8 (i.e. rsp+0)
 // The saved rsp is CFA+0
 
-UnwindPlanSP ABISysV_x86_64::CreateFunctionEntryUnwindPlan() {
+bool ABISysV_x86_64::CreateFunctionEntryUnwindPlan(UnwindPlan &unwind_plan) {
+  unwind_plan.Clear();
+  unwind_plan.SetRegisterKind(eRegisterKindDWARF);
+
   uint32_t sp_reg_num = dwarf_rsp;
   uint32_t pc_reg_num = dwarf_rip;
 
-  UnwindPlan::Row row;
-  row.GetCFAValue().SetIsRegisterPlusOffset(sp_reg_num, 8);
-  row.SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, -8, false);
-  row.SetRegisterLocationToIsCFAPlusOffset(sp_reg_num, 0, true);
-
-  auto plan_sp = std::make_shared<UnwindPlan>(eRegisterKindDWARF);
-  plan_sp->AppendRow(std::move(row));
-  plan_sp->SetSourceName("x86_64 at-func-entry default");
-  plan_sp->SetSourcedFromCompiler(eLazyBoolNo);
-  return plan_sp;
+  UnwindPlan::RowSP row(new UnwindPlan::Row);
+  row->GetCFAValue().SetIsRegisterPlusOffset(sp_reg_num, 8);
+  row->SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, -8, false);
+  row->SetRegisterLocationToIsCFAPlusOffset(sp_reg_num, 0, true);
+  unwind_plan.AppendRow(row);
+  unwind_plan.SetSourceName("x86_64 at-func-entry default");
+  unwind_plan.SetSourcedFromCompiler(eLazyBoolNo);
+  return true;
 }
 
 // This defines the CFA as rbp+16
@@ -881,29 +876,31 @@ UnwindPlanSP ABISysV_x86_64::CreateFunctionEntryUnwindPlan() {
 // The saved rbp is at CFA-16 (i.e. rbp+0)
 // The saved rsp is CFA+0
 
-UnwindPlanSP ABISysV_x86_64::CreateDefaultUnwindPlan() {
+bool ABISysV_x86_64::CreateDefaultUnwindPlan(UnwindPlan &unwind_plan) {
+  unwind_plan.Clear();
+  unwind_plan.SetRegisterKind(eRegisterKindDWARF);
+
   uint32_t fp_reg_num = dwarf_rbp;
   uint32_t sp_reg_num = dwarf_rsp;
   uint32_t pc_reg_num = dwarf_rip;
 
-  UnwindPlan::Row row;
+  UnwindPlan::RowSP row(new UnwindPlan::Row);
 
   const int32_t ptr_size = 8;
-  row.GetCFAValue().SetIsRegisterPlusOffset(dwarf_rbp, 2 * ptr_size);
-  row.SetOffset(0);
-  row.SetUnspecifiedRegistersAreUndefined(true);
+  row->GetCFAValue().SetIsRegisterPlusOffset(dwarf_rbp, 2 * ptr_size);
+  row->SetOffset(0);
+  row->SetUnspecifiedRegistersAreUndefined(true);
 
-  row.SetRegisterLocationToAtCFAPlusOffset(fp_reg_num, ptr_size * -2, true);
-  row.SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, ptr_size * -1, true);
-  row.SetRegisterLocationToIsCFAPlusOffset(sp_reg_num, 0, true);
+  row->SetRegisterLocationToAtCFAPlusOffset(fp_reg_num, ptr_size * -2, true);
+  row->SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, ptr_size * -1, true);
+  row->SetRegisterLocationToIsCFAPlusOffset(sp_reg_num, 0, true);
 
-  auto plan_sp = std::make_shared<UnwindPlan>(eRegisterKindDWARF);
-  plan_sp->AppendRow(std::move(row));
-  plan_sp->SetSourceName("x86_64 default unwind plan");
-  plan_sp->SetSourcedFromCompiler(eLazyBoolNo);
-  plan_sp->SetUnwindPlanValidAtAllInstructions(eLazyBoolNo);
-  plan_sp->SetUnwindPlanForSignalTrap(eLazyBoolNo);
-  return plan_sp;
+  unwind_plan.AppendRow(row);
+  unwind_plan.SetSourceName("x86_64 default unwind plan");
+  unwind_plan.SetSourcedFromCompiler(eLazyBoolNo);
+  unwind_plan.SetUnwindPlanValidAtAllInstructions(eLazyBoolNo);
+  unwind_plan.SetUnwindPlanForSignalTrap(eLazyBoolNo);
+  return true;
 }
 
 bool ABISysV_x86_64::RegisterIsVolatile(const RegisterInfo *reg_info) {
@@ -926,8 +923,8 @@ bool ABISysV_x86_64::RegisterIsCalleeSaved(const RegisterInfo *reg_info) {
   std::string Name = std::string(reg_info->name);
   bool IsCalleeSaved =
       llvm::StringSwitch<bool>(Name)
-          .Cases({"r12", "r13", "r14", "r15", "rbp", "ebp", "rbx", "ebx"}, true)
-          .Cases({"rip", "eip", "rsp", "esp", "sp", "fp", "pc"}, true)
+          .Cases("r12", "r13", "r14", "r15", "rbp", "ebp", "rbx", "ebx", true)
+          .Cases("rip", "eip", "rsp", "esp", "sp", "fp", "pc", true)
           .Default(false);
   return IsCalleeSaved;
 }

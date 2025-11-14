@@ -9,13 +9,17 @@
 #include "mlir/Dialect/Async/IR/Async.h"
 
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
 using namespace mlir::async;
 
 #include "mlir/Dialect/Async/IR/AsyncOpsDialect.cpp.inc"
+
+constexpr StringRef AsyncDialect::kAllowedToBlockAttrName;
 
 void AsyncDialect::initialize() {
   addOperations<
@@ -34,9 +38,8 @@ void AsyncDialect::initialize() {
 
 constexpr char kOperandSegmentSizesAttr[] = "operandSegmentSizes";
 
-OperandRange ExecuteOp::getEntrySuccessorOperands(RegionSuccessor successor) {
-  assert(successor.getSuccessor() == &getBodyRegion() &&
-         "invalid region index");
+OperandRange ExecuteOp::getEntrySuccessorOperands(RegionBranchPoint point) {
+  assert(point == getBodyRegion() && "invalid region index");
   return getBodyOperands();
 }
 
@@ -52,10 +55,8 @@ bool ExecuteOp::areTypesCompatible(Type lhs, Type rhs) {
 void ExecuteOp::getSuccessorRegions(RegionBranchPoint point,
                                     SmallVectorImpl<RegionSuccessor> &regions) {
   // The `body` region branch back to the parent operation.
-  if (!point.isParent() &&
-      point.getTerminatorPredecessorOrNull()->getParentRegion() ==
-          &getBodyRegion()) {
-    regions.push_back(RegionSuccessor(getOperation(), getBodyResults()));
+  if (point == getBodyRegion()) {
+    regions.push_back(RegionSuccessor(getBodyResults()));
     return;
   }
 
@@ -67,7 +68,7 @@ void ExecuteOp::getSuccessorRegions(RegionBranchPoint point,
 void ExecuteOp::build(OpBuilder &builder, OperationState &result,
                       TypeRange resultTypes, ValueRange dependencies,
                       ValueRange operands, BodyBuilderFn bodyBuilder) {
-  OpBuilder::InsertionGuard guard(builder);
+
   result.addOperands(dependencies);
   result.addOperands(operands);
 
@@ -86,21 +87,26 @@ void ExecuteOp::build(OpBuilder &builder, OperationState &result,
 
   // Add a body region with block arguments as unwrapped async value operands.
   Region *bodyRegion = result.addRegion();
-  Block *bodyBlock = builder.createBlock(bodyRegion);
+  bodyRegion->push_back(new Block);
+  Block &bodyBlock = bodyRegion->front();
   for (Value operand : operands) {
     auto valueType = llvm::dyn_cast<ValueType>(operand.getType());
-    bodyBlock->addArgument(valueType ? valueType.getValueType()
-                                     : operand.getType(),
-                           operand.getLoc());
+    bodyBlock.addArgument(valueType ? valueType.getValueType()
+                                    : operand.getType(),
+                          operand.getLoc());
   }
 
   // Create the default terminator if the builder is not provided and if the
   // expected result is empty. Otherwise, leave this to the caller
   // because we don't know which values to return from the execute op.
   if (resultTypes.empty() && !bodyBuilder) {
-    async::YieldOp::create(builder, result.location, ValueRange());
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(&bodyBlock);
+    builder.create<async::YieldOp>(result.location, ValueRange());
   } else if (bodyBuilder) {
-    bodyBuilder(builder, result.location, bodyBlock->getArguments());
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(&bodyBlock);
+    bodyBuilder(builder, result.location, bodyBlock.getArguments());
   }
 }
 
@@ -307,8 +313,8 @@ void FuncOp::build(OpBuilder &builder, OperationState &state, StringRef name,
   if (argAttrs.empty())
     return;
   assert(type.getNumInputs() == argAttrs.size());
-  call_interface_impl::addArgAndResultAttrs(
-      builder, state, argAttrs, /*resultAttrs=*/{},
+  function_interface_impl::addArgAndResultAttrs(
+      builder, state, argAttrs, /*resultAttrs=*/std::nullopt,
       getArgAttrsAttrName(state.name), getResAttrsAttrName(state.name));
 }
 

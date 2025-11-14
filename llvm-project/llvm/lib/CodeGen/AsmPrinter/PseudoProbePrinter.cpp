@@ -18,12 +18,9 @@
 #include "llvm/MC/MCPseudoProbe.h"
 #include "llvm/MC/MCStreamer.h"
 
-#ifndef NDEBUG
-#include "llvm/IR/Module.h"
-#include "llvm/Support/WithColor.h"
-#endif
-
 using namespace llvm;
+
+PseudoProbeHandler::~PseudoProbeHandler() = default;
 
 void PseudoProbeHandler::emitPseudoProbe(uint64_t Guid, uint64_t Index,
                                          uint64_t Type, uint64_t Attr,
@@ -39,10 +36,7 @@ void PseudoProbeHandler::emitPseudoProbe(uint64_t Guid, uint64_t Index,
     // Use caching to avoid redundant md5 computation for build speed.
     uint64_t &CallerGuid = NameGuidMap[Name];
     if (!CallerGuid)
-      CallerGuid = Function::getGUIDAssumingExternalLinkage(Name);
-#ifndef NDEBUG
-    verifyGuidExistenceInDesc(CallerGuid, Name);
-#endif
+      CallerGuid = Function::getGUID(Name);
     uint64_t CallerProbeId = PseudoProbeDwarfDiscriminator::extractProbeIndex(
         InlinedAt->getDiscriminator());
     ReversedInlineStack.emplace_back(CallerGuid, CallerProbeId);
@@ -59,28 +53,4 @@ void PseudoProbeHandler::emitPseudoProbe(uint64_t Guid, uint64_t Index,
   SmallVector<InlineSite, 8> InlineStack(llvm::reverse(ReversedInlineStack));
   Asm->OutStreamer->emitPseudoProbe(Guid, Index, Type, Attr, Discriminator,
                                     InlineStack, Asm->CurrentFnSym);
-#ifndef NDEBUG
-  verifyGuidExistenceInDesc(
-      Guid, DebugLoc ? DebugLoc->getSubprogramLinkageName() : "");
-#endif
 }
-
-#ifndef NDEBUG
-void PseudoProbeHandler::verifyGuidExistenceInDesc(uint64_t Guid,
-                                                   StringRef FuncName) {
-  NamedMDNode *Desc = Asm->MF->getFunction().getParent()->getNamedMetadata(
-      PseudoProbeDescMetadataName);
-  assert(Desc && "pseudo probe does not exist");
-
-  // Keep DescGuidSet up to date.
-  for (size_t I = DescGuidSet.size(), E = Desc->getNumOperands(); I != E; ++I) {
-    const auto *MD = cast<MDNode>(Desc->getOperand(I));
-    auto *ID = mdconst::extract<ConstantInt>(MD->getOperand(0));
-    DescGuidSet.insert(ID->getZExtValue());
-  }
-
-  if (!DescGuidSet.contains(Guid))
-    WithColor::warning() << "Guid:" << Guid << " Name:" << FuncName
-                         << " does not exist in pseudo probe desc\n";
-}
-#endif

@@ -26,11 +26,7 @@ function(merge_relocatable_object name)
   )
   # Pass -r to the driver is much cleaner than passing -Wl,-r: the compiler knows it is
   # a relocatable linking and will not pass other irrelevant flags to the linker.
-  set(link_opts -r -nostdlib)
-  if (explicit_target_triple AND LLVM_ENABLE_LLD)
-    list(APPEND link_opts --target=${explicit_target_triple})
-  endif()
-  target_link_options(${relocatable_target} PRIVATE ${link_opts})
+  target_link_options(${relocatable_target} PRIVATE -r -nostdlib)
   set_target_properties(
     ${relocatable_target}
     PROPERTIES
@@ -41,13 +37,13 @@ function(merge_relocatable_object name)
   add_dependencies(${fq_name} ${relocatable_target})
   target_link_libraries(${fq_name} INTERFACE ${fq_link_libraries})
   set_target_properties(
-    ${fq_name}
+    ${fq_name} 
     PROPERTIES
       LINKER_LANGUAGE CXX
       IMPORTED_OBJECTS ${CMAKE_CURRENT_BINARY_DIR}/${name}.o
       TARGET_TYPE ${OBJECT_LIBRARY_TARGET_TYPE}
       DEPS "${fq_link_libraries}"
-  )
+  ) 
 endfunction()
 
 function(add_startup_object name)
@@ -60,7 +56,7 @@ function(add_startup_object name)
   )
 
   get_fq_target_name(${name} fq_target_name)
-
+  
   add_object_library(
     ${name}
     SRCS ${ADD_STARTUP_OBJECT_SRC}
@@ -95,17 +91,14 @@ add_object_library(
   HDRS
     do_start.h
   DEPENDS
-    libc.config.app_h
-    libc.hdr.stdint_proxy
+    libc.config.linux.app_h
     libc.include.sys_mman
     libc.include.sys_syscall
-    libc.include.llvm-libc-macros.link_macros
     libc.src.__support.threads.thread
     libc.src.__support.OSUtil.osutil
     libc.src.stdlib.exit
     libc.src.stdlib.atexit
     libc.src.unistd.environ
-    libc.src.__support.OSUtil.linux.auxv
   COMPILE_OPTIONS
     -ffreestanding       # To avoid compiler warnings about calling the main function.
     -fno-builtin         # avoid emit unexpected calls
@@ -138,7 +131,7 @@ foreach(target IN LISTS startup_components)
   set(fq_target_name libc.startup.linux.${target})
   add_dependencies(libc-startup ${fq_target_name})
   install(FILES $<TARGET_OBJECTS:${fq_target_name}>
-          DESTINATION ${LIBC_INSTALL_LIBRARY_DIR}
+          DESTINATION ${CMAKE_INSTALL_LIBDIR}
           RENAME $<TARGET_PROPERTY:${fq_target_name},OUTPUT_NAME>
           COMPONENT libc)
 endforeach()

@@ -138,7 +138,7 @@ def BufferizableOpInterface : OpInterface<"BufferizableOpInterface"> {
         /*retType=*/"bool",
         /*methodName=*/"bufferizesToElementwiseAccess",
         /*args=*/(ins "const ::mlir::bufferization::AnalysisState &":$state,
-                      "::llvm::ArrayRef<::mlir::OpOperand *>":$opOperands),
+                      "ArrayRef<OpOperand *>":$opOperands),
         /*methodBody=*/"",
         /*defaultImplementation=*/[{
           // It is always safe to assume that the op is not element-wise.
@@ -164,7 +164,7 @@ def BufferizableOpInterface : OpInterface<"BufferizableOpInterface"> {
              write.
 
              Counter-example: bufferization.alloc_tensor
-             The op just allocates and does not specify the data of the tensor,
+             The op just allocates and does not specifiy the data of the tensor,
              so resultBufferizesToMemoryWrite is overridden to return false.
 
           2. At least one aliasing OpOperand bufferizes to a memory write.
@@ -378,17 +378,16 @@ def BufferizableOpInterface : OpInterface<"BufferizableOpInterface"> {
           This method can query analysis information from the given analysis
           state.
         }],
-        /*retType=*/"::llvm::LogicalResult",
+        /*retType=*/"::mlir::LogicalResult",
         /*methodName=*/"resolveConflicts",
         /*args=*/(ins "::mlir::RewriterBase &":$rewriter,
-                      "const ::mlir::bufferization::AnalysisState &":$analysisState,
-                      "const ::mlir::bufferization::BufferizationState &":$bufferizationState),
+                      "const ::mlir::bufferization::AnalysisState &":$state),
         /*methodBody=*/"",
         /*defaultImplementation=*/[{
           auto bufferizableOp =
               ::llvm::cast<BufferizableOpInterface>($_op.getOperation());
           return bufferizableOp.resolveTensorOpOperandConflicts(
-              rewriter, analysisState, bufferizationState);
+              rewriter, state);
         }]
       >,
       InterfaceMethod<
@@ -417,11 +416,6 @@ def BufferizableOpInterface : OpInterface<"BufferizableOpInterface"> {
           expected to survive bufferization, `success` should be returned
           (together with `allow-unknown-ops` enabled).
 
-          If the bufferized operation has symbol semantics (i.e., it defines a
-          symbol or a symbol table), the implementation is expected to update
-          the cached symbol tables -- within the bufferization state -- to keep
-          them in a consistent state.
-
           Note: If this op supports unstructured control flow in its regions,
           then this function should also bufferize all block signatures that
           belong to this op. Branch ops (that branch to a block) are typically
@@ -429,11 +423,10 @@ def BufferizableOpInterface : OpInterface<"BufferizableOpInterface"> {
           suggestion to make sure IR is valid at every point in time and could
           be done differently).
         }],
-        /*retType=*/"::llvm::LogicalResult",
+        /*retType=*/"::mlir::LogicalResult",
         /*methodName=*/"bufferize",
         /*args=*/(ins "::mlir::RewriterBase &":$rewriter,
-                      "const ::mlir::bufferization::BufferizationOptions &":$options,
-                      "::mlir::bufferization::BufferizationState &":$state),
+                      "const ::mlir::bufferization::BufferizationOptions &":$options),
         /*methodBody=*/"",
         /*defaultImplementation=*/[{
           llvm_unreachable("bufferize not implemented");
@@ -497,7 +490,7 @@ def BufferizableOpInterface : OpInterface<"BufferizableOpInterface"> {
           This method can be used to check expected invariants and limitations
           of the current bufferization implementation.
         }],
-        /*retType=*/"::llvm::LogicalResult",
+        /*retType=*/"::mlir::LogicalResult",
         /*methodName=*/"verifyAnalysis",
         /*args=*/(ins "const ::mlir::bufferization::AnalysisState &":$state),
         /*methodBody=*/"",
@@ -525,11 +518,10 @@ def BufferizableOpInterface : OpInterface<"BufferizableOpInterface"> {
           Note: This interface method should never be called directly from user
           code. Always use `bufferization::getBufferType`.
         }],
-        /*retType=*/"::mlir::FailureOr<::mlir::bufferization::BufferLikeType>",
+        /*retType=*/"::mlir::FailureOr<::mlir::BaseMemRefType>",
         /*methodName=*/"getBufferType",
         /*args=*/(ins "::mlir::Value":$value,
                       "const ::mlir::bufferization::BufferizationOptions &":$options,
-                      "const ::mlir::bufferization::BufferizationState &":$state,
                       "::llvm::SmallVector<::mlir::Value> &":$invocationStack),
         /*methodBody=*/"",
         /*defaultImplementation=*/[{
@@ -538,7 +530,7 @@ def BufferizableOpInterface : OpInterface<"BufferizableOpInterface"> {
           assert(invocationStack.back() == value &&
                  "inconsistant invocation stack");
           return ::mlir::bufferization::detail::defaultGetBufferType(
-              value, options, state, invocationStack);
+              value, options, invocationStack);
         }]
       >,
       InterfaceMethod<
@@ -621,10 +613,9 @@ def BufferizableOpInterface : OpInterface<"BufferizableOpInterface"> {
   let extraClassDeclaration = [{
     /// Resolve out-of-place tensor OpOperands with explicit allocations in the
     /// form of `bufferization.alloc_tensor` ops.
-    ::llvm::LogicalResult resolveTensorOpOperandConflicts(
+    ::mlir::LogicalResult resolveTensorOpOperandConflicts(
         ::mlir::RewriterBase &rewriter,
-        const ::mlir::bufferization::AnalysisState &analysisState,
-        const ::mlir::bufferization::BufferizationState &bufferizationState);
+        const ::mlir::bufferization::AnalysisState &state);
 
     /// Return `true` if the given OpOperand creates an alias but does neither
     /// read nor write. This implies that `bufferizesToMemoryRead` and

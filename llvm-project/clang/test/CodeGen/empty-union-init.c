@@ -8,7 +8,6 @@ struct Mem {
 
 struct Mem *columnMem(void){
         static const struct Mem nullMem = { {} };
-        return 0;
 }
 
 

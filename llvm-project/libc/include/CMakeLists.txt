@@ -4,7 +4,7 @@ set(LIBC_INCLUDE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 include(LLVMLibCHeaderRules)
 
 # The GPU build wants to install files in the compiler's resource directory.
-if(LIBC_TARGET_OS_IS_GPU)
+if(LIBC_TARGET_ARCHITECTURE_IS_GPU)
   include(GetClangResourceDir)
 endif()
 
@@ -17,31 +17,18 @@ add_header(
     __llvm-libc-common.h
 )
 
-# TODO: Can we simplify this macro expansion?
-# https://github.com/llvm/llvm-project/issues/117254
-macro(add_header_macro TARGET_NAME YAML_FILE GEN_HDR DEPENDS)
-  add_gen_header(
-    ${TARGET_NAME}
-    YAML_FILE ${YAML_FILE}
-    GEN_HDR ${GEN_HDR}
-    ${DEPENDS}
-    ${ARGN}
-  )
-endmacro()
-
-add_header_macro(
+add_gen_header(
   ctype
-  ../libc/include/ctype.yaml
-  ctype.h
+  DEF_FILE ctype.h.def
+  GEN_HDR ctype.h
   DEPENDS
     .llvm_libc_common_h
-    .llvm-libc-types.locale_t
 )
 
-add_header_macro(
+add_gen_header(
   dirent
-  ../libc/include/dirent.yaml
-  dirent.h
+  DEF_FILE dirent.h.def
+  GEN_HDR dirent.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-types.ino_t
@@ -49,52 +36,29 @@ add_header_macro(
     .llvm-libc-types.struct_dirent
 )
 
-add_header_macro(
+add_gen_header(
   fcntl
-  ../libc/include/fcntl.yaml
-  fcntl.h
+  DEF_FILE fcntl.h.def
+  GEN_HDR fcntl.h
   DEPENDS
+    .llvm_libc_common_h
     .llvm-libc-macros.fcntl_macros
     .llvm-libc-types.mode_t
-    .llvm-libc-types.struct_flock
-    .llvm-libc-types.struct_flock64
-    .llvm-libc-types.off64_t
-    .llvm-libc-types.pid_t
-    .llvm-libc-types.off_t
-    .llvm_libc_common_h
 )
 
-add_header_macro(
-  dlfcn
-  ../libc/include/dlfcn.yaml
-  dlfcn.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-types.dl_info
-)
-
-add_header_macro(
-  endian
-  ../libc/include/endian.yaml
-  endian.h
-  DEPENDS
-    .llvm-libc-macros.endian_macros
-    .llvm_libc_common_h
-)
-
-add_header_macro(
+add_gen_header(
   features
-  ../libc/include/features.yaml
-  features.h
+  DEF_FILE features.h.def
+  GEN_HDR features.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.features_macros
 )
 
-add_header_macro(
+add_gen_header(
   fenv
-  ../libc/include/fenv.yaml
-  fenv.h
+  DEF_FILE fenv.h.def
+  GEN_HDR fenv.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.fenv_macros
@@ -102,188 +66,99 @@ add_header_macro(
     .llvm-libc-types.fexcept_t
 )
 
-add_header_macro(
-  stdint
-  ../libc/include/stdint.yaml
-  stdint.h
-  DEPENDS
-    .llvm-libc-macros.stdint_macros
-)
-
-add_header_macro(
+add_gen_header(
   inttypes
-  ../libc/include/inttypes.yaml
-  inttypes.h
+  DEF_FILE inttypes.h.def
+  GEN_HDR inttypes.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-types.imaxdiv_t
-    .llvm-libc-macros.inttypes_macros
-    .stdint
 )
 
-add_header_macro(
+add_gen_header(
   float
-  ../libc/include/float.yaml
-  float.h
+  DEF_FILE float.h.def
+  GEN_HDR float.h
   DEPENDS
     .llvm-libc-macros.float_macros
 )
 
-add_header_macro(
-  limits
-  ../libc/include/limits.yaml
-  limits.h
-  DEPENDS
-    .llvm-libc-macros.limits_macros
-)
-
-add_header_macro(
-  malloc
-  ../libc/include/malloc.yaml
-  malloc.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-macros.malloc_macros
-)
-
-add_header_macro(
+add_gen_header(
   math
-  ../libc/include/math.yaml
-  math.h
+  DEF_FILE math.h.def
+  GEN_HDR math.h
   DEPENDS
     .llvm_libc_common_h
-    .llvm-libc-macros.float16_macros
     .llvm-libc-macros.math_macros
-    .llvm-libc-macros.math_function_macros
     .llvm-libc-types.double_t
     .llvm-libc-types.float_t
-    .llvm-libc-types.float128
 )
-
-add_header_macro(
-  stdfix
-  ../libc/include/stdfix.yaml
-  stdfix.h
-  DEPENDS
-    .llvm-libc-macros.stdfix_macros
-    .llvm-libc-types.int_hk_t
-    .llvm-libc-types.int_hr_t
-    .llvm-libc-types.int_k_t
-    .llvm-libc-types.int_lk_t
-    .llvm-libc-types.int_lr_t
-    .llvm-libc-types.int_r_t
-    .llvm-libc-types.uint_uhk_t
-    .llvm-libc-types.uint_uhr_t
-    .llvm-libc-types.uint_uk_t
-    .llvm-libc-types.uint_ulk_t
-    .llvm-libc-types.uint_ulr_t
-    .llvm-libc-types.uint_ur_t
-)
-
-
-add_header_macro(
-  sysexits
-  ../libc/include/sysexits.yaml
-  sysexits.h
-  DEPENDS
-    .llvm-libc-macros.sysexits_macros
-)
-
 
 # TODO: This should be conditional on POSIX networking being included.
 file(MAKE_DIRECTORY ${LIBC_INCLUDE_DIR}/arpa)
 
-add_header_macro(
+add_gen_header(
   arpa_inet
-  ../libc/include/arpa/inet.yaml
-  arpa/inet.h
+  DEF_FILE arpa/inet.h.def
+  GEN_HDR arpa/inet.h
   DEPENDS
     .llvm_libc_common_h
-    .inttypes
 )
 
-file(MAKE_DIRECTORY ${LIBC_INCLUDE_DIR}/netinet)
-
-add_header_macro(
-  netinet_in
-  ../libc/include/netinet/in.yaml
-  netinet/in.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-macros.netinet_in_macros
-)
-
-add_header_macro(
+add_gen_header(
   assert
-  ../libc/include/assert.yaml
-  assert.h
+  DEF_FILE assert.h.def
+  GEN_HDR assert.h
   DEPENDS
     .llvm_libc_common_h
-    .llvm-libc-macros.assert_macros
 )
 
-add_header_macro(
-  complex
-  ../libc/include/complex.yaml
-  complex.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-macros.complex_macros
-    .llvm-libc-types.float128
-    .llvm-libc-types.cfloat128
-    .llvm-libc-types.cfloat16
-)
-
-add_header_macro(
+add_gen_header(
   setjmp
-  ../libc/include/setjmp.yaml
-  setjmp.h
+  DEF_FILE setjmp.h.def
+  GEN_HDR setjmp.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-types.jmp_buf
-    .llvm-libc-types.sigjmp_buf
 )
 
-add_header_macro(
+add_gen_header(
   string
-  ../libc/include/string.yaml
-  string.h
+  DEF_FILE string.h.def
+  GEN_HDR string.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.null_macro
     .llvm-libc-types.size_t
 )
 
-add_header_macro(
+add_gen_header(
   strings
-  ../libc/include/strings.yaml
-  strings.h
+  DEF_FILE strings.h.def
+  GEN_HDR strings.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-types.size_t
 )
 
-add_header_macro(
+add_gen_header(
   search
-  ../libc/include/search.yaml
-  search.h
+  DEF_FILE search.h.def
+  GEN_HDR search.h
   DEPENDS
+    .llvm_libc_common_h
     .llvm-libc-types.ACTION
     .llvm-libc-types.ENTRY
-    .llvm-libc-types.VISIT
-    .llvm-libc-types.__search_compare_t
-    .llvm-libc-types.size_t
     .llvm-libc-types.struct_hsearch_data
-    .llvm_libc_common_h
+    .llvm-libc-types.size_t
 )
 
-add_header_macro(
+add_gen_header(
   time
-  ../libc/include/time.yaml
-  time.h
+  DEF_FILE time.h.def
+  GEN_HDR time.h
   DEPENDS
     .llvm_libc_common_h
-    .llvm-libc-macros.null_macro
     .llvm-libc-macros.time_macros
     .llvm-libc-types.clock_t
     .llvm-libc-types.time_t
@@ -293,10 +168,10 @@ add_header_macro(
     .llvm-libc-types.clockid_t
 )
 
-add_header_macro(
+add_gen_header(
   threads
-  ../libc/include/threads.yaml
-  threads.h
+  DEF_FILE threads.h.def
+  GEN_HDR threads.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-types.__call_once_func_t
@@ -309,88 +184,72 @@ add_header_macro(
     .llvm-libc-types.tss_dtor_t
 )
 
-add_header_macro(
+add_gen_header(
   errno
-  ../libc/include/errno.yaml
-  errno.h
+  DEF_FILE errno.h.def
+  GEN_HDR errno.h
   DEPENDS
     .llvm-libc-macros.generic_error_number_macros
-    .llvm-libc-macros.error_number_macros
 )
 
-add_header_macro(
-  signal
-  ../libc/include/signal.yaml
-  signal.h
-  DEPENDS
-    .llvm-libc-macros.signal_macros
-    .llvm-libc-types.pid_t
-    .llvm-libc-types.sig_atomic_t
-    .llvm-libc-types.sighandler_t
-    .llvm-libc-types.siginfo_t
-    .llvm-libc-types.sigset_t
-    .llvm-libc-types.stack_t
-    .llvm-libc-types.struct_sigaction
-    .llvm-libc-types.union_sigval
-)
+if(EXISTS "${LIBC_SOURCE_DIR}/config/${LIBC_TARGET_OS}/signal.h.in")
+  add_gen_header(
+    signal
+    DEF_FILE signal.h.def
+    PARAMS
+      platform_signal=../config/${LIBC_TARGET_OS}/signal.h.in
+    GEN_HDR signal.h
+    DATA_FILES
+      ../config/${LIBC_TARGET_OS}/signal.h.in
+    DEPENDS
+      .llvm-libc-macros.signal_macros
+      .llvm-libc-types.sig_atomic_t
+      .llvm-libc-types.sigset_t
+      .llvm-libc-types.struct_sigaction
+      .llvm-libc-types.union_sigval
+      .llvm-libc-types.siginfo_t
+      .llvm-libc-types.stack_t
+      .llvm-libc-types.pid_t
+  )
+else()
+  message(STATUS "Skipping header signal.h as the target config is missing")
+endif()
 
-add_header_macro(
-  stdbit
-  ../libc/include/stdbit.yaml
-  stdbit.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-macros.stdbit_macros
-)
-
-add_header_macro(
-  stdckdint
-  ../libc/include/stdckdint.yaml
-  stdckdint.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-macros.stdckdint_macros
-)
-
-add_header_macro(
+add_gen_header(
   stdio
-  ../libc/include/stdio.yaml
-  stdio.h
+  DEF_FILE stdio.h.def
+  GEN_HDR stdio.h
   DEPENDS
+    .llvm_libc_common_h
     .llvm-libc-macros.file_seek_macros
-    .llvm-libc-macros.null_macro
     .llvm-libc-macros.stdio_macros
-    .llvm-libc-types.FILE
-    .llvm-libc-types.cookie_io_functions_t
-    .llvm-libc-types.off_t
     .llvm-libc-types.size_t
     .llvm-libc-types.ssize_t
-    .llvm_libc_common_h
+    .llvm-libc-types.FILE
+    .llvm-libc-types.cookie_io_functions_t
 )
 
-add_header_macro(
+add_gen_header(
   stdlib
-  ../libc/include/stdlib.yaml
-  stdlib.h
+  DEF_FILE stdlib.h.def
+  GEN_HDR stdlib.h
   DEPENDS
-    .llvm-libc-macros.null_macro
+    .llvm_libc_common_h
     .llvm-libc-macros.stdlib_macros
-    .llvm-libc-types.__atexithandler_t
-    .llvm-libc-types.__qsortcompare_t
-    .llvm-libc-types.__qsortrcompare_t
-    .llvm-libc-types.__search_compare_t
     .llvm-libc-types.div_t
     .llvm-libc-types.ldiv_t
     .llvm-libc-types.lldiv_t
-    .llvm-libc-types.locale_t
     .llvm-libc-types.size_t
-    .llvm_libc_common_h
+    .llvm-libc-types.__bsearchcompare_t
+    .llvm-libc-types.__qsortcompare_t
+    .llvm-libc-types.__qsortrcompare_t
+    .llvm-libc-types.__atexithandler_t
 )
 
-add_header_macro(
+add_gen_header(
   unistd
-  ../libc/include/unistd.yaml
-  unistd.h
+  DEF_FILE unistd.h.def
+  GEN_HDR unistd.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.file_seek_macros
@@ -405,35 +264,28 @@ add_header_macro(
     .llvm-libc-types.__getoptargv_t
 )
 
-add_header_macro(
+add_gen_header(
   pthread
-  ../libc/include/pthread.yaml
-  pthread.h
+  DEF_FILE pthread.h.def
+  GEN_HDR pthread.h
   DEPENDS
-    .llvm-libc-macros.pthread_macros
+    .llvm_libc_common_h
     .llvm-libc-types.__atfork_callback_t
     .llvm-libc-types.__pthread_once_func_t
     .llvm-libc-types.__pthread_start_t
     .llvm-libc-types.__pthread_tss_dtor_t
     .llvm-libc-types.pthread_attr_t
-    .llvm-libc-types.pthread_condattr_t
-    .llvm-libc-types.pthread_key_t
-    .llvm-libc-types.pthread_barrier_t
-    .llvm-libc-types.pthread_barrierattr_t
     .llvm-libc-types.pthread_mutex_t
     .llvm-libc-types.pthread_mutexattr_t
-    .llvm-libc-types.pthread_once_t
-    .llvm-libc-types.pthread_rwlock_t
-    .llvm-libc-types.pthread_rwlockattr_t
-    .llvm-libc-types.pthread_spinlock_t
     .llvm-libc-types.pthread_t
-    .llvm_libc_common_h
+    .llvm-libc-types.pthread_key_t
+    .llvm-libc-types.pthread_once_t
 )
 
-add_header_macro(
+add_gen_header(
   sched
-  ../libc/include/sched.yaml
-  sched.h
+  DEF_FILE sched.h.def
+  GEN_HDR sched.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.sched_macros
@@ -446,10 +298,10 @@ add_header_macro(
     .llvm-libc-types.struct_timespec
 )
 
-add_header_macro(
+add_gen_header(
   spawn
-  ../libc/include/spawn.yaml
-  spawn.h
+  DEF_FILE spawn.h.def
+  GEN_HDR spawn.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-types.mode_t
@@ -458,64 +310,33 @@ add_header_macro(
     .llvm-libc-types.posix_spawn_file_actions_t
 )
 
-add_header_macro(
-  link
-  ../libc/include/link.yaml
-  link.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-macros.link_macros
-    .llvm-libc-types.struct_dl_phdr_info
-    .llvm-libc-types.__dl_iterate_phdr_callback_t
-)
-
-add_header_macro(
-  elf
-  ../libc/include/elf.yaml
-  elf.h
-  DEPENDS
-    .llvm-libc-macros.elf_macros
-)
-
 # TODO: Not all platforms will have a include/sys directory. Add the sys
 # directory and the targets for sys/*.h files conditional to the OS requiring
 # them.
 file(MAKE_DIRECTORY ${LIBC_INCLUDE_DIR}/sys)
 
-add_header_macro(
+add_gen_header(
   sys_auxv
-  ../libc/include/sys/auxv.yaml
-  sys/auxv.h
+  DEF_FILE sys/auxv.h.def
+  GEN_HDR sys/auxv.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.sys_auxv_macros
 )
 
-add_header_macro(
-  sys_epoll
-  ../libc/include/sys/epoll.yaml
-  sys/epoll.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-types.struct_epoll_event
-    .llvm-libc-types.struct_epoll_data
-    .llvm-libc-types.sigset_t
-    .llvm-libc-macros.sys_epoll_macros
-)
-
-add_header_macro(
+add_gen_header(
   sys_ioctl
-  ../libc/include/sys/ioctl.yaml
-  sys/ioctl.h
+  DEF_FILE sys/ioctl.h.def
+  GEN_HDR sys/ioctl.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.sys_ioctl_macros
 )
 
-add_header_macro(
+add_gen_header(
   sys_mman
-  ../libc/include/sys/mman.yaml
-  sys/mman.h
+  DEF_FILE sys/mman.h.def
+  GEN_HDR sys/mman.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.sys_mman_macros
@@ -524,10 +345,10 @@ add_header_macro(
     .llvm-libc-types.ssize_t
 )
 
-add_header_macro(
+add_gen_header(
   sys_prctl
-  ../libc/include/sys/prctl.yaml
-  sys/prctl.h
+  DEF_FILE sys/prctl.h.def
+  GEN_HDR sys/prctl.h
   DEPENDS
     .llvm_libc_common_h
 )
@@ -540,10 +361,10 @@ add_header(
     .llvm-libc-macros.sys_queue_macros
 )
 
-add_header_macro(
+add_gen_header(
   sys_random
-  ../libc/include/sys/random.yaml
-  sys/random.h
+  DEF_FILE sys/random.h.def
+  GEN_HDR sys/random.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.sys_random_macros
@@ -551,10 +372,10 @@ add_header_macro(
     .llvm-libc-types.ssize_t
 )
 
-add_header_macro(
+add_gen_header(
   sys_resource
-  ../libc/include/sys/resource.yaml
-  sys/resource.h
+  DEF_FILE sys/resource.h.def
+  GEN_HDR sys/resource.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.sys_resource_macros
@@ -562,10 +383,10 @@ add_header_macro(
     .llvm-libc-types.struct_rlimit
 )
 
-add_header_macro(
+add_gen_header(
   sys_stat
-  ../libc/include/sys/stat.yaml
-  sys/stat.h
+  DEF_FILE sys/stat.h.def
+  GEN_HDR sys/stat.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.sys_stat_macros
@@ -583,10 +404,10 @@ add_header_macro(
     .llvm-libc-types.struct_stat
 )
 
-add_header_macro(
+add_gen_header(
   sys_select
-  ../libc/include/sys/select.yaml
-  sys/select.h
+  DEF_FILE sys/select.h.def
+  GEN_HDR sys/select.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.sys_select_macros
@@ -598,10 +419,10 @@ add_header_macro(
     .llvm-libc-types.struct_timeval
 )
 
-add_header_macro(
+add_gen_header(
   sys_sendfile
-  ../libc/include/sys/sendfile.yaml
-  sys/sendfile.h
+  DEF_FILE sys/sendfile.h.def
+  GEN_HDR sys/sendfile.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-types.off_t
@@ -609,52 +430,43 @@ add_header_macro(
     .llvm-libc-types.ssize_t
 )
 
-add_header_macro(
+add_gen_header(
   sys_socket
-  ../libc/include/sys/socket.yaml
-  sys/socket.h
+  DEF_FILE sys/socket.h.def
+  GEN_HDR sys/socket.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.sys_socket_macros
     .llvm-libc-types.sa_family_t
     .llvm-libc-types.socklen_t
-    .llvm-libc-types.struct_iovec
-    .llvm-libc-types.struct_msghdr
     .llvm-libc-types.struct_sockaddr
     .llvm-libc-types.struct_sockaddr_un
 )
 
-add_header_macro(
-  sys_statvfs
-  ../libc/include/sys/statvfs.yaml
-  sys/statvfs.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-types.struct_statvfs
-)
-
-add_header_macro(
+add_gen_header(
   sys_syscall
-  ../libc/include/sys/syscall.yaml
-  sys/syscall.h
-  DEPENDS
+  DEF_FILE sys/syscall.h.def
+  GEN_HDR sys/syscall.h
+  PARAMS
+    syscall_numbers=../config/${LIBC_TARGET_OS}/syscall_numbers.h.inc
+  DATA_FILES
+    ../config/${LIBC_TARGET_OS}/syscall_numbers.h.inc
 )
 
-add_header_macro(
+add_gen_header(
   sys_time
-  ../libc/include/sys/time.yaml
-  sys/time.h
+  DEF_FILE sys/time.h.def
+  GEN_HDR sys/time.h
   DEPENDS
     .llvm_libc_common_h
-    .llvm-libc-macros.sys_time_macros
-    .llvm-libc-types.struct_itimerval
     .llvm-libc-types.struct_timeval
+    .llvm-libc-macros.sys_time_macros
 )
 
-add_header_macro(
+add_gen_header(
   sys_types
-  ../libc/include/sys/types.yaml
-  sys/types.h
+  DEF_FILE sys/types.h.def
+  GEN_HDR sys/types.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-types.blkcnt_t
@@ -680,29 +492,19 @@ add_header_macro(
     .llvm-libc-types.uid_t
 )
 
-add_header_macro(
+add_gen_header(
   sys_utsname
-  ../libc/include/sys/utsname.yaml
-  sys/utsname.h
+  DEF_FILE sys/utsname.h.def
+  GEN_HDR sys/utsname.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-types.struct_utsname
 )
 
-add_header_macro(
-  sys_uio
-  ../libc/include/sys/uio.yaml
-  sys/uio.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-types.struct_iovec
-    .llvm-libc-types.ssize_t
-)
-
-add_header_macro(
+add_gen_header(
   sys_wait
-  ../libc/include/sys/wait.yaml
-  sys/wait.h
+  DEF_FILE sys/wait.h.def
+  GEN_HDR sys/wait.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.sys_wait_macros
@@ -711,10 +513,10 @@ add_header_macro(
     .llvm-libc-types.siginfo_t
 )
 
-add_header_macro(
+add_gen_header(
   termios
-  ../libc/include/termios.yaml
-  termios.h
+  DEF_FILE termios.h.def
+  GEN_HDR termios.h
   DEPENDS
     .llvm_libc_common_h
     .llvm-libc-macros.termios_macros
@@ -725,83 +527,30 @@ add_header_macro(
     .llvm-libc-types.tcflag_t
 )
 
-add_header_macro(
-  uchar
-  ../libc/include/uchar.yaml
-  uchar.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-types.mbstate_t
-    .llvm-libc-types.char8_t
-    .llvm-libc-types.char16_t
-    .llvm-libc-types.char32_t
-)
-
-add_header_macro(
+add_gen_header(
   wchar
-  ../libc/include/wchar.yaml
-  wchar.h
+  DEF_FILE wchar.h.def
+  GEN_HDR wchar.h
   DEPENDS
     .llvm_libc_common_h
-    .llvm-libc-macros.null_macro
     .llvm-libc-macros.wchar_macros
-    .llvm-libc-types.mbstate_t
     .llvm-libc-types.size_t
     .llvm-libc-types.wint_t
     .llvm-libc-types.wchar_t
 )
 
-add_header_macro(
-  wctype
-  ../libc/include/wctype.yaml
-  wctype.h
-  DEPENDS
-    .llvm_libc_common_h    
-    .llvm-libc-types.wint_t
-)
+if(LIBC_TARGET_ARCHITECTURE_IS_GPU)
+  file(MAKE_DIRECTORY ${LIBC_INCLUDE_DIR}/gpu)
 
-add_header_macro(
-  locale
-  ../libc/include/locale.yaml
-  locale.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-macros.locale_macros
-    .llvm-libc-macros.null_macro
-    .llvm-libc-types.locale_t
-    .llvm-libc-types.struct_lconv
-)
-
-add_header_macro(
-  poll
-  ../libc/include/poll.yaml
-  poll.h
-  DEPENDS
-    .llvm-libc-types.struct_pollfd
-    .llvm-libc-types.nfds_t
-    .llvm-libc-macros.poll-macros
+  add_gen_header(
+    gpu_rpc
+    DEF_FILE gpu/rpc.h.def
+    GEN_HDR gpu/rpc.h
+    DEPENDS
+      .llvm_libc_common_h
+      .llvm-libc-types.rpc_opcodes_t
   )
-
-add_header_macro(
-  nl_types
-  ../libc/include/nl_types.yaml
-  nl_types.h
-  DEPENDS
-    .llvm-libc-macros.nl_types_macros
-    .llvm-libc-types.nl_catd
-  )
-
-# UEFI spec references "Uefi.h" so we use that name for compatibility
-add_header_macro(
-  uefi
-  ../libc/include/Uefi.yaml
-  Uefi.h
-  DEPENDS
-    .llvm_libc_common_h
-    .llvm-libc-types.EFI_GUID
-    .llvm-libc-types.EFI_STATUS
-    .llvm-libc-types.EFI_SYSTEM_TABLE
-)
+endif()
 
 if(NOT LLVM_LIBC_FULL_BUILD)
   # We don't install headers in non-fullbuild mode.
@@ -842,7 +591,7 @@ foreach(target IN LISTS all_install_header_targets)
   # The GPU optionally provides the supported declarations externally so
   # offloading languages like CUDA and OpenMP know what is supported by libc. We
   # install these in the compiler's resource directory at a preset location.
-  if(LIBC_TARGET_OS_IS_GPU AND PACKAGE_VERSION)
+  if(LIBC_TARGET_ARCHITECTURE_IS_GPU AND PACKAGE_VERSION)
     get_target_property(decls_file ${target} DECLS_FILE_PATH)
     if(NOT decls_file)
       continue()

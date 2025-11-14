@@ -13,17 +13,13 @@
 #ifndef LLVM_EXECUTIONENGINE_ORC_LLJIT_H
 #define LLVM_EXECUTIONENGINE_ORC_LLJIT_H
 
-#include "llvm/ADT/SmallSet.h"
-#include "llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
 #include "llvm/ExecutionEngine/Orc/CompileOnDemandLayer.h"
 #include "llvm/ExecutionEngine/Orc/CompileUtils.h"
 #include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
 #include "llvm/ExecutionEngine/Orc/IRCompileLayer.h"
-#include "llvm/ExecutionEngine/Orc/IRPartitionLayer.h"
 #include "llvm/ExecutionEngine/Orc/IRTransformLayer.h"
 #include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
 #include "llvm/ExecutionEngine/Orc/ThreadSafeModule.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ThreadPool.h"
 #include <variant>
@@ -39,14 +35,14 @@ class ExecutorProcessControl;
 /// A pre-fabricated ORC JIT stack that can serve as an alternative to MCJIT.
 ///
 /// Create instances using LLJITBuilder.
-class LLVM_ABI LLJIT {
+class LLJIT {
   template <typename, typename, typename> friend class LLJITBuilderSetters;
 
-  LLVM_ABI friend Expected<JITDylibSP> setUpGenericLLVMIRPlatform(LLJIT &J);
+  friend Expected<JITDylibSP> setUpGenericLLVMIRPlatform(LLJIT &J);
 
 public:
   /// Initializer support for LLJIT.
-  class LLVM_ABI PlatformSupport {
+  class PlatformSupport {
   public:
     virtual ~PlatformSupport();
 
@@ -245,6 +241,8 @@ protected:
 
   Error applyDataLayout(Module &M);
 
+  void recordCtorDtors(Module &M);
+
   std::unique_ptr<ExecutionSession> ES;
   std::unique_ptr<PlatformSupport> PS;
 
@@ -256,6 +254,7 @@ protected:
 
   DataLayout DL;
   Triple TT;
+  std::unique_ptr<ThreadPool> CompileThreads;
 
   std::unique_ptr<ObjectLayer> ObjLinkingLayer;
   std::unique_ptr<ObjectTransformLayer> ObjTransformLayer;
@@ -272,15 +271,16 @@ class LLLazyJIT : public LLJIT {
 public:
 
   /// Sets the partition function.
-  void setPartitionFunction(IRPartitionLayer::PartitionFunction Partition) {
-    IPLayer->setPartitionFunction(std::move(Partition));
+  void
+  setPartitionFunction(CompileOnDemandLayer::PartitionFunction Partition) {
+    CODLayer->setPartitionFunction(std::move(Partition));
   }
 
   /// Returns a reference to the on-demand layer.
   CompileOnDemandLayer &getCompileOnDemandLayer() { return *CODLayer; }
 
   /// Add a module to be lazily compiled to JITDylib JD.
-  LLVM_ABI Error addLazyIRModule(JITDylib &JD, ThreadSafeModule M);
+  Error addLazyIRModule(JITDylib &JD, ThreadSafeModule M);
 
   /// Add a module to be lazily compiled to the main JITDylib.
   Error addLazyIRModule(ThreadSafeModule M) {
@@ -290,17 +290,17 @@ public:
 private:
 
   // Create a single-threaded LLLazyJIT instance.
-  LLVM_ABI LLLazyJIT(LLLazyJITBuilderState &S, Error &Err);
+  LLLazyJIT(LLLazyJITBuilderState &S, Error &Err);
 
   std::unique_ptr<LazyCallThroughManager> LCTMgr;
-  std::unique_ptr<IRPartitionLayer> IPLayer;
   std::unique_ptr<CompileOnDemandLayer> CODLayer;
 };
 
 class LLJITBuilderState {
 public:
   using ObjectLinkingLayerCreator =
-      std::function<Expected<std::unique_ptr<ObjectLayer>>(ExecutionSession &)>;
+      std::function<Expected<std::unique_ptr<ObjectLayer>>(ExecutionSession &,
+                                                           const Triple &)>;
 
   using CompileFunctionCreator =
       std::function<Expected<std::unique_ptr<IRCompileLayer::IRCompiler>>(
@@ -310,8 +310,6 @@ public:
       unique_function<Expected<JITDylibSP>(LLJIT &J)>;
 
   using PlatformSetupFunction = unique_function<Expected<JITDylibSP>(LLJIT &J)>;
-
-  using NotifyCreatedFunction = std::function<Error(LLJIT &)>;
 
   std::unique_ptr<ExecutorProcessControl> EPC;
   std::unique_ptr<ExecutionSession> ES;
@@ -323,18 +321,16 @@ public:
   CompileFunctionCreator CreateCompileFunction;
   unique_function<Error(LLJIT &)> PrePlatformSetup;
   PlatformSetupFunction SetUpPlatform;
-  NotifyCreatedFunction NotifyCreated;
   unsigned NumCompileThreads = 0;
-  std::optional<bool> SupportConcurrentCompilation;
 
   /// Called prior to JIT class construcion to fix up defaults.
-  LLVM_ABI Error prepareForConstruction();
+  Error prepareForConstruction();
 };
 
 template <typename JITType, typename SetterImpl, typename State>
 class LLJITBuilderSetters {
 public:
-  /// Set an ExecutorProcessControl for this instance.
+  /// Set a ExecutorProcessControl for this instance.
   /// This should not be called if ExecutionSession has already been set.
   SetterImpl &
   setExecutorProcessControl(std::unique_ptr<ExecutorProcessControl> EPC) {
@@ -445,16 +441,6 @@ public:
     return impl();
   }
 
-  /// Set up a callback after successful construction of the JIT.
-  ///
-  /// This is useful to attach generators to JITDylibs or inject initial symbol
-  /// definitions.
-  SetterImpl &
-  setNotifyCreatedCallback(LLJITBuilderState::NotifyCreatedFunction Callback) {
-    impl().NotifyCreated = std::move(Callback);
-    return impl();
-  }
-
   /// Set the number of compile threads to use.
   ///
   /// If set to zero, compilation will be performed on the execution thread when
@@ -463,26 +449,19 @@ public:
   ///
   /// If this method is not called, behavior will be as if it were called with
   /// a zero argument.
-  ///
-  /// This setting should not be used if a custom ExecutionSession or
-  /// ExecutorProcessControl object is set: in those cases a custom
-  /// TaskDispatcher should be used instead.
   SetterImpl &setNumCompileThreads(unsigned NumCompileThreads) {
     impl().NumCompileThreads = NumCompileThreads;
     return impl();
   }
 
-  /// If set, this forces LLJIT concurrent compilation support to be either on
-  /// or off. This controls the selection of compile function (concurrent vs
-  /// single threaded) and whether or not sub-modules are cloned to new
-  /// contexts for lazy emission.
+  /// Set an ExecutorProcessControl object.
   ///
-  /// If not explicitly set then concurrency support will be turned on if
-  /// NumCompileThreads is set to a non-zero value, or if a custom
-  /// ExecutionSession or ExecutorProcessControl instance is provided.
-  SetterImpl &setSupportConcurrentCompilation(
-      std::optional<bool> SupportConcurrentCompilation) {
-    impl().SupportConcurrentCompilation = SupportConcurrentCompilation;
+  /// If the platform uses ObjectLinkingLayer by default and no
+  /// ObjectLinkingLayerCreator has been set then the ExecutorProcessControl
+  /// object will be used to supply the memory manager for the
+  /// ObjectLinkingLayer.
+  SetterImpl &setExecutorProcessControl(ExecutorProcessControl &EPC) {
+    impl().EPC = &EPC;
     return impl();
   }
 
@@ -495,11 +474,6 @@ public:
     std::unique_ptr<JITType> J(new JITType(impl(), Err));
     if (Err)
       return std::move(Err);
-
-    if (impl().NotifyCreated)
-      if (Error Err = impl().NotifyCreated(*J))
-        return std::move(Err);
-
     return std::move(J);
   }
 
@@ -524,7 +498,7 @@ public:
   std::unique_ptr<LazyCallThroughManager> LCTMgr;
   IndirectStubsManagerBuilderFunction ISMBuilder;
 
-  LLVM_ABI Error prepareForConstruction();
+  Error prepareForConstruction();
 };
 
 template <typename JITType, typename SetterImpl, typename State>
@@ -568,7 +542,7 @@ class LLLazyJITBuilder
 
 /// Configure the LLJIT instance to use orc runtime support. This overload
 /// assumes that the client has manually configured a Platform object.
-LLVM_ABI Error setUpOrcPlatformManually(LLJIT &J);
+Error setUpOrcPlatformManually(LLJIT &J);
 
 /// Configure the LLJIT instance to use the ORC runtime and the detected
 /// native target for the executor.
@@ -591,7 +565,7 @@ public:
     return *this;
   }
 
-  LLVM_ABI Expected<JITDylibSP> operator()(LLJIT &J);
+  Expected<JITDylibSP> operator()(LLJIT &J);
 
 private:
   std::variant<std::string, std::unique_ptr<MemoryBuffer>> OrcRuntime;
@@ -602,17 +576,17 @@ private:
 /// llvm.global_dtors variables and (if present) build initialization and
 /// deinitialization functions. Platform specific initialization configurations
 /// should be preferred where available.
-LLVM_ABI Expected<JITDylibSP> setUpGenericLLVMIRPlatform(LLJIT &J);
+Expected<JITDylibSP> setUpGenericLLVMIRPlatform(LLJIT &J);
 
 /// Configure the LLJIT instance to disable platform support explicitly. This is
 /// useful in two cases: for platforms that don't have such requirements and for
 /// platforms, that we have no explicit support yet and that don't work well
 /// with the generic IR platform.
-LLVM_ABI Expected<JITDylibSP> setUpInactivePlatform(LLJIT &J);
+Expected<JITDylibSP> setUpInactivePlatform(LLJIT &J);
 
 /// A Platform-support class that implements initialize / deinitialize by
 /// forwarding to ORC runtime dlopen / dlclose operations.
-class LLVM_ABI ORCPlatformSupport : public LLJIT::PlatformSupport {
+class ORCPlatformSupport : public LLJIT::PlatformSupport {
 public:
   ORCPlatformSupport(orc::LLJIT &J) : J(J) {}
   Error initialize(orc::JITDylib &JD) override;
@@ -621,7 +595,6 @@ public:
 private:
   orc::LLJIT &J;
   DenseMap<orc::JITDylib *, orc::ExecutorAddr> DSOHandles;
-  SmallPtrSet<JITDylib const *, 8> InitializedDylib;
 };
 
 } // End namespace orc

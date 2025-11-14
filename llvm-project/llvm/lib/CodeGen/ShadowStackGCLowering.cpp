@@ -42,6 +42,7 @@
 #include "llvm/Transforms/Utils/EscapeEnumerator.h"
 #include <cassert>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -109,7 +110,7 @@ public:
 PreservedAnalyses ShadowStackGCLoweringPass::run(Module &M,
                                                  ModuleAnalysisManager &MAM) {
   auto &Map = MAM.getResult<CollectorMetadataAnalysis>(M);
-  if (!Map.contains("shadow-stack"))
+  if (Map.StrategyMap.contains("shadow-stack"))
     return PreservedAnalyses::all();
 
   ShadowStackGCLoweringImpl Impl;
@@ -233,7 +234,7 @@ bool ShadowStackGCLoweringImpl::doInitialization(Module &M) {
   // Specifies length of variable length array.
   EltTys.push_back(Type::getInt32Ty(M.getContext()));
   FrameMapTy = StructType::create(EltTys, "gc_map");
-  PointerType *FrameMapPtrTy = PointerType::getUnqual(M.getContext());
+  PointerType *FrameMapPtrTy = PointerType::getUnqual(FrameMapTy);
 
   // struct StackEntry {
   //   ShadowStackEntry *Next; // Caller's stack entry.
@@ -241,12 +242,13 @@ bool ShadowStackGCLoweringImpl::doInitialization(Module &M) {
   //   void *Roots[];          // Stack roots (in-place array, so we pretend).
   // };
 
-  PointerType *StackEntryPtrTy = PointerType::getUnqual(M.getContext());
+  StackEntryTy = StructType::create(M.getContext(), "gc_stackentry");
 
   EltTys.clear();
-  EltTys.push_back(StackEntryPtrTy);
+  EltTys.push_back(PointerType::getUnqual(StackEntryTy));
   EltTys.push_back(FrameMapPtrTy);
-  StackEntryTy = StructType::create(EltTys, "gc_stackentry");
+  StackEntryTy->setBody(EltTys);
+  PointerType *StackEntryPtrTy = PointerType::getUnqual(StackEntryTy);
 
   // Get the root chain if it already exists.
   Head = M.getGlobalVariable("llvm_gc_root_chain");

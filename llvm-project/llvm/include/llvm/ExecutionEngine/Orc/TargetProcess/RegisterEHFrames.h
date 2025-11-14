@@ -17,28 +17,26 @@
 #define LLVM_EXECUTIONENGINE_ORC_TARGETPROCESS_REGISTEREHFRAMES_H
 
 #include "llvm/ExecutionEngine/Orc/Shared/WrapperFunctionUtils.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/Error.h"
 
 namespace llvm {
 namespace orc {
 
 /// Register frames in the given eh-frame section with libunwind.
-LLVM_ABI Error registerEHFrameSection(const void *EHFrameSectionAddr,
-                                      size_t EHFrameSectionSize);
+Error registerEHFrameSection(const void *EHFrameSectionAddr,
+                             size_t EHFrameSectionSize);
 
 /// Unregister frames in the given eh-frame section with libunwind.
-LLVM_ABI Error deregisterEHFrameSection(const void *EHFrameSectionAddr,
-                                        size_t EHFrameSectionSize);
+Error deregisterEHFrameSection(const void *EHFrameSectionAddr,
+                               size_t EHFrameSectionSize);
 
 } // end namespace orc
 } // end namespace llvm
 
-extern "C" LLVM_ABI llvm::orc::shared::CWrapperFunctionResult
-llvm_orc_registerEHFrameSectionAllocAction(const char *ArgData, size_t ArgSize);
+extern "C" llvm::orc::shared::CWrapperFunctionResult
+llvm_orc_registerEHFrameSectionWrapper(const char *Data, uint64_t Size);
 
-extern "C" LLVM_ABI llvm::orc::shared::CWrapperFunctionResult
-llvm_orc_deregisterEHFrameSectionAllocAction(const char *ArgData,
-                                             size_t ArgSize);
+extern "C" llvm::orc::shared::CWrapperFunctionResult
+llvm_orc_deregisterEHFrameSectionWrapper(const char *Data, uint64_t Size);
 
 #endif // LLVM_EXECUTIONENGINE_ORC_TARGETPROCESS_REGISTEREHFRAMES_H

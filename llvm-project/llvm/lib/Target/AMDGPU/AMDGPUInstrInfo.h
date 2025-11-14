@@ -23,16 +23,21 @@ class GCNSubtarget;
 class MachineMemOperand;
 class MachineInstr;
 
-namespace AMDGPU {
+class AMDGPUInstrInfo {
+public:
+  explicit AMDGPUInstrInfo(const GCNSubtarget &st);
 
-bool isUniformMMO(const MachineMemOperand *MMO);
+  static bool isUniformMMO(const MachineMemOperand *MMO);
+};
+
+namespace AMDGPU {
 
 /// Return the intrinsic ID for opcodes with the G_AMDGPU_INTRIN_ prefix.
 ///
 /// These opcodes have an Intrinsic::ID operand similar to a GIntrinsic. But
 /// they are not actual instances of GIntrinsics, so we cannot use
 /// GIntrinsic::getIntrinsicID() on them.
-Intrinsic::ID getIntrinsicID(const MachineInstr &I);
+unsigned getIntrinsicID(const MachineInstr &I);
 
 struct RsrcIntrinsic {
   unsigned Intr;
@@ -50,7 +55,6 @@ const D16ImageDimIntrinsic *lookupD16ImageDimIntrinsic(unsigned Intr);
 struct ImageDimIntrinsicInfo {
   unsigned Intr;
   unsigned BaseOpcode;
-  unsigned AtomicNoRetBaseOpcode;
   MIMGDim Dim;
 
   uint8_t NumOffsetArgs;

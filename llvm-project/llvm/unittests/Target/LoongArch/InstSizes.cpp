@@ -2,7 +2,6 @@
 #include "LoongArchTargetMachine.h"
 #include "llvm/CodeGen/MIRParser/MIRParser.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
-#include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/TargetSelect.h"
@@ -13,8 +12,8 @@
 using namespace llvm;
 
 namespace {
-std::unique_ptr<TargetMachine> createTargetMachine() {
-  Triple TT("loongarch64--");
+std::unique_ptr<LLVMTargetMachine> createTargetMachine() {
+  auto TT(Triple::normalize("loongarch64--"));
   std::string CPU("generic-la64");
   std::string FS("+64bit");
 
@@ -25,9 +24,9 @@ std::unique_ptr<TargetMachine> createTargetMachine() {
   std::string Error;
   const Target *TheTarget = TargetRegistry::lookupTarget(TT, Error);
 
-  return std::unique_ptr<TargetMachine>(
+  return std::unique_ptr<LLVMTargetMachine>(static_cast<LLVMTargetMachine *>(
       TheTarget->createTargetMachine(TT, CPU, FS, TargetOptions(), std::nullopt,
-                                     std::nullopt, CodeGenOptLevel::Default));
+                                     std::nullopt, CodeGenOptLevel::Default)));
 }
 
 std::unique_ptr<LoongArchInstrInfo> createInstrInfo(TargetMachine *TM) {
@@ -42,8 +41,8 @@ std::unique_ptr<LoongArchInstrInfo> createInstrInfo(TargetMachine *TM) {
 /// the \p InputMIRSnippet (global variables etc)
 /// Inspired by AArch64
 void runChecks(
-    TargetMachine *TM, LoongArchInstrInfo *II, const StringRef InputIRSnippet,
-    const StringRef InputMIRSnippet,
+    LLVMTargetMachine *TM, LoongArchInstrInfo *II,
+    const StringRef InputIRSnippet, const StringRef InputMIRSnippet,
     std::function<void(LoongArchInstrInfo &, MachineFunction &)> Checks) {
   LLVMContext Context;
 
@@ -70,7 +69,7 @@ void runChecks(
   std::unique_ptr<Module> M = MParser->parseIRModule();
   ASSERT_TRUE(M);
 
-  M->setTargetTriple(TM->getTargetTriple());
+  M->setTargetTriple(TM->getTargetTriple().getTriple());
   M->setDataLayout(TM->createDataLayout());
 
   MachineModuleInfo MMI(TM);
@@ -87,7 +86,7 @@ void runChecks(
 } // anonymous namespace
 
 TEST(InstSizes, INLINEASM_BR) {
-  std::unique_ptr<TargetMachine> TM = createTargetMachine();
+  std::unique_ptr<LLVMTargetMachine> TM = createTargetMachine();
   std::unique_ptr<LoongArchInstrInfo> II = createInstrInfo(TM.get());
 
   runChecks(TM.get(), II.get(), "",
@@ -101,7 +100,7 @@ TEST(InstSizes, INLINEASM_BR) {
 }
 
 TEST(InstSizes, SPACE) {
-  std::unique_ptr<TargetMachine> TM = createTargetMachine();
+  std::unique_ptr<LLVMTargetMachine> TM = createTargetMachine();
   std::unique_ptr<LoongArchInstrInfo> II = createInstrInfo(TM.get());
 
   runChecks(TM.get(), II.get(), "", "  INLINEASM &\".space 1024\", 1\n",
@@ -112,7 +111,7 @@ TEST(InstSizes, SPACE) {
 }
 
 TEST(InstSizes, AtomicPseudo) {
-  std::unique_ptr<TargetMachine> TM = createTargetMachine();
+  std::unique_ptr<LLVMTargetMachine> TM = createTargetMachine();
   std::unique_ptr<LoongArchInstrInfo> II = createInstrInfo(TM.get());
 
   runChecks(
@@ -138,20 +137,5 @@ TEST(InstSizes, AtomicPseudo) {
         EXPECT_EQ(36u, II.getInstSizeInBytes(*I));
         ++I;
         EXPECT_EQ(44u, II.getInstSizeInBytes(*I));
-      });
-}
-
-TEST(InstSizes, StatePoint) {
-  std::unique_ptr<TargetMachine> TM = createTargetMachine();
-  std::unique_ptr<LoongArchInstrInfo> II = createInstrInfo(TM.get());
-
-  runChecks(
-      TM.get(), II.get(), "  declare zeroext i1 @return_i1()\n",
-      // clang-format off
-      "  STATEPOINT 0, 0, 0, target-flags(loongarch-call-plt) @return_i1, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, implicit-def $r3, implicit-def $r4\n",
-      // clang-format on
-      [](LoongArchInstrInfo &II, MachineFunction &MF) {
-        auto I = MF.begin()->begin();
-        EXPECT_EQ(4u, II.getInstSizeInBytes(*I));
       });
 }

@@ -7,7 +7,6 @@ add_header_library(
   HDRS
     file_actions.h
   DEPENDS
-    libc.hdr.stdint_proxy
     libc.include.spawn
 )
 
@@ -29,9 +28,9 @@ add_entrypoint_object(
     posix_spawn_file_actions_destroy.h
   DEPENDS
     .file_actions
+    libc.include.errno
     libc.include.spawn
     libc.src.__support.CPP.new
-    libc.src.errno.errno
 )
 
 add_entrypoint_object(
@@ -42,9 +41,9 @@ add_entrypoint_object(
     posix_spawn_file_actions_adddup2.h
   DEPENDS
     .file_actions
+    libc.include.errno
     libc.include.spawn
     libc.src.__support.CPP.new
-    libc.src.errno.errno
 )
 
 add_entrypoint_object(
@@ -55,9 +54,9 @@ add_entrypoint_object(
     posix_spawn_file_actions_addopen.h
   DEPENDS
     .file_actions
+    libc.include.errno
     libc.include.spawn
     libc.src.__support.CPP.new
-    libc.src.errno.errno
 )
 
 add_entrypoint_object(
@@ -68,9 +67,9 @@ add_entrypoint_object(
     posix_spawn_file_actions_addclose.h
   DEPENDS
     .file_actions
+    libc.include.errno
     libc.include.spawn
     libc.src.__support.CPP.new
-    libc.src.errno.errno
 )
 
 add_entrypoint_object(

@@ -1,11 +1,14 @@
 add_llvm_library(LLVMBOLTPasses
-  AArch64RelaxationPass.cpp
+  ADRRelaxationPass.cpp
   Aligner.cpp
   AllocCombiner.cpp
   AsmDump.cpp
   BinaryPasses.cpp
+  BinaryFunctionCallGraph.cpp
   CMOVConversion.cpp
   CacheMetrics.cpp
+  CallGraph.cpp
+  CallGraphWalker.cpp
   DataflowAnalysis.cpp
   DataflowInfoManager.cpp
   FrameAnalysis.cpp
@@ -13,23 +16,20 @@ add_llvm_library(LLVMBOLTPasses
   FixRelaxationPass.cpp
   FixRISCVCallsPass.cpp
   HFSort.cpp
+  HFSortPlus.cpp
   Hugify.cpp
   IdenticalCodeFolding.cpp
   IndirectCallPromotion.cpp
   Inliner.cpp
-  InsertNegateRAStatePass.cpp
   Instrumentation.cpp
   JTFootprintReduction.cpp
   LongJmp.cpp
   LoopInversionPass.cpp
   LivenessAnalysis.cpp
   MCF.cpp
-  MarkRAStates.cpp
   PatchEntries.cpp
-  PAuthGadgetScanner.cpp
   PettisAndHansen.cpp
   PLTCall.cpp
-  ProfileQualityStats.cpp
   RegAnalysis.cpp
   RegReAssign.cpp
   ReorderAlgorithm.cpp
@@ -49,7 +49,6 @@ add_llvm_library(LLVMBOLTPasses
   VeneerElimination.cpp
   RetpolineInsertion.cpp
 
-  NO_EXPORT
   DISABLE_LLVM_LINK_LLVM_DYLIB
 
   LINK_LIBS

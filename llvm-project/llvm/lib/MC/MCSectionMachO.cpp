@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/MC/MCSectionMachO.h"
-#include "llvm/MC/MCAsmInfoDarwin.h"
 #include "llvm/MC/SectionKind.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -93,9 +92,8 @@ ENTRY("" /*FIXME*/,          S_ATTR_LOC_RELOC)
 MCSectionMachO::MCSectionMachO(StringRef Segment, StringRef Section,
                                unsigned TAA, unsigned reserved2, SectionKind K,
                                MCSymbol *Begin)
-    : MCSection(Section, K.isText(),
-                MachO::isVirtualSection(TAA & MachO::SECTION_TYPE), Begin),
-      TypeAndAttributes(TAA), Reserved2(reserved2) {
+    : MCSection(SV_MachO, Section, K, Begin), TypeAndAttributes(TAA),
+      Reserved2(reserved2) {
   assert(Segment.size() <= 16 && Section.size() <= 16 &&
          "Segment or section string too long");
   for (unsigned i = 0; i != 16; ++i) {
@@ -106,20 +104,19 @@ MCSectionMachO::MCSectionMachO(StringRef Segment, StringRef Section,
   }
 }
 
-void MCAsmInfoDarwin::printSwitchToSection(const MCSection &Section, uint32_t,
-                                           const Triple &T,
-                                           raw_ostream &OS) const {
-  auto &Sec = static_cast<const MCSectionMachO &>(Section);
-  OS << "\t.section\t" << Sec.getSegmentName() << ',' << Sec.getName();
+void MCSectionMachO::printSwitchToSection(const MCAsmInfo &MAI, const Triple &T,
+                                          raw_ostream &OS,
+                                          const MCExpr *Subsection) const {
+  OS << "\t.section\t" << getSegmentName() << ',' << getName();
 
   // Get the section type and attributes.
-  unsigned TAA = Sec.getTypeAndAttributes();
+  unsigned TAA = getTypeAndAttributes();
   if (TAA == 0) {
     OS << '\n';
     return;
   }
 
-  MachO::SectionType SectionType = Sec.getType();
+  MachO::SectionType SectionType = getType();
   assert(SectionType <= MachO::LAST_KNOWN_SECTION_TYPE &&
          "Invalid SectionType specified!");
 
@@ -137,8 +134,8 @@ void MCAsmInfoDarwin::printSwitchToSection(const MCSection &Section, uint32_t,
   if (SectionAttrs == 0) {
     // If we have a S_SYMBOL_STUBS size specified, print it along with 'none' as
     // the attribute specifier.
-    if (Sec.Reserved2 != 0)
-      OS << ",none," << Sec.Reserved2;
+    if (Reserved2 != 0)
+      OS << ",none," << Reserved2;
     OS << '\n';
     return;
   }
@@ -166,9 +163,19 @@ void MCAsmInfoDarwin::printSwitchToSection(const MCSection &Section, uint32_t,
   assert(SectionAttrs == 0 && "Unknown section attributes!");
 
   // If we have a S_SYMBOL_STUBS size specified, print it.
-  if (Sec.Reserved2 != 0)
-    OS << ',' << Sec.Reserved2;
+  if (Reserved2 != 0)
+    OS << ',' << Reserved2;
   OS << '\n';
+}
+
+bool MCSectionMachO::useCodeAlign() const {
+  return hasAttribute(MachO::S_ATTR_PURE_INSTRUCTIONS);
+}
+
+bool MCSectionMachO::isVirtualSection() const {
+  return (getType() == MachO::S_ZEROFILL ||
+          getType() == MachO::S_GB_ZEROFILL ||
+          getType() == MachO::S_THREAD_LOCAL_ZEROFILL);
 }
 
 /// ParseSectionSpecifier - Parse the section specifier indicated by "Spec".
@@ -284,15 +291,3 @@ Error MCSectionMachO::ParseSectionSpecifier(StringRef Spec,       // In.
 
   return Error::success();
 }
-
-void MCSectionMachO::allocAtoms() {
-  auto *L = curFragList();
-  if (L->Tail)
-    Atoms.resize(L->Tail->getLayoutOrder() + 1);
-}
-
-const MCSymbol *MCSectionMachO::getAtom(size_t I) const {
-  return I < Atoms.size() ? Atoms[I] : nullptr;
-}
-
-void MCSectionMachO::setAtom(size_t I, const MCSymbol *Sym) { Atoms[I] = Sym; }

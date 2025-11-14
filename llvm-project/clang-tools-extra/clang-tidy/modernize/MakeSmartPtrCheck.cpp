@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- MakeSmartPtrCheck.cpp - clang-tidy--------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -16,15 +16,15 @@ using namespace clang::ast_matchers;
 
 namespace clang::tidy::modernize {
 
-static constexpr char ConstructorCall[] = "constructorCall";
-static constexpr char DirectVar[] = "directVar";
-static constexpr char ResetCall[] = "resetCall";
-static constexpr char NewExpression[] = "newExpression";
+namespace {
 
-static std::string getNewExprName(const CXXNewExpr *NewExpr,
-                                  const SourceManager &SM,
-                                  const LangOptions &Lang) {
-  const StringRef WrittenName = Lexer::getSourceText(
+constexpr char ConstructorCall[] = "constructorCall";
+constexpr char ResetCall[] = "resetCall";
+constexpr char NewExpression[] = "newExpression";
+
+std::string getNewExprName(const CXXNewExpr *NewExpr, const SourceManager &SM,
+                           const LangOptions &Lang) {
+  StringRef WrittenName = Lexer::getSourceText(
       CharSourceRange::getTokenRange(
           NewExpr->getAllocatedTypeSourceInfo()->getTypeLoc().getSourceRange()),
       SM, Lang);
@@ -33,6 +33,8 @@ static std::string getNewExprName(const CXXNewExpr *NewExpr,
   }
   return WrittenName.str();
 }
+
+} // namespace
 
 const char MakeSmartPtrCheck::PointerType[] = "pointerType";
 
@@ -46,7 +48,7 @@ MakeSmartPtrCheck::MakeSmartPtrCheck(StringRef Name, ClangTidyContext *Context,
           Options.get("MakeSmartPtrFunctionHeader", "<memory>")),
       MakeSmartPtrFunctionName(
           Options.get("MakeSmartPtrFunction", MakeSmartPtrFunctionName)),
-      IgnoreMacros(Options.get("IgnoreMacros", true)),
+      IgnoreMacros(Options.getLocalOrGlobal("IgnoreMacros", true)),
       IgnoreDefaultInitialization(
           Options.get("IgnoreDefaultInitialization", true)) {}
 
@@ -79,18 +81,18 @@ void MakeSmartPtrCheck::registerMatchers(ast_matchers::MatchFinder *Finder) {
   auto IsPlacement = hasAnyPlacementArg(anything());
 
   Finder->addMatcher(
-      traverse(TK_AsIs,
-               cxxConstructExpr(
-                   anyOf(hasParent(cxxBindTemporaryExpr()),
-                         hasParent(varDecl().bind(DirectVar))),
-                   hasType(getSmartPointerTypeMatcher()), argumentCountIs(1),
-                   hasArgument(
-                       0, cxxNewExpr(hasType(pointsTo(qualType(hasCanonicalType(
-                                         equalsBoundNode(PointerType))))),
-                                     CanCallCtor, unless(IsPlacement))
-                              .bind(NewExpression)),
-                   unless(isInTemplateInstantiation()))
-                   .bind(ConstructorCall)),
+      traverse(
+          TK_AsIs,
+          cxxBindTemporaryExpr(has(ignoringParenImpCasts(
+              cxxConstructExpr(
+                  hasType(getSmartPointerTypeMatcher()), argumentCountIs(1),
+                  hasArgument(
+                      0, cxxNewExpr(hasType(pointsTo(qualType(hasCanonicalType(
+                                        equalsBoundNode(PointerType))))),
+                                    CanCallCtor, unless(IsPlacement))
+                             .bind(NewExpression)),
+                  unless(isInTemplateInstantiation()))
+                  .bind(ConstructorCall))))),
       this);
 
   Finder->addMatcher(
@@ -117,7 +119,6 @@ void MakeSmartPtrCheck::check(const MatchFinder::MatchResult &Result) {
   SourceManager &SM = *Result.SourceManager;
   const auto *Construct =
       Result.Nodes.getNodeAs<CXXConstructExpr>(ConstructorCall);
-  const auto *DVar = Result.Nodes.getNodeAs<VarDecl>(DirectVar);
   const auto *Reset = Result.Nodes.getNodeAs<CXXMemberCallExpr>(ResetCall);
   const auto *Type = Result.Nodes.getNodeAs<QualType>(PointerType);
   const auto *New = Result.Nodes.getNodeAs<CXXNewExpr>(NewExpression);
@@ -134,31 +135,30 @@ void MakeSmartPtrCheck::check(const MatchFinder::MatchResult &Result) {
   //
   // The fix of the check has side effect, it introduces value initialization
   // which maybe unexpected and cause performance regression.
-  const bool Initializes = New->hasInitializer() ||
-                           !utils::type_traits::isTriviallyDefaultConstructible(
-                               New->getAllocatedType(), *Result.Context);
+  bool Initializes = New->hasInitializer() ||
+                     !utils::type_traits::isTriviallyDefaultConstructible(
+                         New->getAllocatedType(), *Result.Context);
   if (!Initializes && IgnoreDefaultInitialization)
     return;
   if (Construct)
-    checkConstruct(SM, Result.Context, Construct, DVar, Type, New);
+    checkConstruct(SM, Result.Context, Construct, Type, New);
   else if (Reset)
     checkReset(SM, Result.Context, Reset, New);
 }
 
 void MakeSmartPtrCheck::checkConstruct(SourceManager &SM, ASTContext *Ctx,
                                        const CXXConstructExpr *Construct,
-                                       const VarDecl *DVar,
                                        const QualType *Type,
                                        const CXXNewExpr *New) {
-  const SourceLocation ConstructCallStart = Construct->getExprLoc();
-  const bool InMacro = ConstructCallStart.isMacroID();
+  SourceLocation ConstructCallStart = Construct->getExprLoc();
+  bool InMacro = ConstructCallStart.isMacroID();
 
   if (InMacro && IgnoreMacros) {
     return;
   }
 
   bool Invalid = false;
-  const StringRef ExprStr = Lexer::getSourceText(
+  StringRef ExprStr = Lexer::getSourceText(
       CharSourceRange::getCharRange(
           ConstructCallStart, Construct->getParenOrBraceRange().getBegin()),
       SM, getLangOpts(), &Invalid);
@@ -178,7 +178,7 @@ void MakeSmartPtrCheck::checkConstruct(SourceManager &SM, ASTContext *Ctx,
   }
 
   // Find the location of the template's left angle.
-  const size_t LAngle = ExprStr.find('<');
+  size_t LAngle = ExprStr.find('<');
   SourceLocation ConstructCallEnd;
   if (LAngle == StringRef::npos) {
     // If the template argument is missing (because it is part of the alias)
@@ -190,19 +190,14 @@ void MakeSmartPtrCheck::checkConstruct(SourceManager &SM, ASTContext *Ctx,
     ConstructCallEnd = ConstructCallStart.getLocWithOffset(LAngle);
   }
 
-  std::string FinalMakeSmartPtrFunctionName = MakeSmartPtrFunctionName.str();
-  if (DVar)
-    FinalMakeSmartPtrFunctionName =
-        ExprStr.str() + " = " + MakeSmartPtrFunctionName.str();
-
   Diag << FixItHint::CreateReplacement(
       CharSourceRange::getCharRange(ConstructCallStart, ConstructCallEnd),
-      FinalMakeSmartPtrFunctionName);
+      MakeSmartPtrFunctionName);
 
   // If the smart_ptr is built with brace enclosed direct initialization, use
   // parenthesis instead.
   if (Construct->isListInitialization()) {
-    const SourceRange BraceRange = Construct->getParenOrBraceRange();
+    SourceRange BraceRange = Construct->getParenOrBraceRange();
     Diag << FixItHint::CreateReplacement(
         CharSourceRange::getCharRange(
             BraceRange.getBegin(), BraceRange.getBegin().getLocWithOffset(1)),
@@ -220,13 +215,13 @@ void MakeSmartPtrCheck::checkReset(SourceManager &SM, ASTContext *Ctx,
                                    const CXXMemberCallExpr *Reset,
                                    const CXXNewExpr *New) {
   const auto *Expr = cast<MemberExpr>(Reset->getCallee());
-  const SourceLocation OperatorLoc = Expr->getOperatorLoc();
-  const SourceLocation ResetCallStart = Reset->getExprLoc();
-  const SourceLocation ExprStart = Expr->getBeginLoc();
-  const SourceLocation ExprEnd =
+  SourceLocation OperatorLoc = Expr->getOperatorLoc();
+  SourceLocation ResetCallStart = Reset->getExprLoc();
+  SourceLocation ExprStart = Expr->getBeginLoc();
+  SourceLocation ExprEnd =
       Lexer::getLocForEndOfToken(Expr->getEndLoc(), 0, SM, getLangOpts());
 
-  const bool InMacro = ExprStart.isMacroID();
+  bool InMacro = ExprStart.isMacroID();
 
   if (InMacro && IgnoreMacros) {
     return;
@@ -267,7 +262,7 @@ bool MakeSmartPtrCheck::replaceNew(DiagnosticBuilder &Diag,
                                    const CXXNewExpr *New, SourceManager &SM,
                                    ASTContext *Ctx) {
   auto SkipParensParents = [&](const Expr *E) {
-    const TraversalKindScope RAII(*Ctx, TK_AsIs);
+    TraversalKindScope RAII(*Ctx, TK_AsIs);
 
     for (const Expr *OldE = nullptr; E != OldE;) {
       OldE = E;
@@ -281,9 +276,9 @@ bool MakeSmartPtrCheck::replaceNew(DiagnosticBuilder &Diag,
     return E;
   };
 
-  const SourceRange NewRange = SkipParensParents(New)->getSourceRange();
-  const SourceLocation NewStart = NewRange.getBegin();
-  const SourceLocation NewEnd = NewRange.getEnd();
+  SourceRange NewRange = SkipParensParents(New)->getSourceRange();
+  SourceLocation NewStart = NewRange.getBegin();
+  SourceLocation NewEnd = NewRange.getEnd();
 
   // Skip when the source location of the new expression is invalid.
   if (NewStart.isInvalid() || NewEnd.isInvalid())
@@ -362,11 +357,12 @@ bool MakeSmartPtrCheck::replaceNew(DiagnosticBuilder &Diag,
         return false;
     }
     if (ArraySizeExpr.empty()) {
-      const SourceRange InitRange = New->getDirectInitRange();
+      SourceRange InitRange = New->getDirectInitRange();
       Diag << FixItHint::CreateRemoval(
           SourceRange(NewStart, InitRange.getBegin()));
       Diag << FixItHint::CreateRemoval(SourceRange(InitRange.getEnd(), NewEnd));
-    } else {
+    }
+    else {
       // New array expression with default/value initialization:
       //   smart_ptr<Foo[]>(new int[5]());
       //   smart_ptr<Foo[]>(new Foo[5]());

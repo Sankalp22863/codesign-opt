@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "TestDialect.h"
-#include "TestOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
@@ -27,8 +26,8 @@ makeIsolatedFromAboveImpl(RewriterBase &rewriter,
       makeRegionIsolatedFromAbove(rewriter, region, callBack);
   SmallVector<Value> operands = regionOp.getOperands();
   operands.append(capturedValues);
-  auto isolatedRegionOp = test::IsolatedOneRegionOp::create(
-      rewriter, regionOp.getLoc(), TypeRange(), operands);
+  auto isolatedRegionOp =
+      rewriter.create<test::IsolatedOneRegionOp>(regionOp.getLoc(), operands);
   rewriter.inlineRegionBefore(region, isolatedRegionOp.getRegion(),
                               isolatedRegionOp.getRegion().begin());
   rewriter.eraseOp(regionOp);
@@ -123,7 +122,7 @@ void TestMakeIsolatedFromAbovePass::runOnOperation() {
   if (simple) {
     RewritePatternSet patterns(context);
     patterns.insert<SimpleMakeIsolatedFromAbove>(context);
-    if (failed(applyPatternsGreedily(funcOp, std::move(patterns)))) {
+    if (failed(applyPatternsAndFoldGreedily(funcOp, std::move(patterns)))) {
       return signalPassFailure();
     }
     return;
@@ -132,7 +131,7 @@ void TestMakeIsolatedFromAbovePass::runOnOperation() {
   if (cloneOpsWithNoOperands) {
     RewritePatternSet patterns(context);
     patterns.insert<MakeIsolatedFromAboveAndCloneOpsWithNoOperands>(context);
-    if (failed(applyPatternsGreedily(funcOp, std::move(patterns)))) {
+    if (failed(applyPatternsAndFoldGreedily(funcOp, std::move(patterns)))) {
       return signalPassFailure();
     }
     return;
@@ -141,7 +140,7 @@ void TestMakeIsolatedFromAbovePass::runOnOperation() {
   if (cloneOpsWithOperands) {
     RewritePatternSet patterns(context);
     patterns.insert<MakeIsolatedFromAboveAndCloneOpsWithOperands>(context);
-    if (failed(applyPatternsGreedily(funcOp, std::move(patterns)))) {
+    if (failed(applyPatternsAndFoldGreedily(funcOp, std::move(patterns)))) {
       return signalPassFailure();
     }
     return;

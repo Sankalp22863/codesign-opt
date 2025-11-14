@@ -9,15 +9,12 @@
 #ifndef LLVM_LIBC_SRC___SUPPORT_CHARVECTOR_H
 #define LLVM_LIBC_SRC___SUPPORT_CHARVECTOR_H
 
-#include "hdr/func/free.h"
-#include "hdr/func/malloc.h"
-#include "hdr/func/realloc.h"
 #include "src/__support/common.h" // LIBC_INLINE
-#include "src/__support/macros/config.h"
 
-#include <stddef.h> // size_t
+#include <stddef.h>
+#include <stdlib.h> // For allocation.
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
 // This is very simple alternate of the std::string class. There is no
 // bounds check performed in any of the methods. The callers are expected to
@@ -49,7 +46,7 @@ public:
       if (cur_str == local_buffer) {
         char *new_str;
         new_str = reinterpret_cast<char *>(malloc(cur_buff_size));
-        if (new_str == nullptr) {
+        if (new_str == NULL) {
           return false;
         }
         // TODO: replace with inline memcpy
@@ -58,7 +55,7 @@ public:
         cur_str = new_str;
       } else {
         cur_str = reinterpret_cast<char *>(realloc(cur_str, cur_buff_size));
-        if (cur_str == nullptr) {
+        if (cur_str == NULL) {
           return false;
         }
       }
@@ -76,6 +73,6 @@ public:
   LIBC_INLINE size_t length() { return index; }
 };
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE
 
 #endif // LLVM_LIBC_SRC___SUPPORT_CHARVECTOR_H

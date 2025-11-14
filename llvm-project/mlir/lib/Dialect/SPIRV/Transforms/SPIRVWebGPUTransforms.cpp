@@ -17,6 +17,7 @@
 #include "mlir/IR/Location.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
+#include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
@@ -38,7 +39,7 @@ namespace {
 //===----------------------------------------------------------------------===//
 // Helpers
 //===----------------------------------------------------------------------===//
-static Attribute getScalarOrSplatAttr(Type type, int64_t value) {
+Attribute getScalarOrSplatAttr(Type type, int64_t value) {
   APInt sizedValue(getElementTypeOrSelf(type).getIntOrFloatBitWidth(), value);
   if (auto intTy = dyn_cast<IntegerType>(type))
     return IntegerAttr::get(intTy, sizedValue);
@@ -46,9 +47,9 @@ static Attribute getScalarOrSplatAttr(Type type, int64_t value) {
   return SplatElementsAttr::get(cast<ShapedType>(type), sizedValue);
 }
 
-static Value lowerExtendedMultiplication(Operation *mulOp,
-                                         PatternRewriter &rewriter, Value lhs,
-                                         Value rhs, bool signExtendArguments) {
+Value lowerExtendedMultiplication(Operation *mulOp, PatternRewriter &rewriter,
+                                  Value lhs, Value rhs,
+                                  bool signExtendArguments) {
   Location loc = mulOp->getLoc();
   Type argTy = lhs.getType();
   // Emulate 64-bit multiplication by splitting each input element of type i32
@@ -64,16 +65,16 @@ static Value lowerExtendedMultiplication(Operation *mulOp,
   //     and 4 additions after constant folding.
   //   - With sign-extended arguments, we end up emitting 8 multiplications and
   //     and 12 additions after CSE.
-  Value cstLowMask = ConstantOp::create(
-      rewriter, loc, lhs.getType(), getScalarOrSplatAttr(argTy, (1 << 16) - 1));
+  Value cstLowMask = rewriter.create<ConstantOp>(
+      loc, lhs.getType(), getScalarOrSplatAttr(argTy, (1 << 16) - 1));
   auto getLowDigit = [&rewriter, loc, cstLowMask](Value val) {
-    return BitwiseAndOp::create(rewriter, loc, val, cstLowMask);
+    return rewriter.create<BitwiseAndOp>(loc, val, cstLowMask);
   };
 
-  Value cst16 = ConstantOp::create(rewriter, loc, lhs.getType(),
-                                   getScalarOrSplatAttr(argTy, 16));
+  Value cst16 = rewriter.create<ConstantOp>(loc, lhs.getType(),
+                                            getScalarOrSplatAttr(argTy, 16));
   auto getHighDigit = [&rewriter, loc, cst16](Value val) {
-    return ShiftRightLogicalOp::create(rewriter, loc, val, cst16);
+    return rewriter.create<ShiftRightLogicalOp>(loc, val, cst16);
   };
 
   auto getSignDigit = [&rewriter, loc, cst16, &getHighDigit](Value val) {
@@ -82,11 +83,11 @@ static Value lowerExtendedMultiplication(Operation *mulOp,
     // fine. We do not have to introduce an extra constant since any
     // value in [15, 32) would do.
     return getHighDigit(
-        ShiftRightArithmeticOp::create(rewriter, loc, val, cst16));
+        rewriter.create<ShiftRightArithmeticOp>(loc, val, cst16));
   };
 
-  Value cst0 = ConstantOp::create(rewriter, loc, lhs.getType(),
-                                  getScalarOrSplatAttr(argTy, 0));
+  Value cst0 = rewriter.create<ConstantOp>(loc, lhs.getType(),
+                                           getScalarOrSplatAttr(argTy, 0));
 
   Value lhsLow = getLowDigit(lhs);
   Value lhsHigh = getHighDigit(lhs);
@@ -108,7 +109,7 @@ static Value lowerExtendedMultiplication(Operation *mulOp,
         continue;
 
       Value &thisResDigit = resultDigits[i + j];
-      Value mul = IMulOp::create(rewriter, loc, lhsDigit, rhsDigit);
+      Value mul = rewriter.create<IMulOp>(loc, lhsDigit, rhsDigit);
       Value current = rewriter.createOrFold<IAddOp>(loc, thisResDigit, mul);
       thisResDigit = getLowDigit(current);
 
@@ -122,15 +123,14 @@ static Value lowerExtendedMultiplication(Operation *mulOp,
   }
 
   auto combineDigits = [loc, cst16, &rewriter](Value low, Value high) {
-    Value highBits = ShiftLeftLogicalOp::create(rewriter, loc, high, cst16);
-    return BitwiseOrOp::create(rewriter, loc, low, highBits);
+    Value highBits = rewriter.create<ShiftLeftLogicalOp>(loc, high, cst16);
+    return rewriter.create<BitwiseOrOp>(loc, low, highBits);
   };
   Value low = combineDigits(resultDigits[0], resultDigits[1]);
   Value high = combineDigits(resultDigits[2], resultDigits[3]);
 
-  return CompositeConstructOp::create(rewriter, loc,
-                                      mulOp->getResultTypes().front(),
-                                      llvm::ArrayRef({low, high}));
+  return rewriter.create<CompositeConstructOp>(
+      loc, mulOp->getResultTypes().front(), llvm::ArrayRef({low, high}));
 }
 
 //===----------------------------------------------------------------------===//
@@ -168,7 +168,7 @@ using ExpandUMulExtendedPattern =
     ExpandMulExtendedPattern<UMulExtendedOp, false>;
 
 struct ExpandAddCarryPattern final : OpRewritePattern<IAddCarryOp> {
-  using Base::Base;
+  using OpRewritePattern<IAddCarryOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(IAddCarryOp op,
                                 PatternRewriter &rewriter) const override {
@@ -185,45 +185,20 @@ struct ExpandAddCarryPattern final : OpRewritePattern<IAddCarryOp> {
           loc,
           llvm::formatv("Unexpected integer type for WebGPU: '{0}'", elemTy));
 
-    Value one = ConstantOp::create(rewriter, loc, argTy,
-                                   getScalarOrSplatAttr(argTy, 1));
-    Value zero = ConstantOp::create(rewriter, loc, argTy,
-                                    getScalarOrSplatAttr(argTy, 0));
+    Value one =
+        rewriter.create<ConstantOp>(loc, argTy, getScalarOrSplatAttr(argTy, 1));
+    Value zero =
+        rewriter.create<ConstantOp>(loc, argTy, getScalarOrSplatAttr(argTy, 0));
 
     // Calculate the carry by checking if the addition resulted in an overflow.
-    Value out = IAddOp::create(rewriter, loc, lhs, rhs);
-    Value cmp = ULessThanOp::create(rewriter, loc, out, lhs);
-    Value carry = SelectOp::create(rewriter, loc, cmp, one, zero);
+    Value out = rewriter.create<IAddOp>(loc, lhs, rhs);
+    Value cmp = rewriter.create<ULessThanOp>(loc, out, lhs);
+    Value carry = rewriter.create<SelectOp>(loc, cmp, one, zero);
 
-    Value add = CompositeConstructOp::create(rewriter, loc,
-                                             op->getResultTypes().front(),
-                                             llvm::ArrayRef({out, carry}));
+    Value add = rewriter.create<CompositeConstructOp>(
+        loc, op->getResultTypes().front(), llvm::ArrayRef({out, carry}));
 
     rewriter.replaceOp(op, add);
-    return success();
-  }
-};
-
-struct ExpandIsInfPattern final : OpRewritePattern<IsInfOp> {
-  using Base::Base;
-
-  LogicalResult matchAndRewrite(IsInfOp op,
-                                PatternRewriter &rewriter) const override {
-    // We assume values to be finite and turn `IsInf` info `false`.
-    rewriter.replaceOpWithNewOp<spirv::ConstantOp>(
-        op, op.getType(), getScalarOrSplatAttr(op.getType(), 0));
-    return success();
-  }
-};
-
-struct ExpandIsNanPattern final : OpRewritePattern<IsNanOp> {
-  using Base::Base;
-
-  LogicalResult matchAndRewrite(IsNanOp op,
-                                PatternRewriter &rewriter) const override {
-    // We assume values to be finite and turn `IsNan` info `false`.
-    rewriter.replaceOpWithNewOp<spirv::ConstantOp>(
-        op, op.getType(), getScalarOrSplatAttr(op.getType(), 0));
     return success();
   }
 };
@@ -231,14 +206,15 @@ struct ExpandIsNanPattern final : OpRewritePattern<IsNanOp> {
 //===----------------------------------------------------------------------===//
 // Passes
 //===----------------------------------------------------------------------===//
-struct WebGPUPreparePass final
-    : impl::SPIRVWebGPUPreparePassBase<WebGPUPreparePass> {
+class WebGPUPreparePass
+    : public impl::SPIRVWebGPUPreparePassBase<WebGPUPreparePass> {
+public:
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
     populateSPIRVExpandExtendedMultiplicationPatterns(patterns);
-    populateSPIRVExpandNonFiniteArithmeticPatterns(patterns);
 
-    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns))))
+    if (failed(
+            applyPatternsAndFoldGreedily(getOperation(), std::move(patterns))))
       signalPassFailure();
   }
 };
@@ -251,16 +227,12 @@ void populateSPIRVExpandExtendedMultiplicationPatterns(
     RewritePatternSet &patterns) {
   // WGSL currently does not support extended multiplication ops, see:
   // https://github.com/gpuweb/gpuweb/issues/1565.
-  patterns.add<ExpandSMulExtendedPattern, ExpandUMulExtendedPattern,
-               ExpandAddCarryPattern>(patterns.getContext());
+  patterns.add<
+      // clang-format off
+    ExpandSMulExtendedPattern,
+    ExpandUMulExtendedPattern,
+    ExpandAddCarryPattern
+  >(patterns.getContext());
 }
-
-void populateSPIRVExpandNonFiniteArithmeticPatterns(
-    RewritePatternSet &patterns) {
-  // WGSL currently does not support `isInf` and `isNan`, see:
-  // https://github.com/gpuweb/gpuweb/pull/2311.
-  patterns.add<ExpandIsInfPattern, ExpandIsNanPattern>(patterns.getContext());
-}
-
 } // namespace spirv
 } // namespace mlir

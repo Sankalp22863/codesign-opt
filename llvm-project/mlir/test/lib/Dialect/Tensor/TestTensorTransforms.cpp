@@ -16,8 +16,8 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tensor/Transforms/TransformUtils.h"
 #include "mlir/Dialect/Tensor/Transforms/Transforms.h"
+#include "mlir/Dialect/Transform/IR/TransformInterfaces.h"
 #include "mlir/Dialect/Transform/IR/TransformOps.h"
-#include "mlir/Dialect/Transform/Interfaces/TransformInterfaces.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
@@ -72,14 +72,9 @@ struct TestTensorTransforms
       llvm::cl::desc("Test folding of expand_shape/collapse_shape"),
       llvm::cl::init(false)};
 
-  Option<bool> testBubbleUpExpandShapePatterns{
-      *this, "test-expand-shape-bubbling",
-      llvm::cl::desc("Test folding of expand_shape/collapse_shape"),
-      llvm::cl::init(false)};
-
-  Option<bool> testFoldExtractFromCollapseShape{
-      *this, "test-fold-extract-from-collapse-shape",
-      llvm::cl::desc("Test folding of extract from collapse_shape"),
+  Option<bool> testFoldIntoPackAndUnpack{
+      *this, "test-fold-into-pack-and-unpack",
+      llvm::cl::desc("Test folding ops into tensor.pack and tensor.unpack"),
       llvm::cl::init(false)};
 
   Option<bool> useForeach{
@@ -87,6 +82,11 @@ struct TestTensorTransforms
       llvm::cl::desc(
           "Use the scf.forall operation when generating loop nests for "
           "the extract_slice of collapse_shape pattern"),
+      llvm::cl::init(false)};
+
+  Option<bool> testSimplifyPackUnpackPatterns{
+      *this, "test-simplify-pack-unpack-patterns",
+      llvm::cl::desc("Test patterns to simplify tensor.pack and tensor.unpack"),
       llvm::cl::init(false)};
 
   Option<bool> testTrackingListener{
@@ -99,13 +99,13 @@ struct TestTensorTransforms
 static void applyReassociativeReshapeFoldingPatterns(Operation *rootOp) {
   RewritePatternSet patterns(rootOp->getContext());
   tensor::populateReassociativeReshapeFoldingPatterns(patterns);
-  (void)applyPatternsGreedily(rootOp, std::move(patterns));
+  (void)applyPatternsAndFoldGreedily(rootOp, std::move(patterns));
 }
 
-static void applyBubbleUpExpandShapePatterns(Operation *rootOp) {
+static void applyFoldIntoPackAndUnpackPatterns(Operation *rootOp) {
   RewritePatternSet patterns(rootOp->getContext());
-  tensor::populateBubbleUpExpandShapePatterns(patterns);
-  (void)applyPatternsGreedily(rootOp, std::move(patterns));
+  tensor::populateFoldIntoPackAndUnpackPatterns(patterns);
+  (void)applyPatternsAndFoldGreedily(rootOp, std::move(patterns));
 }
 
 static void applyFoldConstantExtractSlicePatterns(Operation *rootOp) {
@@ -121,26 +121,26 @@ static void applyFoldConstantExtractSlicePatterns(Operation *rootOp) {
       };
 
   tensor::populateFoldConstantExtractSlicePatterns(patterns, controlFn);
-  (void)applyPatternsGreedily(rootOp, std::move(patterns));
+  (void)applyPatternsAndFoldGreedily(rootOp, std::move(patterns));
 }
 
 static void applyFoldConsecutiveInsertExtractSlicePatterns(Operation *rootOp) {
   RewritePatternSet patterns(rootOp->getContext());
   tensor::populateMergeConsecutiveInsertExtractSlicePatterns(patterns);
-  (void)applyPatternsGreedily(rootOp, std::move(patterns));
+  (void)applyPatternsAndFoldGreedily(rootOp, std::move(patterns));
 }
 
 static void
 applyDropRedundantInsertSliceRankExpansionPatterns(Operation *rootOp) {
   RewritePatternSet patterns(rootOp->getContext());
   tensor::populateDropRedundantInsertSliceRankExpansionPatterns(patterns);
-  (void)applyPatternsGreedily(rootOp, std::move(patterns));
+  (void)applyPatternsAndFoldGreedily(rootOp, std::move(patterns));
 }
 
-static void applyFoldExtractFromCollapseShapePatterns(Operation *rootOp) {
+static void applySimplifyPackUnpackPatterns(Operation *rootOp) {
   RewritePatternSet patterns(rootOp->getContext());
-  tensor::populateFoldCollapseExtractPatterns(patterns);
-  (void)applyPatternsGreedily(rootOp, std::move(patterns));
+  tensor::populateSimplifyPackAndUnpackPatterns(patterns);
+  (void)applyPatternsAndFoldGreedily(rootOp, std::move(patterns));
 }
 
 namespace {
@@ -192,8 +192,8 @@ struct RewriteExtractSliceFromCollapseShapeBase
     // Create the destination tensor using the above values.
     Type elementType = op.getSourceType().getElementType();
     SmallVector<OpFoldResult> outputShape = reifiedShapes[0];
-    Value dest = tensor::EmptyOp::create(rewriter, op->getLoc(), outputShape,
-                                         elementType);
+    Value dest = rewriter.create<tensor::EmptyOp>(op->getLoc(), outputShape,
+                                                  elementType);
 
     // Calculate the parameters for the tile loop nest.
     FailureOr<tensor::ExtractSliceFromCollapseHelper> params =
@@ -215,8 +215,8 @@ struct RewriteExtractSliceFromCollapseShapeUsingScfFor
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
     const unsigned numTiledDims = helper.getIterationSpaceSizes().size();
-    auto zero = arith::ConstantIndexOp::create(rewriter, loc, 0);
-    auto one = arith::ConstantIndexOp::create(rewriter, loc, 1);
+    auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    auto one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
     SmallVector<Value> lbs(numTiledDims, zero);
     SmallVector<Value> steps(numTiledDims, one);
 
@@ -228,8 +228,8 @@ struct RewriteExtractSliceFromCollapseShapeUsingScfFor
               helper.emitLoopNestBody(nestedBuilder, loc, outputIvs);
 
           // Insert the slice into the destination.
-          return {tensor::InsertSliceOp::create(nestedBuilder, loc, tile,
-                                                iterArgs[0], insertParams)};
+          return {nestedBuilder.create<tensor::InsertSliceOp>(
+              loc, tile, iterArgs[0], insertParams)};
         });
     rewriter.replaceOp(op, nest.results);
 
@@ -245,9 +245,8 @@ struct RewriteExtractSliceFromCollapseShapeUsingScfForeach
                                 tensor::ExtractSliceFromCollapseHelper &helper,
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
-    auto forallOp = scf::ForallOp::create(
-        rewriter, loc,
-        /*numThreads=*/getAsOpFoldResult(helper.getIterationSpaceSizes()),
+    auto forallOp = rewriter.create<scf::ForallOp>(
+        loc, /*numThreads=*/getAsOpFoldResult(helper.getIterationSpaceSizes()),
         /*outputs=*/dest,
         /*mapping=*/std::nullopt,
         [&](OpBuilder &nestedBuilder, Location loc, ValueRange regionArgs) {
@@ -262,10 +261,10 @@ struct RewriteExtractSliceFromCollapseShapeUsingScfForeach
           auto [tile, insertParams] =
               helper.emitLoopNestBody(nestedBuilder, loc, outputIvs);
           // Insert the slice into the destination.
-          auto term = scf::InParallelOp::create(nestedBuilder, loc);
+          auto term = nestedBuilder.create<scf::InParallelOp>(loc);
           nestedBuilder.setInsertionPointToStart(term.getBody());
-          tensor::ParallelInsertSliceOp::create(nestedBuilder, loc, tile,
-                                                outputArgs[0], insertParams);
+          nestedBuilder.create<tensor::ParallelInsertSliceOp>(
+              loc, tile, outputArgs[0], insertParams);
         });
     rewriter.replaceOp(op, forallOp->getResult(0));
     return success();
@@ -283,7 +282,7 @@ applyRewriteExtractFromCollapseShapePatterns(Operation *rootOp,
   else
     patterns.add<RewriteExtractSliceFromCollapseShapeUsingScfFor>(
         rootOp->getContext());
-  return applyPatternsGreedily(rootOp, std::move(patterns));
+  return applyPatternsAndFoldGreedily(rootOp, std::move(patterns));
 }
 
 namespace {
@@ -356,8 +355,8 @@ static LogicalResult testTrackingListenerReplacements(Operation *rootOp) {
   MLIRContext *context = rootOp->getContext();
   OpBuilder builder(context);
   OwningOpRef<transform::NamedSequenceOp> transformOp =
-      transform::NamedSequenceOp::create(
-          builder, rootOp->getLoc(),
+      builder.create<transform::NamedSequenceOp>(
+          rootOp->getLoc(),
           /*sym_name=*/"test_sequence",
           /*function_type=*/
           TypeAttr::get(FunctionType::get(context, TypeRange{}, TypeRange{})),
@@ -377,6 +376,8 @@ static LogicalResult testTrackingListenerReplacements(Operation *rootOp) {
 
 void TestTensorTransforms::runOnOperation() {
   Operation *rootOp = getOperation();
+  if (testSimplifyPackUnpackPatterns)
+    applySimplifyPackUnpackPatterns(rootOp);
   if (testFoldConstantExtractSlice)
     applyFoldConstantExtractSlicePatterns(rootOp);
   if (testFoldConsecutiveInsertExtractSlice)
@@ -385,15 +386,13 @@ void TestTensorTransforms::runOnOperation() {
     applyDropRedundantInsertSliceRankExpansionPatterns(rootOp);
   if (testReassociativeReshapeFolding)
     applyReassociativeReshapeFoldingPatterns(rootOp);
-  if (testBubbleUpExpandShapePatterns)
-    applyBubbleUpExpandShapePatterns(rootOp);
+  if (testFoldIntoPackAndUnpack)
+    applyFoldIntoPackAndUnpackPatterns(rootOp);
   if (testRewriteExtractSliceWithTiledCollapseShape) {
     if (failed(
             applyRewriteExtractFromCollapseShapePatterns(rootOp, useForeach)))
       return signalPassFailure();
   }
-  if (testFoldExtractFromCollapseShape)
-    applyFoldExtractFromCollapseShapePatterns(rootOp);
   if (testTrackingListener)
     if (failed(testTrackingListenerReplacements(rootOp)))
       return signalPassFailure();

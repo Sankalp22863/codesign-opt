@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===--- ForwardDeclarationNamespaceCheck.cpp - clang-tidy ------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -11,6 +11,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
+#include <stack>
 #include <string>
 
 using namespace clang::ast_matchers;
@@ -46,7 +47,7 @@ void ForwardDeclarationNamespaceCheck::check(
     const MatchFinder::MatchResult &Result) {
   if (const auto *RecordDecl =
           Result.Nodes.getNodeAs<CXXRecordDecl>("record_decl")) {
-    const StringRef DeclName = RecordDecl->getName();
+    StringRef DeclName = RecordDecl->getName();
     if (RecordDecl->isThisDeclarationADefinition()) {
       DeclNameToDefinitions[DeclName].push_back(RecordDecl);
     } else {
@@ -69,9 +70,10 @@ void ForwardDeclarationNamespaceCheck::check(
     //      struct B { friend A; };
     //    \endcode
     // `A` will not be marked as "referenced" in the AST.
-    if (const TypeSourceInfo *Tsi = Decl->getFriendType())
-      FriendTypes.insert(
-          Tsi->getType()->getCanonicalTypeUnqualified().getTypePtr());
+    if (const TypeSourceInfo *Tsi = Decl->getFriendType()) {
+      QualType Desugared = Tsi->getType().getDesugaredType(*Result.Context);
+      FriendTypes.insert(Desugared.getTypePtr());
+    }
   }
 }
 
@@ -93,7 +95,7 @@ static bool haveSameNamespaceOrTranslationUnit(const CXXRecordDecl *Decl1,
          "ParentDecl2 declaration must be a namespace");
   auto *Ns1 = NamespaceDecl::castFromDeclContext(ParentDecl1);
   auto *Ns2 = NamespaceDecl::castFromDeclContext(ParentDecl2);
-  return Ns1->getFirstDecl() == Ns2->getFirstDecl();
+  return Ns1->getOriginalNamespace() == Ns2->getOriginalNamespace();
 }
 
 static std::string getNameOfNamespace(const CXXRecordDecl *Decl) {
@@ -105,6 +107,7 @@ static std::string getNameOfNamespace(const CXXRecordDecl *Decl) {
   std::string Ns;
   llvm::raw_string_ostream OStream(Ns);
   NsDecl->printQualifiedName(OStream);
+  OStream.flush();
   return Ns.empty() ? "(global)" : Ns;
 }
 
@@ -118,9 +121,7 @@ void ForwardDeclarationNamespaceCheck::onEndOfTranslationUnit() {
       if (CurDecl->hasDefinition() || CurDecl->isReferenced()) {
         continue; // Skip forward declarations that are used/referenced.
       }
-      if (FriendTypes.contains(CurDecl->getASTContext()
-                                   .getCanonicalTagType(CurDecl)
-                                   ->getTypePtr())) {
+      if (FriendTypes.contains(CurDecl->getTypeForDecl())) {
         continue; // Skip forward declarations referenced as friend.
       }
       if (CurDecl->getLocation().isMacroID() ||
@@ -146,13 +147,12 @@ void ForwardDeclarationNamespaceCheck::onEndOfTranslationUnit() {
       }
       // Check if a definition in another namespace exists.
       const auto DeclName = CurDecl->getName();
-      auto It = DeclNameToDefinitions.find(DeclName);
-      if (It == DeclNameToDefinitions.end()) {
+      if (!DeclNameToDefinitions.contains(DeclName)) {
         continue; // No definition in this translation unit, we can skip it.
       }
       // Make a warning for each definition with the same name (in other
       // namespaces).
-      const auto &Definitions = It->second;
+      const auto &Definitions = DeclNameToDefinitions[DeclName];
       for (const auto *Def : Definitions) {
         diag(CurDecl->getLocation(),
              "no definition found for %0, but a definition with "

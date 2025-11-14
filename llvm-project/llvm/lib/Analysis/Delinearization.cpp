@@ -15,6 +15,7 @@
 
 #include "llvm/Analysis/Delinearization.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/Passes.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionDivision.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
@@ -24,7 +25,6 @@
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/PassManager.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -32,11 +32,6 @@ using namespace llvm;
 
 #define DL_NAME "delinearize"
 #define DEBUG_TYPE DL_NAME
-
-static cl::opt<bool> UseFixedSizeArrayHeuristic(
-    "delinearize-use-fixed-size-array-heuristic", cl::init(false), cl::Hidden,
-    cl::desc("When printing analysis, use the heuristic for fixed-size arrays "
-             "if the default delinearizetion fails."));
 
 // Return true when S contains at least an undef value.
 static inline bool containsUndefs(const SCEV *S) {
@@ -136,7 +131,7 @@ struct SCEVCollectAddRecMultiplies {
     if (auto *Mul = dyn_cast<SCEVMulExpr>(S)) {
       bool HasAddRec = false;
       SmallVector<const SCEV *, 0> Operands;
-      for (const SCEV *Op : Mul->operands()) {
+      for (const auto *Op : Mul->operands()) {
         const SCEVUnknown *Unknown = dyn_cast<SCEVUnknown>(Op);
         if (Unknown && !isa<CallInst>(Unknown->getValue())) {
           Operands.push_back(Op);
@@ -182,7 +177,7 @@ void llvm::collectParametricTerms(ScalarEvolution &SE, const SCEV *Expr,
   LLVM_DEBUG({
     dbgs() << "Strides:\n";
     for (const SCEV *S : Strides)
-      dbgs().indent(2) << *S << "\n";
+      dbgs() << *S << "\n";
   });
 
   for (const SCEV *S : Strides) {
@@ -193,7 +188,7 @@ void llvm::collectParametricTerms(ScalarEvolution &SE, const SCEV *Expr,
   LLVM_DEBUG({
     dbgs() << "Terms:\n";
     for (const SCEV *T : Terms)
-      dbgs().indent(2) << *T << "\n";
+      dbgs() << *T << "\n";
   });
 
   SCEVCollectAddRecMultiplies MulCollector(Terms, SE);
@@ -294,12 +289,12 @@ void llvm::findArrayDimensions(ScalarEvolution &SE,
   LLVM_DEBUG({
     dbgs() << "Terms:\n";
     for (const SCEV *T : Terms)
-      dbgs().indent(2) << *T << "\n";
+      dbgs() << *T << "\n";
   });
 
   // Remove duplicates.
   array_pod_sort(Terms.begin(), Terms.end());
-  Terms.erase(llvm::unique(Terms), Terms.end());
+  Terms.erase(std::unique(Terms.begin(), Terms.end()), Terms.end());
 
   // Put larger terms first.
   llvm::sort(Terms, [](const SCEV *LHS, const SCEV *RHS) {
@@ -325,7 +320,7 @@ void llvm::findArrayDimensions(ScalarEvolution &SE,
   LLVM_DEBUG({
     dbgs() << "Terms after sorting:\n";
     for (const SCEV *T : NewTerms)
-      dbgs().indent(2) << *T << "\n";
+      dbgs() << *T << "\n";
   });
 
   if (NewTerms.empty() || !findArrayDimensionsRec(SE, NewTerms, Sizes)) {
@@ -339,7 +334,7 @@ void llvm::findArrayDimensions(ScalarEvolution &SE,
   LLVM_DEBUG({
     dbgs() << "Sizes:\n";
     for (const SCEV *S : Sizes)
-      dbgs().indent(2) << *S << "\n";
+      dbgs() << *S << "\n";
   });
 }
 
@@ -354,24 +349,18 @@ void llvm::computeAccessFunctions(ScalarEvolution &SE, const SCEV *Expr,
     if (!AR->isAffine())
       return;
 
-  LLVM_DEBUG(dbgs() << "\ncomputeAccessFunctions\n"
-                    << "Memory Access Function: " << *Expr << "\n");
-
   const SCEV *Res = Expr;
   int Last = Sizes.size() - 1;
-
   for (int i = Last; i >= 0; i--) {
-    const SCEV *Size = Sizes[i];
     const SCEV *Q, *R;
-
-    SCEVDivision::divide(SE, Res, Size, &Q, &R);
+    SCEVDivision::divide(SE, Res, Sizes[i], &Q, &R);
 
     LLVM_DEBUG({
-      dbgs() << "Computing 'MemAccFn / Sizes[" << i << "]':\n";
-      dbgs() << "  MemAccFn: " << *Res << "\n";
-      dbgs() << "  Sizes[" << i << "]: " << *Size << "\n";
-      dbgs() << "  Quotient (Leftover): " << *Q << "\n";
-      dbgs() << "  Remainder (Subscript Access Function): " << *R << "\n";
+      dbgs() << "Res: " << *Res << "\n";
+      dbgs() << "Sizes[i]: " << *Sizes[i] << "\n";
+      dbgs() << "Res divided by Sizes[i]:\n";
+      dbgs() << "Quotient: " << *Q << "\n";
+      dbgs() << "Remainder: " << *R << "\n";
     });
 
     Res = Q;
@@ -403,8 +392,7 @@ void llvm::computeAccessFunctions(ScalarEvolution &SE, const SCEV *Expr,
   LLVM_DEBUG({
     dbgs() << "Subscripts:\n";
     for (const SCEV *S : Subscripts)
-      dbgs().indent(2) << *S << "\n";
-    dbgs() << "\n";
+      dbgs() << *S << "\n";
   });
 }
 
@@ -476,184 +464,21 @@ void llvm::delinearize(ScalarEvolution &SE, const SCEV *Expr,
 
   // Third step: compute the access functions for each subscript.
   computeAccessFunctions(SE, Expr, Subscripts, Sizes);
-}
 
-static std::optional<APInt> tryIntoAPInt(const SCEV *S) {
-  if (const auto *Const = dyn_cast<SCEVConstant>(S))
-    return Const->getAPInt();
-  return std::nullopt;
-}
+  if (Subscripts.empty())
+    return;
 
-/// Collects the absolute values of constant steps for all induction variables.
-/// Returns true if we can prove that all step recurrences are constants and \p
-/// Expr is divisible by \p ElementSize. Each step recurrence is stored in \p
-/// Steps after divided by \p ElementSize.
-static bool collectConstantAbsSteps(ScalarEvolution &SE, const SCEV *Expr,
-                                    SmallVectorImpl<uint64_t> &Steps,
-                                    uint64_t ElementSize) {
-  // End of recursion. The constant value also must be a multiple of
-  // ElementSize.
-  if (const auto *Const = dyn_cast<SCEVConstant>(Expr)) {
-    const uint64_t Mod = Const->getAPInt().urem(ElementSize);
-    return Mod == 0;
-  }
+  LLVM_DEBUG({
+    dbgs() << "succeeded to delinearize " << *Expr << "\n";
+    dbgs() << "ArrayDecl[UnknownSize]";
+    for (const SCEV *S : Sizes)
+      dbgs() << "[" << *S << "]";
 
-  const SCEVAddRecExpr *AR = dyn_cast<SCEVAddRecExpr>(Expr);
-  if (!AR || !AR->isAffine())
-    return false;
-
-  const SCEV *Step = AR->getStepRecurrence(SE);
-  std::optional<APInt> StepAPInt = tryIntoAPInt(Step);
-  if (!StepAPInt)
-    return false;
-
-  APInt Q;
-  uint64_t R;
-  APInt::udivrem(StepAPInt->abs(), ElementSize, Q, R);
-  if (R != 0)
-    return false;
-
-  // Bail out when the step is too large.
-  std::optional<uint64_t> StepVal = Q.tryZExtValue();
-  if (!StepVal)
-    return false;
-
-  Steps.push_back(*StepVal);
-  return collectConstantAbsSteps(SE, AR->getStart(), Steps, ElementSize);
-}
-
-bool llvm::findFixedSizeArrayDimensions(ScalarEvolution &SE, const SCEV *Expr,
-                                        SmallVectorImpl<uint64_t> &Sizes,
-                                        const SCEV *ElementSize) {
-  if (!ElementSize)
-    return false;
-
-  std::optional<APInt> ElementSizeAPInt = tryIntoAPInt(ElementSize);
-  if (!ElementSizeAPInt || *ElementSizeAPInt == 0)
-    return false;
-
-  std::optional<uint64_t> ElementSizeConst = ElementSizeAPInt->tryZExtValue();
-
-  // Early exit when ElementSize is not a positive constant.
-  if (!ElementSizeConst)
-    return false;
-
-  if (!collectConstantAbsSteps(SE, Expr, Sizes, *ElementSizeConst) ||
-      Sizes.empty()) {
-    Sizes.clear();
-    return false;
-  }
-
-  // At this point, Sizes contains the absolute step recurrences for all
-  // induction variables. Each step recurrence must be a multiple of the size of
-  // the array element. Assuming that the each value represents the size of an
-  // array for each dimension, attempts to restore the length of each dimension
-  // by dividing the step recurrence by the next smaller value. For example, if
-  // we have the following AddRec SCEV:
-  //
-  //   AddRec: {{{0,+,2048}<%for.i>,+,256}<%for.j>,+,8}<%for.k> (ElementSize=8)
-  //
-  // Then Sizes will become [256, 32, 1] after sorted. We don't know the size of
-  // the outermost dimension, the next dimension will be computed as 256 / 32 =
-  // 8, and the last dimension will be computed as 32 / 1 = 32. Thus it results
-  // in like Arr[UnknownSize][8][32] with elements of size 8 bytes, where Arr is
-  // a base pointer.
-  //
-  // TODO: Catch more cases, e.g., when a step recurrence is not divisible by
-  // the next smaller one, like A[i][3*j].
-  llvm::sort(Sizes.rbegin(), Sizes.rend());
-  Sizes.erase(llvm::unique(Sizes), Sizes.end());
-
-  // The last element in Sizes should be ElementSize. At this point, all values
-  // in Sizes are assumed to be divided by ElementSize, so replace it with 1.
-  assert(Sizes.back() != 0 && "Unexpected zero size in Sizes.");
-  Sizes.back() = 1;
-
-  for (unsigned I = 0; I + 1 < Sizes.size(); I++) {
-    uint64_t PrevSize = Sizes[I + 1];
-    if (Sizes[I] % PrevSize) {
-      Sizes.clear();
-      return false;
-    }
-    Sizes[I] /= PrevSize;
-  }
-
-  // Finally, the last element in Sizes should be ElementSize.
-  Sizes.back() = *ElementSizeConst;
-  return true;
-}
-
-/// Splits the SCEV into two vectors of SCEVs representing the subscripts and
-/// sizes of an array access, assuming that the array is a fixed size array.
-///
-/// E.g., if we have the code like as follows:
-///
-///  double A[42][8][32];
-///  for i
-///    for j
-///      for k
-///        use A[i][j][k]
-///
-/// The access function will be represented as an AddRec SCEV like:
-///
-///  AddRec: {{{0,+,2048}<%for.i>,+,256}<%for.j>,+,8}<%for.k> (ElementSize=8)
-///
-/// Then findFixedSizeArrayDimensions infers the size of each dimension of the
-/// array based on the fact that the value of the step recurrence is a multiple
-/// of the size of the corresponding array element. In the above example, it
-/// results in the following:
-///
-///  CHECK: ArrayDecl[UnknownSize][8][32] with elements of 8 bytes.
-///
-/// Finally each subscript will be computed as follows:
-///
-///  CHECK: ArrayRef[{0,+,1}<%for.i>][{0,+,1}<%for.j>][{0,+,1}<%for.k>]
-///
-/// Note that this function doesn't check the range of possible values for each
-/// subscript, so the caller should perform additional boundary checks if
-/// necessary.
-///
-/// Also note that this function doesn't guarantee that the original array size
-/// is restored "correctly". For example, in the following case:
-///
-///  double A[42][4][64];
-///  double B[42][8][32];
-///  for i
-///    for j
-///      for k
-///        use A[i][j][k]
-///        use B[i][2*j][k]
-///
-/// The access function for both accesses will be the same:
-///
-///  AddRec: {{{0,+,2048}<%for.i>,+,512}<%for.j>,+,8}<%for.k> (ElementSize=8)
-///
-/// The array sizes for both A and B will be computed as
-/// ArrayDecl[UnknownSize][4][64], which matches for A, but not for B.
-///
-/// TODO: At the moment, this function can handle only simple cases. For
-/// example, we cannot handle a case where a step recurrence is not divisible
-/// by the next smaller step recurrence, e.g., A[i][3*j].
-bool llvm::delinearizeFixedSizeArray(ScalarEvolution &SE, const SCEV *Expr,
-                                     SmallVectorImpl<const SCEV *> &Subscripts,
-                                     SmallVectorImpl<const SCEV *> &Sizes,
-                                     const SCEV *ElementSize) {
-
-  // First step: find the fixed array size.
-  SmallVector<uint64_t, 4> ConstSizes;
-  if (!findFixedSizeArrayDimensions(SE, Expr, ConstSizes, ElementSize)) {
-    Sizes.clear();
-    return false;
-  }
-
-  // Convert the constant size to SCEV.
-  for (uint64_t Size : ConstSizes)
-    Sizes.push_back(SE.getConstant(Expr->getType(), Size));
-
-  // Second step: compute the access functions for each subscript.
-  computeAccessFunctions(SE, Expr, Subscripts, Sizes);
-
-  return !Subscripts.empty();
+    dbgs() << "\nArrayRef";
+    for (const SCEV *S : Subscripts)
+      dbgs() << "[" << *S << "]";
+    dbgs() << "\n";
+  });
 }
 
 bool llvm::getIndexExpressionsFromGEP(ScalarEvolution &SE,
@@ -663,7 +488,6 @@ bool llvm::getIndexExpressionsFromGEP(ScalarEvolution &SE,
   assert(Subscripts.empty() && Sizes.empty() &&
          "Expected output lists to be empty on entry to this function.");
   assert(GEP && "getIndexExpressionsFromGEP called with a null GEP");
-  LLVM_DEBUG(dbgs() << "\nGEP to delinearize: " << *GEP << "\n");
   Type *Ty = nullptr;
   bool DroppedFirstDim = false;
   for (unsigned i = 1; i < GEP->getNumOperands(); i++) {
@@ -681,8 +505,6 @@ bool llvm::getIndexExpressionsFromGEP(ScalarEvolution &SE,
 
     auto *ArrayTy = dyn_cast<ArrayType>(Ty);
     if (!ArrayTy) {
-      LLVM_DEBUG(dbgs() << "GEP delinearize failed: " << *Ty
-                        << " is not an array type.\n");
       Subscripts.clear();
       Sizes.clear();
       return false;
@@ -694,13 +516,6 @@ bool llvm::getIndexExpressionsFromGEP(ScalarEvolution &SE,
 
     Ty = ArrayTy->getElementType();
   }
-  LLVM_DEBUG({
-    dbgs() << "Subscripts:\n";
-    for (const SCEV *S : Subscripts)
-      dbgs() << *S << "\n";
-    dbgs() << "\n";
-  });
-
   return !Subscripts.empty();
 }
 
@@ -746,49 +561,35 @@ namespace {
 
 void printDelinearization(raw_ostream &O, Function *F, LoopInfo *LI,
                           ScalarEvolution *SE) {
-  O << "Printing analysis 'Delinearization' for function '" << F->getName()
-    << "':";
+  O << "Delinearization on function " << F->getName() << ":\n";
   for (Instruction &Inst : instructions(F)) {
     // Only analyze loads and stores.
-    if (!isa<StoreInst>(&Inst) && !isa<LoadInst>(&Inst))
+    if (!isa<StoreInst>(&Inst) && !isa<LoadInst>(&Inst) &&
+        !isa<GetElementPtrInst>(&Inst))
       continue;
 
     const BasicBlock *BB = Inst.getParent();
-    Loop *L = LI->getLoopFor(BB);
-    // Only delinearize the memory access in the innermost loop.
+    // Delinearize the memory access as analyzed in all the surrounding loops.
     // Do not analyze memory accesses outside loops.
-    if (!L)
-      continue;
+    for (Loop *L = LI->getLoopFor(BB); L != nullptr; L = L->getParentLoop()) {
+      const SCEV *AccessFn = SE->getSCEVAtScope(getPointerOperand(&Inst), L);
 
-    const SCEV *AccessFn = SE->getSCEVAtScope(getPointerOperand(&Inst), L);
+      const SCEVUnknown *BasePointer =
+          dyn_cast<SCEVUnknown>(SE->getPointerBase(AccessFn));
+      // Do not delinearize if we cannot find the base pointer.
+      if (!BasePointer)
+        break;
+      AccessFn = SE->getMinusSCEV(AccessFn, BasePointer);
 
-    const SCEVUnknown *BasePointer =
-        dyn_cast<SCEVUnknown>(SE->getPointerBase(AccessFn));
-    // Do not delinearize if we cannot find the base pointer.
-    if (!BasePointer)
-      break;
-    AccessFn = SE->getMinusSCEV(AccessFn, BasePointer);
+      O << "\n";
+      O << "Inst:" << Inst << "\n";
+      O << "In Loop with Header: " << L->getHeader()->getName() << "\n";
+      O << "AccessFunction: " << *AccessFn << "\n";
 
-    O << "\n";
-    O << "Inst:" << Inst << "\n";
-    O << "AccessFunction: " << *AccessFn << "\n";
-
-    SmallVector<const SCEV *, 3> Subscripts, Sizes;
-
-    auto IsDelinearizationFailed = [&]() {
-      return Subscripts.size() == 0 || Sizes.size() == 0 ||
-             Subscripts.size() != Sizes.size();
-    };
-
-    delinearize(*SE, AccessFn, Subscripts, Sizes, SE->getElementSize(&Inst));
-    if (UseFixedSizeArrayHeuristic && IsDelinearizationFailed()) {
-      Subscripts.clear();
-      Sizes.clear();
-      delinearizeFixedSizeArray(*SE, AccessFn, Subscripts, Sizes,
-                                SE->getElementSize(&Inst));
-    }
-
-      if (IsDelinearizationFailed()) {
+      SmallVector<const SCEV *, 3> Subscripts, Sizes;
+      delinearize(*SE, AccessFn, Subscripts, Sizes, SE->getElementSize(&Inst));
+      if (Subscripts.size() == 0 || Sizes.size() == 0 ||
+          Subscripts.size() != Sizes.size()) {
         O << "failed to delinearize\n";
         continue;
       }
@@ -804,6 +605,7 @@ void printDelinearization(raw_ostream &O, Function *F, LoopInfo *LI,
       for (int i = 0; i < Size; i++)
         O << "[" << *Subscripts[i] << "]";
       O << "\n";
+    }
   }
 }
 

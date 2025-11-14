@@ -7,12 +7,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/stdio/getchar.h"
-
 #include "file.h"
-#include "hdr/stdio_macros.h" // for EOF and stdin.
-#include "src/__support/common.h"
 
-namespace LIBC_NAMESPACE_DECL {
+#include <stdio.h>
+
+namespace LIBC_NAMESPACE {
 
 LLVM_LIBC_FUNCTION(int, getchar, ()) {
   unsigned char c;
@@ -23,4 +22,4 @@ LLVM_LIBC_FUNCTION(int, getchar, ()) {
   return c;
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

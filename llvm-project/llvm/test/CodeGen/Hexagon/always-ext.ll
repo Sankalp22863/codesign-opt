@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=hexagon < %s | FileCheck %s
+; RUN: llc -march=hexagon < %s | FileCheck %s
 
 ; Check that we don't generate an invalid packet with too many instructions
 ; due to a store that has a must-extend operand.
@@ -18,7 +18,7 @@
 
 declare void @_Assert()
 
-define void @CuSuiteAddSuite() nounwind null_pointer_is_valid {
+define void @CuSuiteAddSuite() nounwind {
 entry:
   br i1 undef, label %for.body.us, label %for.end
 

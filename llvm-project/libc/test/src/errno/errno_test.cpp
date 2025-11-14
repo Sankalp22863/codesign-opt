@@ -6,12 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "src/__support/libc_errno.h"
-#include "test/UnitTest/ErrnoCheckingTest.h"
+#include "src/errno/libc_errno.h"
 #include "test/UnitTest/Test.h"
 
 TEST(LlvmLibcErrnoTest, Basic) {
   int test_val = 123;
   libc_errno = test_val;
-  ASSERT_ERRNO_EQ(test_val);
+  ASSERT_EQ(test_val, libc_errno);
 }

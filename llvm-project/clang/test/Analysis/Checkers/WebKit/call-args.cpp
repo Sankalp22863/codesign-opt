@@ -2,25 +2,18 @@
 
 #include "mock-types.h"
 
-RefCountable* provide();
-void consume_refcntbl(RefCountable*);
-void some_function();
+RefCountable* provide() { return nullptr; }
+void consume_refcntbl(RefCountable*) {}
 
 namespace simple {
   void foo() {
     consume_refcntbl(provide());
     // expected-warning@-1{{Call argument is uncounted and unsafe}}
   }
-
-  // Test that the checker works with [[clang::suppress]].
-  void foo_suppressed() {
-    [[clang::suppress]]
-    consume_refcntbl(provide()); // no-warning
-  }
 }
 
 namespace multi_arg {
-  void consume_refcntbl(int, RefCountable* foo, bool);
+  void consume_refcntbl(int, RefCountable* foo, bool) {}
   void foo() {
     consume_refcntbl(42, provide(), true);
     // expected-warning@-1{{Call argument for parameter 'foo' is uncounted and unsafe}}
@@ -32,15 +25,15 @@ namespace ref_counted {
   void consume_ref_counted(Ref<RefCountable>) {}
 
   void foo() {
-    consume_refcntbl(provide_ref_counted().ptr());
+    consume_refcntbl(provide_ref_counted().get());
     // no warning
   }
 }
 
 namespace methods {
   struct Consumer {
-    void consume_ptr(RefCountable* ptr);
-    void consume_ref(const RefCountable& ref);
+    void consume_ptr(RefCountable* ptr) {}
+    void consume_ref(const RefCountable& ref) {}
   };
 
   void foo() {
@@ -54,7 +47,7 @@ namespace methods {
 
   void foo2() {
     struct Consumer {
-      void consume(RefCountable*) { some_function(); }
+      void consume(RefCountable*) { }
       void whatever() {
         consume(provide());
         // expected-warning@-1{{Call argument is uncounted and unsafe}}
@@ -64,7 +57,7 @@ namespace methods {
 
   void foo3() {
     struct Consumer {
-      void consume(RefCountable*) { some_function(); }
+      void consume(RefCountable*) { }
       void whatever() {
         this->consume(provide());
         // expected-warning@-1{{Call argument is uncounted and unsafe}}
@@ -74,7 +67,7 @@ namespace methods {
 }
 
 namespace casts {
-  RefCountable* downcast(RefCountable*);
+  RefCountable* downcast(RefCountable*) { return nullptr; }
 
   void foo() {
     consume_refcntbl(provide());
@@ -117,7 +110,7 @@ namespace null_ptr {
 
 namespace ref_counted_lookalike {
   struct Decoy {
-    RefCountable* get();
+    RefCountable* get() { return nullptr; }
   };
 
   void foo() {
@@ -146,8 +139,8 @@ namespace Ref_to_reference_conversion_operator {
 }
 
 namespace param_formarding_function {
-  void consume_ref_countable_ref(RefCountable&);
-  void consume_ref_countable_ptr(RefCountable*);
+  void consume_ref_countable_ref(RefCountable&) {}
+  void consume_ref_countable_ptr(RefCountable*) {}
 
   namespace ptr {
     void foo(RefCountable* param) {
@@ -173,21 +166,21 @@ namespace param_formarding_function {
 
   namespace casts {
 
-  RefCountable* downcast(RefCountable*);
-  template<class T> T* bitwise_cast(T*);
-  template<class T> T* bit_cast(T*);
+  RefCountable* downcast(RefCountable*) { return nullptr; }
 
-  void foo(RefCountable* param) {
-    consume_ref_countable_ptr(downcast(param));
-    consume_ref_countable_ptr(bitwise_cast(param));
-    consume_ref_countable_ptr(bit_cast(param));
-   }
+  template<class T>
+  T* bitwise_cast(T*) { return nullptr; }
+
+    void foo(RefCountable* param) {
+      consume_ref_countable_ptr(downcast(param));
+      consume_ref_countable_ptr(bitwise_cast(param));
+     }
   }
 }
 
 namespace param_formarding_lambda {
-  auto consume_ref_countable_ref = [](RefCountable&) { some_function(); };
-  auto consume_ref_countable_ptr = [](RefCountable*) { some_function(); };
+  auto consume_ref_countable_ref = [](RefCountable&) {};
+  auto consume_ref_countable_ptr = [](RefCountable*) {};
 
   namespace ptr {
     void foo(RefCountable* param) {
@@ -305,7 +298,7 @@ namespace string_impl {
 namespace default_arg {
   RefCountable* global;
 
-  void function_with_default_arg(RefCountable* param = global);
+  void function_with_default_arg(RefCountable* param = global) {}
   // expected-warning@-1{{Call argument for parameter 'param' is uncounted and unsafe}}
 
   void foo() {
@@ -313,23 +306,12 @@ namespace default_arg {
   }
 }
 
-namespace cxx_member_func {
-  Ref<RefCountable> provideProtected();
-  void foo() {
-    provide()->trivial();
-    provide()->method();
-    // expected-warning@-1{{Call argument for 'this' parameter is uncounted and unsafe}}
-    provideProtected()->method();
-    (provideProtected())->method();
-  };
-}
-
 namespace cxx_member_operator_call {
   // The hidden this-pointer argument without a corresponding parameter caused couple bugs in parameter <-> argument attribution.
   struct Foo {
-    Foo& operator+(RefCountable* bad);
-    friend Foo& operator-(Foo& lhs, RefCountable* bad);
-    void operator()(RefCountable* bad);
+    Foo& operator+(RefCountable* bad) { return *this; }
+    friend Foo& operator-(Foo& lhs, RefCountable* bad) { return lhs; }
+    void operator()(RefCountable* bad) { }
   };
 
   RefCountable* global;
@@ -342,101 +324,5 @@ namespace cxx_member_operator_call {
     // expected-warning@-1{{Call argument for parameter 'bad' is uncounted and unsafe}}
     f(global);
     // expected-warning@-1{{Call argument for parameter 'bad' is uncounted and unsafe}}
-  }
-}
-
-namespace call_with_ptr_on_ref {
-  Ref<RefCountable> provideProtected();
-  void bar(RefCountable* bad);
-  bool baz();
-  void foo(bool v) {
-    bar(v ? nullptr : provideProtected().ptr());
-    bar(baz() ? provideProtected().ptr() : nullptr);
-    bar(v ? provide() : provideProtected().ptr());
-    // expected-warning@-1{{Call argument for parameter 'bad' is uncounted and unsafe}}
-    bar(v ? provideProtected().ptr() : provide());
-    // expected-warning@-1{{Call argument for parameter 'bad' is uncounted and unsafe}}
-  }
-}
-
-namespace call_with_explicit_construct_from_auto {
-
-  struct Impl {
-    void ref() const;
-    void deref() const;
-
-    static Ref<Impl> create();
-  };
-
-  template <typename T>
-  struct ArgObj {
-    T* t;
-  };
-
-  struct Object {
-    Object();
-    Object(Ref<Impl>&&);
-
-    Impl* impl() const { return m_impl.get(); }
-
-    static Object create(ArgObj<char>&) { return Impl::create(); }
-    static void bar(Impl&);
-
-  private:
-    RefPtr<Impl> m_impl;
-  };
-
-  template<typename CharacterType> void foo()
-  {
-      auto result = Object::create(ArgObj<CharacterType> { });
-      Object::bar(Ref { *result.impl() });
-  }
-
-}
-
-namespace call_with_explicit_temporary_obj {
-  void foo() {
-    Ref { *provide() }->method();
-    RefPtr { provide() }->method();
-  }
-  template <typename T>
-  void bar() {
-    Ref(*provide())->method();
-    RefPtr(provide())->method();
-  }
-  void baz() {
-    bar<int>();
-  }
-
-  class Foo {
-    Ref<RefCountable> ensure();
-    void foo() {
-      Ref { ensure() }->method();
-    }
-  };
-
-  void baz(Ref<RefCountable>&& arg) {
-    Ref { arg }->method();
-  }
-}
-
-namespace call_with_explicit_construct {
-}
-
-namespace call_with_adopt_ref {
-  class Obj {
-  public:
-    void ref() const;
-    void deref() const;
-    void method();
-  };
-
-  // This is needed due to rdar://141692212.
-  struct dummy {
-    RefPtr<Obj> any;
-  };
-
-  void foo() {
-    adoptRef(new Obj)->method();
   }
 }

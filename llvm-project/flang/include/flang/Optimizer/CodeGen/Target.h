@@ -15,7 +15,6 @@
 
 #include "flang/Optimizer/Dialect/FIRType.h"
 #include "flang/Optimizer/Dialect/Support/KindMapping.h"
-#include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/TargetParser/Triple.h"
 #include <memory>
@@ -71,34 +70,17 @@ public:
   using TypeAndAttr = std::tuple<mlir::Type, Attributes>;
   using Marshalling = std::vector<TypeAndAttr>;
 
-  static std::unique_ptr<CodeGenSpecifics>
-  get(mlir::MLIRContext *ctx, llvm::Triple &&trp, KindMapping &&kindMap,
-      llvm::StringRef targetCPU, mlir::LLVM::TargetFeaturesAttr targetFeatures,
-      const mlir::DataLayout &dl);
-
-  static std::unique_ptr<CodeGenSpecifics>
-  get(mlir::MLIRContext *ctx, llvm::Triple &&trp, KindMapping &&kindMap,
-      llvm::StringRef targetCPU, mlir::LLVM::TargetFeaturesAttr targetFeatures,
-      const mlir::DataLayout &dl, llvm::StringRef tuneCPU);
+  static std::unique_ptr<CodeGenSpecifics> get(mlir::MLIRContext *ctx,
+                                               llvm::Triple &&trp,
+                                               KindMapping &&kindMap,
+                                               const mlir::DataLayout &dl);
 
   static TypeAndAttr getTypeAndAttr(mlir::Type t) { return TypeAndAttr{t, {}}; }
 
   CodeGenSpecifics(mlir::MLIRContext *ctx, llvm::Triple &&trp,
-                   KindMapping &&kindMap, llvm::StringRef targetCPU,
-                   mlir::LLVM::TargetFeaturesAttr targetFeatures,
-                   const mlir::DataLayout &dl)
+                   KindMapping &&kindMap, const mlir::DataLayout &dl)
       : context{*ctx}, triple{std::move(trp)}, kindMap{std::move(kindMap)},
-        targetCPU{targetCPU}, targetFeatures{targetFeatures}, dataLayout{&dl},
-        tuneCPU{""} {}
-
-  CodeGenSpecifics(mlir::MLIRContext *ctx, llvm::Triple &&trp,
-                   KindMapping &&kindMap, llvm::StringRef targetCPU,
-                   mlir::LLVM::TargetFeaturesAttr targetFeatures,
-                   const mlir::DataLayout &dl, llvm::StringRef tuneCPU)
-      : context{*ctx}, triple{std::move(trp)}, kindMap{std::move(kindMap)},
-        targetCPU{targetCPU}, targetFeatures{targetFeatures}, dataLayout{&dl},
-        tuneCPU{tuneCPU} {}
-
+        dataLayout{&dl} {}
   CodeGenSpecifics() = delete;
   virtual ~CodeGenSpecifics() {}
 
@@ -126,14 +108,17 @@ public:
   structArgumentType(mlir::Location loc, fir::RecordType recTy,
                      const Marshalling &previousArguments) const = 0;
 
-  /// Type representation of a `fir.type<T>` type argument when returned by
-  /// value. Such value may need to be converted to a hidden reference argument.
-  virtual Marshalling structReturnType(mlir::Location loc,
-                                       fir::RecordType eleTy) const = 0;
-
   /// Type representation of a `boxchar<n>` type argument when passed by value.
   /// An argument value may need to be passed as a (safe) reference argument.
-  virtual Marshalling boxcharArgumentType(mlir::Type eleTy) const = 0;
+  ///
+  /// A function that returns a `boxchar<n>` type value must already have
+  /// converted that return value to a parameter decorated with the 'sret'
+  /// Attribute (https://llvm.org/docs/LangRef.html#parameter-attributes).
+  /// This requirement is in keeping with Fortran semantics, which require the
+  /// caller to allocate the space for the return CHARACTER value and pass
+  /// a pointer and the length of that space (a boxchar) to the called function.
+  virtual Marshalling boxcharArgumentType(mlir::Type eleTy,
+                                          bool sret = false) const = 0;
 
   // Compute ABI rules for an integer argument of the given mlir::IntegerType
   // \p argTy. Note that this methods is supposed to be called for
@@ -176,13 +161,6 @@ public:
   // Returns width in bits of C/C++ 'int' type size.
   virtual unsigned char getCIntTypeWidth() const = 0;
 
-  llvm::StringRef getTargetCPU() const { return targetCPU; }
-  llvm::StringRef getTuneCPU() const { return tuneCPU; }
-
-  mlir::LLVM::TargetFeaturesAttr getTargetFeatures() const {
-    return targetFeatures;
-  }
-
   const mlir::DataLayout &getDataLayout() const {
     assert(dataLayout && "dataLayout must be set");
     return *dataLayout;
@@ -192,10 +170,7 @@ protected:
   mlir::MLIRContext &context;
   llvm::Triple triple;
   KindMapping kindMap;
-  llvm::StringRef targetCPU;
-  mlir::LLVM::TargetFeaturesAttr targetFeatures;
   const mlir::DataLayout *dataLayout = nullptr;
-  llvm::StringRef tuneCPU;
 };
 
 } // namespace fir

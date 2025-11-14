@@ -29,9 +29,9 @@ class SparcTargetMachine;
 FunctionPass *createSparcISelDag(SparcTargetMachine &TM);
 FunctionPass *createSparcDelaySlotFillerPass();
 
-void initializeSparcAsmPrinterPass(PassRegistry &);
-void initializeSparcDAGToDAGISelLegacyPass(PassRegistry &);
-void initializeErrataWorkaroundPass(PassRegistry &);
+void LowerSparcMachineInstrToMCInst(const MachineInstr *MI, MCInst &OutMI,
+                                    AsmPrinter &AP);
+void initializeSparcDAGToDAGISelPass(PassRegistry &);
 } // namespace llvm
 
 namespace llvm {

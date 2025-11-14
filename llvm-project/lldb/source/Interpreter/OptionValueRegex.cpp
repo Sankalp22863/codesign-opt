@@ -8,7 +8,6 @@
 
 #include "lldb/Interpreter/OptionValueRegex.h"
 
-#include "lldb/Interpreter/OptionValue.h"
 #include "lldb/Utility/Stream.h"
 
 using namespace lldb;
@@ -24,12 +23,6 @@ void OptionValueRegex::DumpValue(const ExecutionContext *exe_ctx, Stream &strm,
     if (m_regex.IsValid()) {
       llvm::StringRef regex_text = m_regex.GetText();
       strm.Printf("%s", regex_text.str().c_str());
-    }
-    if (dump_mask & eDumpOptionDefaultValue &&
-        m_regex.GetText() != m_default_regex_str &&
-        !m_default_regex_str.empty()) {
-      DefaultValueFormat label(strm);
-      strm.PutCString(m_default_regex_str);
     }
   }
 }
@@ -58,9 +51,9 @@ Status OptionValueRegex::SetValueFromString(llvm::StringRef value,
       m_value_was_set = true;
       NotifyValueChanged();
     } else if (llvm::Error err = m_regex.GetError()) {
-      return Status::FromError(std::move(err));
+      error.SetErrorString(llvm::toString(std::move(err)));
     } else {
-      return Status::FromErrorString("regex error");
+      error.SetErrorString("regex error");
     }
     break;
   }

@@ -139,7 +139,8 @@ class MaximalStaticExpansionImpl {
                     SmallPtrSetImpl<MemoryAccess *> &Reads, Scop &S) {
     if (SAI->isValueKind()) {
       Writes.insert(S.getValueDef(SAI));
-      Reads.insert_range(S.getValueUses(SAI));
+      for (auto MA : S.getValueUses(SAI))
+        Reads.insert(MA);
       return true;
     } else if (SAI->isPHIKind()) {
       auto Read = S.getPHIRead(SAI);
@@ -168,7 +169,7 @@ class MaximalStaticExpansionImpl {
     } else if (SAI->isExitPHIKind()) {
       // For now, we are not able to expand ExitPhi.
       emitRemark(SAI->getName() + " is a ExitPhi node.",
-                 &*S.getEnteringBlock()->getFirstNonPHIIt());
+                 S.getEnteringBlock()->getFirstNonPHI());
       return false;
     }
 
@@ -269,7 +270,7 @@ class MaximalStaticExpansionImpl {
     // No need to expand SAI with no write.
     if (NumberWrites == 0) {
       emitRemark(SAI->getName() + " has 0 write access.",
-                 &*S.getEnteringBlock()->getFirstNonPHIIt());
+                 S.getEnteringBlock()->getFirstNonPHI());
       return false;
     }
 
@@ -398,8 +399,9 @@ class MaximalStaticExpansionImpl {
   /// @param Dependences The RAW dependences of the SCop.
   void expandPhi(Scop &S, const ScopArrayInfo *SAI,
                  const isl::union_map &Dependences) {
-    SmallPtrSet<MemoryAccess *, 4> Writes(llvm::from_range,
-                                          S.getPHIIncomings(SAI));
+    SmallPtrSet<MemoryAccess *, 4> Writes;
+    for (auto MA : S.getPHIIncomings(SAI))
+      Writes.insert(MA);
     auto Read = S.getPHIRead(SAI);
     auto ExpandedSAI = expandAccess(Read);
 

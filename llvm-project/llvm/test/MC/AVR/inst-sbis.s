@@ -1,5 +1,6 @@
 ; RUN: llvm-mc -triple avr -show-encoding < %s | FileCheck %s
-; RUN: llvm-mc -filetype=obj -triple avr < %s | llvm-objdump --no-print-imm-hex -dr - | FileCheck -check-prefix=CHECK-INST %s
+; RUN: llvm-mc -filetype=obj -triple avr < %s | llvm-objdump --no-print-imm-hex -d - | FileCheck -check-prefix=CHECK-INST %s
+
 
 foo:
   sbis 4,  3
@@ -21,6 +22,7 @@ foo:
 ; CHECK: sbis 31, 7                  ; encoding: [0xff,0x9b]
 
 ; CHECK: sbis FOO+4, 7               ; encoding: [0bAAAAA111,0x9b]
+; CHECK:                             ;   fixup A - offset: 0, value: FOO+4, kind: fixup_port5
 
 ; CHECK-INST: sbis 4,  3
 ; CHECK-INST: sbis 6,  2

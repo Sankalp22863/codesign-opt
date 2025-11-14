@@ -23,13 +23,10 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/iterator_range.h"
 #include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Allocator.h"
-#include "llvm/Support/Compiler.h"
-#include "llvm/Support/InterleavedRange.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/ScaledNumber.h"
 #include "llvm/Support/StringSaver.h"
@@ -44,7 +41,6 @@
 #include <optional>
 #include <set>
 #include <string>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -73,8 +69,7 @@ struct CalleeInfo {
   uint32_t Hotness : 3;
 
   // True if at least one of the calls to the callee is a tail call.
-  LLVM_PREFERRED_TYPE(bool)
-  uint32_t HasTailCall : 1;
+  bool HasTailCall : 1;
 
   /// The value stored in RelBlockFreq has to be interpreted as the digits of
   /// a scaled number with a scale of \p -ScaleShift.
@@ -164,45 +159,10 @@ struct alignas(8) GlobalValueSummaryInfo {
 
   inline GlobalValueSummaryInfo(bool HaveGVs);
 
-  /// Access a read-only list of global value summary structures for a
-  /// particular value held in the GlobalValueMap.
-  ArrayRef<std::unique_ptr<GlobalValueSummary>> getSummaryList() const {
-    return SummaryList;
-  }
-
-  /// Add a summary corresponding to a global value definition in a module with
-  /// the corresponding GUID.
-  inline void addSummary(std::unique_ptr<GlobalValueSummary> Summary);
-
-  /// Verify that the HasLocal flag is consistent with the SummaryList. Should
-  /// only be called prior to index-based internalization and promotion.
-  inline void verifyLocal() const;
-
-  bool hasLocal() const { return HasLocal; }
-
-private:
   /// List of global value summary structures for a particular value held
   /// in the GlobalValueMap. Requires a vector in the case of multiple
-  /// COMDAT values of the same name, weak symbols, locals of the same name when
-  /// compiling without sufficient distinguishing path, or (theoretically) hash
-  /// collisions. Each summary is from a different module.
+  /// COMDAT values of the same name.
   GlobalValueSummaryList SummaryList;
-
-  /// True if the SummaryList contains at least one summary with local linkage.
-  /// In most cases there should be only one, unless translation units with
-  /// same-named locals were compiled without distinguishing path. And generally
-  /// there should not be a mix of local and non-local summaries, because the
-  /// GUID for a local is computed with the path prepended and a ';' delimiter.
-  /// In extremely rare cases there could be a GUID hash collision. Having the
-  /// flag saves having to walk through all summaries to prove the existence or
-  /// not of any locals.
-  /// NOTE: this flag is set when the index is built. It does not reflect
-  /// index-based internalization and promotion decisions. Generally most
-  /// index-based analysis occurs before then, but any users should assert that
-  /// the withInternalizeAndPromote() flag is not set on the index.
-  /// TODO: Replace checks in various ThinLTO analyses that loop through all
-  /// summaries to handle the local case with a check of the flag.
-  bool HasLocal : 1;
 };
 
 /// Map from global value GUID to corresponding summary structures. Use a
@@ -236,19 +196,10 @@ struct ValueInfo {
   }
 
   ArrayRef<std::unique_ptr<GlobalValueSummary>> getSummaryList() const {
-    return getRef()->second.getSummaryList();
+    return getRef()->second.SummaryList;
   }
 
-  void verifyLocal() const { getRef()->second.verifyLocal(); }
-
-  bool hasLocal() const { return getRef()->second.hasLocal(); }
-
-  // Even if the index is built with GVs available, we may not have one for
-  // summary entries synthesized for profiled indirect call targets.
-  bool hasName() const { return !haveGVs() || getValue(); }
-
   StringRef name() const {
-    assert(!haveGVs() || getRef()->second.U.GV);
     return haveGVs() ? getRef()->second.U.GV->getName()
                      : getRef()->second.U.Name;
   }
@@ -288,14 +239,14 @@ struct ValueInfo {
   /// Returns the most constraining visibility among summaries. The
   /// visibilities, ordered from least to most constraining, are: default,
   /// protected and hidden.
-  LLVM_ABI GlobalValue::VisibilityTypes getELFVisibility() const;
+  GlobalValue::VisibilityTypes getELFVisibility() const;
 
   /// Checks if all summaries are DSO local (have the flag set). When DSOLocal
   /// propagation has been done, set the parameter to enable fast check.
-  LLVM_ABI bool isDSOLocal(bool WithDSOLocalPropagation = false) const;
+  bool isDSOLocal(bool WithDSOLocalPropagation = false) const;
 
   /// Checks if all copies are eligible for auto-hiding (have flag set).
-  LLVM_ABI bool canAutoHide() const;
+  bool canAutoHide() const;
 };
 
 inline raw_ostream &operator<<(raw_ostream &OS, const ValueInfo &VI) {
@@ -342,15 +293,7 @@ template <> struct DenseMapInfo<ValueInfo> {
     assert(isSpecialKey(L) || isSpecialKey(R) || (L.haveGVs() == R.haveGVs()));
     return L.getRef() == R.getRef();
   }
-  static unsigned getHashValue(ValueInfo I) { return hash_value(I.getRef()); }
-};
-
-// For optional hinted size reporting, holds a pair of the full stack id
-// (pre-trimming, from the full context in the profile), and the associated
-// total profiled size.
-struct ContextTotalSize {
-  uint64_t FullStackId;
-  uint64_t TotalSize;
+  static unsigned getHashValue(ValueInfo I) { return (uintptr_t)I.getRef(); }
 };
 
 /// Summary of memprof callsite metadata.
@@ -384,8 +327,22 @@ struct CallsiteInfo {
 
 inline raw_ostream &operator<<(raw_ostream &OS, const CallsiteInfo &SNI) {
   OS << "Callee: " << SNI.Callee;
-  OS << " Clones: " << llvm::interleaved(SNI.Clones);
-  OS << " StackIds: " << llvm::interleaved(SNI.StackIdIndices);
+  bool First = true;
+  OS << " Clones: ";
+  for (auto V : SNI.Clones) {
+    if (!First)
+      OS << ", ";
+    First = false;
+    OS << V;
+  }
+  First = true;
+  OS << " StackIds: ";
+  for (auto Id : SNI.StackIdIndices) {
+    if (!First)
+      OS << ", ";
+    First = false;
+    OS << Id;
+  }
   return OS;
 }
 
@@ -419,7 +376,14 @@ struct MIBInfo {
 
 inline raw_ostream &operator<<(raw_ostream &OS, const MIBInfo &MIB) {
   OS << "AllocType " << (unsigned)MIB.AllocType;
-  OS << " StackIds: " << llvm::interleaved(MIB.StackIdIndices);
+  bool First = true;
+  OS << " StackIds: ";
+  for (auto Id : MIB.StackIdIndices) {
+    if (!First)
+      OS << ", ";
+    First = false;
+    OS << Id;
+  }
   return OS;
 }
 
@@ -437,14 +401,6 @@ struct AllocInfo {
 
   // Vector of MIBs in this memprof metadata.
   std::vector<MIBInfo> MIBs;
-
-  // If requested, keep track of full stack contexts and total profiled sizes
-  // for each MIB. This will be a vector of the same length and order as the
-  // MIBs vector, if non-empty. Note that each MIB in the summary can have
-  // multiple of these as we trim the contexts when possible during matching.
-  // For hinted size reporting we, however, want the original pre-trimmed full
-  // stack context id for better correlation with the profile.
-  std::vector<std::vector<ContextTotalSize>> ContextSizeInfos;
 
   AllocInfo(std::vector<MIBInfo> MIBs) : MIBs(std::move(MIBs)) {
     Versions.push_back(0);
@@ -466,20 +422,6 @@ inline raw_ostream &operator<<(raw_ostream &OS, const AllocInfo &AE) {
   for (auto &M : AE.MIBs) {
     OS << "\t\t" << M << "\n";
   }
-  if (!AE.ContextSizeInfos.empty()) {
-    OS << "\tContextSizeInfo per MIB:\n";
-    for (auto Infos : AE.ContextSizeInfos) {
-      OS << "\t\t";
-      bool FirstInfo = true;
-      for (auto [FullStackId, TotalSize] : Infos) {
-        if (!FirstInfo)
-          OS << ", ";
-        FirstInfo = false;
-        OS << "{ " << FullStackId << ", " << TotalSize << " }";
-      }
-      OS << "\n";
-    }
-  }
   return OS;
 }
 
@@ -489,18 +431,6 @@ class GlobalValueSummary {
 public:
   /// Sububclass discriminator (for dyn_cast<> et al.)
   enum SummaryKind : unsigned { AliasKind, FunctionKind, GlobalVarKind };
-
-  enum ImportKind : unsigned {
-    // The global value definition corresponding to the summary should be
-    // imported from source module
-    Definition = 0,
-
-    // When its definition doesn't exist in the destination module and not
-    // imported (e.g., function is too large to be inlined), the global value
-    // declaration corresponding to the summary should be imported, or the
-    // attributes from summary should be annotated on the function declaration.
-    Declaration = 1,
-  };
 
   /// Group flags (Linkage, NotEligibleToImport, etc.) as a bitfield.
   struct GVFlags {
@@ -542,19 +472,14 @@ public:
     /// means the symbol was externally visible.
     unsigned CanAutoHide : 1;
 
-    /// This field is written by the ThinLTO indexing step to postlink combined
-    /// summary. The value is interpreted as 'ImportKind' enum defined above.
-    unsigned ImportType : 1;
-
     /// Convenience Constructors
     explicit GVFlags(GlobalValue::LinkageTypes Linkage,
                      GlobalValue::VisibilityTypes Visibility,
                      bool NotEligibleToImport, bool Live, bool IsLocal,
-                     bool CanAutoHide, ImportKind ImportType)
+                     bool CanAutoHide)
         : Linkage(Linkage), Visibility(Visibility),
           NotEligibleToImport(NotEligibleToImport), Live(Live),
-          DSOLocal(IsLocal), CanAutoHide(CanAutoHide),
-          ImportType(static_cast<unsigned>(ImportType)) {}
+          DSOLocal(IsLocal), CanAutoHide(CanAutoHide) {}
   };
 
 private:
@@ -581,13 +506,10 @@ private:
   /// (either by the initializer of a global variable, or referenced
   /// from within a function). This does not include functions called, which
   /// are listed in the derived FunctionSummary object.
-  /// We use SmallVector<ValueInfo, 0> instead of std::vector<ValueInfo> for its
-  /// smaller memory footprint.
-  SmallVector<ValueInfo, 0> RefEdgeList;
+  std::vector<ValueInfo> RefEdgeList;
 
 protected:
-  GlobalValueSummary(SummaryKind K, GVFlags Flags,
-                     SmallVectorImpl<ValueInfo> &&Refs)
+  GlobalValueSummary(SummaryKind K, GVFlags Flags, std::vector<ValueInfo> Refs)
       : Kind(K), Flags(Flags), RefEdgeList(std::move(Refs)) {
     assert((K != AliasKind || Refs.empty()) &&
            "Expect no references for AliasSummary");
@@ -642,16 +564,6 @@ public:
 
   bool canAutoHide() const { return Flags.CanAutoHide; }
 
-  bool shouldImportAsDecl() const {
-    return Flags.ImportType == GlobalValueSummary::ImportKind::Declaration;
-  }
-
-  void setImportKind(ImportKind IK) { Flags.ImportType = IK; }
-
-  GlobalValueSummary::ImportKind importType() const {
-    return static_cast<ImportKind>(Flags.ImportType);
-  }
-
   GlobalValue::VisibilityTypes getVisibility() const {
     return (GlobalValue::VisibilityTypes)Flags.Visibility;
   }
@@ -673,23 +585,7 @@ public:
   friend class ModuleSummaryIndex;
 };
 
-GlobalValueSummaryInfo::GlobalValueSummaryInfo(bool HaveGVs)
-    : U(HaveGVs), HasLocal(false) {}
-
-void GlobalValueSummaryInfo::addSummary(
-    std::unique_ptr<GlobalValueSummary> Summary) {
-  if (GlobalValue::isLocalLinkage(Summary->linkage()))
-    HasLocal = true;
-  return SummaryList.push_back(std::move(Summary));
-}
-
-void GlobalValueSummaryInfo::verifyLocal() const {
-  assert(HasLocal ==
-         llvm::any_of(SummaryList,
-                      [](const std::unique_ptr<GlobalValueSummary> &Summary) {
-                        return GlobalValue::isLocalLinkage(Summary->linkage());
-                      }));
-}
+GlobalValueSummaryInfo::GlobalValueSummaryInfo(bool HaveGVs) : U(HaveGVs) {}
 
 /// Alias summary information.
 class AliasSummary : public GlobalValueSummary {
@@ -699,11 +595,12 @@ class AliasSummary : public GlobalValueSummary {
   /// memory for time). Note that this pointer may be null (and the value info
   /// empty) when we have a distributed index where the alias is being imported
   /// (as a copy of the aliasee), but the aliasee is not.
-  GlobalValueSummary *AliaseeSummary = nullptr;
+  GlobalValueSummary *AliaseeSummary;
 
 public:
   AliasSummary(GVFlags Flags)
-      : GlobalValueSummary(AliasKind, Flags, SmallVector<ValueInfo, 0>{}) {}
+      : GlobalValueSummary(AliasKind, Flags, ArrayRef<ValueInfo>{}),
+        AliaseeSummary(nullptr) {}
 
   /// Check if this is an alias summary.
   static bool classof(const GlobalValueSummary *GVS) {
@@ -869,7 +766,7 @@ public:
       OS << ", hasUnknownCall: " << this->HasUnknownCall;
       OS << ", mustBeUnreachable: " << this->MustBeUnreachable;
       OS << ")";
-      return Output;
+      return OS.str();
     }
   };
 
@@ -910,15 +807,16 @@ public:
   /// Create an empty FunctionSummary (with specified call edges).
   /// Used to represent external nodes and the dummy root node.
   static FunctionSummary
-  makeDummyFunctionSummary(SmallVectorImpl<FunctionSummary::EdgeTy> &&Edges) {
+  makeDummyFunctionSummary(std::vector<FunctionSummary::EdgeTy> Edges) {
     return FunctionSummary(
         FunctionSummary::GVFlags(
             GlobalValue::LinkageTypes::AvailableExternallyLinkage,
             GlobalValue::DefaultVisibility,
             /*NotEligibleToImport=*/true, /*Live=*/true, /*IsLocal=*/false,
-            /*CanAutoHide=*/false, GlobalValueSummary::ImportKind::Definition),
-        /*NumInsts=*/0, FunctionSummary::FFlags{}, SmallVector<ValueInfo, 0>(),
-        std::move(Edges), std::vector<GlobalValue::GUID>(),
+            /*CanAutoHide=*/false),
+        /*NumInsts=*/0, FunctionSummary::FFlags{}, /*EntryCount=*/0,
+        std::vector<ValueInfo>(), std::move(Edges),
+        std::vector<GlobalValue::GUID>(),
         std::vector<FunctionSummary::VFuncId>(),
         std::vector<FunctionSummary::VFuncId>(),
         std::vector<FunctionSummary::ConstVCall>(),
@@ -928,7 +826,7 @@ public:
   }
 
   /// A dummy node to reference external functions that aren't in the index
-  LLVM_ABI static FunctionSummary ExternalNode;
+  static FunctionSummary ExternalNode;
 
 private:
   /// Number of instructions (ignoring debug instructions, e.g.) computed
@@ -938,10 +836,13 @@ private:
   /// Function summary specific flags.
   FFlags FunFlags;
 
+  /// The synthesized entry count of the function.
+  /// This is only populated during ThinLink phase and remains unused while
+  /// generating per-module summaries.
+  uint64_t EntryCount = 0;
+
   /// List of <CalleeValueInfo, CalleeInfo> call edge pairs from this function.
-  /// We use SmallVector<ValueInfo, 0> instead of std::vector<ValueInfo> for its
-  /// smaller memory footprint.
-  SmallVector<EdgeTy, 0> CallGraphEdgeList;
+  std::vector<EdgeTy> CallGraphEdgeList;
 
   std::unique_ptr<TypeIdInfo> TIdInfo;
 
@@ -970,8 +871,8 @@ private:
 
 public:
   FunctionSummary(GVFlags Flags, unsigned NumInsts, FFlags FunFlags,
-                  SmallVectorImpl<ValueInfo> &&Refs,
-                  SmallVectorImpl<EdgeTy> &&CGEdges,
+                  uint64_t EntryCount, std::vector<ValueInfo> Refs,
+                  std::vector<EdgeTy> CGEdges,
                   std::vector<GlobalValue::GUID> TypeTests,
                   std::vector<VFuncId> TypeTestAssumeVCalls,
                   std::vector<VFuncId> TypeCheckedLoadVCalls,
@@ -980,7 +881,7 @@ public:
                   std::vector<ParamAccess> Params, CallsitesTy CallsiteList,
                   AllocsTy AllocList)
       : GlobalValueSummary(FunctionKind, Flags, std::move(Refs)),
-        InstCount(NumInsts), FunFlags(FunFlags),
+        InstCount(NumInsts), FunFlags(FunFlags), EntryCount(EntryCount),
         CallGraphEdgeList(std::move(CGEdges)) {
     if (!TypeTests.empty() || !TypeTestAssumeVCalls.empty() ||
         !TypeCheckedLoadVCalls.empty() || !TypeTestAssumeConstVCalls.empty() ||
@@ -998,7 +899,7 @@ public:
       Allocs = std::make_unique<AllocsTy>(std::move(AllocList));
   }
   // Gets the number of readonly and writeonly refs in RefEdgeList
-  LLVM_ABI std::pair<unsigned, unsigned> specialRefCounts() const;
+  std::pair<unsigned, unsigned> specialRefCounts() const;
 
   /// Check if this is a function summary.
   static bool classof(const GlobalValueSummary *GVS) {
@@ -1015,10 +916,16 @@ public:
   /// Get the instruction count recorded for this function.
   unsigned instCount() const { return InstCount; }
 
+  /// Get the synthetic entry count for this function.
+  uint64_t entryCount() const { return EntryCount; }
+
+  /// Set the synthetic entry count for this function.
+  void setEntryCount(uint64_t EC) { EntryCount = EC; }
+
   /// Return the list of <CalleeValueInfo, CalleeInfo> pairs.
   ArrayRef<EdgeTy> calls() const { return CallGraphEdgeList; }
 
-  SmallVector<EdgeTy, 0> &mutableCalls() { return CallGraphEdgeList; }
+  std::vector<EdgeTy> &mutableCalls() { return CallGraphEdgeList; }
 
   void addCall(EdgeTy E) { CallGraphEdgeList.push_back(E); }
 
@@ -1217,7 +1124,7 @@ public:
   } VarFlags;
 
   GlobalVarSummary(GVFlags Flags, GVarFlags VarFlags,
-                   SmallVectorImpl<ValueInfo> &&Refs)
+                   std::vector<ValueInfo> Refs)
       : GlobalValueSummary(GlobalVarKind, Flags, std::move(Refs)),
         VarFlags(VarFlags) {}
 
@@ -1327,74 +1234,6 @@ struct TypeIdSummary {
   std::map<uint64_t, WholeProgramDevirtResolution> WPDRes;
 };
 
-class CfiFunctionIndex {
-  DenseMap<GlobalValue::GUID, std::set<std::string, std::less<>>> Index;
-  using IndexIterator =
-      DenseMap<GlobalValue::GUID,
-               std::set<std::string, std::less<>>>::const_iterator;
-  using NestedIterator = std::set<std::string, std::less<>>::const_iterator;
-
-public:
-  // Iterates keys of the DenseMap.
-  class GUIDIterator : public iterator_adaptor_base<GUIDIterator, IndexIterator,
-                                                    std::forward_iterator_tag,
-                                                    GlobalValue::GUID> {
-    using base = GUIDIterator::iterator_adaptor_base;
-
-  public:
-    GUIDIterator() = default;
-    explicit GUIDIterator(IndexIterator I) : base(I) {}
-
-    GlobalValue::GUID operator*() const { return this->wrapped()->first; }
-  };
-
-  CfiFunctionIndex() = default;
-  template <typename It> CfiFunctionIndex(It B, It E) {
-    for (; B != E; ++B)
-      emplace(*B);
-  }
-
-  std::vector<StringRef> symbols() const {
-    std::vector<StringRef> Symbols;
-    for (auto &[GUID, Syms] : Index) {
-      (void)GUID;
-      llvm::append_range(Symbols, Syms);
-    }
-    return Symbols;
-  }
-
-  GUIDIterator guid_begin() const { return GUIDIterator(Index.begin()); }
-  GUIDIterator guid_end() const { return GUIDIterator(Index.end()); }
-  iterator_range<GUIDIterator> guids() const {
-    return make_range(guid_begin(), guid_end());
-  }
-
-  iterator_range<NestedIterator> forGuid(GlobalValue::GUID GUID) const {
-    auto I = Index.find(GUID);
-    if (I == Index.end())
-      return make_range(NestedIterator{}, NestedIterator{});
-    return make_range(I->second.begin(), I->second.end());
-  }
-
-  template <typename... Args> void emplace(Args &&...A) {
-    StringRef S(std::forward<Args>(A)...);
-    GlobalValue::GUID GUID = GlobalValue::getGUIDAssumingExternalLinkage(
-        GlobalValue::dropLLVMManglingEscape(S));
-    Index[GUID].emplace(S);
-  }
-
-  size_t count(StringRef S) const {
-    GlobalValue::GUID GUID = GlobalValue::getGUIDAssumingExternalLinkage(
-        GlobalValue::dropLLVMManglingEscape(S));
-    auto I = Index.find(GUID);
-    if (I == Index.end())
-      return 0;
-    return I->second.count(S);
-  }
-
-  bool empty() const { return Index.empty(); }
-};
-
 /// 160 bits SHA1
 using ModuleHash = std::array<uint32_t, 5>;
 
@@ -1410,18 +1249,10 @@ using ModulePathStringTableTy = StringMap<ModuleHash>;
 /// a particular module, and provide efficient access to their summary.
 using GVSummaryMapTy = DenseMap<GlobalValue::GUID, GlobalValueSummary *>;
 
-/// Map of a module name to the GUIDs and summaries we will import from that
-/// module.
-using ModuleToSummariesForIndexTy =
-    std::map<std::string, GVSummaryMapTy, std::less<>>;
-
-/// A set of global value summary pointers.
-using GVSummaryPtrSet = std::unordered_set<GlobalValueSummary *>;
-
 /// Map of a type GUID to type id string and summary (multimap used
 /// in case of GUID conflicts).
 using TypeIdSummaryMapTy =
-    std::multimap<GlobalValue::GUID, std::pair<StringRef, TypeIdSummary>>;
+    std::multimap<GlobalValue::GUID, std::pair<std::string, TypeIdSummary>>;
 
 /// The following data structures summarize type metadata information.
 /// For type metadata overview see https://llvm.org/docs/TypeMetadata.html.
@@ -1457,9 +1288,6 @@ private:
   /// Holds strings for combined index, mapping to the corresponding module ID.
   ModulePathStringTableTy ModulePathStringTable;
 
-  BumpPtrAllocator TypeIdSaverAlloc;
-  UniqueStringSaver TypeIdSaver;
-
   /// Mapping from type identifier GUIDs to type identifier and its summary
   /// information. Produced by thin link.
   TypeIdSummaryMapTy TypeIdMap;
@@ -1468,12 +1296,12 @@ private:
   /// with that type identifier's metadata. Produced by per module summary
   /// analysis and consumed by thin link. For more information, see description
   /// above where TypeIdCompatibleVtableInfo is defined.
-  std::map<StringRef, TypeIdCompatibleVtableInfo, std::less<>>
+  std::map<std::string, TypeIdCompatibleVtableInfo, std::less<>>
       TypeIdCompatibleVtableMap;
 
   /// Mapping from original ID to GUID. If original ID can map to multiple
   /// GUIDs, it will be mapped to 0.
-  DenseMap<GlobalValue::GUID, GlobalValue::GUID> OidGuidMap;
+  std::map<GlobalValue::GUID, GlobalValue::GUID> OidGuidMap;
 
   /// Indicates that summary-based GlobalValue GC has run, and values with
   /// GVFlags::Live==false are really dead. Otherwise, all values must be
@@ -1488,9 +1316,6 @@ private:
   /// Indicates that summary-based DSOLocal propagation has run and the flag in
   /// every summary of a GV is synchronized.
   bool WithDSOLocalPropagation = false;
-
-  /// Indicates that summary-based internalization and promotion has run.
-  bool WithInternalizeAndPromote = false;
 
   /// Indicates that we have whole program visibility.
   bool WithWholeProgramVisibility = false;
@@ -1527,8 +1352,8 @@ private:
   /// True if some of the FunctionSummary contains a ParamAccess.
   bool HasParamAccess = false;
 
-  CfiFunctionIndex CfiFunctionDefs;
-  CfiFunctionIndex CfiFunctionDecls;
+  std::set<std::string> CfiFunctionDefs;
+  std::set<std::string> CfiFunctionDecls;
 
   // Used in cases where we want to record the name of a global, but
   // don't have the string owned elsewhere (e.g. the Strtab on a module).
@@ -1542,7 +1367,7 @@ private:
   // used except in the case of a SamplePGO partial profile, and should be
   // reevaluated/redesigned to allow more effective incremental builds in that
   // case.
-  uint64_t BlockCount = 0;
+  uint64_t BlockCount;
 
   // List of unique stack ids (hashes). We use a 4B index of the id in the
   // stack id lists on the alloc and callsite summaries for memory savings,
@@ -1552,7 +1377,7 @@ private:
 
   // Temporary map while building StackIds list. Clear when index is completely
   // built via releaseTemporaryMemory.
-  DenseMap<uint64_t, unsigned> StackIdToIndex;
+  std::map<uint64_t, unsigned> StackIdToIndex;
 
   // YAML I/O support.
   friend yaml::MappingTraits<ModuleSummaryIndex>;
@@ -1567,16 +1392,15 @@ public:
   // See HaveGVs variable comment.
   ModuleSummaryIndex(bool HaveGVs, bool EnableSplitLTOUnit = false,
                      bool UnifiedLTO = false)
-      : TypeIdSaver(TypeIdSaverAlloc), HaveGVs(HaveGVs),
-        EnableSplitLTOUnit(EnableSplitLTOUnit), UnifiedLTO(UnifiedLTO),
-        Saver(Alloc) {}
+      : HaveGVs(HaveGVs), EnableSplitLTOUnit(EnableSplitLTOUnit),
+        UnifiedLTO(UnifiedLTO), Saver(Alloc), BlockCount(0) {}
 
   // Current version for the module summary in bitcode files.
   // The BitcodeSummaryVersion should be bumped whenever we introduce changes
   // in the way some record are interpreted, like flags for instance.
   // Note that incrementing this may require changes in both BitcodeReader.cpp
   // and BitcodeWriter.cpp.
-  static constexpr uint64_t BitcodeSummaryVersion = 12;
+  static constexpr uint64_t BitcodeSummaryVersion = 9;
 
   // Regular LTO module name for ASM writer
   static constexpr const char *getRegularLTOModuleName() {
@@ -1585,8 +1409,8 @@ public:
 
   bool haveGVs() const { return HaveGVs; }
 
-  LLVM_ABI uint64_t getFlags() const;
-  LLVM_ABI void setFlags(uint64_t Flags);
+  uint64_t getFlags() const;
+  void setFlags(uint64_t Flags);
 
   uint64_t getBlockCount() const { return BlockCount; }
   void addBlockCount(uint64_t C) { BlockCount += C; }
@@ -1665,20 +1489,25 @@ public:
 
     for (auto &S : *this) {
       // Skip external functions
-      if (!S.second.getSummaryList().size() ||
-          !isa<FunctionSummary>(S.second.getSummaryList().front().get()))
+      if (!S.second.SummaryList.size() ||
+          !isa<FunctionSummary>(S.second.SummaryList.front().get()))
         continue;
       discoverNodes(ValueInfo(HaveGVs, &S), FunctionHasParent);
     }
 
-    SmallVector<FunctionSummary::EdgeTy, 0> Edges;
+    std::vector<FunctionSummary::EdgeTy> Edges;
     // create edges to all roots in the Index
     for (auto &P : FunctionHasParent) {
       if (P.second)
         continue; // skip over non-root nodes
       Edges.push_back(std::make_pair(P.first, CalleeInfo{}));
     }
-    return FunctionSummary::makeDummyFunctionSummary(std::move(Edges));
+    if (Edges.empty()) {
+      // Failed to find root - return an empty node
+      return FunctionSummary::makeDummyFunctionSummary({});
+    }
+    auto CallGraphRoot = FunctionSummary::makeDummyFunctionSummary(Edges);
+    return CallGraphRoot;
   }
 
   bool withGlobalValueDeadStripping() const {
@@ -1696,9 +1525,6 @@ public:
   bool withDSOLocalPropagation() const { return WithDSOLocalPropagation; }
   void setWithDSOLocalPropagation() { WithDSOLocalPropagation = true; }
 
-  bool withInternalizeAndPromote() const { return WithInternalizeAndPromote; }
-  void setWithInternalizeAndPromote() { WithInternalizeAndPromote = true; }
-
   bool withWholeProgramVisibility() const { return WithWholeProgramVisibility; }
   void setWithWholeProgramVisibility() { WithWholeProgramVisibility = true; }
 
@@ -1708,6 +1534,9 @@ public:
   bool isWriteOnly(const GlobalVarSummary *GVS) const {
     return WithAttributePropagation && GVS->maybeWriteOnly();
   }
+
+  bool hasSyntheticEntryCounts() const { return HasSyntheticEntryCounts; }
+  void setHasSyntheticEntryCounts() { HasSyntheticEntryCounts = true; }
 
   bool withSupportsHotColdNew() const { return WithSupportsHotColdNew; }
   void setWithSupportsHotColdNew() { WithSupportsHotColdNew = true; }
@@ -1733,7 +1562,7 @@ public:
   bool isGlobalValueLive(const GlobalValueSummary *GVS) const {
     return !WithGlobalValueDeadStripping || GVS->isLive();
   }
-  LLVM_ABI bool isGUIDLive(GlobalValue::GUID GUID) const;
+  bool isGUIDLive(GlobalValue::GUID GUID) const;
 
   /// Return a ValueInfo for the index value_type (convenient when iterating
   /// index).
@@ -1779,11 +1608,11 @@ public:
     return I == OidGuidMap.end() ? 0 : I->second;
   }
 
-  CfiFunctionIndex &cfiFunctionDefs() { return CfiFunctionDefs; }
-  const CfiFunctionIndex &cfiFunctionDefs() const { return CfiFunctionDefs; }
+  std::set<std::string> &cfiFunctionDefs() { return CfiFunctionDefs; }
+  const std::set<std::string> &cfiFunctionDefs() const { return CfiFunctionDefs; }
 
-  CfiFunctionIndex &cfiFunctionDecls() { return CfiFunctionDecls; }
-  const CfiFunctionIndex &cfiFunctionDecls() const { return CfiFunctionDecls; }
+  std::set<std::string> &cfiFunctionDecls() { return CfiFunctionDecls; }
+  const std::set<std::string> &cfiFunctionDecls() const { return CfiFunctionDecls; }
 
   /// Add a global value summary for a value.
   void addGlobalValueSummary(const GlobalValue &GV,
@@ -1794,10 +1623,8 @@ public:
   /// Add a global value summary for a value of the given name.
   void addGlobalValueSummary(StringRef ValueName,
                              std::unique_ptr<GlobalValueSummary> Summary) {
-    addGlobalValueSummary(
-        getOrInsertValueInfo(
-            GlobalValue::getGUIDAssumingExternalLinkage(ValueName)),
-        std::move(Summary));
+    addGlobalValueSummary(getOrInsertValueInfo(GlobalValue::getGUID(ValueName)),
+                          std::move(Summary));
   }
 
   /// Add a global value summary for the given ValueInfo.
@@ -1809,7 +1636,7 @@ public:
     // Here we have a notionally const VI, but the value it points to is owned
     // by the non-const *this.
     const_cast<GlobalValueSummaryMapTy::value_type *>(VI.getRef())
-        ->second.addSummary(std::move(Summary));
+        ->second.SummaryList.push_back(std::move(Summary));
   }
 
   /// Add an original name for the value of the given GUID.
@@ -1817,9 +1644,10 @@ public:
                        GlobalValue::GUID OrigGUID) {
     if (OrigGUID == 0 || ValueGUID == OrigGUID)
       return;
-    auto [It, Inserted] = OidGuidMap.try_emplace(OrigGUID, ValueGUID);
-    if (!Inserted && It->second != ValueGUID)
-      It->second = 0;
+    if (OidGuidMap.count(OrigGUID) && OidGuidMap[OrigGUID] != ValueGUID)
+      OidGuidMap[OrigGUID] = 0;
+    else
+      OidGuidMap[OrigGUID] = ValueGUID;
   }
 
   /// Find the summary for ValueInfo \p VI in module \p ModuleId, or nullptr if
@@ -1857,9 +1685,8 @@ public:
   /// Returns the first GlobalValueSummary for \p ValueGUID, asserting that
   /// there
   /// is only one if \p PerModuleIndex.
-  LLVM_ABI GlobalValueSummary *
-  getGlobalValueSummary(GlobalValue::GUID ValueGUID,
-                        bool PerModuleIndex = true) const;
+  GlobalValueSummary *getGlobalValueSummary(GlobalValue::GUID ValueGUID,
+                                            bool PerModuleIndex = true) const;
 
   /// Table of modules, containing module hash and id.
   const StringMap<ModuleHash> &modulePaths() const {
@@ -1935,25 +1762,22 @@ public:
   /// This accessor can mutate the map and therefore should not be used in
   /// the ThinLTO backends.
   TypeIdSummary &getOrInsertTypeIdSummary(StringRef TypeId) {
-    auto TidIter = TypeIdMap.equal_range(
-        GlobalValue::getGUIDAssumingExternalLinkage(TypeId));
-    for (auto &[GUID, TypeIdPair] : make_range(TidIter))
-      if (TypeIdPair.first == TypeId)
-        return TypeIdPair.second;
-    auto It =
-        TypeIdMap.insert({GlobalValue::getGUIDAssumingExternalLinkage(TypeId),
-                          {TypeIdSaver.save(TypeId), TypeIdSummary()}});
+    auto TidIter = TypeIdMap.equal_range(GlobalValue::getGUID(TypeId));
+    for (auto It = TidIter.first; It != TidIter.second; ++It)
+      if (It->second.first == TypeId)
+        return It->second.second;
+    auto It = TypeIdMap.insert(
+        {GlobalValue::getGUID(TypeId), {std::string(TypeId), TypeIdSummary()}});
     return It->second.second;
   }
 
   /// This returns either a pointer to the type id summary (if present in the
   /// summary map) or null (if not present). This may be used when importing.
   const TypeIdSummary *getTypeIdSummary(StringRef TypeId) const {
-    auto TidIter = TypeIdMap.equal_range(
-        GlobalValue::getGUIDAssumingExternalLinkage(TypeId));
-    for (const auto &[GUID, TypeIdPair] : make_range(TidIter))
-      if (TypeIdPair.first == TypeId)
-        return &TypeIdPair.second;
+    auto TidIter = TypeIdMap.equal_range(GlobalValue::getGUID(TypeId));
+    for (auto It = TidIter.first; It != TidIter.second; ++It)
+      if (It->second.first == TypeId)
+        return &It->second.second;
     return nullptr;
   }
 
@@ -1972,7 +1796,7 @@ public:
   /// the ThinLTO backends.
   TypeIdCompatibleVtableInfo &
   getOrInsertTypeIdCompatibleVtableSummary(StringRef TypeId) {
-    return TypeIdCompatibleVtableMap[TypeIdSaver.save(TypeId)];
+    return TypeIdCompatibleVtableMap[std::string(TypeId)];
   }
 
   /// For the given \p TypeId, this returns the TypeIdCompatibleVtableMap
@@ -1987,9 +1811,8 @@ public:
 
   /// Collect for the given module the list of functions it defines
   /// (GUID -> Summary).
-  LLVM_ABI void
-  collectDefinedFunctionsForModule(StringRef ModulePath,
-                                   GVSummaryMapTy &GVSummaryMap) const;
+  void collectDefinedFunctionsForModule(StringRef ModulePath,
+                                        GVSummaryMapTy &GVSummaryMap) const;
 
   /// Collect for each module the list of Summaries it defines (GUID ->
   /// Summary).
@@ -1998,38 +1821,31 @@ public:
   collectDefinedGVSummariesPerModule(Map &ModuleToDefinedGVSummaries) const {
     for (const auto &GlobalList : *this) {
       auto GUID = GlobalList.first;
-      for (const auto &Summary : GlobalList.second.getSummaryList()) {
+      for (const auto &Summary : GlobalList.second.SummaryList) {
         ModuleToDefinedGVSummaries[Summary->modulePath()][GUID] = Summary.get();
       }
     }
   }
 
   /// Print to an output stream.
-  LLVM_ABI void print(raw_ostream &OS, bool IsForDebug = false) const;
+  void print(raw_ostream &OS, bool IsForDebug = false) const;
 
   /// Dump to stderr (for debugging).
-  LLVM_ABI void dump() const;
+  void dump() const;
 
   /// Export summary to dot file for GraphViz.
-  LLVM_ABI void
+  void
   exportToDot(raw_ostream &OS,
               const DenseSet<GlobalValue::GUID> &GUIDPreservedSymbols) const;
 
   /// Print out strongly connected components for debugging.
-  LLVM_ABI void dumpSCCs(raw_ostream &OS);
+  void dumpSCCs(raw_ostream &OS);
 
   /// Do the access attribute and DSOLocal propagation in combined index.
-  LLVM_ABI void
-  propagateAttributes(const DenseSet<GlobalValue::GUID> &PreservedSymbols);
+  void propagateAttributes(const DenseSet<GlobalValue::GUID> &PreservedSymbols);
 
   /// Checks if we can import global variable from another module.
-  LLVM_ABI bool canImportGlobalVar(const GlobalValueSummary *S,
-                                   bool AnalyzeRefs) const;
-
-  /// Same as above but checks whether the global var is importable as a
-  /// declaration.
-  LLVM_ABI bool canImportGlobalVar(const GlobalValueSummary *S,
-                                   bool AnalyzeRefs, bool &CanImportDecl) const;
+  bool canImportGlobalVar(const GlobalValueSummary *S, bool AnalyzeRefs) const;
 };
 
 /// GraphTraits definition to build SCC for the index
@@ -2041,11 +1857,10 @@ template <> struct GraphTraits<ValueInfo> {
     return P.first;
   }
   using ChildIteratorType =
-      mapped_iterator<SmallVector<FunctionSummary::EdgeTy, 0>::iterator,
+      mapped_iterator<std::vector<FunctionSummary::EdgeTy>::iterator,
                       decltype(&valueInfoFromEdge)>;
 
-  using ChildEdgeIteratorType =
-      SmallVector<FunctionSummary::EdgeTy, 0>::iterator;
+  using ChildEdgeIteratorType = std::vector<FunctionSummary::EdgeTy>::iterator;
 
   static NodeRef getEntryNode(ValueInfo V) { return V; }
 
@@ -2096,7 +1911,7 @@ struct GraphTraits<ModuleSummaryIndex *> : public GraphTraits<ValueInfo> {
     std::unique_ptr<GlobalValueSummary> Root =
         std::make_unique<FunctionSummary>(I->calculateCallGraphRoot());
     GlobalValueSummaryInfo G(I->haveGVs());
-    G.addSummary(std::move(Root));
+    G.SummaryList.push_back(std::move(Root));
     static auto P =
         GlobalValueSummaryMapTy::value_type(GlobalValue::GUID(0), std::move(G));
     return ValueInfo(I->haveGVs(), &P);

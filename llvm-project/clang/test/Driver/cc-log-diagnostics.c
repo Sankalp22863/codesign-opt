@@ -4,7 +4,7 @@
 // RUN: %clang -Wfoobar --target=x86_64-apple-darwin11 -fsyntax-only %s
 // RUN: FileCheck %s < %t.log
 
-int;
+int f0(void) {}
 
 // CHECK: <dict>
 // CHECK:   <key>main-file</key>
@@ -27,9 +27,9 @@ int;
 // CHECK:       <key>line</key>
 // CHECK:       <integer>7</integer>
 // CHECK:       <key>column</key>
-// CHECK:       <integer>1</integer>
+// CHECK:       <integer>15</integer>
 // CHECK:       <key>message</key>
-// CHECK:       <string>declaration does not declare anything</string>
+// CHECK:       <string>non-void function does not return a value</string>
 // CHECK:     </dict>
 // CHECK:   </array>
 // CHECK: </dict>

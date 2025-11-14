@@ -11,6 +11,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/Transforms/Transforms.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/Interfaces/ValueBoundsOpInterface.h"
 
 using namespace mlir;
@@ -20,15 +21,14 @@ using namespace mlir::tensor;
 static FailureOr<OpFoldResult> makeIndependent(OpBuilder &b, Location loc,
                                                OpFoldResult ofr,
                                                ValueRange independencies) {
-  if (isa<Attribute>(ofr))
+  if (ofr.is<Attribute>())
     return ofr;
-  Value value = cast<Value>(ofr);
+  Value value = ofr.get<Value>();
   AffineMap boundMap;
   ValueDimList mapOperands;
   if (failed(ValueBoundsConstraintSet::computeIndependentBound(
           boundMap, mapOperands, presburger::BoundType::UB, value,
-          independencies,
-          /*closedUB=*/true)))
+          /*dim=*/std::nullopt, independencies, /*closedUB=*/true)))
     return failure();
   return mlir::affine::materializeComputedBound(b, loc, boundMap, mapOperands);
 }
@@ -64,10 +64,9 @@ FailureOr<Value> tensor::buildIndependentOp(OpBuilder &b, tensor::PadOp padOp,
     return padOp.getResult();
 
   // Create a new tensor::PadOp.
-  auto newPadOp =
-      PadOp::create(b, loc, padOp.getResultType(), padOp.getSource(),
-                    newMixedLow, newMixedHigh, constantPadding,
-                    padOp.getNofold(), /*attrs=*/ArrayRef<NamedAttribute>{});
+  auto newPadOp = b.create<PadOp>(
+      loc, padOp.getResultType(), padOp.getSource(), newMixedLow, newMixedHigh,
+      constantPadding, padOp.getNofold(), /*attrs=*/ArrayRef<NamedAttribute>{});
 
   // Create a tensor::ExtractSliceOp.
   // Reify the result sizes of the old tensor::PadOp.
@@ -80,14 +79,14 @@ FailureOr<Value> tensor::buildIndependentOp(OpBuilder &b, tensor::PadOp padOp,
   for (int64_t i = 0, e = padOp.getResultType().getRank(); i < e; ++i) {
     // offset = ub(low_padding) - low_padding
     OpFoldResult prevLow = padOp.getMixedLowPad()[i];
-    if (isa<Attribute>(prevLow)) {
+    if (prevLow.is<Attribute>()) {
       offsets.push_back(b.getIndexAttr(0));
     } else {
       offsets.push_back(
-          affine::AffineApplyOp::create(
-              b, loc, b.getAffineDimExpr(0) - b.getAffineDimExpr(1),
-              std::initializer_list<Value>{cast<Value>(newMixedLow[i]),
-                                           cast<Value>(prevLow)})
+          b.create<affine::AffineApplyOp>(
+               loc, b.getAffineDimExpr(0) - b.getAffineDimExpr(1),
+               std::initializer_list<Value>{newMixedLow[i].get<Value>(),
+                                            prevLow.get<Value>()})
               .getResult());
     }
     // size = reified result size
@@ -100,7 +99,7 @@ FailureOr<Value> tensor::buildIndependentOp(OpBuilder &b, tensor::PadOp padOp,
     strides.push_back(b.getIndexAttr(1));
   }
 
-  return ExtractSliceOp::create(b, loc, newPadOp, offsets, sizes, strides)
+  return b.create<ExtractSliceOp>(loc, newPadOp, offsets, sizes, strides)
       .getResult();
 }
 
@@ -125,12 +124,13 @@ FailureOr<Value> tensor::buildIndependentOp(OpBuilder &b,
 
   // Create a new tensor::EmptyOp.
   Value newEmptyOp =
-      EmptyOp::create(b, loc, newSizes, emptyOp.getType().getElementType());
+      b.create<EmptyOp>(loc, newSizes, emptyOp.getType().getElementType());
 
   // Create a tensor::ExtractSliceOp.
   SmallVector<OpFoldResult> offsets(newSizes.size(), b.getIndexAttr(0));
   SmallVector<OpFoldResult> strides(newSizes.size(), b.getIndexAttr(1));
-  return ExtractSliceOp::create(b, loc, newEmptyOp, offsets,
-                                emptyOp.getMixedSizes(), strides)
+  return b
+      .create<ExtractSliceOp>(loc, newEmptyOp, offsets, emptyOp.getMixedSizes(),
+                              strides)
       .getResult();
 }

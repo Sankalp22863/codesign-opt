@@ -9,7 +9,6 @@
 #include "lldb/Interpreter/OptionValuePathMappings.h"
 
 #include "lldb/Host/FileSystem.h"
-#include "lldb/Interpreter/OptionValue.h"
 #include "lldb/Utility/Args.h"
 #include "lldb/Utility/FileSpec.h"
 #include "lldb/Utility/Stream.h"
@@ -29,21 +28,14 @@ void OptionValuePathMappings::DumpValue(const ExecutionContext *exe_ctx,
   if (dump_mask & eDumpOptionType)
     strm.Printf("(%s)", GetTypeAsCString());
   if (dump_mask & eDumpOptionValue) {
-    if (dump_mask & (eDumpOptionType | eDumpOptionDefaultValue)) {
-      strm.Printf(" =");
-      if (dump_mask & eDumpOptionDefaultValue && !m_path_mappings.IsEmpty()) {
-        DefaultValueFormat label(strm);
-        strm.PutCString("empty");
-      }
-      if (!m_path_mappings.IsEmpty())
-        strm.PutCString("\n");
-    }
+    if (dump_mask & eDumpOptionType)
+      strm.Printf(" =%s", (m_path_mappings.GetSize() > 0) ? "\n" : "");
     m_path_mappings.Dump(&strm);
   }
 }
 
 llvm::json::Value
-OptionValuePathMappings::ToJSON(const ExecutionContext *exe_ctx) const {
+OptionValuePathMappings::ToJSON(const ExecutionContext *exe_ctx) {
   return m_path_mappings.ToJSON();
 }
 
@@ -66,7 +58,7 @@ Status OptionValuePathMappings::SetValueFromString(llvm::StringRef value,
       uint32_t idx;
       const uint32_t count = m_path_mappings.GetSize();
       if (!llvm::to_integer(args.GetArgumentAtIndex(0), idx) || idx > count) {
-        error = Status::FromErrorStringWithFormat(
+        error.SetErrorStringWithFormat(
             "invalid file list index %s, index must be 0 through %u",
             args.GetArgumentAtIndex(0), count);
       } else {
@@ -83,7 +75,7 @@ Status OptionValuePathMappings::SetValueFromString(llvm::StringRef value,
           } else {
             std::string previousError =
                 error.Fail() ? std::string(error.AsCString()) + "\n" : "";
-            error = Status::FromErrorStringWithFormat(
+            error.SetErrorStringWithFormat(
                 "%sthe replacement path doesn't exist: \"%s\"",
                 previousError.c_str(), replace_path);
           }
@@ -92,16 +84,14 @@ Status OptionValuePathMappings::SetValueFromString(llvm::StringRef value,
           NotifyValueChanged();
       }
     } else {
-      error = Status::FromErrorString(
-          "replace operation takes an array index followed by "
-          "one or more path pairs");
+      error.SetErrorString("replace operation takes an array index followed by "
+                           "one or more path pairs");
     }
     break;
 
   case eVarSetOperationAssign:
     if (argc < 2 || (argc & 1)) {
-      error = Status::FromErrorString(
-          "assign operation takes one or more path pairs");
+      error.SetErrorString("assign operation takes one or more path pairs");
       break;
     }
     m_path_mappings.Clear(m_notify_changes);
@@ -109,8 +99,7 @@ Status OptionValuePathMappings::SetValueFromString(llvm::StringRef value,
     [[fallthrough]];
   case eVarSetOperationAppend:
     if (argc < 2 || (argc & 1)) {
-      error = Status::FromErrorString(
-          "append operation takes one or more path pairs");
+      error.SetErrorString("append operation takes one or more path pairs");
       break;
     } else {
       bool changed = false;
@@ -124,7 +113,7 @@ Status OptionValuePathMappings::SetValueFromString(llvm::StringRef value,
         } else {
           std::string previousError =
               error.Fail() ? std::string(error.AsCString()) + "\n" : "";
-          error = Status::FromErrorStringWithFormat(
+          error.SetErrorStringWithFormat(
               "%sthe replacement path doesn't exist: \"%s\"",
               previousError.c_str(), replace_path);
         }
@@ -142,7 +131,7 @@ Status OptionValuePathMappings::SetValueFromString(llvm::StringRef value,
       uint32_t idx;
       const uint32_t count = m_path_mappings.GetSize();
       if (!llvm::to_integer(args.GetArgumentAtIndex(0), idx) || idx > count) {
-        error = Status::FromErrorStringWithFormat(
+        error.SetErrorStringWithFormat(
             "invalid file list index %s, index must be 0 through %u",
             args.GetArgumentAtIndex(0), count);
       } else {
@@ -160,7 +149,7 @@ Status OptionValuePathMappings::SetValueFromString(llvm::StringRef value,
           } else {
             std::string previousError =
                 error.Fail() ? std::string(error.AsCString()) + "\n" : "";
-            error = Status::FromErrorStringWithFormat(
+            error.SetErrorStringWithFormat(
                 "%sthe replacement path doesn't exist: \"%s\"",
                 previousError.c_str(), replace_path);
           }
@@ -169,9 +158,8 @@ Status OptionValuePathMappings::SetValueFromString(llvm::StringRef value,
           NotifyValueChanged();
       }
     } else {
-      error = Status::FromErrorString(
-          "insert operation takes an array index followed by "
-          "one or more path pairs");
+      error.SetErrorString("insert operation takes an array index followed by "
+                           "one or more path pairs");
     }
     break;
 
@@ -182,7 +170,7 @@ Status OptionValuePathMappings::SetValueFromString(llvm::StringRef value,
         int idx;
         if (!llvm::to_integer(args.GetArgumentAtIndex(i), idx) || idx < 0 ||
             idx >= (int)m_path_mappings.GetSize()) {
-          error = Status::FromErrorStringWithFormat(
+          error.SetErrorStringWithFormat(
               "invalid array index '%s', aborting remove operation",
               args.GetArgumentAtIndex(i));
           break;
@@ -196,8 +184,7 @@ Status OptionValuePathMappings::SetValueFromString(llvm::StringRef value,
         m_path_mappings.Remove(index, m_notify_changes);
       NotifyValueChanged();
     } else {
-      error = Status::FromErrorString(
-          "remove operation takes one or more array index");
+      error.SetErrorString("remove operation takes one or more array index");
     }
     break;
 
